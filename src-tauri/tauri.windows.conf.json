@@ -1,0 +1,21 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Multara",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 900,
+        "minHeight": 620,
+        "center": true,
+        "visible": false,
+        "focus": false,
+        "backgroundColor": "#121212",
+        "decorations": false,
+        "shadow": true,
+        "additionalBrowserArgs": "--disable-features=OverscrollHistoryNavigation,ElasticOverscroll --disable-crash-reporter --disable-breakpad"
+      }
+    ]
+  }
+}
