@@ -329,7 +329,7 @@ function acceptCheckout() {
     return;
   }
   const choice = checkoutChoices.value[checkoutIndex.value];
-  if (!choice || choice.type === "sep") return;
+  if (!choice) return;
   if (choice.type === "branch") {
     if (checkoutMode.value === "from") {
       checkoutFrom.value = choice.name;
