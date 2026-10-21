@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cline 式整文件审查 · 逐步演示</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #121212;
+      --panel: #1a1a1a;
+      --panel-2: #202020;
+      --border: #2b2b2b;
+      --muted: #8f8f8f;
+      --blue: #1683ff;
+      --blue-hover: #3796ff;
+      --green: #39c274;
+      --text: #e8e8e8;
+      --text-strong: #f2f2f2;
+      --text-faint: #626262;
+      --surface-hover: #1c1c1c;
+      --surface-active: #292929;
+      --control-bg: #1c1c1c;
+      --danger: #ff8f8f;
+      --danger-bg: #351c1c;
+      --warning: #e8c582;
+      --warning-bg: #332918;
+      --info: #79b8ff;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --font-ui: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: var(--font-ui);
+      background: var(--background);
+      color: var(--text);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+    }
+    button {
+      font: inherit;
+      border: 1px solid var(--border);
+      background: var(--control-bg);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      height: 26px;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+    button:hover { background: var(--surface-active); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    button.primary:hover { background: var(--blue-hover); }
+    button.danger { color: var(--danger); border-color: #6c3030; background: var(--danger-bg); }
+    .titlebar {
+      height: 38px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 12px;
+      background: var(--panel);
+    }
+    .titlebar strong { font-size: 13px; }
+    .titlebar span { color: var(--muted); }
+    .guide {
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+    }
+    .guide > div:first-child { max-width: 720px; }
+    .guide h1 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+    .guide p { margin: 0; color: var(--muted); line-height: 1.5; }
+    .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+    .step-dot {
+      min-width: 28px;
+      height: 22px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--control-bg);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .step-dot.on { border-color: var(--blue); color: #fff; background: #16375c; }
+    .step-dot.done { color: var(--green); }
+    .nav { display: flex; gap: 6px; align-items: center; }
+    .workbench {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 168px 1fr 300px;
+    }
+    .col { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+    .col:last-child { border-right: 0; }
+    .col-h {
+      height: 28px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+    }
+    .tree { padding: 6px; }
+    .tree-row {
+      height: 24px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+      border-radius: var(--radius-sm);
+      color: var(--text);
+    }
+    .tree-row.active { background: var(--surface-active); }
+    .pill {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: var(--radius-sm);
+      background: var(--panel-2);
+      color: var(--muted);
+    }
+    .pill.disk { color: var(--green); background: #16301f; }
+    .pill.preview { color: var(--warning); background: var(--warning-bg); }
+    .editor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .tabs { display: flex; height: 28px; border-bottom: 1px solid var(--border); }
+    .tab {
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-right: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .tab.on { color: var(--text-strong); background: var(--background); }
+    .code {
+      flex: 1;
+      margin: 0;
+      padding: 10px 12px;
+      overflow: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 20px;
+      white-space: pre;
+    }
+    .line-del { background: #351c1c; color: #ffb4b4; }
+    .line-add { background: #16301f; color: #9ee6b8; }
+    .banner {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .banner.warn { background: var(--warning-bg); color: var(--warning); }
+    .banner.ok { background: #16301f; color: var(--green); }
+    .banner.idle { background: var(--panel); color: var(--muted); }
+    .chat { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .msg { padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
+    .msg.user { align-self: flex-end; max-width: 92%; }
+    .msg small { color: var(--muted); display: block; margin-bottom: 4px; }
+    .tool {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+    }
+    .tool strong { display: block; margin-bottom: 4px; }
+    .actions { display: flex; gap: 6px; margin-top: 8px; }
+    .status {
+      height: 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 10px;
+      color: var(--muted);
+      font-size: 11px;
+      background: var(--panel);
+    }
+    .key { color: var(--info); }
+  </style>
+</head>
+<body>
+  <header class="titlebar">
+    <strong>Multara 工作台</strong>
+    <span>演示：Cline 式整文件审查（先预览，Save 才写盘）</span>
+  </header>
+
+  <section class="guide">
+    <div>
+      <h1 id="step-title">第 1 步</h1>
+      <p id="step-desc"></p>
+    </div>
+    <div>
+      <div class="steps" id="step-dots"></div>
+      <div class="nav" style="margin-top:8px;justify-content:flex-end">
+        <button type="button" id="prev">上一步</button>
+        <button type="button" class="primary" id="next">下一步</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="workbench">
+    <aside class="col">
+      <div class="col-h">资源管理器</div>
+      <div class="tree" id="tree"></div>
+    </aside>
+
+    <section class="col editor">
+      <div class="tabs">
+        <div class="tab on" id="tab-label">user.ts</div>
+      </div>
+      <div class="banner idle" id="banner">磁盘即当前文件 · 没有未接受的红绿块</div>
+      <pre class="code" id="code"></pre>
+    </section>
+
+    <aside class="col">
+      <div class="col-h">聊天</div>
+      <div class="tabs" id="chat-tabs"></div>
+      <div class="chat" id="chat"></div>
+    </aside>
+  </div>
+
+  <footer class="status">
+    <span>磁盘：<span class="key" id="disk-status">原始</span></span>
+    <span>预览：<span class="key" id="preview-status">无</span></span>
+    <span>待审粒度：每个写文件工具 = 一个文件，整包 Save / Reject</span>
+  </footer>
+
+  <script>
+    const FILES = {
+      "user.ts": {
+        original: `export function getUserName(user) {
+  return user.name;
+}
+
+export function getAge(user) {
+  return user.age;
+}`,
+        proposed: `export function getUserName(user) {
+  return user?.name ?? '';
+}
+
+export function getAge(user) {
+  return user?.age ?? 0;
+}`,
+        proposedB: `export function getUserName(user) {
+  return user?.name ?? 'guest';
+}
+
+export function getAge(user) {
+  return user.age;
+}`,
+      },
+      "notes.ts": {
+        original: `export const title = "hello";
+`,
+        proposed: `export const title = "hello world";
+`,
+      },
+    };
+
+    const disk = {
+      "user.ts": FILES["user.ts"].original,
+      "notes.ts": FILES["notes.ts"].original,
+    };
+
+    const steps = [
+      {
+        title: "第 1 步 · 开始前",
+        desc: "磁盘上就是真实文件。没有 pending、没有行内接受/拒绝。智能体还没提出改动。",
+        file: "user.ts",
+        mode: "disk",
+        chat: [
+          { who: "user", text: "给 getUserName / getAge 加上空值保护。" },
+        ],
+        diskLabel: "两文件都是原始内容",
+        previewLabel: "无",
+      },
+      {
+        title: "第 2 步 · 工具算出补丁，先出预览",
+        desc: "智能体要改 user.ts。此时还没写盘。中间是虚拟 Diff。Save / Reject 是整文件：不能只留 getUserName、丢掉 getAge。一次写文件工具 = 一整包。",
+        file: "user.ts",
+        mode: "preview",
+        propose: "user.ts",
+        chat: [
+          { who: "user", text: "给 getUserName / getAge 加上空值保护。" },
+          { who: "tool", file: "user.ts", pending: true },
+        ],
+        diskLabel: "仍是原始 user.ts",
+        previewLabel: "user.ts 虚拟 Diff（未写入）",
+      },
+      {
+        title: "第 3 步 · Save user.ts",
+        desc: "点 Save：这时才写盘。预览关掉。磁盘变成 AI 版本。没有残留红绿块，也不需要再按 hunk 接受。",
+        file: "user.ts",
+        mode: "disk",
+        saved: ["user.ts"],
+        chat: [
+          { who: "user", text: "给 getUserName / getAge 加上空值保护。" },
+          { who: "tool", file: "user.ts", pending: false, result: "saved" },
+        ],
+        diskLabel: "user.ts 已是 AI 版本",
+        previewLabel: "已关闭",
+      },
+      {
+        title: "第 4 步 · 下一个文件再来一次",
+        desc: "同一轮里改 notes.ts，又是一次独立工具调用。再开一张预览。user.ts 已经落盘，不受影响。",
+        file: "notes.ts",
+        mode: "preview",
+        propose: "notes.ts",
+        saved: ["user.ts"],
+        chat: [
+          { who: "user", text: "给 getUserName / getAge 加上空值保护。" },
+          { who: "tool", file: "user.ts", pending: false, result: "saved" },
+          { who: "tool", file: "notes.ts", pending: true },
+        ],
+        diskLabel: "user.ts 已写入 · notes.ts 仍是原始",
+        previewLabel: "notes.ts 虚拟 Diff（未写入）",
+      },
+      {
+        title: "第 5 步 · Reject notes.ts",
+        desc: "点 Reject：预览关掉，磁盘不动。notes.ts 还是 hello。没有「拒绝一块却把另一块行号带偏」的问题。",
+        file: "notes.ts",
+        mode: "disk",
+        saved: ["user.ts"],
+        chat: [
+          { who: "user", text: "给 getUserName / getAge 加上空值保护。" },
+          { who: "tool", file: "user.ts", pending: false, result: "saved" },
+          { who: "tool", file: "notes.ts", pending: false, result: "rejected" },
+        ],
+        diskLabel: "user.ts 已写入 · notes.ts 保持原始",
+        previewLabel: "已关闭",
+      },
+      {
+        title: "第 6 步 · 对照：没有分块生命周期",
+        desc: "整轮结束。磁盘 = 已接受的最终态。回滚靠检查点，不靠「Reject All 清 pending」。+/- 只出现在批准前的预览里，所以不会画错行。",
+        file: "user.ts",
+        mode: "disk",
+        saved: ["user.ts"],
+        chat: [
+          { who: "user", text: "给 getUserName / getAge 加上空值保护。" },
+          { who: "tool", file: "user.ts", pending: false, result: "saved" },
+          { who: "tool", file: "notes.ts", pending: false, result: "rejected" },
+          { who: "ai", text: "已写入 user.ts 的空值保护；notes.ts 按你的拒绝保持原样。" },
+        ],
+        diskLabel: "最终：只留下你 Save 过的文件",
+        previewLabel: "无",
+      },
+      {
+        title: "第 7 步 · 两个聊天 Tab 同时改（同一工作区）",
+        desc: "聊天 A 已经 Save 过 user.ts。聊天 B 也要改同一个文件。两边看到的是同一块磁盘。B 的预览相对「当前磁盘」（已是 A 的版本），不是各自挂一套 pending。",
+        file: "user.ts",
+        mode: "preview",
+        propose: "user.ts",
+        proposeFrom: "B",
+        saved: ["user.ts"],
+        activeChat: "B",
+        chats: ["A", "B"],
+        chat: [
+          { who: "ai", text: "聊天 B：把默认名改成 guest。getAge 先不动。" },
+          { who: "tool", file: "user.ts", pending: true, label: "聊天 B · 写文件" },
+        ],
+        diskLabel: "磁盘仍是聊天 A 写入的版本",
+        previewLabel: "聊天 B 的虚拟 Diff（未写入）",
+      },
+      {
+        title: "第 8 步 · 同一工作区：后 Save 的覆盖先 Save 的",
+        desc: "B 点 Save：整文件写盘。磁盘变成 B 的版本。A 没有残留红绿块可「再拒一块」。A 的改动如果和 B 重叠，就被整文件覆盖。要找回 A，靠检查点，不靠分块 Reject。",
+        file: "user.ts",
+        mode: "disk",
+        saved: ["user.ts"],
+        diskVersion: "B",
+        activeChat: "B",
+        chats: ["A", "B"],
+        chat: [
+          { who: "tool", file: "user.ts", pending: false, result: "saved", label: "聊天 B · 已覆盖磁盘" },
+          { who: "ai", text: "同一工作区里，后写入的聊天赢。没有两套 pending 对打。" },
+        ],
+        diskLabel: "磁盘 = 聊天 B 的整文件",
+        previewLabel: "已关闭",
+      },
+      {
+        title: "第 9 步 · 若两个聊天各用 worktree",
+        desc: "聊天 A / B 各有一份目录。B Save 只写 B 的 worktree，A 的磁盘不受影响。这是「两个聊天同时改这个软件」该有的隔离；同一 direct 工作区则回到第 7–8 步。",
+        file: "user.ts",
+        mode: "disk",
+        saved: ["user.ts"],
+        diskVersion: "A",
+        activeChat: "A",
+        chats: ["A", "B"],
+        isolated: true,
+        chat: [
+          { who: "ai", text: "聊天 A 的 worktree：仍是空值保护版本。" },
+          { who: "ai", text: "聊天 B 的 worktree：是 guest 版本。两份文件，互不覆盖。" },
+        ],
+        diskLabel: "当前看着 A 的 worktree，B 改不到这里",
+        previewLabel: "无",
+      },
+    ];
+
+    let index = 0;
+
+    function escapeHtml(text) {
+      return text
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function renderDiff(before, after) {
+      const oldLines = before.split("\n");
+      const newLines = after.split("\n");
+      const max = Math.max(oldLines.length, newLines.length);
+      const rows = [];
+      for (let i = 0; i < max; i += 1) {
+        const a = oldLines[i];
+        const b = newLines[i];
+        if (a === b) {
+          if (a !== undefined) rows.push(` <span>${escapeHtml(a)}</span>`);
+        } else {
+          if (a !== undefined) rows.push(`<span class="line-del">-${escapeHtml(a)}</span>`);
+          if (b !== undefined) rows.push(`<span class="line-add">+${escapeHtml(b)}</span>`);
+        }
+      }
+      return rows.join("\n");
+    }
+
+    function fileVersion(name, version) {
+      if (name === "user.ts" && version === "B") return FILES["user.ts"].proposedB;
+      if (version === "A" || version === true) return FILES[name].proposed;
+      return FILES[name].proposed;
+    }
+
+    function applyDisk(step) {
+      if (step.saved?.includes("user.ts")) {
+        disk["user.ts"] = fileVersion("user.ts", step.diskVersion || "A");
+      } else {
+        disk["user.ts"] = FILES["user.ts"].original;
+      }
+      disk["notes.ts"] = step.saved?.includes("notes.ts")
+        ? FILES["notes.ts"].proposed
+        : FILES["notes.ts"].original;
+    }
+
+    function renderTree(step) {
+      const files = ["user.ts", "notes.ts"];
+      document.getElementById("tree").innerHTML = files
+        .map((name) => {
+          const written = disk[name] !== FILES[name].original;
+          const active = step.file === name;
+          return `<div class="tree-row${active ? " active" : ""}">${name}${
+            written ? '<span class="pill disk">已写入</span>' : ""
+          }</div>`;
+        })
+        .join("");
+    }
+
+    function renderEditor(step) {
+      const name = step.file;
+      document.getElementById("tab-label").textContent =
+        step.mode === "preview" ? `${name} · 预览` : name;
+      const banner = document.getElementById("banner");
+      const code = document.getElementById("code");
+      if (step.mode === "preview") {
+        const from = step.proposeFrom === "B" ? disk[name] : FILES[name].original;
+        const to = step.proposeFrom === "B" ? FILES[name].proposedB : FILES[name].proposed;
+        banner.className = "banner warn";
+        banner.innerHTML = `<span>虚拟 Diff · 整文件一包 · 不能勾选其中几行</span><span class="pill preview">未写入</span>`;
+        code.innerHTML = renderDiff(from, to);
+      } else {
+        banner.className = step.saved?.includes(name) ? "banner ok" : "banner idle";
+        banner.textContent = step.isolated
+          ? "当前是聊天 A 的 worktree · 聊天 B 写在另一份目录"
+          : step.saved?.includes(name)
+            ? "已写入磁盘 · 审查结束 · 编辑器就是最终文件"
+            : "磁盘即当前文件 · 没有未接受的红绿块";
+        code.textContent = disk[name];
+      }
+    }
+
+    function renderChatTabs(step) {
+      const tabs = step.chats || ["A"];
+      const active = step.activeChat || "A";
+      document.getElementById("chat-tabs").innerHTML = tabs
+        .map(
+          (id) =>
+            `<div class="tab${id === active ? " on" : ""}">聊天 ${id}${
+              step.isolated ? (id === "A" ? " · worktree-a" : " · worktree-b") : ""
+            }</div>`,
+        )
+        .join("");
+    }
+
+    function renderChat(step) {
+      const html = step.chat
+        .map((item) => {
+          if (item.who === "user") {
+            return `<div class="msg user"><small>你</small>${escapeHtml(item.text)}</div>`;
+          }
+          if (item.who === "ai") {
+            return `<div class="msg"><small>智能体</small>${escapeHtml(item.text)}</div>`;
+          }
+          const status =
+            item.result === "saved"
+              ? "已保存到磁盘（整文件）"
+              : item.result === "rejected"
+                ? "已拒绝，整文件未写入"
+                : "等待整文件确认 · 不能分块勾选";
+          const buttons = item.pending
+            ? `<div class="actions"><button type="button" class="danger" disabled>Reject 整文件</button><button type="button" class="primary" disabled>Save 整文件</button></div><div style="margin-top:6px;color:var(--muted)">演示里用上面的「下一步」代替点按钮</div>`
+            : "";
+          return `<div class="tool"><strong>${item.label || "写文件"} · ${item.file}</strong><small style="color:var(--muted)">${status}</small>${buttons}</div>`;
+        })
+        .join("");
+      document.getElementById("chat").innerHTML = html;
+    }
+
+    function renderDots() {
+      document.getElementById("step-dots").innerHTML = steps
+        .map((_, i) => {
+          const cls = i === index ? "on" : i < index ? "done" : "";
+          return `<button type="button" class="step-dot ${cls}" data-step="${i}">${i + 1}</button>`;
+        })
+        .join("");
+      document.querySelectorAll("[data-step]").forEach((button) => {
+        button.addEventListener("click", () => {
+          index = Number(button.dataset.step);
+          render();
+        });
+      });
+    }
+
+    function render() {
+      const step = steps[index];
+      applyDisk(step);
+      document.getElementById("step-title").textContent = step.title;
+      document.getElementById("step-desc").textContent = step.desc;
+      document.getElementById("disk-status").textContent = step.diskLabel;
+      document.getElementById("preview-status").textContent = step.previewLabel;
+      document.getElementById("prev").disabled = index === 0;
+      document.getElementById("next").disabled = index === steps.length - 1;
+      document.getElementById("next").textContent =
+        index === steps.length - 1 ? "已到最后" : "下一步";
+      renderDots();
+      renderTree(step);
+      renderEditor(step);
+      renderChatTabs(step);
+      renderChat(step);
+    }
+
+    document.getElementById("prev").addEventListener("click", () => {
+      if (index > 0) index -= 1;
+      render();
+    });
+    document.getElementById("next").addEventListener("click", () => {
+      if (index < steps.length - 1) index += 1;
+      render();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight") document.getElementById("next").click();
+      if (event.key === "ArrowLeft") document.getElementById("prev").click();
+    });
+
+    render();
+  </script>
+</body>
+</html>

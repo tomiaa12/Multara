@@ -1,0 +1,319 @@
+{
+  "entries": [
+    {
+      "id": "multara",
+      "label": "Multara",
+      "runtime": false,
+      "skillsHome": ".multara/skills",
+      "mcpHome": ".multara/mcp.json"
+    },
+    {
+      "id": "agents",
+      "label": "Agents",
+      "runtime": false,
+      "skillsHome": ".agents/skills"
+    },
+    {
+      "id": "vscode",
+      "label": "VS Code",
+      "runtime": false,
+      "mcpSpecial": "vscode"
+    },
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "command": "claude",
+      "protocol": "anthropic",
+      "gateway": true,
+      "urlSuffix": "plain",
+      "runtime": true,
+      "skillsHome": ".claude/skills",
+      "mcpHome": ".claude.json"
+    },
+    {
+      "id": "codebuddy",
+      "label": "CodeBuddy",
+      "command": "codebuddy",
+      "protocol": "anthropic",
+      "gateway": false,
+      "urlSuffix": "plain",
+      "runtime": true,
+      "skillsHome": ".codebuddy/skills",
+      "mcpHome": ".codebuddy/.mcp.json"
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "command": "codex",
+      "protocol": "openai",
+      "gateway": true,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".codex/skills",
+      "mcpHome": ".codex/config.toml"
+    },
+    {
+      "id": "copilot",
+      "label": "GitHub Copilot",
+      "command": "copilot",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".copilot/skills",
+      "mcpHome": ".copilot/mcp-config.json"
+    },
+    {
+      "id": "opencode",
+      "label": "OpenCode",
+      "command": "opencode",
+      "protocol": "openai",
+      "gateway": true,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".config/opencode/skills",
+      "mcpHome": ".config/opencode/opencode.json"
+    },
+    {
+      "id": "codearts",
+      "label": "CodeArts",
+      "command": "codearts",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".codeartsdoer/skills",
+      "mcpHome": ".codeartsdoer/codearts_cli.jsonc"
+    },
+    {
+      "id": "deveco",
+      "label": "DevEco",
+      "command": "deveco",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".deveco/skills",
+      "mcpHome": ".config/deveco/deveco.jsonc"
+    },
+    {
+      "id": "openclaw",
+      "label": "OpenClaw",
+      "command": "openclaw",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".openclaw/skills",
+      "mcpHome": ".openclaw/openclaw.json"
+    },
+    {
+      "id": "hermes",
+      "label": "Hermes",
+      "command": "hermes",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".hermes/skills",
+      "mcpHome": ".hermes/config.yaml"
+    },
+    {
+      "id": "pi",
+      "label": "Pi",
+      "command": "pi",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".pi/skills",
+      "mcpHome": ".pi/agent/mcp.json"
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "command": "cursor-agent",
+      "protocol": "anthropic",
+      "gateway": false,
+      "urlSuffix": "plain",
+      "runtime": true,
+      "skillsHome": ".cursor/skills",
+      "mcpHome": ".cursor/mcp.json"
+    },
+    {
+      "id": "kimi",
+      "label": "Kimi CLI",
+      "command": "kimi",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".kimi/skills",
+      "mcpHome": ".kimi-code/mcp.json"
+    },
+    {
+      "id": "reasonix",
+      "label": "Reasonix",
+      "command": "reasonix",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".reasonix/skills",
+      "mcpHome": ".reasonix/config.toml"
+    },
+    {
+      "id": "dsh",
+      "label": "DSH",
+      "command": "dsh",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".dsh/skills",
+      "mcpHome": ".dsh/mcp.json"
+    },
+    {
+      "id": "dim",
+      "label": "Dim",
+      "command": "dim",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "mcpHome": ".dimcode/v2/mcp.json"
+    },
+    {
+      "id": "kiro",
+      "label": "Kiro",
+      "command": "kiro-cli",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".kiro/skills",
+      "mcpHome": ".kiro/settings/mcp.json"
+    },
+    {
+      "id": "antigravity",
+      "label": "Antigravity",
+      "command": "agy",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".gemini/antigravity/skills",
+      "mcpHome": ".gemini/antigravity/mcp_config.json"
+    },
+    {
+      "id": "qoder",
+      "label": "Qoder",
+      "command": "qodercli",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".qoder/skills",
+      "mcpHome": ".qoder/settings.json"
+    },
+    {
+      "id": "qoderclicn",
+      "label": "Qoder CN",
+      "icon": "qoder",
+      "command": "qoderclicn",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".qoder-cn/skills",
+      "mcpHome": ".qoder-cn/settings.json"
+    },
+    {
+      "id": "traecli",
+      "label": "TRAE CLI",
+      "command": "traecli",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".traecli/skills",
+      "mcpHome": ".trae/traecli.toml"
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "command": "grok",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".grok/skills",
+      "mcpHome": ".grok/config.toml"
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini CLI",
+      "command": "gemini",
+      "protocol": "gemini",
+      "gateway": true,
+      "urlSuffix": "plain",
+      "runtime": true,
+      "skillsHome": ".gemini/skills",
+      "mcpHome": ".gemini/settings.json"
+    },
+    {
+      "id": "qwen",
+      "label": "Qwen Code",
+      "command": "qwen",
+      "protocol": "openai",
+      "gateway": true,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".qwen/skills",
+      "mcpHome": ".qwen/settings.json"
+    },
+    {
+      "id": "qwenpaw",
+      "label": "QwenPaw",
+      "command": "qwenpaw",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "mcpHome": ".qwenpaw/workspaces/default/agent.json"
+    },
+    {
+      "id": "mcode",
+      "label": "MiniMax Code",
+      "command": "mcode",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".minimax/skills",
+      "mcpHome": ".minimax/mcp.json"
+    },
+    {
+      "id": "zeroclaw",
+      "label": "ZeroClaw",
+      "command": "zeroclaw",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".zeroclaw/workspace/skills",
+      "mcpHome": ".zeroclaw/config.toml"
+    },
+    {
+      "id": "omp",
+      "label": "OMP",
+      "command": "omp",
+      "protocol": "openai",
+      "gateway": false,
+      "urlSuffix": "v1",
+      "runtime": true,
+      "skillsHome": ".omp/skills",
+      "mcpHome": ".omp/agent/mcp.json"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Multara",
+  "version": "0.1.0",
+  "identifier": "com.multara.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Multara",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 900,
+        "minHeight": 620,
+        "center": true,
+        "visible": false,
+        "focus": false,
+        "backgroundColor": "#121212",
+        "decorations": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 19
+        },
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5MTc3NTk3RkIwRUUzMEQKUldRTjR3NzdsM1VYT1JDMUhJeVgzbFVsR3d3QjJjNkhxTzVCNndGcUZlWkJjY09WTE5ONGdIR0oK",
+      "endpoints": [
+        "https://github.com/tomiaa12/Multara/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis", "msi", "dmg"],
+    "publisher": "Multara",
+    "copyright": "Copyright © 2026 Multara",
+    "category": "DeveloperTool",
+    "shortDescription": "本地优先的多智能体开发工作区",
+    "longDescription": "Multara 在隔离工作区中调度本机 AI 编程工具，并集中管理智能体、小队、Skills 与 MCP。",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["SimpChinese", "English"]
+      },
+      "wix": {
+        "language": ["zh-CN", "en-US"],
+        "upgradeCode": "0f0e395d-6c1c-5e8f-985b-3dca0b57fe4f"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "hardenedRuntime": false,
+      "signingIdentity": "-"
+    }
+  }
+}
