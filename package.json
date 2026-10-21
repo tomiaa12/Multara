@@ -1,7 +1,7 @@
 {
   "name": "multara",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "packageManager": "pnpm@10.15.1",
   "scripts": {
@@ -16,7 +16,8 @@
     "tauri:build:macos-intel": "node scripts/with-cargo.mjs build --target x86_64-apple-darwin --bundles app,dmg",
     "test": "vitest run",
     "test:watch": "vitest",
-    "reset": "node scripts/reset-app.mjs"
+    "reset": "node scripts/reset-app.mjs",
+    "screenshots": "node scripts/capture-readme-screenshots.mjs"
   },
   "dependencies": {
     "@dicebear/collection": "^9.4.2",
@@ -59,6 +60,7 @@
     "typescript": "~5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.1",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.11",
+    "playwright": "1.64.1"
   }
 }
