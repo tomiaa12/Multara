@@ -9,7 +9,8 @@ import Codicon from "../components/ui/Codicon.vue";
 import FileTypeIcon from "../components/FileTypeIcon.vue";
 import ExplorerTreeList from "../components/workbench/ExplorerTreeList.vue";
 import { monacoZoomOptions } from "../components/workbench/monaco-zoom";
-import { nestExplorerRows } from "../components/workbench/explorer-tree";
+import type { ExplorerRowNode } from "../components/workbench/explorer/explorer-rows";
+import { nestExplorerRows, type ExplorerTreeNode } from "../components/workbench/explorer-tree";
 import { monaco, monacoLanguageId } from "../monaco";
 import { currentDocumentTheme, monacoThemeName, watchDocumentTheme } from "../editor/monaco-workspace";
 import { relativeTime } from "./task-board";
@@ -58,6 +59,19 @@ function treeGuideLeft(level: number) {
   return TREE_ROW_INSET + (level - 1) * TREE_INDENT + TREE_CHEVRON / 2;
 }
 
+function toExplorerRowNodes(nodes: ExplorerTreeNode[]): ExplorerRowNode[] {
+  return nodes.map((node) => ({
+    entry: {
+      ...node.entry,
+      workspaceId: skill.value?.id ?? "",
+      expandable: node.entry.isDirectory,
+      expanded: node.expanded,
+    },
+    expanded: node.expanded,
+    children: toExplorerRowNodes(node.children),
+  }));
+}
+
 const treeNodes = computed(() => {
   const rows: FileEntry[] = [];
   const append = (entries: FileEntry[], depth: number) => {
@@ -69,7 +83,9 @@ const treeNodes = computed(() => {
     }
   };
   append(roots.value, 0);
-  return nestExplorerRows(rows, (entry) => entry.isDirectory && expanded.value.has(entry.path));
+  return toExplorerRowNodes(
+    nestExplorerRows(rows, (entry) => entry.isDirectory && expanded.value.has(entry.path)),
+  );
 });
 
 async function loadCount() {

@@ -28,7 +28,7 @@ const AVATAR_STYLES = [
   collection.pixelArtNeutral,
   collection.thumbs,
   collection.toonHead,
-] as Style[];
+] as Array<Style<Record<string, unknown>>>;
 
 function pickStyle() {
   return AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)] ?? collection.lorelei;

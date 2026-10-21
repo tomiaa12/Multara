@@ -221,7 +221,7 @@ export const useAppStore = defineStore("app", () => {
         else existing.timeline.push(payload.timelineItem);
         existing.timeline.sort((a, b) => a.seq - b.seq);
         if (payload.timelineItem.eventType === "permission" && payload.timelineItem.status !== "resolved") {
-          void captureInboxNotice({ ...payload, status: "needs_permission" });
+          void captureInboxNotice(payload);
         }
       }
       if (payload.chunk) {

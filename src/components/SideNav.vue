@@ -11,6 +11,7 @@ export type SideNavItem = {
   active?: boolean;
   badge?: string | number;
   title?: string;
+  children?: SideNavItem[];
 };
 
 export type SideNavGroup = {
