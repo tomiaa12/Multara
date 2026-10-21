@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multara · UI Playground</title>
+    <link rel="icon" type="image/svg+xml" href="../src/assets/logo.svg" />
+    <!-- 与应用完全相同的样式来源：Token → Base → 组件 → 布局 → 业务样式 -->
+    <link rel="stylesheet" href="../src/design/tokens.css" />
+    <link rel="stylesheet" href="../src/design/base.css" />
+    <link rel="stylesheet" href="../src/design/components.css" />
+    <link rel="stylesheet" href="../src/design/layout.css" />
+    <link rel="stylesheet" href="../src/styles.css" />
+    <link rel="stylesheet" href="./playground.css" />
+  </head>
+  <body>
+    <div class="pg">
+      <!-- ═══ 控制面板 ═══ -->
+      <aside class="pg-panel">
+        <div class="pg-panel-head">
+          <span class="brand-mark"><i data-icon="logo" data-size="14"></i></span>
+          <strong>UI Playground</strong>
+          <small>Multara Design</small>
+        </div>
+        <div class="pg-panel-body">
+          <section class="pg-group">
+            <span class="ds-overline">主题</span>
+            <div class="ds-segmented" style="width: 100%">
+              <button type="button" data-theme-set="dark" style="flex: 1"><i data-icon="moon" data-size="13"></i> 深色</button>
+              <button type="button" data-theme-set="light" style="flex: 1"><i data-icon="sun" data-size="13"></i> 浅色</button>
+            </div>
+            <div class="pg-control">
+              <div class="pg-control-head">主色</div>
+              <div class="pg-swatches"></div>
+            </div>
+          </section>
+
+          <section class="pg-group">
+            <span class="ds-overline">预设方案</span>
+            <div class="pg-presets"></div>
+            <div class="pg-compare">
+              <button type="button" class="ui-button" data-size="small" data-slot-save="A">保存为 A</button>
+              <button type="button" class="ui-button" data-size="small" data-slot-save="B">保存为 B</button>
+              <button type="button" class="ui-button primary" data-size="small" data-slot-load="A">查看方案 A</button>
+              <button type="button" class="ui-button primary" data-size="small" data-slot-load="B">查看方案 B</button>
+            </div>
+            <button type="button" class="ui-button" data-variant="ghost" data-size="small" data-action="reset">
+              <i data-icon="refresh" data-size="13"></i> 恢复默认
+            </button>
+          </section>
+
+          <section class="pg-group">
+            <span class="ds-overline">字体</span>
+            <label class="pg-control">
+              <span class="pg-control-head">字体族</span>
+              <select class="ui-select" data-bind="fontFamily" id="c-font">
+                <option value="inter">Inter（默认）</option>
+                <option value="system">系统字体</option>
+                <option value="geist">Geist / SF Pro</option>
+                <option value="mono">等宽</option>
+              </select>
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">正文字号 <output for="c-fs"></output></span>
+              <input id="c-fs" type="range" min="12" max="15" step="0.5" data-bind="fontSize" data-unit="px" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">行高 <output for="c-lh"></output></span>
+              <input id="c-lh" type="range" min="1.3" max="1.8" step="0.05" data-bind="lineHeight" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">标题字重 <output for="c-fw"></output></span>
+              <input id="c-fw" type="range" min="500" max="700" step="100" data-bind="headingWeight" />
+            </label>
+          </section>
+
+          <section class="pg-group">
+            <span class="ds-overline">形状与密度</span>
+            <label class="pg-control">
+              <span class="pg-control-head">圆角倍率 <output for="c-radius"></output></span>
+              <input id="c-radius" type="range" min="0" max="2" step="0.1" data-bind="radius" data-unit="×" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">间距倍率 <output for="c-spacing"></output></span>
+              <input id="c-spacing" type="range" min="0.75" max="1.4" step="0.05" data-bind="spacing" data-unit="×" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">卡片间距 <output for="c-card"></output></span>
+              <input id="c-card" type="range" min="4" max="24" step="2" data-bind="cardGap" data-unit="px" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">Section 间距 <output for="c-section"></output></span>
+              <input id="c-section" type="range" min="16" max="56" step="4" data-bind="sectionGap" data-unit="px" />
+            </label>
+          </section>
+
+          <section class="pg-group">
+            <span class="ds-overline">布局</span>
+            <label class="pg-control">
+              <span class="pg-control-head">侧边栏宽度 <output for="c-sidebar"></output></span>
+              <input id="c-sidebar" type="range" min="168" max="280" step="4" data-bind="sidebarWidth" data-unit="px" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">Header 高度 <output for="c-header"></output></span>
+              <input id="c-header" type="range" min="32" max="56" step="2" data-bind="headerHeight" data-unit="px" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">内容最大宽度 <output for="c-width"></output></span>
+              <input id="c-width" type="range" min="880" max="1440" step="20" data-bind="contentWidth" data-unit="px" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">内容区 Padding <output for="c-padding"></output></span>
+              <input id="c-padding" type="range" min="16" max="56" step="4" data-bind="contentPadding" data-unit="px" />
+            </label>
+            <label class="pg-control">
+              <span class="pg-control-head">Grid 列数 <output for="c-cols"></output></span>
+              <input id="c-cols" type="range" min="1" max="6" step="1" data-bind="gridColumns" />
+            </label>
+          </section>
+
+          <section class="pg-group">
+            <span class="ds-overline">导出</span>
+            <textarea class="ui-textarea pg-export" readonly></textarea>
+            <button type="button" class="ui-button" data-size="small" data-action="copy">复制 CSS</button>
+          </section>
+        </div>
+      </aside>
+
+      <!-- ═══ 主区域 ═══ -->
+      <main class="pg-main">
+        <header class="pg-main-head">
+          <nav class="ds-tabs">
+            <button type="button" class="active" data-view-tab="view-foundation">基础 Token</button>
+            <button type="button" data-view-tab="view-components">组件</button>
+            <button type="button" data-view-tab="view-pages">页面预览</button>
+          </nav>
+          <span class="ds-hint">所有修改实时作用于下方组件与页面</span>
+        </header>
+
+        <div class="pg-scroll">
+          <!-- ─────────── 基础 Token ─────────── -->
+          <div class="pg-content pg-view" id="view-foundation">
+            <section class="pg-section">
+              <header>
+                <h2>颜色</h2>
+                <p>所有颜色均为语义 Token，深浅主题共享同一套名称。业务代码禁止直接写色值。</p>
+              </header>
+              <div id="pg-colors" class="pg-section"></div>
+            </section>
+
+            <section class="pg-section">
+              <header>
+                <h2>字体</h2>
+                <p>桌面开发工具以 13px 为正文基准，层级通过字号与字重共同表达。</p>
+              </header>
+              <div class="pg-demo">
+                <div class="pg-type"><code>--font-size-3xl</code><small>24px</small><strong style="font-size: var(--font-size-3xl); color: var(--color-text-strong)">1,284 指标数字</strong></div>
+                <div class="pg-type"><code>--font-size-2xl</code><small>20px</small><h1>页面标题 Page Title</h1></div>
+                <div class="pg-type"><code>--font-size-xl</code><small>16px</small><strong style="font-size: var(--font-size-xl); color: var(--color-text-strong)">弹窗标题 / 详情副标题</strong></div>
+                <div class="pg-type"><code>--font-size-lg</code><small>14px</small><h2>Section 标题、卡片标题</h2></div>
+                <div class="pg-type"><code>--font-size-md</code><small>13px</small><span>正文、按钮、输入框与表格内容。The quick brown fox jumps over the lazy dog.</span></div>
+                <div class="pg-type"><code>--font-size-sm</code><small>12px</small><small>辅助说明、表单 Label、表头</small></div>
+                <div class="pg-type"><code>--font-size-xs</code><small>11px</small><span style="font-size: var(--font-size-xs); color: var(--color-text-tertiary)">徽标、状态栏、时间戳</span></div>
+                <div class="pg-type"><code>--font-family-mono</code><small>12px</small><code style="font: var(--font-size-sm) var(--font-family-mono); color: var(--color-text)">git checkout -b feat/design-system</code></div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header>
+                <h2>间距</h2>
+                <p>4px 基准。组件内部用 1–3，组件之间用 3–6，区块之间用 8 以上。</p>
+              </header>
+              <div class="pg-demo pg-scale">
+                <div><code>--spacing-1</code><small>4px</small><i style="width: var(--spacing-1)"></i></div>
+                <div><code>--spacing-2</code><small>8px</small><i style="width: var(--spacing-2)"></i></div>
+                <div><code>--spacing-3</code><small>12px</small><i style="width: var(--spacing-3)"></i></div>
+                <div><code>--spacing-4</code><small>16px</small><i style="width: var(--spacing-4)"></i></div>
+                <div><code>--spacing-6</code><small>24px</small><i style="width: var(--spacing-6)"></i></div>
+                <div><code>--spacing-8</code><small>32px</small><i style="width: var(--spacing-8)"></i></div>
+                <div><code>--spacing-12</code><small>48px</small><i style="width: var(--spacing-12)"></i></div>
+                <div><code>--spacing-16</code><small>64px</small><i style="width: var(--spacing-16)"></i></div>
+                <div><code>--spacing-24</code><small>96px</small><i style="width: var(--spacing-24)"></i></div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header>
+                <h2>圆角与阴影</h2>
+                <p>阴影只用于浮层（菜单、弹窗、抽屉），页面内的卡片依靠边框区分层级。</p>
+              </header>
+              <div class="pg-demo pg-shapes">
+                <div style="border-radius: var(--radius-sm)">radius-sm</div>
+                <div style="border-radius: var(--radius-md)">radius-md</div>
+                <div style="border-radius: var(--radius-lg)">radius-lg</div>
+                <div style="border-radius: var(--radius-xl)">radius-xl</div>
+                <div style="border-radius: var(--radius-lg); box-shadow: var(--shadow-sm)">shadow-sm</div>
+                <div style="border-radius: var(--radius-lg); box-shadow: var(--shadow-md)">shadow-md</div>
+                <div style="border-radius: var(--radius-lg); box-shadow: var(--shadow-lg)">shadow-lg</div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ─────────── 组件 ─────────── -->
+          <div class="pg-content pg-view" id="view-components" hidden>
+            <section class="pg-section">
+              <header><h2>Button</h2><p>默认 / Primary / Danger / Danger Ghost / Ghost 等语义，覆盖所有交互状态。</p></header>
+              <div class="pg-demo">
+                <div class="pg-row">
+                  <span class="pg-row-label">变体</span>
+                  <button class="ui-button">默认按钮</button>
+                  <button class="ui-button primary"><i data-icon="plus" data-size="14"></i> 新建需求</button>
+                  <button class="ui-button danger"><i data-icon="trash" data-size="14"></i> 删除</button>
+                  <button class="ui-button" data-variant="danger-ghost">删除</button>
+                  <button class="ui-button" data-variant="danger-solid">确认删除</button>
+                  <button class="ui-button" data-variant="ghost">Ghost</button>
+                  <button class="ui-button icon-button" title="更多"><i data-icon="more"></i></button>
+                </div>
+                <div class="pg-row">
+                  <span class="pg-row-label">状态 · 默认</span>
+                  <button class="ui-button">Normal</button>
+                  <button class="ui-button is-hover">Hover</button>
+                  <button class="ui-button is-active">Active</button>
+                  <button class="ui-button is-focus">Focus</button>
+                  <button class="ui-button active">Selected</button>
+                  <button class="ui-button" disabled>Disabled</button>
+                  <button class="ui-button is-loading">Loading</button>
+                </div>
+                <div class="pg-row">
+                  <span class="pg-row-label">状态 · Primary</span>
+                  <button class="ui-button primary">Normal</button>
+                  <button class="ui-button primary is-hover">Hover</button>
+                  <button class="ui-button primary is-active">Active</button>
+                  <button class="ui-button primary is-focus">Focus</button>
+                  <button class="ui-button primary" disabled>Disabled</button>
+                  <button class="ui-button primary" data-demo="loading">点击加载</button>
+                </div>
+                <div class="pg-row">
+                  <span class="pg-row-label">尺寸</span>
+                  <button class="ui-button" data-size="small">Small</button>
+                  <button class="ui-button">Default</button>
+                  <button class="ui-button" data-size="large">Large</button>
+                  <div class="ds-button-group">
+                    <button class="ui-button">左</button><button class="ui-button active">中</button><button class="ui-button">右</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Send Button</h2><p>聊天输入框的圆形发送按钮。可发送时反相（深色主题浅底、浅色主题深底），不可发送时退回中性灰底；切换右上角主题可对比。</p></header>
+              <div class="pg-demo">
+                <div class="pg-row">
+                  <span class="pg-row-label">状态</span>
+                  <button class="ui-button ds-send-button" title="Normal"><i data-icon="arrow-up" data-size="16"></i></button>
+                  <button class="ui-button ds-send-button is-hover" title="Hover"><i data-icon="arrow-up" data-size="16"></i></button>
+                  <button class="ui-button ds-send-button is-active" title="Active"><i data-icon="arrow-up" data-size="16"></i></button>
+                  <button class="ui-button ds-send-button is-focus" title="Focus"><i data-icon="arrow-up" data-size="16"></i></button>
+                  <button class="ui-button ds-send-button" disabled title="Disabled"><i data-icon="arrow-up" data-size="16"></i></button>
+                </div>
+                <div class="pg-row">
+                  <span class="pg-row-label">尺寸</span>
+                  <button class="ui-button ds-send-button" data-size="small" title="Small"><i data-icon="arrow-up" data-size="14"></i></button>
+                  <button class="ui-button ds-send-button" title="Default"><i data-icon="arrow-up" data-size="16"></i></button>
+                </div>
+                <p style="margin: 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm)">Vue：<code>&lt;UiButton class="ds-send-button" type="submit" :disabled="!canSend"&gt;</code>，图标用 lucide <code>ArrowUp</code>。</p>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Input / Select / Textarea</h2><p>统一 32px 高度，Focus 时出现主色描边与外环。</p></header>
+              <div class="pg-demo">
+                <div class="pg-grid">
+                  <label class="ds-field"><span>默认</span><input class="ui-input" placeholder="输入需求标题" /></label>
+                  <label class="ds-field"><span>Hover</span><input class="ds-input is-hover" value="已输入内容" /></label>
+                  <label class="ds-field"><span>Focus</span><input class="ds-input is-focus" value="正在编辑" /></label>
+                  <label class="ds-field"><span>Disabled</span><input class="ui-input" disabled value="不可编辑" /></label>
+                  <label class="ds-field">
+                    <span>Error</span><input class="ui-input is-error" value="feat/中文 分支" />
+                    <span class="ds-error-text">分支名不能包含空格</span>
+                  </label>
+                  <label class="ds-field">
+                    <span>Select</span>
+                    <select class="ui-select"><option>Claude Code</option><option>Codex</option></select>
+                    <span class="ds-hint">智能体使用的运行时</span>
+                  </label>
+                  <label class="ds-field">
+                    <span>搜索</span>
+                    <span class="ds-search"><i data-icon="search" data-size="14"></i><input class="ui-input" type="search" placeholder="搜索智能体" /></span>
+                  </label>
+                </div>
+                <label class="ds-field"><span>Textarea</span><textarea class="ui-textarea" placeholder="描述你希望智能体完成的任务…"></textarea></label>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header>
+                <h2>Dropdown Select 下拉框</h2>
+                <p>
+                  自定义下拉框：搜索（拼音首字母 / 全拼 / 混拼）、头像、分组、多选、可创建、远程搜索。键盘：<span class="ds-kbd">↑</span><span class="ds-kbd">↓</span>
+                  切换，<span class="ds-kbd">Enter</span> 选择，<span class="ds-kbd">Esc</span> 关闭，<span class="ds-kbd">Backspace</span> 删除最后一个标签；不可搜索时输入字母可按首字母跳转。
+                </p>
+              </header>
+              <div class="pg-demo">
+                <div class="pg-grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr))">
+                  <div class="ds-field"><span>普通下拉框</span><div data-select-demo="basic"></div><span class="ds-hint">可清空 · 含禁用项 · 右侧附加信息</span></div>
+                  <div class="ds-field"><span>可搜索 · 拼音</span><div data-select-demo="pinyin"></div><span class="ds-hint">试试输入 cs、ceshi、ces 或「测」</span></div>
+                  <div class="ds-field"><span>头像 + 描述</span><div data-select-demo="avatar"></div><span class="ds-hint">支持 emoji 或图片头像，按姓名 / 职位搜索</span></div>
+                  <div class="ds-field"><span>分组列表</span><div data-select-demo="group"></div><span class="ds-hint">组标题右侧显示该组命中数量</span></div>
+                  <div class="ds-field"><span>多选 · 标签折叠</span><div data-select-demo="multiple"></div><span class="ds-hint">最多展示 2 个标签，最多选 5 项</span></div>
+                  <div class="ds-field"><span>可创建</span><div data-select-demo="creatable"></div><span class="ds-hint">输入不存在的标签后回车创建</span></div>
+                  <div class="ds-field"><span>远程搜索</span><div data-select-demo="remote"></div><span class="ds-hint">防抖 300ms，显示加载状态</span></div>
+                  <div class="ds-field"><span>前缀图标</span><div data-select-demo="prefix"></div><span class="ds-hint" data-select-output="prefix">当前值：main</span></div>
+                </div>
+                <div class="pg-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
+                  <div class="ds-field"><span>Small</span><div data-select-demo="small"></div></div>
+                  <div class="ds-field"><span>Large</span><div data-select-demo="large"></div></div>
+                  <div class="ds-field"><span>Disabled</span><div data-select-demo="disabled"></div></div>
+                  <div class="ds-field"><span>Error</span><div data-select-demo="invalid"></div><span class="ds-error-text">请选择运行时</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Checkbox / Radio / Switch</h2></header>
+              <div class="pg-demo">
+                <div class="pg-row">
+                  <label class="check-row"><input class="ui-checkbox" type="checkbox" checked /> 已选中</label>
+                  <label class="check-row"><input class="ui-checkbox" type="checkbox" /> 未选中</label>
+                  <label class="check-row"><input class="ui-checkbox" type="checkbox" disabled /> 禁用</label>
+                  <label class="check-row"><input class="ui-checkbox" type="radio" name="r" checked /> 选项 A</label>
+                  <label class="check-row"><input class="ui-checkbox" type="radio" name="r" /> 选项 B</label>
+                </div>
+                <div class="pg-row">
+                  <label class="check-row"><input class="ds-switch" type="checkbox" checked /> <span>自动更新</span></label>
+                  <label class="check-row"><input class="ds-switch" type="checkbox" /> <span>共享诊断信息</span></label>
+                  <label class="check-row"><input class="ds-switch" type="checkbox" disabled /> <span>禁用</span></label>
+                  <label class="check-row">
+                    <input class="ds-switch" type="checkbox" />
+                    <span>需要授权<small>说明文字单独一行，不和开关抢位置。</small></span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Badge / Status / Avatar</h2></header>
+              <div class="pg-demo">
+                <div class="pg-row">
+                  <span class="ds-badge">默认</span>
+                  <span class="ds-badge" data-tone="primary">进行中</span>
+                  <span class="ds-badge" data-tone="success">已完成</span>
+                  <span class="ds-badge" data-tone="warning">待审核</span>
+                  <span class="ds-badge" data-tone="error">失败</span>
+                  <span class="ds-badge" data-tone="accent">MCP</span>
+                  <span class="ds-badge" data-tone="purple">Skill</span>
+                  <span class="ds-badge" data-variant="solid">New</span>
+                  <span class="ds-count" data-digits="1">3</span>
+                  <span class="ds-count">12</span>
+                  <span class="ds-count" data-tone="primary" data-digits="1">9</span>
+                  <span class="ds-count" data-tone="primary">99+</span>
+                </div>
+                <div class="pg-row">
+                  <span class="agent-directory-status" data-status="运行中">运行中</span>
+                  <span class="agent-directory-status" data-status="空闲">空闲</span>
+                  <span class="agent-directory-status" data-status="需要授权">需要授权</span>
+                  <span class="agent-directory-status" data-status="已停用">已停用</span>
+                </div>
+                <div class="pg-row">
+                  <span class="ds-avatar" style="width: 24px; height: 24px; font-size: 12px">🤖</span>
+                  <span class="ds-avatar" style="width: 32px; height: 32px; font-size: 15px">🦊</span>
+                  <span class="ds-avatar" style="width: 40px; height: 40px; font-size: 18px">🐙</span>
+                  <span class="ds-avatar-stack">
+                    <span class="ds-avatar" style="width: 24px; height: 24px; font-size: 12px">🤖</span>
+                    <span class="ds-avatar" style="width: 24px; height: 24px; font-size: 12px">🦊</span>
+                    <span class="ds-avatar" style="width: 24px; height: 24px; font-size: 12px">🐙</span>
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Segmented / Tabs / 导航</h2><p>分段控件用于筛选与视图切换，Tabs 用于页面级分区。</p></header>
+              <div class="pg-demo">
+                <div class="pg-row">
+                  <div class="ds-segmented">
+                    <button class="active">全部 <em>24</em></button>
+                    <button>进行中</button>
+                    <button>已完成</button>
+                    <button disabled>已归档</button>
+                  </div>
+                  <div class="ds-segmented">
+                    <button class="active" title="列表"><i data-icon="list" data-size="14"></i></button>
+                    <button title="看板"><i data-icon="panel" data-size="14"></i></button>
+                  </div>
+                </div>
+                <nav class="ds-tabs">
+                  <button class="active">概览</button><button>Skills</button><button>运行记录 <span class="ds-count">3</span></button><button>设置</button>
+                </nav>
+                <div style="display: grid; grid-template-columns: 200px 1fr; gap: var(--spacing-6)">
+                  <nav class="ds-nav-list">
+                    <a href="#" class="active"><i data-icon="settings" data-size="14"></i> 通用</a>
+                    <a href="#"><i data-icon="box" data-size="14"></i> 运行时</a>
+                    <a href="#"><i data-icon="key" data-size="14"></i> 账号与授权</a>
+                  </nav>
+                  <nav class="ds-breadcrumb"><a href="#">智能体</a><i data-icon="chevron-right" data-size="12"></i><span aria-current="page">代码审查员</span></nav>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Card / Stat / 属性列表</h2></header>
+              <div class="ds-stat-grid">
+                <div class="ds-stat"><span>需求总数</span><strong>128</strong><small>本周 +12</small></div>
+                <button class="ds-stat is-on" type="button"><span>进行中</span><strong>6</strong><small>点击筛选</small></button>
+                <button class="ds-stat" type="button"><span>已完成</span><strong>94</strong><small>完成率 73%</small></button>
+                <div class="ds-stat"><span>Token 消耗</span><strong>3.2M</strong><small>≈ $18.40</small></div>
+              </div>
+              <div class="pg-grid">
+                <article class="ds-card">
+                  <div class="ds-card-header"><div><h3>普通卡片</h3><p>用于承载一组相关信息</p></div><span class="ds-badge" data-tone="success">在线</span></div>
+                  <dl class="ds-dl">
+                    <div><dt>运行时</dt><dd>Claude Code</dd></div>
+                    <div><dt>模型</dt><dd>claude-sonnet</dd></div>
+                    <div><dt>工作目录</dt><dd>~/github/multara</dd></div>
+                  </dl>
+                </article>
+                <a class="ds-card" href="#">
+                  <div class="ds-card-header"><div><h3>可点击卡片</h3><p>Hover 时边框与背景加深</p></div><i data-icon="arrow"></i></div>
+                </a>
+                <article class="ds-card is-selected">
+                  <div class="ds-card-header"><div><h3>选中卡片</h3><p>主色描边表示当前选择</p></div><i data-icon="check-circle"></i></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Table / Directory</h2></header>
+              <div class="ds-table-wrap">
+                <table class="ds-table">
+                  <thead><tr><th>模型</th><th class="is-num">请求</th><th class="is-num">输入 Token</th><th class="is-num">费用</th></tr></thead>
+                  <tbody>
+                    <tr><td>claude-sonnet</td><td class="is-num">1,204</td><td class="is-num">2.1M</td><td class="is-num">$12.30</td></tr>
+                    <tr><td>gpt-5-codex</td><td class="is-num">388</td><td class="is-num">640K</td><td class="is-num">$4.12</td></tr>
+                    <tr><td>gemini-flash</td><td class="is-num">96</td><td class="is-num">120K</td><td class="is-num">$0.40</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="agent-directory">
+                <div class="agent-directory-head"><span>智能体</span><span>状态</span><span>运行时</span><span>模型</span><span>任务</span><span></span></div>
+                <div class="agent-directory-row">
+                  <span class="agent-directory-identity"><span class="ds-avatar" style="width: 32px; height: 32px">🤖</span><span><strong>代码审查员</strong><small>审查 PR 并给出修改建议</small></span></span>
+                  <span class="agent-directory-status" data-status="运行中">运行中</span><span>Claude Code</span><span>sonnet</span><span>3</span>
+                  <button class="ui-button icon-button"><i data-icon="more"></i></button>
+                </div>
+                <div class="agent-directory-row">
+                  <span class="agent-directory-identity"><span class="ds-avatar" style="width: 32px; height: 32px">🦊</span><span><strong>前端工程师</strong><small>实现 UI 与交互</small></span></span>
+                  <span class="agent-directory-status" data-status="空闲">空闲</span><span>Codex</span><span>gpt-5</span><span>0</span>
+                  <button class="ui-button icon-button"><i data-icon="more"></i></button>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Modal / Drawer</h2><p>弹窗宽度自适应屏幕，内容超高时内部滚动。</p></header>
+              <div class="pg-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
+                <div class="pg-static-overlay">
+                  <div class="modal">
+                    <div class="modal-heading"><h2>新建需求</h2><button class="ui-button icon-button"><i data-icon="x"></i></button></div>
+                    <label>标题<input class="ui-input" placeholder="一句话描述需求" /></label>
+                    <label>描述<textarea class="ui-textarea" placeholder="补充背景与验收标准"></textarea></label>
+                    <div class="modal-actions"><button class="ui-button">取消</button><button class="ui-button primary">创建</button></div>
+                  </div>
+                </div>
+                <div class="pg-static-drawer">
+                  <aside class="ds-drawer">
+                    <header><h3>筛选</h3><button class="ui-button icon-button"><i data-icon="x"></i></button></header>
+                    <div>
+                      <label class="ds-field"><span>状态</span><select class="ui-select"><option>全部</option></select></label>
+                      <label class="check-row"><input class="ui-checkbox" type="checkbox" checked /> 只看我的</label>
+                    </div>
+                    <footer><button class="ui-button">重置</button><button class="ui-button primary">应用</button></footer>
+                  </aside>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Menu / Tooltip / Toast / Alert</h2></header>
+              <div class="pg-demo is-plain">
+                <div class="pg-row" style="align-items: flex-start">
+                  <div class="ds-menu">
+                    <button><i data-icon="edit" data-size="14"></i> 重命名 <kbd>F2</kbd></button>
+                    <button class="is-hover"><i data-icon="copy" data-size="14"></i> 复制路径 <kbd>⌘C</kbd></button>
+                    <button disabled><i data-icon="branch" data-size="14"></i> 切换分支</button>
+                    <hr />
+                    <button class="is-danger"><i data-icon="trash" data-size="14"></i> 删除</button>
+                  </div>
+                  <div style="display: grid; gap: var(--spacing-3)">
+                    <div class="ds-toast" data-tone="success"><i data-icon="check-circle"></i><div><strong>设置已保存</strong><small>下次启动时生效</small></div></div>
+                    <div class="ds-toast" data-tone="error"><i data-icon="alert"></i><div><strong>运行失败</strong><small>运行时未登录，请先完成授权</small></div></div>
+                    <div class="ds-alert" data-tone="warning"><i data-icon="alert" data-size="14"></i> 当前工作区有未提交的修改</div>
+                    <div class="ds-alert"><i data-icon="info" data-size="14"></i> 智能体会在独立的 Git worktree 中工作</div>
+                    <p class="form-error">名称不能为空</p>
+                  </div>
+                  <div class="pg-row">
+                    <button class="ui-button is-tooltip-open" data-tooltip="轻量 data-tooltip">data-tooltip</button>
+                    <span class="ds-inline-status"><i data-icon="check" data-size="14"></i> 已保存</span>
+                    <span class="ds-kbd">⌘</span><span class="ds-kbd">K</span>
+                  </div>
+                  <p style="margin: 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm)">
+                    轻量：<code>data-tooltip</code>（固定上方）。动态定位请用 Vue <code>&lt;UiTooltip content="…" /&gt;</code>。
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Text Effect · 扫光 / 轮播</h2></header>
+              <div class="pg-demo is-plain">
+                <div style="display: grid; gap: var(--spacing-3)">
+                  <div class="pg-row">
+                    <span class="ds-text-shimmer">Task 检查预览端口</span>
+                    <span class="ds-text-shimmer">读取 ChatPanel.vue L140-189</span>
+                    <span class="ds-text-shimmer">思考中…</span>
+                  </div>
+                  <div class="pg-row" style="color: var(--color-text-secondary); font-size: var(--font-size-xs)">
+                    <span class="ds-spinner"></span>
+                    <span class="ds-text-rotate" id="pg-text-rotate"><span class="ds-text-shimmer">思考中…</span></span>
+                    <span>· 4 秒</span>
+                    <button class="ui-button" id="pg-text-rotate-next" style="margin-left: var(--spacing-3)">下一个文案</button>
+                  </div>
+                  <p style="margin: 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm)">
+                    Vue：<code>&lt;UiShimmerText :text="label" :active="running" rotate /&gt;</code>；
+                    静态页面：<code>.ds-text-shimmer</code>、<code>.ds-text-rotate</code>。换文案时旧文案上移淡出，新文案从下方进入。
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Tooltip · 悬停提示</h2><p>默认上方；空间不够时自动换到下 / 左 / 右。黑白主题反色，支持 max-width 换行。</p></header>
+              <div class="pg-demo is-plain">
+                <div class="pg-row" style="flex-wrap: wrap; gap: var(--spacing-3)">
+                  <span class="ds-tooltip is-ready" data-placement="top" style="position: relative; top: auto; left: auto; max-width: 220px">默认 top · 可换行长文案示例</span>
+                  <span class="ds-tooltip is-ready" data-placement="bottom" style="position: relative; top: auto; left: auto">bottom</span>
+                  <span class="ds-tooltip is-ready" data-placement="left" style="position: relative; top: auto; left: auto">left</span>
+                  <span class="ds-tooltip is-ready" data-placement="right" style="position: relative; top: auto; left: auto">right</span>
+                </div>
+                <p style="margin: var(--spacing-3) 0 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm)">
+                  Vue：<code>&lt;UiTooltip content="全路径" /&gt;</code>。
+                  Teleport 到 body，打开时 <code>nextPopupZIndex()</code>（起步 <code>--z-popup: 300</code>，高于 modal 200），对齐 Element Plus 弹层策略。
+                </p>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Path Text · 路径中间缩略</h2><p>占满一行宽度；装不下时按像素动态中间 <code>...</code>，缩窄容器会跟着变。悬停看全路径。</p></header>
+              <div class="pg-demo is-plain">
+                <div style="display: grid; gap: var(--spacing-2); width: min(280px, 100%); color: var(--color-text-secondary); font-size: var(--font-size-sm)">
+                  <span class="ds-path-text">Users/tomiaa/.../work_bk/uc</span>
+                  <span class="ds-path-text">/a/b/c</span>
+                </div>
+                <p style="margin: var(--spacing-3) 0 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm)">
+                  Vue：<code>&lt;UiPathText path="…" /&gt;</code>；
+                  逻辑：<code>fitMiddleEllipsis(text, width, measure)</code> + <code>ResizeObserver</code>。
+                </p>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header><h2>Empty / Loading / Error</h2></header>
+              <div class="pg-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
+                <div class="ds-card ds-empty" style="padding: var(--spacing-10) var(--spacing-6)">
+                  <span class="ds-empty-icon"><i data-icon="inbox" data-size="18"></i></span>
+                  <h3>还没有需求</h3>
+                  <p>创建第一个需求，让智能体开始工作。</p>
+                  <button class="ui-button primary"><i data-icon="plus" data-size="14"></i> 新建需求</button>
+                </div>
+                <div class="ds-card" style="align-content: start">
+                  <div class="pg-row"><span class="ds-spinner"></span><span>正在加载运行时…</span></div>
+                  <span class="ds-skeleton" style="width: 60%"></span>
+                  <span class="ds-skeleton"></span>
+                  <span class="ds-skeleton" style="width: 80%"></span>
+                  <div class="ds-progress"><span style="width: 64%"></span></div>
+                </div>
+                <div class="error-card" style="margin: 0">无法连接到运行时：spawn claude ENOENT</div>
+              </div>
+            </section>
+
+            <section class="pg-section" id="pg-tag">
+              <header>
+                <h2>Tag</h2>
+                <p>公共标签。触发器展示已选标签；下拉可搜索、多选，没有同名时回车创建；「管理标签」打开弹窗改名、改色、删除。</p>
+              </header>
+              <div class="pg-demo is-plain">
+                <div class="pg-row" style="align-items: flex-start">
+                  <span class="pg-row-label">下拉</span>
+                  <div class="tag-anchor">
+                    <div class="tag-trigger" id="pg-tag-trigger" role="button" tabindex="0"></div>
+                    <div class="tag-pop" id="pg-tag-pop" hidden>
+                      <label class="ds-search"><input class="ui-input" id="pg-tag-query" placeholder="搜索标签" /></label>
+                      <div class="tag-pop-list" id="pg-tag-options"></div>
+                      <button type="button" class="tag-pop-foot" id="pg-tag-manage">管理标签</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
+              <header>
+                <h2>需求标签</h2>
+                <p>全部、进行中留在左侧。标签筛选靠右，对齐到「管理标签」。默认两行，超出后展开。</p>
+              </header>
+              <div class="pg-demo is-plain" id="pg-req-tags">
+                <div class="req-filter-bar">
+                  <div class="tag-filter">
+                    <div class="tag-filter-main">
+                      <div class="tag-filter-chips" id="pg-req-chips"></div>
+                      <button type="button" class="tag-filter-more" id="pg-req-more" hidden>展开</button>
+                    </div>
+                  </div>
+                  <button type="button" class="ui-button" data-variant="ghost" data-size="small" id="pg-req-manage">管理标签</button>
+                </div>
+                <article class="req-card" id="pg-req-card" style="margin-top: var(--spacing-3); border: 1px solid var(--color-border); border-radius: var(--radius-lg)">
+                  <div class="req-row">
+                    <span class="req-expand">›</span>
+                    <div class="req-main">
+                      <div class="req-title"><h3>结算页改版</h3><span class="ds-badge" data-tone="primary">运行中</span></div>
+                      <p class="req-note">用下拉框多选标签。管理列表右侧的「编辑」打开和新建相同的弹窗。</p>
+                      <div class="tag-anchor">
+                        <div class="tag-trigger" id="pg-req-trigger" role="button" tabindex="0"></div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <!-- ─────────── 页面预览 ─────────── -->
+          <div class="pg-content pg-view" id="view-pages" hidden style="max-width: none">
+            <div class="pg-preview-bar">
+              <label class="ds-field" style="grid-auto-flow: column; align-items: center">
+                <span>页面</span>
+                <select class="ui-select" id="pg-page-select" style="width: 200px">
+                  <option value="dashboard">需求</option>
+                  <option value="inbox">收件箱</option>
+                  <option value="tasks">任务</option>
+                  <option value="task-detail">任务详情</option>
+                  <option value="automation">自动化</option>
+                  <option value="agents">智能体</option>
+                  <option value="agent-detail">智能体详情</option>
+                  <option value="squads">小队</option>
+                  <option value="stats">统计</option>
+                  <option value="runtimes">运行时</option>
+                  <option value="skills">Skills</option>
+                  <option value="mcp">MCP</option>
+                  <option value="settings">设置</option>
+                </select>
+              </label>
+              <div class="ds-segmented">
+                <button class="active" data-viewport="desktop"><i data-icon="monitor" data-size="14"></i> 桌面</button>
+                <button data-viewport="tablet"><i data-icon="tablet" data-size="14"></i> 平板</button>
+                <button data-viewport="mobile"><i data-icon="phone" data-size="14"></i> 手机</button>
+              </div>
+            </div>
+            <div class="pg-viewport">
+              <iframe src="./pages.html" title="页面预览"></iframe>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script src="./icons.js"></script>
+    <script src="./select.js"></script>
+    <script src="./playground.js"></script>
+  </body>
+</html>

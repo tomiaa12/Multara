@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Multara · Logo 方案</title>
+    <style>
+      body { margin: 0; padding: 32px; font-family: -apple-system, "PingFang SC", sans-serif; background: #f4f4f6; color: #1d1e24; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 24px; color: #6b6d78; font-size: 13px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+      .card { background: #fff; border: 1px solid #e4e4e9; border-radius: 12px; padding: 16px; }
+      .row { display: flex; align-items: center; gap: 12px; }
+      .stage { display: grid; place-items: center; width: 140px; height: 140px; border-radius: 10px; background: #fff; border: 1px solid #ececf0; }
+      .stage.tile-wrap { background: #fafafb; }
+      /* App 图标版：品牌色底板 + 白色图形 */
+      .tile { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 22px; }
+      .tile svg { --c2: rgba(255, 255, 255, 0.55); --c1: #fff; }
+      .sizes { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+      .mini { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; }
+      .mini svg { --c1: #fff; --c2: rgba(255, 255, 255, 0.55); }
+      .title { margin: 14px 0 2px; font-weight: 600; font-size: 14px; }
+      .desc { margin: 0; color: #6b6d78; font-size: 12px; line-height: 1.6; }
+      .num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: #1d1e24; color: #fff; font-size: 12px; margin-right: 6px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      每个方案定义为 symbol（viewBox 1024，透明背景），颜色通过 CSS 变量 --c1 / --c2 注入，
+      这样同一图形可以复用为「白底原色版」和「App 图标白色版」。
+    -->
+    <svg width="0" height="0" style="position: absolute">
+      <defs>
+        <mask id="m3" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+          <rect width="1024" height="1024" fill="#fff" />
+          <rect x="384" y="420" width="76" height="176" rx="38" fill="#000" />
+          <rect x="564" y="420" width="76" height="176" rx="38" fill="#000" />
+        </mask>
+        <mask id="m7" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+          <rect width="1024" height="1024" fill="#fff" />
+          <circle cx="632" cy="412" r="228" fill="#000" />
+        </mask>
+      </defs>
+
+      <!-- 1 双环交汇：两圆相交，交集挖空成负空间 -->
+      <symbol id="s1" viewBox="0 0 1024 1024">
+        <path fill-rule="evenodd" fill="var(--c1)" d="M152 512a260 260 0 1 0 520 0a260 260 0 1 0 -520 0ZM352 512a260 260 0 1 0 520 0a260 260 0 1 0 -520 0Z" />
+      </symbol>
+
+      <!-- 2 旋叶：三片月牙叶 120° 旋转 -->
+      <symbol id="s2" viewBox="0 0 1024 1024">
+        <g fill="var(--c1)">
+          <path id="petal" d="M512 512A160 160 0 0 1 512 192A420 420 0 0 0 512 512Z" />
+          <path d="M512 512A160 160 0 0 1 512 192A420 420 0 0 0 512 512Z" transform="rotate(120 512 512)" />
+          <path d="M512 512A160 160 0 0 1 512 192A420 420 0 0 0 512 512Z" transform="rotate(240 512 512)" />
+        </g>
+      </symbol>
+
+      <!-- 3 智能体伙伴：圆润体块 + 两只胶囊眼（负空间） -->
+      <symbol id="s3" viewBox="0 0 1024 1024">
+        <rect x="192" y="232" width="640" height="560" rx="250" fill="var(--c1)" mask="url(#m3)" />
+      </symbol>
+
+      <!-- 4 对话种子：三圆角一尖角的气泡，中心环形负空间 + 核心点 -->
+      <symbol id="s4" viewBox="0 0 1024 1024">
+        <path fill-rule="evenodd" fill="var(--c1)" d="M792 792V512A280 280 0 0 0 512 232A280 280 0 0 0 232 512A280 280 0 0 0 512 792ZM384 512a128 128 0 1 0 256 0a128 128 0 1 0 -256 0Z" />
+        <circle cx="512" cy="512" r="64" fill="var(--c2)" />
+      </symbol>
+
+      <!-- 5 三元：三个圆以三角排布，顶部为强调色 -->
+      <symbol id="s5" viewBox="0 0 1024 1024">
+        <circle cx="512" cy="336" r="140" fill="var(--c2)" />
+        <circle cx="360" cy="600" r="140" fill="var(--c1)" />
+        <circle cx="664" cy="600" r="140" fill="var(--c1)" />
+      </symbol>
+
+      <!-- 6 链环：两个开口环相扣 -->
+      <symbol id="s6" viewBox="0 0 1024 1024">
+        <g fill="none" stroke-width="96" stroke-linecap="round">
+          <path d="M585 383A200 200 0 1 0 585 641" stroke="var(--c1)" />
+          <path d="M439 641A200 200 0 1 0 439 383" stroke="var(--c2)" />
+        </g>
+      </symbol>
+
+      <!-- 7 月牙与星：大圆被偏心圆咬出月牙，缺口中放一颗点 -->
+      <symbol id="s7" viewBox="0 0 1024 1024">
+        <circle cx="512" cy="512" r="300" fill="var(--c1)" mask="url(#m7)" />
+        <circle cx="676" cy="348" r="64" fill="var(--c2)" />
+      </symbol>
+
+      <!-- 8 立方：等距六边形拆成三面，面与面之间留缝 -->
+      <symbol id="s8" viewBox="0 0 1024 1024">
+        <g stroke-linejoin="round" stroke-width="28">
+          <path d="M512 192L789 352L512 512L235 352Z" fill="var(--c2)" stroke="var(--c2)" transform="translate(512 352) scale(0.8) translate(-512 -352)" />
+          <path d="M512 512L789 352L789 672L512 832Z" fill="var(--c1)" stroke="var(--c1)" transform="translate(650 592) scale(0.8) translate(-650 -592)" />
+          <path d="M512 512L512 832L235 672L235 352Z" fill="var(--c1)" stroke="var(--c1)" opacity="0.72" transform="translate(374 592) scale(0.8) translate(-374 -592)" />
+        </g>
+      </symbol>
+
+      <!-- 9 积木：L 形方块 + 一颗圆，像拼起来的模块 -->
+      <symbol id="s9" viewBox="0 0 1024 1024">
+        <g fill="var(--c1)">
+          <rect x="232" y="232" width="268" height="560" rx="96" />
+          <rect x="232" y="524" width="560" height="268" rx="96" />
+        </g>
+        <circle cx="658" cy="366" r="134" fill="var(--c2)" />
+      </symbol>
+      <!-- 10 半月对望：左右两个半圆上下错位 -->
+      <symbol id="s10" viewBox="0 0 1024 1024">
+        <path d="M492 212A300 300 0 0 0 492 812Z" fill="var(--c1)" transform="translate(0 -36)" />
+        <path d="M532 212A300 300 0 0 1 532 812Z" fill="var(--c2)" transform="translate(0 36)" />
+      </symbol>
+
+      <!-- 11 无限环：一笔连续的回环 -->
+      <symbol id="s11" viewBox="0 0 1024 1024">
+        <path d="M512 512C432 382 232 382 232 512C232 642 432 642 512 512C592 382 792 382 792 512C792 642 592 642 512 512Z" fill="none" stroke="var(--c1)" stroke-width="92" stroke-linejoin="round" />
+      </symbol>
+
+      <!-- 12 三段环：圆环三等分留缺口，中心一颗核心点；周长 2π·260≈1634，三段各 440 + 缺口 105 -->
+      <symbol id="s12" viewBox="0 0 1024 1024">
+        <circle cx="512" cy="512" r="260" fill="none" stroke="var(--c1)" stroke-width="96" stroke-dasharray="440 104.7" transform="rotate(-75 512 512)" />
+        <circle cx="512" cy="512" r="92" fill="var(--c2)" />
+      </symbol>
+
+      <!-- 13 错位方块：两个圆角方块对角重叠，重叠区挖空 -->
+      <symbol id="s13" viewBox="0 0 1024 1024">
+        <path fill-rule="evenodd" fill="var(--c1)" d="M212 312a100 100 0 0 1 100 -100h200a100 100 0 0 1 100 100v200a100 100 0 0 1 -100 100h-200a100 100 0 0 1 -100 -100ZM412 512a100 100 0 0 1 100 -100h200a100 100 0 0 1 100 100v200a100 100 0 0 1 -100 100h-200a100 100 0 0 1 -100 -100Z" />
+      </symbol>
+
+      <!-- 14 叶芽：两片叶子从同一点生长 -->
+      <symbol id="s14" viewBox="0 0 1024 1024">
+        <path d="M512 780C392 660 392 420 512 268C632 420 632 660 512 780Z" fill="var(--c1)" transform="rotate(-34 512 780)" />
+        <path d="M512 780C392 660 392 420 512 268C632 420 632 660 512 780Z" fill="var(--c2)" transform="rotate(34 512 780)" />
+      </symbol>
+
+      <!-- 15 蜂巢：六边形拆成三块同色菱形（平面，无明暗） -->
+      <symbol id="s15" viewBox="0 0 1024 1024">
+        <g fill="var(--c1)" stroke="var(--c1)" stroke-linejoin="round" stroke-width="28">
+          <path d="M512 192L789 352L512 512L235 352Z" transform="translate(512 352) scale(0.82) translate(-512 -352)" />
+          <path d="M512 512L789 352L789 672L512 832Z" transform="translate(650 592) scale(0.82) translate(-650 -592)" />
+          <path d="M512 512L512 832L235 672L235 352Z" transform="translate(374 592) scale(0.82) translate(-374 -592)" />
+        </g>
+      </symbol>
+
+      <!-- 16 对话双叶：两片叶形气泡尖角相对，像两方对话 -->
+      <symbol id="s16" viewBox="0 0 1024 1024">
+        <path d="M500 500V340A160 160 0 0 0 340 180A160 160 0 0 0 180 340A160 160 0 0 0 340 500Z" fill="var(--c1)" />
+        <path d="M500 500V340A160 160 0 0 0 340 180A160 160 0 0 0 180 340A160 160 0 0 0 340 500Z" fill="var(--c2)" transform="rotate(180 512 512)" />
+      </symbol>
+
+      <!-- 17 环中点：粗圆环 + 偏心核心点 -->
+      <symbol id="s17" viewBox="0 0 1024 1024">
+        <circle cx="512" cy="512" r="250" fill="none" stroke="var(--c1)" stroke-width="104" />
+        <circle cx="580" cy="444" r="96" fill="var(--c2)" />
+      </symbol>
+
+      <!-- 18 阶梯：三根圆角柱逐级升高，持续推进 -->
+      <symbol id="s18" viewBox="0 0 1024 1024">
+        <g fill="var(--c1)">
+          <rect x="232" y="552" width="152" height="240" rx="76" />
+          <rect x="436" y="412" width="152" height="380" rx="76" />
+        </g>
+        <rect x="640" y="232" width="152" height="560" rx="76" fill="var(--c2)" />
+      </symbol>
+    </svg>
+
+    <h1>Multara · Logo 方案（第二、三轮）</h1>
+    <p class="sub">无字母、纯几何图形。每个方案展示：白底原色版 / App 图标版 / 24px 小尺寸。</p>
+    <div class="grid" id="grid"></div>
+
+    <script>
+      // [symbol id, 名称, 说明, 主色 c1, 辅色 c2]
+      const OPTIONS = [
+        ["s1", "双环交汇", "两个圆相交，交集被挖空——两方（人与智能体）在同一处协作。负空间强，24px 依然清晰。", "#FF5A36", "#FF5A36"],
+        ["s2", "旋叶", "三片月牙叶旋转排布，像风车也像引擎：多个智能体同时运转、持续推进。", "#10B981", "#10B981"],
+        ["s3", "智能体伙伴", "圆润体块 + 两只胶囊眼，友好的 AI 伙伴形象，亲和力和记忆点最强。", "#7C3AED", "#7C3AED"],
+        ["s4", "对话种子", "三圆角一尖角的气泡，中间一颗核心点：对话驱动需求，从一个点生长出来。", "#0EA5E9", "#0F172A"],
+        ["s5", "三元", "三个圆组成稳定三角，顶部强调色：一条需求 + 多个执行者，结构平衡。", "#111827", "#FACC15"],
+        ["s6", "链环", "两个开口环相扣，连接、衔接、协同；双色区分人与智能体。", "#E11D48", "#1F2937"],
+        ["s7", "月牙与星", "大圆被咬出月牙，缺口里一颗星点：安静、克制、有探索感。", "#1E1B4B", "#F59E0B"],
+        ["s8", "立方", "等距立方拆成三面并留缝：工作区、仓库、模块的结构感，偏工程向。", "#0F172A", "#22C55E"],
+        ["s9", "积木", "L 形方块 + 一颗圆，像拼合在一起的模块：多仓库组装成一个需求。", "#2563EB", "#F97316"],
+["s10", "半月对望", "两个半圆上下错位相对：人与智能体各占一半，互补又对等。结构极简。", "#111827", "#FF5A36"],
+        ["s11", "无限环", "一笔连续的回环：需求 → 执行 → 反馈的循环，持续迭代。", "#0D9488", "#0D9488"],
+        ["s12", "三段环", "三段圆弧围绕核心点：多个智能体环绕同一任务协作。", "#F43F5E", "#111827"],
+        ["s13", "错位方块", "两个圆角方块对角重叠、交集挖空：多个工作区叠加又互相独立。", "#111827", "#111827"],
+        ["s14", "叶芽", "两片叶子从同一点生长：一条需求生长出多个分支，生命力强。", "#16A34A", "#86EFAC"],
+        ["s15", "蜂巢", "六边形拆成三块同色菱形：模块化、可组合，比立方更平面。", "#F59E0B", "#F59E0B"],
+        ["s16", "对话双叶", "两片叶形气泡尖角相对：两方对话、协同，正负空间清晰。", "#FF7A00", "#111827"],
+        ["s17", "环中点", "粗圆环中一颗偏心核心点：聚焦、专注，像在看向下一步。", "#7C3AED", "#FACC15"],
+        ["s18", "阶梯", "三根圆角柱逐级升高，最高一根为强调色：任务持续推进。", "#0EA5E9", "#0F172A"],
+      ];
+      const sym = (id, size, c1, c2) =>
+        `<svg width="${size}" height="${size}" style="${c1 ? `--c1:${c1};--c2:${c2}` : ""}"><use href="#${id}"/></svg>`;
+      document.getElementById("grid").innerHTML = OPTIONS.map(([id, name, desc, c1, c2], i) => `
+        <div class="card">
+          <div class="row">
+            <div class="stage">${sym(id, 112, c1, c2)}</div>
+            <div class="stage tile-wrap"><div class="tile" style="background:${c1}">${sym(id, 76)}</div></div>
+            <div class="sizes">${sym(id, 24, c1, c2)}<div class="mini" style="background:${c1}">${sym(id, 18)}</div></div>
+          </div>
+          <p class="title"><span class="num">${i + 1}</span>${name}</p>
+          <p class="desc">${desc}</p>
+        </div>`).join("");
+    </script>
+  </body>
+</html>

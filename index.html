@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 启动前的底色：设计令牌尚未加载，这里的色值需与 tokens.css 中的 --color-bg 保持一致 -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141416" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <title>Multara</title>
+    <link rel="icon" type="image/svg+xml" href="/src/assets/logo.svg" />
+    <style>
+      html,
+      body {
+        background: #141416;
+      }
+      @media (prefers-color-scheme: light) {
+        html:not([data-theme="dark"]),
+        html:not([data-theme="dark"]) body {
+          background: #ffffff;
+        }
+      }
+      html[data-theme="light"],
+      html[data-theme="light"] body {
+        background: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+    
+  </body>
+</html>

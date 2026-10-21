@@ -1,0 +1,84 @@
+.diff-line-added {
+  background-color: #9ccc2c33 !important;
+}
+
+.diff-removed-zone {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.diff-removed-row {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: #ff000033;
+  white-space: pre;
+}
+
+.diff-chunk-controls {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  box-sizing: border-box;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+}
+.diff-chunk-controls-bar {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+  pointer-events: all;
+}
+.diff-btn {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 14px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  font-weight: 400;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--color-text);
+}
+.diff-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+.diff-btn-accept {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.diff-btn-accept:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+.diff-btn-undo {
+  background: transparent;
+  color: var(--color-text);
+}
+.diff-controls-disabled .diff-btn,
+.diff-btn:disabled {
+  color: var(--color-text-disabled);
+  background: transparent;
+  cursor: not-allowed;
+}
+.diff-controls-disabled .diff-btn-accept,
+.diff-btn-accept:disabled {
+  background: var(--color-primary);
+  opacity: 0.4;
+}

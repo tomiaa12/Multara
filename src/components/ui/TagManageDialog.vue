@@ -1,0 +1,74 @@
+<script setup lang="ts">
+import { reactive } from "vue";
+import { X } from "@lucide/vue";
+import { TAG_COLORS, type RequirementCategory } from "../../views/dashboard/requirement-categories";
+
+defineProps<{
+  tags: RequirementCategory[];
+}>();
+
+const emit = defineEmits<{
+  close: [];
+  create: [name: string];
+  rename: [id: string, name: string];
+  recolor: [id: string, color: string];
+  remove: [id: string];
+}>();
+
+const name = reactive({ value: "" });
+const drafts = reactive<Record<string, string>>({});
+
+function submitCreate() {
+  const next = name.value.trim();
+  if (!next) return;
+  emit("create", next);
+  name.value = "";
+}
+
+function commit(id: string, fallback: string) {
+  emit("rename", id, drafts[id] ?? fallback);
+}
+</script>
+
+<template>
+  <div class="modal-backdrop" @click.self="emit('close')">
+    <div class="modal">
+      <div class="modal-heading">
+        <h2>管理标签</h2>
+        <UiButton class="icon-button" size="icon" title="关闭" @click="emit('close')">
+          <X :size="15" />
+        </UiButton>
+      </div>
+      <form class="tag-manage-create" @submit.prevent="submitCreate">
+        <span>新建标签</span>
+        <UiInput v-model="name.value" placeholder="标签名称" />
+        <UiButton type="submit" :disabled="!name.value.trim()">添加</UiButton>
+      </form>
+      <div v-if="tags.length" class="tag-pop-list">
+        <div v-for="tag in tags" :key="tag.id" class="tag-manage-row">
+          <i class="tag-dot" :style="{ background: tag.color }" />
+          <UiInput
+            :model-value="drafts[tag.id] ?? tag.name"
+            @update:model-value="drafts[tag.id] = String($event ?? '')"
+            @blur="commit(tag.id, tag.name)"
+            @keydown.enter.prevent="commit(tag.id, tag.name)"
+          />
+          <UiButton size="small" variant="danger" @click="emit('remove', tag.id)">删除</UiButton>
+          <div class="tag-color-row">
+            <button
+              v-for="color in TAG_COLORS"
+              :key="color"
+              type="button"
+              class="tag-color-swatch"
+              :class="{ 'is-on': tag.color === color }"
+              :style="{ background: color }"
+              :aria-label="color"
+              @click="emit('recolor', tag.id, color)"
+            />
+          </div>
+        </div>
+      </div>
+      <p v-else class="tag-empty">还没有标签。在上面输入名称即可创建。</p>
+    </div>
+  </div>
+</template>

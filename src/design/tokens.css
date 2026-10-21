@@ -1,0 +1,244 @@
+/*
+ * Multara Design Tokens
+ *
+ * 唯一的视觉变量来源。业务样式只引用这里的 Token，不直接写色值。
+ * 主题通过 <html data-theme="dark|light"> 切换；未设置时默认深色。
+ * design-system/index.html 会直接加载本文件，并实时改写其中的变量做预览。
+ */
+
+:root {
+  /* ── Typography ─────────────────────────────────────────────── */
+  --font-family-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-family-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* 桌面开发工具以 13px 为正文基准，比网页更紧凑 */
+  --font-size-xs: 11px; /* 徽标、状态栏、表格辅助信息 */
+  --font-size-sm: 12px; /* 辅助文字、Label、小按钮、表头 */
+  --font-size-md: 13px; /* 正文、按钮、输入框、表格内容 */
+  --font-size-lg: 14px; /* Section 标题、卡片标题 */
+  --font-size-xl: 16px; /* 弹窗标题、详情页副标题 */
+  --font-size-2xl: 20px; /* 页面标题 */
+  --font-size-3xl: 24px; /* 指标数字、空状态标题 */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.65;
+  --letter-spacing-tight: -0.01em;
+  --letter-spacing-caps: 0.04em;
+
+  /* ── Spacing（4px 基准） ─────────────────────────────────────── */
+  --spacing-0-5: 2px;
+  --spacing-1: 4px;
+  --spacing-1-5: 6px;
+  --spacing-2: 8px;
+  --spacing-2-5: 10px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+  --spacing-24: 96px;
+
+  /* ── Radius ─────────────────────────────────────────────────── */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  /* ── Control sizes ──────────────────────────────────────────── */
+  --control-height-sm: 26px;
+  --control-height-md: 32px;
+  --control-height-lg: 36px;
+
+  /* ── Layout ─────────────────────────────────────────────────── */
+  --layout-header-height: 40px;
+  --layout-statusbar-height: 24px;
+  --layout-sidebar-width: 208px;
+  --layout-content-max-width: 1160px;
+  --layout-content-padding: 32px;
+  --layout-grid-columns: 4;
+  --layout-card-gap: 12px;
+  --layout-section-gap: 32px;
+
+  /* ── Motion ─────────────────────────────────────────────────── */
+  --motion-duration-fast: 120ms;
+  --motion-duration-normal: 180ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ── Z-index ──────────────────────────────────────────────────
+   * 页面内浮层用低档；Teleport 到 body 的叠层用高档。
+   * 弹窗内的 tip / select：Teleport + nextPopupZIndex()（起步 --z-popup）。
+   * 对齐 Element Plus：打开时递增，后开盖先开。 */
+  --z-overlay-scroll: 2; /* 宿主内悬浮滚动条，须低于同面板的输入/提问 dock */
+  --z-dropdown: 40;
+  --z-floating: 60;
+  --z-modal: 200;
+  --z-drawer: 201;
+  --z-popup: 300;
+  --z-toast: 400;
+}
+
+/* ── Dark theme（默认） ─────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Primary：深色主题用白底黑字（强调按钮如「新建 Skill」） */
+  --color-primary: #fafafb;
+  --color-brand: #16a34a;
+  --color-primary-hover: #e6e6e9;
+  --color-primary-active: #d4d4d8;
+  --color-primary-subtle: rgb(250 250 251 / 12%);
+  --color-primary-border: rgb(250 250 251 / 36%);
+  --color-on-primary: #0b0b0e;
+
+  --color-bg: #141416; /* 主内容画布 */
+  --color-bg-secondary: #0f0f11; /* 标题栏、侧边栏、状态栏 */
+  --color-bg-tertiary: #1c1c20; /* 轻填充：分段控件底、代码块、表头 */
+
+  --color-surface: #18181b; /* 卡片、列表容器 */
+  --color-surface-raised: #1e1e22; /* 弹窗、菜单、浮层、编辑器 */
+  --color-surface-hover: #232328;
+  --color-surface-active: #2a2a30;
+  --color-surface-emphasis: #36363d;
+
+  --color-text: #e6e6e9;
+  --color-text-strong: #fafafb;
+  --color-text-secondary: #a0a0a9;
+  --color-text-tertiary: #71717b;
+  --color-text-disabled: #52525a;
+  --color-text-placeholder: #63636d;
+
+  --color-border: #2b2b31;
+  --color-border-light: #222227;
+  --color-border-strong: #3b3b43;
+
+  --color-field: #18181b;
+  --color-field-border: #34343b;
+  --color-focus: #fafafb;
+  --color-focus-ring: rgb(250 250 251 / 28%);
+  --color-selection: rgb(250 250 251 / 18%);
+
+  --color-success: #3ecf8e;
+  --color-success-subtle: rgb(62 207 142 / 12%);
+  --color-success-border: rgb(62 207 142 / 36%);
+  --color-warning: #f0b45a;
+  --color-warning-subtle: rgb(240 180 90 / 12%);
+  --color-warning-border: rgb(240 180 90 / 36%);
+  --color-error: #f26d6d;
+  --color-error-subtle: rgb(242 109 109 / 12%);
+  --color-error-border: rgb(242 109 109 / 38%);
+  --color-info: #6cb6ff;
+  --color-info-subtle: rgb(108 182 255 / 12%);
+
+  /* 品牌辅助色：worktree（青）与智能体/小队（紫） */
+  --color-accent: #3cc8b4;
+  --color-accent-subtle: rgb(60 200 180 / 12%);
+  --color-accent-border: rgb(60 200 180 / 36%);
+  --color-purple: #b39dff;
+  --color-purple-subtle: rgb(179 157 255 / 14%);
+  --color-purple-border: rgb(179 157 255 / 36%);
+
+  /* Git 文件状态（与 VS Code 语义一致） */
+  --color-git-modified: #e2c08d;
+  --color-git-added: #81b88b;
+  --color-git-untracked: #73c991;
+  --color-git-deleted: #e06c6c;
+
+  --color-overlay: rgb(0 0 0 / 56%);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-md: 0 6px 20px rgb(0 0 0 / 36%), 0 0 0 1px rgb(255 255 255 / 4%);
+  --shadow-lg: 0 18px 56px rgb(0 0 0 / 52%), 0 0 0 1px rgb(255 255 255 / 5%);
+
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: rgb(255 255 255 / 14%);
+  --scrollbar-thumb-hover: rgb(255 255 255 / 24%);
+  --scrollbar-thumb-active: rgb(255 255 255 / 32%);
+}
+
+/* ── Light theme ───────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Primary：浅色主题用黑底白字 */
+  --color-primary: #0b0b0e;
+  --color-brand: #16a34a; /* 品牌标识色（Logo 叶芽绿），不随主题变化 */
+  --color-primary-hover: #232328;
+  --color-primary-active: #2a2a30;
+  --color-primary-subtle: rgb(11 11 14 / 8%);
+  --color-primary-border: rgb(11 11 14 / 28%);
+  --color-on-primary: #ffffff;
+
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f7f7f8;
+  --color-bg-tertiary: #f2f2f4;
+
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #f2f2f4;
+  --color-surface-active: #e9e9ec;
+  --color-surface-emphasis: #dcdce1;
+
+  --color-text: #1d1d22;
+  --color-text-strong: #0b0b0e;
+  --color-text-secondary: #5c5c66;
+  --color-text-tertiary: #84848e;
+  --color-text-disabled: #b0b0b8;
+  --color-text-placeholder: #a0a0a9;
+
+  --color-border: #e4e4e8;
+  --color-border-light: #ededf0;
+  --color-border-strong: #d2d2d8;
+
+  --color-field: #ffffff;
+  --color-field-border: #d6d6dc;
+  --color-focus: #0b0b0e;
+  --color-focus-ring: rgb(11 11 14 / 22%);
+  --color-selection: rgb(11 11 14 / 12%);
+
+  --color-success: #12895c;
+  --color-success-subtle: rgb(18 137 92 / 9%);
+  --color-success-border: rgb(18 137 92 / 30%);
+  --color-warning: #a8650a;
+  --color-warning-subtle: rgb(214 140 30 / 12%);
+  --color-warning-border: rgb(168 101 10 / 30%);
+  --color-error: #d23c3c;
+  --color-error-subtle: rgb(210 60 60 / 8%);
+  --color-error-border: rgb(210 60 60 / 30%);
+  --color-info: #1f6fd1;
+  --color-info-subtle: rgb(31 111 209 / 9%);
+
+  --color-accent: #0f8f7f;
+  --color-accent-subtle: rgb(15 143 127 / 9%);
+  --color-accent-border: rgb(15 143 127 / 30%);
+  --color-purple: #6b4fd8;
+  --color-purple-subtle: rgb(107 79 216 / 9%);
+  --color-purple-border: rgb(107 79 216 / 30%);
+
+  --color-git-modified: #895503;
+  --color-git-added: #587c0c;
+  --color-git-untracked: #007100;
+  --color-git-deleted: #ad0707;
+
+  --color-overlay: rgb(15 15 20 / 32%);
+
+  --shadow-sm: 0 1px 2px rgb(15 15 25 / 6%);
+  --shadow-md: 0 6px 20px rgb(15 15 25 / 9%), 0 0 0 1px rgb(15 15 25 / 5%);
+  --shadow-lg: 0 18px 56px rgb(15 15 25 / 14%), 0 0 0 1px rgb(15 15 25 / 6%);
+
+  --scrollbar-thumb: rgb(0 0 0 / 16%);
+  --scrollbar-thumb-hover: rgb(0 0 0 / 28%);
+  --scrollbar-thumb-active: rgb(0 0 0 / 40%);
+}

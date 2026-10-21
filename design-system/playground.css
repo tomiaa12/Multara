@@ -1,0 +1,360 @@
+/*
+ * UI Playground 自身的布局样式（pg- 前缀）。
+ * 只负责"展示台"的排版，被展示的组件全部来自 ../src/design/*.css 与 ../src/styles.css。
+ */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+.pg {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  height: 100vh;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
+/* ── 控制面板 ─────────────────────────────────────────────────── */
+.pg-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+.pg-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-4);
+  border-bottom: 1px solid var(--color-border-light);
+}
+.pg-panel-head strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+}
+.pg-panel-head small {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+}
+.pg-panel-body {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-6);
+  padding: var(--spacing-4);
+  overflow: auto;
+}
+.pg-group {
+  display: grid;
+  gap: var(--spacing-3);
+}
+.pg-group > .ds-overline {
+  padding-bottom: var(--spacing-1);
+  border-bottom: 1px solid var(--color-border-light);
+}
+.pg-control {
+  display: grid;
+  gap: var(--spacing-1-5);
+}
+.pg-control-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.pg-control-head output {
+  color: var(--color-text-tertiary);
+  font: var(--font-size-xs) var(--font-family-mono);
+}
+.pg-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--color-primary);
+}
+.pg-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1-5);
+}
+.pg-swatches button {
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+}
+.pg-swatches button.active {
+  box-shadow: 0 0 0 2px var(--color-text-strong);
+}
+.pg-swatches input[type="color"] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.pg-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-1-5);
+}
+.pg-presets .ui-button {
+  justify-content: flex-start;
+}
+.pg-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-1-5);
+}
+.pg-export {
+  width: 100%;
+  min-height: 120px;
+  font: var(--font-size-xs) / 1.5 var(--font-family-mono);
+}
+
+/* ── 主区域 ───────────────────────────────────────────────────── */
+.pg-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-bg);
+}
+.pg-main-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  padding: 0 var(--spacing-6);
+  border-bottom: 1px solid var(--color-border);
+}
+.pg-main-head .ds-tabs {
+  border-bottom: 0;
+  min-height: 48px;
+}
+.pg-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+.pg-content {
+  display: grid;
+  gap: var(--spacing-12);
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: var(--spacing-8) var(--spacing-6) var(--spacing-16);
+}
+.pg-view[hidden] {
+  display: none;
+}
+.pg-section {
+  display: grid;
+  gap: var(--spacing-4);
+}
+.pg-section > header {
+  display: grid;
+  gap: var(--spacing-1);
+}
+.pg-section > header h2 {
+  font-size: var(--font-size-xl);
+}
+.pg-demo {
+  display: grid;
+  gap: var(--spacing-4);
+  padding: var(--spacing-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.pg-demo.is-plain {
+  background: var(--color-bg);
+}
+.pg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.pg-row-label {
+  width: 88px;
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.pg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-4);
+}
+
+/* 色板 */
+.pg-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--spacing-3);
+}
+.pg-color {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.pg-color > i {
+  display: block;
+  height: 48px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.pg-color > span {
+  display: grid;
+  gap: 2px;
+  padding: var(--spacing-2) var(--spacing-2-5);
+}
+.pg-color strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.pg-color code {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font: var(--font-size-xs) var(--font-family-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 字体 */
+.pg-type {
+  display: grid;
+  grid-template-columns: 120px 72px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--spacing-4);
+  padding: var(--spacing-3) 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.pg-type:last-child {
+  border-bottom: 0;
+}
+.pg-type code,
+.pg-type small {
+  color: var(--color-text-tertiary);
+  font: var(--font-size-xs) var(--font-family-mono);
+}
+
+/* 间距 / 圆角 / 阴影 */
+.pg-scale {
+  display: grid;
+  gap: var(--spacing-2);
+}
+.pg-scale > div {
+  display: grid;
+  grid-template-columns: 120px 48px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-3);
+  font-size: var(--font-size-sm);
+}
+.pg-scale code {
+  color: var(--color-text-secondary);
+  font: var(--font-size-xs) var(--font-family-mono);
+}
+.pg-scale i {
+  display: block;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-primary);
+}
+.pg-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+}
+.pg-shapes > div {
+  display: grid;
+  place-items: center;
+  gap: var(--spacing-2);
+  width: 120px;
+  height: 96px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: var(--font-size-xs) var(--font-family-mono);
+}
+
+/* 弹层组件需要在展示台里"静态"显示 */
+.pg-static-overlay {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 300px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-overlay);
+}
+.pg-static-overlay > .modal,
+.pg-static-overlay > .ds-modal {
+  animation: none;
+}
+.pg-static-drawer {
+  position: relative;
+  height: 340px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-overlay);
+}
+.pg-static-drawer > .ds-drawer {
+  position: absolute;
+  animation: none;
+}
+
+/* ── 页面预览 ─────────────────────────────────────────────────── */
+.pg-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+/* 默认铺满（桌面）；平板 / 手机由脚本写入固定宽度，max-width 防止超出容器 */
+.pg-viewport {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  transition: width var(--motion-duration-normal) var(--motion-ease);
+}
+.pg-viewport > iframe {
+  display: block;
+  width: 100%;
+  height: 780px;
+  border: 0;
+  background: var(--color-bg-secondary);
+}
+
+@media (max-width: 900px) {
+  .pg {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    height: auto;
+    min-height: 100vh;
+  }
+  html,
+  body {
+    overflow: auto;
+  }
+  .pg-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .pg-panel-body {
+    max-height: 50vh;
+  }
+}

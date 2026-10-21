@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Multara 应用图标源文件（tauri icon 以此生成各平台图标）。
+    图形「叶芽」：两片叶子从同一点生长，寓意一条需求生长出多个分支。
+    底板 100~924 为 macOS 图标安全区；品牌色 #16A34A 与设计 Token color-brand 一致。
+    双叶整体包围盒中心约在 (512, 568)，这里上移居中并缩放到 0.86。
+  -->
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="#16A34A"/>
+  <g transform="translate(512 512) scale(0.86) translate(-512 -568)">
+    <path d="M512 780C392 660 392 420 512 268C632 420 632 660 512 780Z" fill="#ffffff" transform="rotate(-34 512 780)"/>
+    <path d="M512 780C392 660 392 420 512 268C632 420 632 660 512 780Z" fill="#ffffff" fill-opacity="0.6" transform="rotate(34 512 780)"/>
+  </g>
+</svg>
