@@ -377,7 +377,7 @@ async function updateRuntime(runtimeId: string, value: unknown) {
           <AvatarPicker
             v-model="agentForm.avatar"
             :name="agentForm.name"
-            :locked="Boolean(agentForm.id && (isMiku(agentForm) || agentForm.id === 'miku'))"
+            :locked="Boolean(agentForm.id && (isMiku({ id: agentForm.id, systemKey: agentForm.systemKey }) || agentForm.id === 'miku'))"
             @error="error = $event"
           />
           <label>{{ t("collection.field.name") }}<UiInput v-model="agentForm.name" required :placeholder="t('collection.namePlaceholder')" /></label>

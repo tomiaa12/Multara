@@ -340,8 +340,10 @@ export function detachOverlayScroll(el: HTMLElement): void {
 }
 
 function walkOverlayHosts(root: ParentNode, visit: (el: HTMLElement) => void): void {
-  if (root instanceof Element && root.classList.contains(HOST_CLASS)) visit(root);
-  root.querySelectorAll?.(`.${HOST_CLASS}`).forEach((node) => visit(node as HTMLElement));
+  if (root instanceof HTMLElement && root.classList.contains(HOST_CLASS)) visit(root);
+  root.querySelectorAll?.(`.${HOST_CLASS}`).forEach((node) => {
+    if (node instanceof HTMLElement) visit(node);
+  });
 }
 
 export function attachOverlayScrollTree(root: ParentNode): void {

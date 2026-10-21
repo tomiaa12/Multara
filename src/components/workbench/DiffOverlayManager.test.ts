@@ -21,7 +21,7 @@ import { DiffOverlayManager, groupAnchorLine, groupConsecutiveChunks, hunkTailLi
 
 function chunk(index: number, newStart: number, newLines: string[], oldLines: string[] = []): DiffChunk {
   return {
-    chunkId: makeChunkId("m1", "ws", "a.ts", index),
+    chunkId: makeChunkId("m1", "ws", "a.ts", String(index)),
     messageId: "m1",
     workspaceId: "ws",
     filePath: "a.ts",
@@ -184,7 +184,7 @@ describe("DiffOverlayManager", () => {
     expect(second.querySelector(".diff-btn-accept")).toBeTruthy();
     expect(second.querySelector(".diff-btn-undo")).toBeTruthy();
     (second.querySelector(".diff-btn-undo") as HTMLButtonElement).click();
-    expect(onUndo).toHaveBeenCalledWith(makeChunkId("m1", "ws", "a.ts", 0));
+    expect(onUndo).toHaveBeenCalledWith(makeChunkId("m1", "ws", "a.ts", "0"));
   });
 
   test("keeps Accept/Undo at the hunk when the hunk ends past the viewport", () => {
@@ -225,8 +225,8 @@ describe("DiffOverlayManager", () => {
     expect(controlWidgets(editor)[0].getDomNode().style.top).toBe("57px");
     (controlWidgets(editor)[0].getDomNode().querySelector(".diff-btn-accept") as HTMLButtonElement).click();
     expect(onAccept).toHaveBeenCalledTimes(2);
-    expect(onAccept).toHaveBeenNthCalledWith(1, makeChunkId("m1", "ws", "a.ts", 1));
-    expect(onAccept).toHaveBeenNthCalledWith(2, makeChunkId("m1", "ws", "a.ts", 0));
+    expect(onAccept).toHaveBeenNthCalledWith(1, makeChunkId("m1", "ws", "a.ts", "1"));
+    expect(onAccept).toHaveBeenNthCalledWith(2, makeChunkId("m1", "ws", "a.ts", "0"));
   });
 
   test("acceptAll and undoAll trigger every visible control, undo from the bottom", async () => {
@@ -242,14 +242,14 @@ describe("DiffOverlayManager", () => {
 
     await overlay.acceptAll();
     expect(onAccept.mock.calls.map((call) => call[0])).toEqual([
-      makeChunkId("m1", "ws", "a.ts", 0),
-      makeChunkId("m1", "ws", "a.ts", 1),
+      makeChunkId("m1", "ws", "a.ts", "0"),
+      makeChunkId("m1", "ws", "a.ts", "1"),
     ]);
 
     await overlay.undoAll();
     expect(onUndo.mock.calls.map((call) => call[0])).toEqual([
-      makeChunkId("m1", "ws", "a.ts", 1),
-      makeChunkId("m1", "ws", "a.ts", 0),
+      makeChunkId("m1", "ws", "a.ts", "1"),
+      makeChunkId("m1", "ws", "a.ts", "0"),
     ]);
   });
 
@@ -317,7 +317,7 @@ describe("DiffOverlayManager", () => {
     const accept = controlWidgets(editor)[0].getDomNode().querySelector(".diff-btn-accept") as HTMLButtonElement;
     expect(accept.disabled).toBe(false);
     accept.click();
-    expect(onAccept).toHaveBeenCalledWith(makeChunkId("m1", "ws", "a.ts", 0));
+    expect(onAccept).toHaveBeenCalledWith(makeChunkId("m1", "ws", "a.ts", "0"));
   });
 
   test("multi-line removed rows stack instead of overlapping", () => {

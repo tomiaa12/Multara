@@ -987,7 +987,7 @@ function previewStatistics(days: number, projectId: string, agentId = ""): RunSt
   const reviewUsage = previewUsage(reviewTotal, failed - mikuFailed, totalSeconds * 0.3, 1);
   const agents = [
     { id: "miku", name: "Miku", completed: mikuTotal - mikuFailed, ...mikuUsage },
-    { name: "审查员", completed: Math.max(0, completed - (mikuTotal - mikuFailed)), ...reviewUsage },
+    { id: "reviewer", name: "审查员", completed: Math.max(0, completed - (mikuTotal - mikuFailed)), ...reviewUsage },
   ].filter((item) => item.total > 0);
   return {
     total,
