@@ -26,6 +26,7 @@ import {
 } from "./dashboard/requirement-categories";
 import { TASK_COLUMNS } from "./task-board";
 import { writeTaskMeta } from "./task-meta";
+import { t } from "../i18n";
 
 const props = defineProps<{
   initialStatus: TaskStatus;
@@ -77,15 +78,21 @@ const targetOptions = computed(() => [
   ...agents.value.map((agent) => ({ value: `agent:${agent.id}`, label: agent.name, avatar: agent.avatar })),
   ...squads.value.map((squad) => ({
     value: `squad:${squad.id}`,
-    label: `小队 · ${squad.name}`,
+    label: t("chat.squadLabel", { name: squad.name }),
     avatar: agents.value.find((agent) => agent.id === squad.leaderAgentId)?.avatar ?? "◉",
   })),
 ]);
-const statusOptions = computed(() => TASK_COLUMNS.map((column) => ({ value: column.id, label: column.label })));
+/** 创建入口只给待规划 / 待办；开跑后系统会同步到进行中等后续状态。 */
+const CREATE_STATUS_IDS = new Set(["backlog", "todo"]);
+const statusOptions = computed(() =>
+  TASK_COLUMNS
+    .filter((column) => CREATE_STATUS_IDS.has(column.id))
+    .map((column) => ({ value: column.id, label: column.label })),
+);
 const projectOptions = computed(() => [
   {
     value: "__associate_hint",
-    label: "关联后，这个任务在该需求的工作区里执行，智能体可以直接改这些目录里的代码。",
+    label: t("tasks.linkProjectHint"),
     disabled: true,
   },
   ...projects.value.map((item) => ({ value: item.id, label: item.name })),
@@ -145,7 +152,7 @@ async function addWorkspaceChip(file: { workspaceId: string; path: string; isDir
     }
   } catch {
     const name = file.path.split(/[\\/]/).pop() || file.path;
-    error.value = `未能读取 ${name}，已添加空引用`;
+    error.value = t("chat.attachEmpty", { name });
   }
   rememberChip({
     id: crypto.randomUUID(),
@@ -159,7 +166,7 @@ async function addWorkspaceChip(file: { workspaceId: string; path: string; isDir
 }
 
 async function addExternalChip(entry: OsDroppedEntry) {
-  const path = entry.path || entry.name || "外部文件";
+  const path = entry.path || entry.name || t("chat.externalFile");
   const resolved = entry.path ? resolvePathInWorkspaces(entry.path, workspaces.value) : null;
   if (resolved) {
     await addWorkspaceChip({ ...resolved, isDirectory: entry.isDirectory });
@@ -185,7 +192,7 @@ async function addExternalChip(entry: OsDroppedEntry) {
         isDirectory = true;
       } catch {
         const name = path.split(/[\\/]/).pop() || path;
-        error.value = `未能读取 ${name}，已添加空引用`;
+        error.value = t("chat.attachEmpty", { name });
       }
     }
   }
@@ -208,7 +215,7 @@ async function onDropWorkspace(file: WorkspaceFileDragPayload) {
 async function onDropOs(entries: OsDroppedEntry[]) {
   error.value = "";
   if (!entries.length) {
-    error.value = "没有识别到可引用的文件";
+    error.value = t("chat.noRefFiles");
     return;
   }
   for (const entry of entries) await addExternalChip(entry);
@@ -263,21 +270,21 @@ async function create() {
       <header>
         <p>
           <template v-if="project">{{ project.name }} <span>›</span> </template>
-          手动创建
+          {{ t('skills.create.method.manual') }}
         </p>
         <div>
-          <button type="button" class="task-icon-button" :title="expanded ? '收起' : '展开'" @click="expanded = !expanded">
+          <button type="button" class="task-icon-button" :title="expanded ? t('skills.collapse') : t('skills.expand')" @click="expanded = !expanded">
             <Minimize2 v-if="expanded" :size="15" />
             <Maximize2 v-else :size="15" />
           </button>
-          <button type="button" class="task-icon-button" title="关闭" @click="emit('close')"><X :size="16" /></button>
+          <button type="button" class="task-icon-button" :title="t('common.close')" @click="emit('close')"><X :size="16" /></button>
         </div>
       </header>
-      <input v-model="form.title" class="task-create-title" placeholder="任务标题" />
+      <input v-model="form.title" class="task-create-title" :placeholder="t('tasks.titlePlaceholder')" />
       <ChatComposer
         ref="composer"
         embedded
-        placeholder="添加描述..."
+        :placeholder="t('tasks.addDescription')"
         :initial-nodes="[]"
         :contexts="contexts"
         :target-options="targetOptions"
@@ -291,11 +298,11 @@ async function create() {
       >
         <template #tools>
           <div class="task-create-tools">
-            <UiSelect v-model="form.status" size="sm" aria-label="待办" :options="statusOptions" />
+            <UiSelect v-model="form.status" size="sm" :aria-label="t('tasks.field.status')" :options="statusOptions" />
             <TagPicker
               v-model="form.labels"
               :tags="categories.categories"
-              placeholder="标签"
+              :placeholder="t('tasks.tags')"
               @create="onTagCreate"
               @manage="showTagManage = true"
             />
@@ -303,21 +310,21 @@ async function create() {
               v-model="form.projectId"
               clearable
               size="sm"
-              aria-label="关联需求"
-              placeholder="关联需求"
+              :aria-label="t('tasks.linkProject')"
+              :placeholder="t('tasks.linkProject')"
               :options="projectOptions"
             />
           </div>
         </template>
         <template #actions>
-          <UiButton type="button" size="icon" variant="ghost" title="添加文件" @click="pickFiles">
+          <UiButton type="button" size="icon" variant="ghost" :title="t('tasks.addFile')" @click="pickFiles">
             <Paperclip :size="16" />
           </UiButton>
           <label class="task-create-keep">
             <input v-model="keepOpen" class="ui-checkbox" type="checkbox" />
-            继续创建
+            {{ t('tasks.keepOpen') }}
           </label>
-          <UiButton variant="primary" type="submit" :disabled="!canCreate">创建任务</UiButton>
+          <UiButton variant="primary" type="submit" :disabled="!canCreate">{{ t('tasks.createSubmit') }}</UiButton>
         </template>
       </ChatComposer>
       <p v-if="error" class="task-create-error">{{ error }}</p>

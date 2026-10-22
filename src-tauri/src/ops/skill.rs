@@ -16,14 +16,14 @@ pub fn get(id: &str) -> Result<crate::models::GlobalResource, String> {
         .ok_or_else(|| "Skill 不存在".to_string())
 }
 
-pub fn builtin() -> serde_json::Value {
+pub fn builtin(locale: &str) -> serde_json::Value {
     serde_json::Value::Array(
         builtin_skills::ALL
             .iter()
             .map(|skill| {
                 serde_json::json!({
                     "name": skill.name,
-                    "description": skill.description,
+                    "description": skill.description_for(locale),
                 })
             })
             .collect(),

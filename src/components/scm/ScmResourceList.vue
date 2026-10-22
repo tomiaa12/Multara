@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { GitFileStatus } from "../../domain/types";
+import { t } from "../../i18n";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu.vue";
 import UiButton from "../ui/UiButton.vue";
@@ -39,14 +40,17 @@ const menuItems = computed<ContextMenuItem[]>(() => {
   const many = menu.value.paths.length > 1;
   const group = menu.value.group;
   const items: ContextMenuItem[] = [
-    { id: "open", label: many ? "打开所选" : "打开更改", disabled: many },
-    { id: "openFile", label: "打开文件", disabled: many },
+    { id: "open", label: many ? t("scm.resource.openSelected") : t("workbench.gitOpenChanges"), disabled: many },
+    { id: "openFile", label: t("scm.resource.openFile"), disabled: many },
   ];
   if (group === "staged") {
-    items.push({ id: "unstage", label: many ? "取消暂存所选" : "取消暂存" });
+    items.push({ id: "unstage", label: many ? t("scm.resource.unstageSelected") : t("scm.unstage") });
   } else {
-    items.push({ id: "discard", label: many ? "撤回所选" : "撤回更改" });
-    items.push({ id: "stage", label: many ? "暂存所选" : group === "merge" ? "标记为已解决" : "暂存更改" });
+    items.push({ id: "discard", label: many ? t("scm.resource.discardSelected") : t("scm.resource.discardChanges") });
+    items.push({
+      id: "stage",
+      label: many ? t("scm.resource.stageSelected") : group === "merge" ? t("scm.resource.markResolved") : t("workbench.gitStage"),
+    });
   }
   return items;
 });
@@ -190,7 +194,7 @@ function guideLeft(level: number) {
           v-if="group.id !== 'staged'"
           variant="ghost"
           size="icon"
-          :title="scmBusyTitle(busy, `discard:${workspaceId}`, '撤回全部更改')"
+          :title="scmBusyTitle(busy, `discard:${workspaceId}`, t('scm.resource.discardAll'))"
           :disabled="Boolean(busy)"
           @click.stop="emit('discard', group.files.map((file) => ({ path: file.path, worktreeStatus: file.worktreeStatus })))"
         >
@@ -200,7 +204,7 @@ function guideLeft(level: number) {
           v-if="group.id === 'staged'"
           variant="ghost"
           size="icon"
-          :title="scmBusyTitle(busy, `stage:${workspaceId}`, '全部取消暂存')"
+          :title="scmBusyTitle(busy, `stage:${workspaceId}`, t('scm.resource.unstageAll'))"
           :disabled="Boolean(busy)"
           @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: false })"
         >
@@ -210,7 +214,7 @@ function guideLeft(level: number) {
           v-else
           variant="ghost"
           size="icon"
-          :title="scmBusyTitle(busy, `stage:${workspaceId}`, group.id === 'merge' ? '全部标记为已解决' : '全部暂存')"
+          :title="scmBusyTitle(busy, `stage:${workspaceId}`, group.id === 'merge' ? t('scm.resource.markAllResolved') : t('scm.resource.stageAll'))"
           :disabled="Boolean(busy)"
           @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: true })"
         >
@@ -266,7 +270,7 @@ function guideLeft(level: number) {
               v-if="row.file.worktreeStatus !== 'D' && row.file.indexStatus !== 'D'"
               variant="ghost"
               size="icon"
-              title="打开文件"
+              :title="t('scm.resource.openFile')"
               @click.stop="emit('openFile', row.file.path)"
             >
               <Codicon name="go-to-file" :size="12" />
@@ -275,7 +279,7 @@ function guideLeft(level: number) {
               v-if="group.id !== 'staged'"
               variant="ghost"
               size="icon"
-              title="撤回更改"
+              :title="t('scm.resource.discardChanges')"
               @click.stop="emit('discard', [{ path: row.file.path, worktreeStatus: row.file.worktreeStatus }])"
             >
               <Codicon name="discard" :size="12" />
@@ -283,7 +287,7 @@ function guideLeft(level: number) {
             <UiButton
               variant="ghost"
               size="icon"
-              :title="group.id === 'staged' ? '取消暂存' : '暂存更改'"
+              :title="group.id === 'staged' ? t('scm.unstage') : t('workbench.gitStage')"
               @click.stop="emit('stage', { paths: [row.file.path], staged: group.id !== 'staged' })"
             >
               <Codicon v-if="group.id === 'staged'" name="remove" :size="12" />

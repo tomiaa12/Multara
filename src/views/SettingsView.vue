@@ -15,8 +15,8 @@ import { setUpdateProxy } from "../services/update";
 import { useAppStore } from "../stores/app";
 import { useUpdaterStore } from "../stores/updater";
 import {
-  DEFAULT_BRANCH_PROMPT,
-  DEFAULT_COMMIT_PROMPT,
+  defaultBranchPrompt,
+  defaultCommitPrompt,
   displayPrompt,
   GEN_MODE_AGENT,
   normalizeGenMode,
@@ -28,6 +28,8 @@ import SideNav, { type SideNavGroup, type SideNavItem } from "../components/Side
 import SettingsAiGenBlock from "./SettingsAiGenBlock.vue";
 
 const SAVE_DEBOUNCE_MS = 300;
+const defaultBranch = computed(() => defaultBranchPrompt());
+const defaultCommit = computed(() => defaultCommitPrompt());
 
 const SECTION_IDS = ["general", "explorer", "git", "branch", "commit", "automation", "updates", "about"] as const;
 type SectionId = (typeof SECTION_IDS)[number];
@@ -69,10 +71,10 @@ const form = reactive({
   webhookPort: 43127,
   branchGenMode: GEN_MODE_AGENT,
   branchAgentId: "",
-  branchPrompt: DEFAULT_BRANCH_PROMPT,
+  branchPrompt: defaultBranchPrompt(),
   commitGenMode: GEN_MODE_AGENT,
   commitAgentId: "",
-  commitPrompt: DEFAULT_COMMIT_PROMPT,
+  commitPrompt: defaultCommitPrompt(),
   genApiUrl: "",
   genApiModel: "",
   genApiKey: "",
@@ -165,10 +167,10 @@ watch(
     form.webhookPort = Number(settings.webhookPort ?? 43127);
     form.branchGenMode = normalizeGenMode(settings.branchGenMode);
     form.branchAgentId = settings.branchAgentId ?? "";
-    form.branchPrompt = displayPrompt(settings.branchPrompt, DEFAULT_BRANCH_PROMPT);
+    form.branchPrompt = displayPrompt(settings.branchPrompt, defaultBranch.value);
     form.commitGenMode = normalizeGenMode(settings.commitGenMode);
     form.commitAgentId = settings.commitAgentId ?? "";
-    form.commitPrompt = displayPrompt(settings.commitPrompt, DEFAULT_COMMIT_PROMPT);
+    form.commitPrompt = displayPrompt(settings.commitPrompt, defaultCommit.value);
     form.genApiUrl = settings.genApiUrl ?? "";
     form.genApiModel = settings.genApiModel ?? "";
     form.genApiKey = settings.genApiKey ?? "";
@@ -221,8 +223,13 @@ watch(
   () => scheduleSave(),
 );
 
-// Re-render section labels when locale changes
-watch(locale, () => undefined);
+// 语言切换后：未自定义的默认提示词跟界面语言走
+watch(locale, () => {
+  const settings = store.data?.settings;
+  if (!settings) return;
+  if (!settings.branchPrompt?.trim()) form.branchPrompt = defaultBranch.value;
+  if (!settings.commitPrompt?.trim()) form.commitPrompt = defaultCommit.value;
+});
 
 function scheduleSave() {
   if (hydrating) return;
@@ -248,10 +255,10 @@ function settingsPayload() {
     webhookPort: String(form.webhookPort),
     branchGenMode: normalizeGenMode(form.branchGenMode),
     branchAgentId: form.branchAgentId.trim(),
-    branchPrompt: persistPrompt(form.branchPrompt, DEFAULT_BRANCH_PROMPT),
+    branchPrompt: persistPrompt(form.branchPrompt, defaultBranch.value),
     commitGenMode: normalizeGenMode(form.commitGenMode),
     commitAgentId: form.commitAgentId.trim(),
-    commitPrompt: persistPrompt(form.commitPrompt, DEFAULT_COMMIT_PROMPT),
+    commitPrompt: persistPrompt(form.commitPrompt, defaultCommit.value),
     genApiUrl: form.genApiUrl.trim(),
     genApiModel: form.genApiModel.trim(),
     genApiKey: form.genApiKey.trim(),
@@ -526,7 +533,7 @@ onBeforeUnmount(() => {
             v-model:api-key="form.genApiKey"
             v-model:prompt="form.branchPrompt"
             :agent-options="agentOptions"
-            :default-prompt="DEFAULT_BRANCH_PROMPT"
+            :default-prompt="defaultBranch"
           />
         </section>
 
@@ -539,7 +546,7 @@ onBeforeUnmount(() => {
             v-model:api-key="form.genApiKey"
             v-model:prompt="form.commitPrompt"
             :agent-options="agentOptions"
-            :default-prompt="DEFAULT_COMMIT_PROMPT"
+            :default-prompt="defaultCommit"
           />
         </section>
 

@@ -1,4 +1,5 @@
 import { confirmRollbackIfDirty } from "../components/workbench/unsaved-editor";
+import { t } from "../i18n";
 
 export function countMessagesFrom(messages: Array<{ id: string }>, targetId: string) {
   const index = messages.findIndex((item) => item.id === targetId);
@@ -10,7 +11,7 @@ export function reaskBannerText(count: number) {
 }
 
 export function reshuffleHintText(count: number) {
-  return `之后 ${count} 条消息将被删除。`;
+  return t("diff.reshuffleHint", { count });
 }
 
 /** 这条以及之后会被删掉的消息里，只要有一轮拍过文件快照，就需要问回滚还是保持。 */

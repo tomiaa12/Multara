@@ -1,3 +1,5 @@
+import { locale, t } from "../../i18n";
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -22,12 +24,12 @@ export function formatRelativeTime(
   const time = parseTimeMs(input);
   if (!Number.isFinite(time)) return "";
   const delta = Math.max(0, now - time);
-  if (delta < MINUTE_MS) return "刚刚";
-  if (delta < HOUR_MS) return `${Math.floor(delta / MINUTE_MS)} 分钟前`;
-  if (delta < DAY_MS) return `${Math.floor(delta / HOUR_MS)} 小时前`;
-  if (delta < MONTH_MS) return `${Math.floor(delta / DAY_MS)} 天前`;
-  if (delta < YEAR_MS) return `${Math.floor(delta / MONTH_MS)} 个月前`;
-  return `${Math.floor(delta / YEAR_MS)} 年前`;
+  if (delta < MINUTE_MS) return t("time.justNow");
+  if (delta < HOUR_MS) return t("time.minutesAgo", { n: Math.floor(delta / MINUTE_MS) });
+  if (delta < DAY_MS) return t("time.hoursAgo", { n: Math.floor(delta / HOUR_MS) });
+  if (delta < MONTH_MS) return t("time.daysAgo", { n: Math.floor(delta / DAY_MS) });
+  if (delta < YEAR_MS) return t("time.monthsAgo", { n: Math.floor(delta / MONTH_MS) });
+  return t("time.yearsAgo", { n: Math.floor(delta / YEAR_MS) });
 }
 
 /** 悬停用的绝对时间（本地时区）。 */
@@ -36,5 +38,5 @@ export function formatAbsoluteTime(
 ): string {
   const time = parseTimeMs(input);
   if (!Number.isFinite(time)) return "";
-  return new Date(time).toLocaleString("zh-CN", { hour12: false });
+  return new Date(time).toLocaleString(locale.value, { hour12: false });
 }

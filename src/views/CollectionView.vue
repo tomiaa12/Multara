@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { Boxes, Pencil, Plus, RefreshCw, Search, Trash2, Users, X } from "@lucide/vue";
+import { Boxes, LayoutGrid, Pencil, Plus, RefreshCw, Rows3, Search, Trash2, Users, X } from "@lucide/vue";
 import { useRoute } from "vue-router";
 import type { Agent, Runtime, Squad } from "../domain/types";
 import { isMiku } from "../domain/types";
@@ -14,9 +14,24 @@ import { gatewayHost } from "./runtime-catalog";
 import { useAppStore } from "../stores/app";
 import CreateRuntimeDialog from "./CreateRuntimeDialog.vue";
 
+const RUNTIME_VIEW_KEY = "multara.runtimes.view";
+
+function agentListDescription(agent: Agent) {
+  if (isMiku(agent)) return t("miku.description");
+  return agent.description || t("common.noDescription");
+}
+
 const route = useRoute();
 const store = useAppStore();
 const kind = computed(() => String(route.meta.kind ?? ""));
+const runtimeView = ref<"list" | "card">(
+  localStorage.getItem(RUNTIME_VIEW_KEY) === "card" ? "card" : "list",
+);
+
+function setRuntimeView(mode: "list" | "card") {
+  runtimeView.value = mode;
+  localStorage.setItem(RUNTIME_VIEW_KEY, mode);
+}
 
 function syncAgentsAndSquads() {
   if (kind.value !== "agents" && kind.value !== "squads") return;
@@ -45,10 +60,13 @@ const visibleRuntimes = computed(
 const agentQuery = ref("");
 const visibleAgents = computed(() => {
   const query = agentQuery.value.trim().toLowerCase();
-  return (store.data?.agents ?? []).filter((agent) => {
-    if (!query) return true;
-    return agent.name.toLowerCase().includes(query) || agent.description.toLowerCase().includes(query);
-  });
+  return (store.data?.agents ?? [])
+    .filter((agent) => {
+      if (!query) return true;
+      return agent.name.toLowerCase().includes(query) || agent.description.toLowerCase().includes(query);
+    })
+    .slice()
+    .sort((left, right) => Number(isMiku(right)) - Number(isMiku(left)));
 });
 
 const runningAgentCount = computed(
@@ -63,20 +81,20 @@ function agentTaskCount(agentId: string) {
   return store.data?.tasks.filter((task) => task.agentId === agentId).length ?? 0;
 }
 
-function agentStatusKey(agent: Agent): "running" | "idle" | "offline" {
+function agentStatusKey(agent: Agent): "running" | "online" | "offline" {
   const running = Object.values(store.runStates).some((event) =>
     event.agentId === agent.id
     && (event.status === "running" || event.status === "queued")
     && !event.runId.startsWith("pending:"),
   );
   if (running) return "running";
-  return agentRuntime(agent)?.status === "online" ? "idle" : "offline";
+  return agentRuntime(agent)?.status === "online" ? "online" : "offline";
 }
 
 function agentStatus(agent: Agent) {
   const key = agentStatusKey(agent);
   if (key === "running") return t("collection.status.running");
-  if (key === "idle") return t("collection.status.idle");
+  if (key === "online") return t("collection.status.online");
   return t("collection.status.offline");
 }
 
@@ -195,6 +213,39 @@ async function removeSquad(squad: Squad) {
 async function updateRuntime(runtimeId: string, value: unknown) {
   await store.configureRuntime(runtimeId, Number(value));
 }
+
+async function setAgentRuntime(agent: Agent, runtimeId: string) {
+  if (!runtimeId || runtimeId === agent.runtimeId) return;
+  try {
+    await store.saveAgent({ ...agent, runtimeId, model: "auto" });
+  } catch (cause) {
+    window.alert(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+async function setAgentModel(agent: Agent, model: string) {
+  const next = model || "auto";
+  if (next === (agent.model || "auto")) return;
+  try {
+    await store.saveAgent({ ...agent, model: next });
+  } catch (cause) {
+    window.alert(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+function runtimePath(runtime: Runtime) {
+  if (runtime.kind === "gateway" && runtime.apiUrl) return gatewayHost(runtime.apiUrl);
+  return runtime.path ?? runtime.command ?? "";
+}
+
+function runtimeSubtitle(runtime: Runtime) {
+  if (runtime.id.startsWith("custom:")) {
+    return runtime.provider === "custom"
+      ? t("runtime.legacy")
+      : t("runtime.basedOn", { name: t(`runtime.family.${runtime.provider}`) });
+  }
+  return runtime.version || t("runtime.unknownVersion");
+}
 </script>
 
 <template>
@@ -205,6 +256,14 @@ async function updateRuntime(runtimeId: string, value: unknown) {
         <p>{{ subtitle }}</p>
       </div>
       <div v-if="kind === 'runtimes'" class="header-actions">
+        <div v-if="visibleRuntimes.length" class="ds-segmented" role="tablist" :aria-label="t('runtime.view')">
+          <button type="button" :class="{ active: runtimeView === 'list' }" :aria-selected="runtimeView === 'list'" @click="setRuntimeView('list')">
+            <Rows3 :size="14" /> {{ t("runtime.view.list") }}
+          </button>
+          <button type="button" :class="{ active: runtimeView === 'card' }" :aria-selected="runtimeView === 'card'" @click="setRuntimeView('card')">
+            <LayoutGrid :size="14" /> {{ t("runtime.view.card") }}
+          </button>
+        </div>
         <UiButton @click="store.refreshRuntimes"><RefreshCw :size="15" /> {{ t("runtime.redetect") }}</UiButton>
         <UiButton variant="primary" @click="editRuntime()"><Plus :size="15" /> {{ t("runtime.add") }}</UiButton>
       </div>
@@ -243,16 +302,52 @@ async function updateRuntime(runtimeId: string, value: unknown) {
         <p>{{ t("runtime.emptyHint") }}</p>
         <UiButton @click="store.refreshRuntimes"><RefreshCw :size="15" /> {{ t("runtime.redetect") }}</UiButton>
       </div>
+      <div v-else-if="runtimeView === 'list'" class="agent-directory runtime-directory">
+        <div class="agent-directory-head">
+          <span>{{ t("runtime.col.runtime") }}</span>
+          <span>{{ t("runtime.col.status") }}</span>
+          <span>{{ t("runtime.col.path") }}</span>
+          <span>{{ t("runtime.col.concurrent") }}</span>
+          <span />
+        </div>
+        <div v-for="runtime in visibleRuntimes" :key="runtime.id" class="agent-directory-row">
+          <span class="agent-directory-identity">
+            <span class="runtime-logo"><ProviderLogo :provider="runtime.provider" :size="20" /></span>
+            <span>
+              <strong>{{ runtime.name }}</strong>
+              <small>{{ runtimeSubtitle(runtime) }}</small>
+            </span>
+          </span>
+          <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'idle' : 'offline'">
+            {{ runtime.status === "online" ? t("runtime.online") : t("runtime.offline") }}
+          </span>
+          <code class="runtime-directory-path" :title="runtime.path ?? runtime.command">
+            {{ runtimePath(runtime) || t("runtime.notFound", { command: runtime.command }) }}
+          </code>
+          <span class="agent-directory-field" @click.stop>
+            <UiSelect
+              :model-value="runtime.maxConcurrent"
+              size="sm"
+              :options="Array.from({ length: 6 }, (_, index) => ({ value: index + 1, label: String(index + 1) }))"
+              :aria-label="t('collection.maxConcurrent')"
+              @change="updateRuntime(runtime.id, $event)"
+            />
+          </span>
+          <span class="runtime-directory-actions">
+            <template v-if="runtime.id.startsWith('custom:')">
+              <UiButton class="icon-button" size="icon" :title="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
+              <UiButton class="icon-button" size="icon" variant="danger" :title="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
+            </template>
+          </span>
+        </div>
+      </div>
       <div v-else class="runtime-grid">
         <article v-for="runtime in visibleRuntimes" :key="runtime.id" class="ds-card runtime-card">
           <div class="runtime-card-head">
             <span class="runtime-logo"><ProviderLogo :provider="runtime.provider" :size="20" /></span>
             <div class="runtime-card-title">
               <strong>{{ runtime.name }}</strong>
-              <small v-if="runtime.id.startsWith('custom:')">
-                {{ runtime.provider === "custom" ? t("runtime.legacy") : t("runtime.basedOn", { name: t(`runtime.family.${runtime.provider}`) }) }}
-              </small>
-              <small v-else>{{ runtime.version || t("runtime.unknownVersion") }}</small>
+              <small>{{ runtimeSubtitle(runtime) }}</small>
               <small v-if="runtime.description">{{ runtime.description }}</small>
             </div>
             <span class="ds-badge" :data-tone="runtime.status === 'online' ? 'success' : undefined">
@@ -284,9 +379,9 @@ async function updateRuntime(runtimeId: string, value: unknown) {
     <div v-else-if="kind === 'agents'" class="agent-directory">
       <div class="agent-directory-head">
         <span>{{ t("collection.col.agent") }}</span>
-        <span>{{ t("collection.col.status") }}</span>
         <span>{{ t("collection.col.runtime") }}</span>
         <span>{{ t("collection.col.model") }}</span>
+        <span>{{ t("collection.col.status") }}</span>
         <span>{{ t("collection.col.tasks") }}</span>
         <span />
       </div>
@@ -294,17 +389,35 @@ async function updateRuntime(runtimeId: string, value: unknown) {
       <p v-else-if="!visibleAgents.length" class="empty-copy">{{ t("collection.noMatchAgent", { query: agentQuery }) }}</p>
       <div v-for="agent in visibleAgents" :key="agent.id" class="agent-directory-row">
         <RouterLink :to="`/agents/${agent.id}`" class="agent-directory-hit">
-        <span class="agent-directory-identity">
-          <AgentAvatar :value="agent.avatar" :name="agent.name" :size="32" />
-          <span>
-            <strong>{{ agent.name }} <span v-if="isMiku(agent)" class="tag">{{ t("collection.steward") }}</span></strong>
-            <small>{{ agent.description || t("common.noDescription") }}</small>
+          <span class="agent-directory-identity">
+            <AgentAvatar :value="agent.avatar" :name="agent.name" :size="32" />
+            <span>
+              <strong>{{ agent.name }} <span v-if="isMiku(agent)" class="tag">{{ t("collection.steward") }}</span></strong>
+              <small>{{ agentListDescription(agent) }}</small>
+            </span>
           </span>
+        </RouterLink>
+        <span class="agent-directory-field" @click.stop @mousedown.stop>
+          <RuntimeSelect
+            size="sm"
+            :model-value="agent.runtimeId"
+            :online-only="false"
+            :placeholder="t('collection.pickRuntime')"
+            @update:model-value="setAgentRuntime(agent, $event ?? '')"
+          />
+        </span>
+        <span class="agent-directory-field" @click.stop @mousedown.stop>
+          <RuntimeModelSelect
+            compact
+            size="sm"
+            :model-value="agent.model || 'auto'"
+            :runtime-id="agent.runtimeId"
+            @update:model-value="setAgentModel(agent, $event)"
+          />
         </span>
         <span class="agent-directory-status" :data-status="agentStatusKey(agent)">{{ agentStatus(agent) }}</span>
-        <span>{{ agentRuntime(agent)?.name ?? t("collection.unbound") }}</span>
-        <span>{{ agent.model || "auto" }}</span>
-        <span>{{ agentTaskCount(agent.id) }}</span>
+        <RouterLink :to="`/agents/${agent.id}`" class="agent-directory-hit">
+          <span>{{ agentTaskCount(agent.id) }}</span>
         </RouterLink>
         <UiButton v-if="!isMiku(agent)" class="icon-button" :title="t('collection.deleteAgent')" @click.stop="removeAgent(agent)"><Trash2 :size="13" /></UiButton>
         <span v-else />

@@ -1,4 +1,6 @@
+import { t } from "../../i18n";
 import type { ScmGroupId, ScmOpenTarget } from "./scm-groups";
+import { scmGroupLabel } from "./scm-groups";
 
 export type ScmDiffPlan = {
   original: "empty" | "head" | "index" | { rev: string };
@@ -25,30 +27,40 @@ export function scmDiffPlan(target: Pick<ScmOpenTarget, "group" | "commit" | "pa
     return {
       original: added || !target.parent ? "empty" : { rev: target.parent },
       modified: deleted ? "empty" : { rev: target.commit },
-      label: "提交中的文件",
-      short: "提交",
+      label: t("scm.diff.commitFile"),
+      short: t("scm.diff.short.commit"),
     };
   }
   if (target.group === "staged") {
-    return { original: "head", modified: "index", label: "暂存的更改", short: "暂存" };
+    return {
+      original: "head",
+      modified: "index",
+      label: scmGroupLabel("staged"),
+      short: t("scm.diff.short.staged"),
+    };
   }
   if (target.group === "untracked") {
-    return { original: "empty", modified: "worktree", label: "未跟踪的更改", short: "未跟踪" };
+    return {
+      original: "empty",
+      modified: "worktree",
+      label: t("scm.diff.untracked"),
+      short: t("scm.diff.short.untracked"),
+    };
   }
   const merge = target.group === "merge";
   if (merge) {
     return {
       original: "head",
       modified: "worktree",
-      label: "合并更改",
-      short: "合并",
+      label: scmGroupLabel("merge"),
+      short: t("scm.diff.short.merge"),
     };
   }
   return {
     original: "index",
     modified: "worktree",
-    label: "更改",
-    short: "更改",
+    label: scmGroupLabel("changes"),
+    short: t("scm.diff.short.changes"),
   };
 }
 

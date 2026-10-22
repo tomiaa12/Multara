@@ -9,6 +9,7 @@ import { currentDocumentTheme, monacoThemeName } from "../editor/monaco-workspac
 import type { FileContent } from "../domain/types";
 import { useAppStore } from "../stores/app";
 import { useDiffStore } from "../stores/diff";
+import { useI18n } from "../i18n";
 import * as backend from "../services/backend";
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 
 const store = useAppStore();
 const diffStore = useDiffStore();
+const { t } = useI18n();
 const editor = ref<InstanceType<typeof EditorWithDiff> | null>(null);
 const file = ref<FileContent | null>(null);
 const pendingChunks = ref(0);
@@ -91,7 +93,7 @@ defineExpose({ layout });
           <button type="button" class="editor-tab active" :title="filePath">
             <FileTypeIcon :name="title" />
             <span class="editor-tab-name">{{ title }}</span>
-            <span class="tab-close" title="关闭" @click="emit('close')">
+            <span class="tab-close" :title="t('common.close')" @click="emit('close')">
               <X :size="12" />
             </span>
           </button>
@@ -102,18 +104,18 @@ defineExpose({ layout });
           <UiButton
             class="diff-file-action diff-file-action-keep"
             size="small"
-            title="保留当前文件的全部改动"
+            :title="t('diff.keepAllTitle')"
             :disabled="busy"
             @click="keep"
-          >保留</UiButton>
+          >{{ t('diff.keep') }}</UiButton>
           <UiButton
             class="diff-file-action"
             variant="ghost"
             size="small"
-            title="撤回当前文件的全部改动"
+            :title="t('diff.revertFileTitle')"
             :disabled="busy"
             @click="undo"
-          >撤回</UiButton>
+          >{{ t('diff.revert') }}</UiButton>
         </div>
         <EditorWithDiff
           ref="editor"

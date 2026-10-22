@@ -3,6 +3,7 @@ import type { FileEntry, Workspace } from "../../../domain/types";
 import { monaco } from "../../../monaco";
 import * as backend from "../../../services/backend";
 import * as explorerBackend from "../../../services/explorer-backend";
+import { t } from "../../../i18n";
 import { useAppStore } from "../../../stores/app";
 import { canDropInExplorer, fileNamesMessage, moveConfirmMessage } from "./explorer-dnd";
 import { readDroppedTree, type DroppedItem } from "./explorer-import";
@@ -112,6 +113,19 @@ function joinPath(dir: string, name: string) {
 
 function messageOf(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+function trashLabel(isWindows: boolean) {
+  return t(isWindows ? "explorer.trash.windows" : "explorer.trash.mac");
+}
+
+function entryKind(isDirectory: boolean) {
+  return t(isDirectory ? "explorer.kind.folder" : "explorer.kind.file");
+}
+
+function transferOpLabel(copy: boolean, count: number, singleName: string) {
+  if (count === 1) return t(copy ? "explorer.op.copy" : "explorer.op.move", { name: singleName });
+  return t(copy ? "explorer.op.copyMany" : "explorer.op.moveMany", { count });
 }
 
 function isUnder(path: string, folder: string) {
@@ -333,13 +347,17 @@ export function useExplorer(host: ExplorerHost) {
     if (!operation) return;
     const mode = settings.value.confirmUndo;
     if (mode === "verbose" || (mode === "default" && operation.destructiveUndo)) {
-      const answer = await confirm({ message: `是否要撤消“${operation.label}”？`, primary: "撤消", type: "warning" });
+      const answer = await confirm({
+        message: t("explorer.undo.confirm", { label: operation.label }),
+        primary: t("explorer.confirm.undo"),
+        type: "warning",
+      });
       if (!answer.confirmed) return;
     }
     try {
       await undoStack.undo();
     } catch (cause) {
-      host.reportError(`撤消失败：${messageOf(cause)}`);
+      host.reportError(t("explorer.undo.failed", { message: messageOf(cause) }));
     } finally {
       undoVersion.value += 1;
       host.afterMutation();
@@ -350,13 +368,16 @@ export function useExplorer(host: ExplorerHost) {
     const operation = undoStack.peekRedo();
     if (!operation) return;
     if (settings.value.confirmUndo === "verbose") {
-      const answer = await confirm({ message: `是否要重做“${operation.label}”？`, primary: "重做" });
+      const answer = await confirm({
+        message: t("explorer.redo.confirm", { label: operation.label }),
+        primary: t("explorer.confirm.redo"),
+      });
       if (!answer.confirmed) return;
     }
     try {
       await undoStack.redo();
     } catch (cause) {
-      host.reportError(`重做失败：${messageOf(cause)}`);
+      host.reportError(t("explorer.redo.failed", { message: messageOf(cause) }));
     } finally {
       undoVersion.value += 1;
       host.afterMutation();
@@ -374,13 +395,13 @@ export function useExplorer(host: ExplorerHost) {
   async function deleteWithBackup(workspaceId: string, paths: string[]) {
     const results = await explorerBackend.deleteEntries(workspaceId, paths, false);
     const failed = results.find((result) => result.error);
-    if (failed) throw new Error(failed.error ?? "删除失败");
+    if (failed) throw new Error(failed.error ?? t("explorer.delete.failed"));
     return results.map((result) => ({ path: result.path, backupId: result.backupId }));
   }
 
   async function restoreBackups(workspaceId: string, records: Array<{ path: string; backupId: string | null }>) {
     for (const record of records) {
-      if (!record.backupId) throw new Error(`“${baseName(record.path)}”太大，没有保留撤消记录`);
+      if (!record.backupId) throw new Error(t("explorer.undo.tooLarge", { name: baseName(record.path) }));
       await explorerBackend.restoreEntry(workspaceId, record.path, record.backupId);
     }
   }
@@ -404,12 +425,18 @@ export function useExplorer(host: ExplorerHost) {
   }
 
   function recordCreate(workspaceId: string, path: string, isDirectory: boolean) {
-    pushUndo(createdUndo(`新建${isDirectory ? "文件夹" : "文件"} ${baseName(path)}`, workspaceId, [path]));
+    pushUndo(
+      createdUndo(
+        t(isDirectory ? "explorer.op.createFolder" : "explorer.op.createFile", { name: baseName(path) }),
+        workspaceId,
+        [path],
+      ),
+    );
   }
 
   function recordRename(workspaceId: string, from: string, to: string) {
     pushUndo({
-      label: `重命名 ${baseName(from)}`,
+      label: t("explorer.op.rename", { name: baseName(from) }),
       destructiveUndo: false,
       undo: async () => {
         await backend.renameWorkspaceEntry(workspaceId, to, from);
@@ -431,14 +458,20 @@ export function useExplorer(host: ExplorerHost) {
     const names = targets.map((item) => item.name);
     const dirty = targets.reduce((sum, item) => sum + host.dirtyEditors(item.workspaceId, item.path), 0);
     if (dirty > 0) {
+      let unsavedMessage: string;
+      if (targets.length === 1) {
+        unsavedMessage = t("explorer.delete.unsavedOne", {
+          kind: entryKind(targets[0].isDirectory),
+          name: names[0],
+        });
+      } else {
+        unsavedMessage = t("explorer.delete.unsavedMany", { count: dirty });
+      }
       const answer = await confirm({
         type: "warning",
-        message:
-          targets.length === 1
-            ? `你正在删除包含未保存更改的${targets[0].isDirectory ? "文件夹" : "文件"}“${names[0]}”。是否继续？`
-            : `你正在删除包含 ${dirty} 个未保存文件的项目。是否继续？`,
-        detail: "如果继续，你的更改将丢失。",
-        primary: "删除",
+        message: unsavedMessage,
+        detail: t("explorer.delete.unsavedDetail"),
+        primary: t("common.delete"),
         danger: true,
       });
       if (!answer.confirmed) return;
@@ -450,21 +483,30 @@ export function useExplorer(host: ExplorerHost) {
     }
 
     const useTrash = !permanent;
-    const what =
-      targets.length === 1
-        ? `“${names[0]}”${targets[0].isDirectory ? "及其内容" : ""}`
-        : `以下 ${targets.length} 个${targets.some((item) => item.isDirectory) ? "文件/文件夹及其内容" : "文件"}`;
+    let what: string;
+    if (targets.length === 1) {
+      const suffix = targets[0].isDirectory ? t("explorer.delete.andContents") : "";
+      what = t("explorer.delete.singleTarget", { name: names[0], suffix });
+    } else {
+      const hasDirectory = targets.some((item) => item.isDirectory);
+      const typeLabel = hasDirectory ? t("explorer.delete.manyTypeMixed") : t("explorer.delete.manyTypeFiles");
+      what = t("explorer.delete.manyTarget", { count: targets.length, type: typeLabel });
+    }
     if (!useTrash || settings.value.confirmDelete) {
       const listing = targets.length > 1 ? fileNamesMessage(names) : "";
+      const trash = trashLabel(isWindows);
+      const detailParts = [listing];
+      if (useTrash) detailParts.push(t("explorer.delete.restoreFromTrash", { trash }));
+      else detailParts.push(t("explorer.delete.noTrash"));
       const answer = await confirm({
         type: "warning",
-        message: useTrash ? `确定要删除${what}吗？` : `确定要永久删除${what}吗？`,
-        detail: [listing, useTrash ? `可以从${isWindows ? "回收站" : "废纸篓"}还原。` : "文件不会进入回收站。"]
-          .filter(Boolean)
-          .join("\n\n"),
-        primary: useTrash ? `移到${isWindows ? "回收站" : "废纸篓"}` : "永久删除",
+        message: useTrash ? t("explorer.delete.confirmTrash", { what }) : t("explorer.delete.confirmPermanent", { what }),
+        detail: detailParts.filter(Boolean).join("\n\n"),
+        primary: useTrash
+          ? t("explorer.confirm.moveToTrash", { trash })
+          : t("explorer.confirm.permanentDelete"),
         danger: true,
-        checkbox: useTrash ? "不再询问" : undefined,
+        checkbox: useTrash ? t("explorer.confirm.dontAskAgain") : undefined,
       });
       if (!answer.confirmed) return;
       if (answer.checked) void updateSettings({ confirmDelete: false });
@@ -484,14 +526,16 @@ export function useExplorer(host: ExplorerHost) {
       }
       const trashFailed = results.filter((result) => result.error?.startsWith(explorerBackend.TRASH_FAILED_PREFIX));
       if (trashFailed.length) {
+        const trash = trashLabel(isWindows);
+        const trashMessage =
+          trashFailed.length === 1
+            ? t("explorer.delete.trashFailOne", { name: baseName(trashFailed[0].path), trash })
+            : t("explorer.delete.trashFailMany", { count: trashFailed.length, trash });
         const answer = await confirm({
           type: "warning",
-          message:
-            trashFailed.length === 1
-              ? `无法将“${baseName(trashFailed[0].path)}”移到${isWindows ? "回收站" : "废纸篓"}。是否要永久删除？`
-              : `无法将 ${trashFailed.length} 个项目移到${isWindows ? "回收站" : "废纸篓"}。是否要永久删除？`,
+          message: trashMessage,
           detail: trashFailed[0].error?.slice(explorerBackend.TRASH_FAILED_PREFIX.length) ?? "",
-          primary: "永久删除",
+          primary: t("explorer.confirm.permanentDelete"),
           danger: true,
         });
         if (answer.confirmed) {
@@ -516,7 +560,10 @@ export function useExplorer(host: ExplorerHost) {
     if (!done.length) return;
     let records = done;
     pushUndo({
-      label: done.length === 1 ? `删除 ${baseName(done[0].path)}` : `删除 ${done.length} 个项目`,
+      label:
+        done.length === 1
+          ? t("explorer.op.delete", { name: baseName(done[0].path) })
+          : t("explorer.op.deleteMany", { count: done.length }),
       destructiveUndo: false,
       undo: async () => {
         for (const record of records) await restoreBackups(record.workspaceId, [record]);
@@ -553,7 +600,7 @@ export function useExplorer(host: ExplorerHost) {
     for (const source of sources) {
       if (!copy && source.workspaceId === target.workspaceId && parentOf(source.path) === target.path) continue;
       if (source.workspaceId === target.workspaceId && source.isDirectory && isUnder(target.path, source.path)) {
-        host.reportError(`不能把“${source.name}”放进它自己里面。`);
+        host.reportError(t("explorer.transfer.cycleError", { name: source.name }));
         continue;
       }
       let name = source.name;
@@ -564,9 +611,9 @@ export function useExplorer(host: ExplorerHost) {
         } else {
           const answer = await confirm({
             type: "warning",
-            message: `目标文件夹中已存在名为“${name}”的文件或文件夹。是否要替换它？`,
-            detail: "此操作不可逆！",
-            primary: "替换",
+            message: t("explorer.transfer.replaceConfirm", { name }),
+            detail: t("explorer.transfer.irreversible"),
+            primary: t("explorer.confirm.replace"),
             danger: true,
           });
           if (!answer.confirmed) continue;
@@ -590,7 +637,7 @@ export function useExplorer(host: ExplorerHost) {
       try {
         const results = await explorerBackend.transferEntries(batch, copy, overwrite);
         results.forEach((result, index) => {
-          if (result.error) errors.push(result.error.replace(explorerBackend.TARGET_EXISTS_PREFIX, "已存在："));
+          if (result.error) errors.push(result.error.replace(explorerBackend.TARGET_EXISTS_PREFIX, t("explorer.error.existsPrefix")));
           else succeeded.push(batch[index]);
         });
       } catch (cause) {
@@ -609,9 +656,11 @@ export function useExplorer(host: ExplorerHost) {
       }
     }
 
-    const label = copy
-      ? `复制 ${succeeded.length === 1 ? baseName(succeeded[0].target) : `${succeeded.length} 个项目`}`
-      : `移动 ${succeeded.length === 1 ? baseName(succeeded[0].source) : `${succeeded.length} 个项目`}`;
+    const label = transferOpLabel(
+      copy,
+      succeeded.length,
+      copy ? baseName(succeeded[0].target) : baseName(succeeded[0].source),
+    );
     if (!replace.some((request) => succeeded.includes(request))) {
       if (copy) {
         pushUndo(createdUndo(label, target.workspaceId, succeeded.map((request) => request.target)));
@@ -694,7 +743,7 @@ export function useExplorer(host: ExplorerHost) {
     const target = folderTarget(anchor ?? focusedItem.value);
     if (!target) return;
     if (host.preview()) {
-      host.reportError("样式预览不能粘贴本机文件");
+      host.reportError(t("explorer.paste.previewBlocked"));
       return;
     }
     let osFiles: explorerBackend.ExplorerClipboardFile[] = [];
@@ -709,11 +758,11 @@ export function useExplorer(host: ExplorerHost) {
         const answer = await confirm({
           message:
             osFiles.length === 1
-              ? `确定要将“${osFiles[0].name}”粘贴到“${target.name}”吗？`
-              : `确定要将以下 ${osFiles.length} 个项目粘贴到“${target.name}”吗？`,
+              ? t("explorer.paste.one", { name: osFiles[0].name, target: target.name })
+              : t("explorer.paste.many", { count: osFiles.length, target: target.name }),
           detail: osFiles.length > 1 ? fileNamesMessage(osFiles.map((file) => file.name)) : "",
-          primary: "粘贴",
-          checkbox: "不再询问",
+          primary: t("workbench.paste"),
+          checkbox: t("explorer.confirm.dontAskAgain"),
         });
         if (!answer.confirmed) return;
         if (answer.checked) void updateSettings({ confirmPasteNative: false });
@@ -805,13 +854,18 @@ export function useExplorer(host: ExplorerHost) {
     const plain = sources.map((item) => ({ workspaceId: item.workspaceId, path: item.path, isDirectory: item.isDirectory, readonly: item.readonly }));
     if (!canDropInExplorer(plain, { workspaceId: folder.workspaceId, path: folder.path }, copy)) return;
     if (host.preview()) {
-      host.reportError("样式预览不能移动本机文件");
+      host.reportError(t("explorer.dnd.previewMoveBlocked"));
       return;
     }
     const distinct = distinctParents(sources);
     if (!copy && settings.value.confirmDragAndDrop) {
       const text = moveConfirmMessage(distinct, folder.name);
-      const answer = await confirm({ message: text.message, detail: text.detail, primary: "移动", checkbox: "不再询问" });
+      const answer = await confirm({
+        message: text.message,
+        detail: text.detail,
+        primary: t("explorer.confirm.move"),
+        checkbox: t("explorer.confirm.dontAskAgain"),
+      });
       if (!answer.confirmed) return;
       if (answer.checked) void updateSettings({ confirmDragAndDrop: false });
     }
@@ -827,11 +881,11 @@ export function useExplorer(host: ExplorerHost) {
   async function importDropped(items: DroppedItem[], anchor: ExplorerItem | null) {
     const target = folderTarget(anchor);
     if (!target) {
-      host.reportError("请先添加工作区，再拖入文件");
+      host.reportError(t("explorer.import.needWorkspace"));
       return;
     }
     if (host.preview()) {
-      host.reportError("样式预览不能导入本机文件");
+      host.reportError(t("explorer.import.previewBlocked"));
       return;
     }
     const native = items.filter((item) => item.nativePath);
@@ -858,9 +912,9 @@ export function useExplorer(host: ExplorerHost) {
         if (taken.has(item.name)) {
           const answer = await confirm({
             type: "warning",
-            message: `目标文件夹中已存在名为“${item.name}”的文件或文件夹。是否要替换它？`,
-            detail: "此操作不可逆！",
-            primary: "替换",
+            message: t("explorer.transfer.replaceConfirm", { name: item.name }),
+            detail: t("explorer.transfer.irreversible"),
+            primary: t("explorer.confirm.replace"),
             danger: true,
           });
           if (!answer.confirmed) continue;
@@ -891,12 +945,23 @@ export function useExplorer(host: ExplorerHost) {
           remember(entry);
           created.push(entry);
         } catch (cause) {
-          errors.push(`${item.name}：${messageOf(cause).replace(explorerBackend.TARGET_EXISTS_PREFIX, "已存在 ")}`);
+          errors.push(
+            t("explorer.error.itemWithCause", {
+              name: item.name,
+              message: messageOf(cause).replace(explorerBackend.TARGET_EXISTS_PREFIX, t("explorer.error.existsInline")),
+            }),
+          );
         }
       }
       if (errors.length) host.reportError(errors.join("\n"));
       if (written.length) {
-        if (!replaced) pushUndo(createdUndo(`导入 ${written.length === 1 ? baseName(written[0]) : `${written.length} 个项目`}`, target.workspaceId, written));
+        if (!replaced) {
+          const importLabel =
+            written.length === 1
+              ? t("explorer.op.import", { name: baseName(written[0]) })
+              : t("explorer.op.importMany", { count: written.length });
+          pushUndo(createdUndo(importLabel, target.workspaceId, written));
+        }
         await host.reloadLevel(target.workspaceId, target.path).catch(() => undefined);
         host.afterMutation();
         await host.expandFolder(target.workspaceId, target.path).catch(() => undefined);
@@ -923,7 +988,7 @@ export function useExplorer(host: ExplorerHost) {
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
     } catch {
-      host.reportError("无法复制到剪贴板");
+      host.reportError(t("explorer.clipboard.failed"));
     }
   }
 

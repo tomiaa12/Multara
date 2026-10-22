@@ -2,13 +2,14 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { Folder, FolderKanban, GitBranch, Plus } from "@lucide/vue";
 import gsap from "gsap";
+import { t } from "../../i18n";
 
 const emit = defineEmits<{ create: [] }>();
 
 const leaves = [
-  { kind: "git" as const, label: "Git 项目" },
-  { kind: "git" as const, label: "Git 项目" },
-  { kind: "folder" as const, label: "文件夹" },
+  { kind: "git" as const, label: t("dashboard.requirementEmpty.gitLeaf") },
+  { kind: "git" as const, label: t("dashboard.requirementEmpty.gitLeaf") },
+  { kind: "folder" as const, label: t("dashboard.requirementEmpty.folderLeaf") },
 ];
 
 const rootRef = ref<HTMLElement | null>(null);
@@ -188,7 +189,7 @@ onBeforeUnmount(() => {
       </svg>
       <div ref="hubRef" class="req-empty-node is-hub">
         <FolderKanban :size="16" />
-        <span>需求</span>
+        <span>{{ t("dashboard.requirementEmpty.hub") }}</span>
       </div>
       <div class="req-empty-leaves">
         <div
@@ -204,29 +205,29 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <h2 ref="titleRef">从一条需求开始</h2>
+    <h2 ref="titleRef">{{ t("dashboard.requirementEmpty.title") }}</h2>
     <ul ref="descRef" class="req-empty-points">
       <li>
         <div>
-          <strong>一条需求，挂齐所有仓库</strong>
-          <span>前端、后端、脚本、配置——多个 Git 项目或普通文件夹都能挂在同一条需求上。智能体一次看全、一次改完，不用来回切项目。</span>
+          <strong>{{ t("dashboard.requirementEmpty.point1Title") }}</strong>
+          <span>{{ t("dashboard.requirementEmpty.point1Body") }}</span>
         </div>
       </li>
       <li>
         <div>
-          <strong>同一仓库，并行推进多条需求</strong>
-          <span>每个需求从所选分支迁出独立 Worktree。一个 Git 项目可以同时开发多条需求，互不抢分支，也不用 stash。</span>
+          <strong>{{ t("dashboard.requirementEmpty.point2Title") }}</strong>
+          <span>{{ t("dashboard.requirementEmpty.point2Body") }}</span>
         </div>
       </li>
       <li>
         <div>
-          <strong>原仓库不被打断</strong>
-          <span>改动落在独立工作区，当前分支保持原样。普通文件夹可复制到隔离目录，也可以直接使用原目录。</span>
+          <strong>{{ t("dashboard.requirementEmpty.point3Title") }}</strong>
+          <span>{{ t("dashboard.requirementEmpty.point3Body") }}</span>
         </div>
       </li>
     </ul>
     <div ref="actionRef" class="req-empty-action">
-      <UiButton variant="primary" @click="emit('create')"><Plus :size="16" /> 新建需求</UiButton>
+      <UiButton variant="primary" @click="emit('create')"><Plus :size="16" /> {{ t("dashboard.create") }}</UiButton>
     </div>
   </section>
 </template>

@@ -13,6 +13,7 @@ import { Check, ChevronDown, Plus, Search, X } from "@lucide/vue";
 import { matchText, pinyinInitial, splitByRange, type MatchRange } from "../../utils/pinyin-match";
 import type { SelectGroup, SelectOption, SelectValue } from "./select-types";
 import AgentAvatar from "../AgentAvatar.vue";
+import { useI18n } from "../../i18n";
 
 defineOptions({ inheritAttrs: false });
 
@@ -43,16 +44,21 @@ const props = withDefaults(defineProps<{
   modelValue: undefined,
   options: undefined,
   groups: undefined,
-  placeholder: "请选择",
+  placeholder: undefined,
   searchable: undefined,
-  searchPlaceholder: "搜索…",
+  searchPlaceholder: undefined,
   maxTagCount: Number.POSITIVE_INFINITY,
   max: undefined,
   load: undefined,
   size: "md",
   variant: "default",
-  emptyText: "无匹配结果",
+  emptyText: undefined,
 });
+
+const { t } = useI18n();
+const resolvedPlaceholder = computed(() => props.placeholder ?? t("select.placeholder"));
+const resolvedSearchPlaceholder = computed(() => props.searchPlaceholder ?? t("select.searchPlaceholder"));
+const resolvedEmptyText = computed(() => props.emptyText ?? t("select.empty"));
 
 const emit = defineEmits<{
   "update:modelValue": [value: T];
@@ -268,7 +274,15 @@ const view = computed(() => {
   return { groups: visibleGroups, items, createIndex };
 });
 
-const emptyMessage = computed(() => (props.load && !query.value.trim() ? "输入关键词开始搜索" : props.emptyText));
+const emptyMessage = computed(() => (
+  props.load && !query.value.trim() ? t("select.searchHint") : resolvedEmptyText.value
+));
+const selectedCountLabel = computed(() =>
+  t("select.selectedCount", {
+    n: selectedValues.value.length,
+    max: props.max != null ? t("select.selectedMax", { max: props.max }) : "",
+  }),
+);
 
 function nextEnabled(from: number, step: 1 | -1) {
   const { items } = view.value;
@@ -569,7 +583,7 @@ onBeforeUnmount(() => {
             class="ds-select-tag-remove"
             role="button"
             :data-remove-index="index"
-            :aria-label="`移除 ${option.label}`"
+            :aria-label="t('select.removeTag', { label: option.label })"
           ><X :size="12" /></span>
         </span>
         <span v-if="restTags.length" class="ds-select-tag is-rest" :title="restTags.join('、')">+{{ restTags.length }}</span>
@@ -600,10 +614,10 @@ onBeforeUnmount(() => {
           </slot>
           <span class="ds-select-text">{{ singleOption?.label ?? String(modelValue) }}</span>
         </template>
-        <span v-else class="ds-select-placeholder">{{ placeholder }}</span>
+        <span v-else class="ds-select-placeholder">{{ resolvedPlaceholder }}</span>
       </span>
       <span class="ds-select-suffix">
-        <span class="ds-select-clear" role="button" aria-label="清空"><X :size="13" /></span>
+        <span class="ds-select-clear" role="button" :aria-label="t('select.clear')"><X :size="13" /></span>
         <span class="ds-select-arrow"><ChevronDown :size="15" /></span>
       </span>
     </div>
@@ -634,7 +648,7 @@ onBeforeUnmount(() => {
             ref="inputEl"
             type="text"
             :value="query"
-            :placeholder="searchPlaceholder"
+            :placeholder="resolvedSearchPlaceholder"
             :aria-controls="`${id}-list`"
             :aria-activedescendant="activeIndex >= 0 ? `${id}-opt-${activeIndex}` : undefined"
             autocomplete="off"
@@ -651,7 +665,7 @@ onBeforeUnmount(() => {
           :aria-multiselectable="multiple || undefined"
           @mousedown.prevent
         >
-          <div v-if="loading" class="ds-select-empty"><span class="ds-spinner" />加载中…</div>
+          <div v-if="loading" class="ds-select-empty"><span class="ds-spinner" />{{ t("select.loading") }}</div>
           <template v-else>
             <div
               v-for="(group, groupIndex) in view.groups"
@@ -700,16 +714,16 @@ onBeforeUnmount(() => {
               @click="choose(view.createIndex)"
             >
               <Plus :size="14" />
-              <span class="ds-select-option-body"><span class="ds-select-option-label">创建「{{ query.trim() }}」</span></span>
+              <span class="ds-select-option-body"><span class="ds-select-option-label">{{ t("select.create", { label: query.trim() }) }}</span></span>
             </div>
             <div v-if="!view.items.length" class="ds-select-empty"><Search :size="18" />{{ emptyMessage }}</div>
           </template>
         </div>
         <div v-if="multiple" class="ds-select-footer">
-          <span>已选 {{ selectedValues.length }}{{ max != null ? ` / ${max}` : "" }} 项</span>
+          <span>{{ selectedCountLabel }}</span>
           <div>
-            <button type="button" class="ui-button" data-variant="ghost" data-size="small" @mousedown.prevent @click="selectAllVisible">全选</button>
-            <button type="button" class="ui-button" data-variant="ghost" data-size="small" :disabled="!hasValue" @mousedown.prevent @click="clear">清空</button>
+            <button type="button" class="ui-button" data-variant="ghost" data-size="small" @mousedown.prevent @click="selectAllVisible">{{ t("select.selectAll") }}</button>
+            <button type="button" class="ui-button" data-variant="ghost" data-size="small" :disabled="!hasValue" @mousedown.prevent @click="clear">{{ t("select.clear") }}</button>
           </div>
         </div>
       </div>

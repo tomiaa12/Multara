@@ -28,6 +28,9 @@
 .app-shell.is-sidebar-collapsed {
   --shell-sidebar: 56px;
 }
+.app-shell.is-sidebar-resizing {
+  transition: none;
+}
 
 /* Titlebar */
 .titlebar {
@@ -219,6 +222,7 @@ a.titlebar-crumb:hover {
 
 /* Sidebar */
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-5);
@@ -226,6 +230,22 @@ a.titlebar-crumb:hover {
   padding: var(--spacing-2) var(--spacing-2) var(--spacing-3);
   overflow: hidden auto;
   background: var(--color-bg-secondary);
+}
+.sidebar > .sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  z-index: 6;
+  width: 4px;
+  min-height: 0;
+  background: transparent;
+}
+/* 只换光标，不画分隔线 / 悬停高亮 */
+.sidebar > .sidebar-resize-handle::after,
+.sidebar > .sidebar-resize-handle:hover::after,
+.sidebar > .sidebar-resize-handle:focus-visible::after {
+  background: transparent;
 }
 .nav-group {
   display: grid;

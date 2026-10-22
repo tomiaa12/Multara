@@ -1,3 +1,4 @@
+pub mod app_locale;
 pub mod automation;
 pub mod builtin_agents;
 pub mod builtin_skills;
@@ -49,6 +50,7 @@ pub mod win_shutdown;
 
 use commands::{
     add_workspace, authorize_mcp, bootstrap, check_git_executable, configure_runtime, create_chat_session,
+    list_agents_and_squads,
     create_project, create_skill, create_task, create_workspace_directory, create_workspace_file, delete_agent, update_project,
     delete_automation, delete_custom_runtime, delete_file_baseline, delete_mcp, delete_project, delete_skill, delete_snapshots_from, delete_squad,
     set_project_archived,
@@ -146,6 +148,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            list_agents_and_squads,
             create_project,
             update_project,
             create_task,

@@ -129,6 +129,11 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                 .or_else(|| env::var("MULTARA_AGENT_ID").ok())
                 .unwrap_or_else(|| builtin_agents::MIKU_ID.to_string());
             let source_session = env::var("MULTARA_SESSION_ID").ok();
+            // 在某个任务的 run 里建子任务时，未传 --parent 则挂到当前任务下，详情右侧才能看见。
+            let parent_task_id = parsed
+                .flag(&["parent", "parent-id"])
+                .map(str::to_string)
+                .or_else(|| env::var("MULTARA_TASK_ID").ok());
             let created = ops::task::create(
                 db,
                 ops::task::CreateTaskInput {
@@ -138,7 +143,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                     project_id: parsed.flag(&["project", "project-id"]),
                     source_session_id: source_session.as_deref(),
                     status: parsed.flag(&["status"]),
-                    parent_task_id: parsed.flag(&["parent", "parent-id"]),
+                    parent_task_id: parent_task_id.as_deref(),
                 },
             )?;
             ops::json(&created.task)
@@ -245,7 +250,10 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             };
             ops::json(&ops::agent::save(db, input, false)?)
         }
-        ("agent", "skills") => ops::json(&ops::skill::builtin()),
+        ("agent", "skills") => {
+            let locale = crate::app_locale::from_db(db);
+            ops::json(&ops::skill::builtin(locale))
+        }
         ("squad", "list") => ops::json(&ops::squad::list(db)?),
         ("squad", "get") => {
             let id = id.ok_or_else(|| "缺少小队 id".to_string())?;
@@ -335,7 +343,10 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             let id = id.ok_or_else(|| "缺少 skill id".to_string())?;
             ops::json(&ops::skill::get(&id)?)
         }
-        ("skill", "builtin") => ops::json(&ops::skill::builtin()),
+        ("skill", "builtin") => {
+            let locale = crate::app_locale::from_db(db);
+            ops::json(&ops::skill::builtin(locale))
+        }
         ("skill", "import") => {
             Err("第一期不支持 URL 导入。用 `multara skill list` 查看本机扫描结果。".into())
         }

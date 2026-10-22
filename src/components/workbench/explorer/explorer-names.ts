@@ -1,3 +1,4 @@
+import { t } from "../../../i18n";
 import type { ExplorerIncrementalNaming } from "./explorer-settings";
 
 const MAX_SAFE_SMALL_INTEGER = 1 << 30;
@@ -156,20 +157,20 @@ export function validateFileName(
 ): FileNameProblem | null {
   const name = wellFormedFileName(rawName);
   if (!name || /^\s+$/.test(name)) {
-    return { message: "必须提供文件或文件夹名称。", severity: "error" };
+    return { message: t("explorer.validate.nameRequired"), severity: "error" };
   }
   if (name[0] === "/" || name[0] === "\\") {
-    return { message: "文件或文件夹名称不能以斜杠开头。", severity: "error" };
+    return { message: t("explorer.validate.noLeadingSlash"), severity: "error" };
   }
   const names = name.split(/[\\/]/).filter(Boolean);
   if (names.length === 1 && name !== options.currentName && options.siblingExists(name)) {
-    return { message: `此位置已存在文件或文件夹 ${name}，请选择其他名称。`, severity: "error" };
+    return { message: t("explorer.validate.duplicate", { name }), severity: "error" };
   }
   if (names.some((segment) => !isValidBasename(segment, options.isWindows))) {
-    return { message: `名称 ${trimLongName(name)} 不能用作文件或文件夹名称，请选择其他名称。`, severity: "error" };
+    return { message: t("explorer.validate.invalid", { name: trimLongName(name) }), severity: "error" };
   }
   if (names.some((segment) => /^\s|\s$/.test(segment))) {
-    return { message: "文件或文件夹名称首尾有空白字符。", severity: "warning" };
+    return { message: t("explorer.validate.whitespaceWarning"), severity: "warning" };
   }
   return null;
 }

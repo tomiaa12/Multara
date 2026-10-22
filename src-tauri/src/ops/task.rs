@@ -70,6 +70,18 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
         return Err("任务标题不能为空".to_string());
     }
     require_agent(db, input.agent_id)?;
+    if let Some(parent_id) = input.parent_task_id {
+        let exists: u32 = db
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE id=?1",
+                [parent_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if exists == 0 {
+            return Err("父任务不存在".to_string());
+        }
+    }
     let status = parse_task_status(input.status.unwrap_or("todo"))?;
     let mut project_id = input
         .project_id
@@ -136,6 +148,10 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             },
         )?;
     }
+    // 挂在父任务下时：在父会话写一条 @指派，详情动态里能看到队长/负责人派活。
+    if let Some(parent_id) = input.parent_task_id {
+        let _ = record_parent_assignment(&transaction, parent_id, input.agent_id, title, &task_id, &now);
+    }
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(CreatedTask {
         task: Task {
@@ -155,6 +171,149 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
         },
         queued,
     })
+}
+
+fn record_parent_assignment(
+    db: &Connection,
+    parent_task_id: &str,
+    assignee_id: &str,
+    child_title: &str,
+    child_id: &str,
+    now: &str,
+) -> Result<(), String> {
+    let (parent_session, parent_agent): (String, String) = db
+        .query_row(
+            "SELECT session_id, agent_id FROM tasks WHERE id=?1",
+            [parent_task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| "父任务不存在".to_string())?;
+    let spoken = format!("请处理子任务「{child_title}」（`{child_id}`），完成后向我汇报。");
+    db.execute(
+        "INSERT INTO messages
+         (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, 'agent', ?5, 'assignment', ?6)",
+        params![
+            Uuid::new_v4().to_string(),
+            parent_session,
+            spoken,
+            parent_agent,
+            assignee_id,
+            now
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// 子任务全部收口后，给父任务负责人再排一轮，汇总结果。
+/// 返回 `(run_id, parent_session_id, parent_agent_id)`。
+pub fn maybe_resume_parent(
+    db: &Connection,
+    child_session_id: &str,
+    now: &str,
+) -> Result<Option<(String, String, String)>, String> {
+    let Some((child_id, child_title, parent_id)) = db
+        .query_row(
+            "SELECT id, title, parent_task_id FROM tasks WHERE session_id=?1",
+            [child_session_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let Some(parent_id) = parent_id.filter(|id| !id.is_empty()) else {
+        return Ok(None);
+    };
+
+    let open_children: u32 = db
+        .query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_task_id=?1
+               AND status IN ('backlog', 'todo', 'in_progress', 'blocked')",
+            [&parent_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if open_children > 0 {
+        return Ok(None);
+    }
+
+    let (parent_session, parent_agent, parent_title): (String, String, String) = db
+        .query_row(
+            "SELECT session_id, agent_id, title FROM tasks WHERE id=?1",
+            [&parent_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| "父任务不存在".to_string())?;
+
+    let active: u32 = db
+        .query_row(
+            "SELECT COUNT(*) FROM agent_runs
+             WHERE session_id=?1 AND status IN ('queued', 'running')",
+            [&parent_session],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if active > 0 {
+        return Ok(None);
+    }
+
+    let mut lines = Vec::new();
+    {
+        let mut statement = db
+            .prepare(
+                "SELECT id, title, status, agent_id FROM tasks
+                 WHERE parent_task_id=?1
+                 ORDER BY updated_at ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([&parent_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?;
+        for row in rows {
+            let (id, title, status, agent_id) = row.map_err(|error| error.to_string())?;
+            let name: String = db
+                .query_row("SELECT name FROM agents WHERE id=?1", [&agent_id], |r| r.get(0))
+                .unwrap_or(agent_id);
+            lines.push(format!("- [{status}] {title}（`{id}`，@{name}）"));
+        }
+    }
+    let summary = lines.join("\n");
+    let assignment = format!(
+        "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n\
+         请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n\n\
+         子任务状态：\n{summary}"
+    );
+
+    let run_id = super::run::enqueue(
+        db,
+        super::run::Enqueue {
+            session_id: &parent_session,
+            turn_id: None,
+            agent_id: &parent_agent,
+            parent_run_id: None,
+            assignment: &assignment,
+            status: "queued",
+            now,
+        },
+    )?;
+    Ok(Some((run_id, parent_session, parent_agent)))
 }
 
 /// 把已经存在的会话挂成任务，不再新建会话、也不再排队。

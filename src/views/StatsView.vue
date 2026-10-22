@@ -16,13 +16,13 @@ import {
   totalTokens,
 } from "./usage-format";
 
-const RANGES = [
-  { days: "1", label: "今天" },
-  { days: "7", label: "7 天" },
-  { days: "30", label: "30 天" },
-  { days: "90", label: "90 天" },
-  { days: "180", label: "180 天" },
-] as const;
+const RANGES = computed(() => [
+  { days: "1", label: t("stats.range.today") },
+  { days: "7", label: t("agent.stats.days", { n: 7 }) },
+  { days: "30", label: t("agent.stats.days", { n: 30 }) },
+  { days: "90", label: t("agent.stats.days", { n: 90 }) },
+  { days: "180", label: t("agent.stats.days", { n: 180 }) },
+]);
 
 const store = useAppStore();
 const router = useRouter();
@@ -40,9 +40,13 @@ const showAllAgents = ref(false);
 const showAllErrors = ref(false);
 const updatedAt = ref("");
 
-const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "本地时间";
+const timezone = computed(() => Intl.DateTimeFormat().resolvedOptions().timeZone || t("stats.localTime"));
 const days = computed(() => Number(range.value) || 30);
 const projects = computed(() => store.data?.projects ?? []);
+const projectOptions = computed(() => [
+  { value: "", label: t("stats.projectAll") },
+  ...projects.value.map((project) => ({ value: project.id, label: project.name })),
+]);
 
 function allowedDims(value: number): Array<"daily" | "weekly"> {
   // 短窗口按天才看得清；180 天只按周，避免一根柱子挤成一条线。
@@ -64,7 +68,7 @@ async function refresh() {
   error.value = "";
   try {
     stats.value = await getRunStatistics(days.value, projectId.value);
-    updatedAt.value = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    updatedAt.value = new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   } finally {
@@ -122,7 +126,7 @@ const buckets = computed<ChartBucket[]>(() => {
     const start = weekStart(item.date);
     const current = groups.get(start) ?? {
       ...emptyUsageDay(start),
-      label: `${start.slice(5)} 起`,
+      label: t("stats.weekFrom", { date: start.slice(5) }),
       partial: false,
       covered: 0,
     };
@@ -155,23 +159,28 @@ const labelEvery = computed(() => {
 });
 
 const chartTitle = computed(() => {
-  const period = dim.value === "weekly" ? "每周" : "每日";
-  if (tab.value === "errors") return `${period}错误`;
-  if (metric.value === "time") return `${period}耗时`;
-  if (metric.value === "tokens") return `${period} Token`;
-  if (metric.value === "cost") return `${period}金额`;
-  return `${period}运行数`;
+  const period = dim.value === "weekly"
+    ? t("stats.chart.period.weekly")
+    : t("stats.chart.period.daily");
+  if (tab.value === "errors") return t("stats.chart.errors", { period });
+  if (metric.value === "time") return t("stats.chart.time", { period });
+  if (metric.value === "tokens") return t("stats.chart.tokens", { period });
+  if (metric.value === "cost") return t("stats.chart.cost", { period });
+  return t("stats.chart.tasks", { period });
 });
 
 function barTitle(item: ChartBucket): string {
-  const value = tab.value === "errors" || metric.value === "tasks"
-    ? `${chartValue(item)} 次`
-    : metric.value === "tokens"
-      ? `${formatTokens(totalTokens(item))} tokens`
-      : metric.value === "cost"
-        ? formatUsd(item.costUsd)
-        : formatDuration(item.seconds);
-  const partial = item.partial ? `（未满 · 已过 ${item.covered} / 7 天）` : "";
+  let value: string;
+  if (tab.value === "errors" || metric.value === "tasks") {
+    value = t("stats.bar.times", { n: chartValue(item) });
+  } else if (metric.value === "tokens") {
+    value = `${formatTokens(totalTokens(item))} tokens`;
+  } else if (metric.value === "cost") {
+    value = formatUsd(item.costUsd);
+  } else {
+    value = formatDuration(item.seconds);
+  }
+  const partial = item.partial ? t("stats.bar.partial", { covered: item.covered }) : "";
   return `${item.date} ${value}${partial}`;
 }
 
@@ -245,30 +254,30 @@ function openAgent(group: StatisticGroup) {
     <div class="page-header">
       <div>
         <h1>{{ t("stats.title") }}</h1>
-        <p>{{ timezone }} · 更新于 {{ updatedAt || "—" }}</p>
+        <p>{{ timezone }} · {{ t("stats.updatedAt", { time: updatedAt || "—" }) }}</p>
       </div>
       <div class="header-actions">
-        <UiButton title="刷新" :class="{ 'is-loading': loading }" :disabled="loading" @click="refresh">
-          <RefreshCw :size="14" />刷新
+        <UiButton :title="t('stats.refresh')" :class="{ 'is-loading': loading }" :disabled="loading" @click="refresh">
+          <RefreshCw :size="14" />{{ t("stats.refresh") }}
         </UiButton>
       </div>
     </div>
 
     <div class="usage-toolbar">
       <div class="ds-segmented usage-tabs" role="tablist">
-        <button type="button" role="tab" :aria-selected="tab === 'usage'" :class="{ active: tab === 'usage' }" @click="tab = 'usage'">用量</button>
-        <button type="button" role="tab" :aria-selected="tab === 'errors'" :class="{ active: tab === 'errors' }" @click="tab = 'errors'">错误</button>
+        <button type="button" role="tab" :aria-selected="tab === 'usage'" :class="{ active: tab === 'usage' }" @click="tab = 'usage'">{{ t("stats.tab.usage") }}</button>
+        <button type="button" role="tab" :aria-selected="tab === 'errors'" :class="{ active: tab === 'errors' }" @click="tab = 'errors'">{{ t("stats.tab.errors") }}</button>
       </div>
       <label>
-        时间范围
-        <UiSelect v-model="range" aria-label="时间范围" :options="RANGES.map((item) => ({ value: item.days, label: item.label }))" />
+        {{ t("stats.range") }}
+        <UiSelect v-model="range" :aria-label="t('stats.range')" :options="RANGES.map((item) => ({ value: item.days, label: item.label }))" />
       </label>
       <label>
-        需求
+        {{ t("stats.project") }}
         <UiSelect
           v-model="projectId"
-          aria-label="需求"
-          :options="[{ value: '', label: '全部需求' }, ...projects.map((project) => ({ value: project.id, label: project.name }))]"
+          :aria-label="t('stats.project')"
+          :options="projectOptions"
         />
       </label>
     </div>
@@ -282,31 +291,31 @@ function openAgent(group: StatisticGroup) {
     </div>
     <div v-else-if="stats.total === 0" class="ds-card ds-empty usage-empty">
       <span class="ds-empty-icon"><BarChart3 :size="18" /></span>
-      <h3>暂无运行数据</h3>
-      <p>当智能体在这里开始运行后，运行次数、Token 和金额将出现在此处。</p>
+      <h3>{{ t("stats.emptyTitle") }}</h3>
+      <p>{{ t("stats.emptyHint") }}</p>
     </div>
 
     <template v-else-if="tab === 'usage'">
       <div class="usage-kpis">
         <article>
-          <span>金额 · {{ days }}天</span>
+          <span>{{ t("agent.stats.cost", { n: days }) }}</span>
           <strong>{{ formatUsd(stats.costUsd) }}</strong>
-          <small>按模型单价估算，CLI 上报的费用优先</small>
+          <small>{{ t("agent.stats.costHint") }}</small>
         </article>
         <article>
-          <span>Token · {{ days }}天</span>
+          <span>{{ t("agent.stats.tokens", { n: days }) }}</span>
           <strong>{{ formatTokens(totalTokens(stats)) }}</strong>
-          <small>输入 {{ formatTokens(stats.inputTokens) }} · 输出 {{ formatTokens(stats.outputTokens) }}</small>
+          <small>{{ t("agent.stats.tokensHint", { input: formatTokens(stats.inputTokens), output: formatTokens(stats.outputTokens) }) }}</small>
         </article>
         <article>
-          <span>耗时 · {{ days }}天</span>
+          <span>{{ t("agent.stats.duration", { n: days }) }}</span>
           <strong>{{ formatDuration(stats.totalSeconds) }}</strong>
-          <small>成功率 {{ formatRate(stats.successRate) }}</small>
+          <small>{{ t("agent.stats.successRate", { rate: stats.successRate.toFixed(1) }) }}</small>
         </article>
         <article>
-          <span>运行数 · {{ days }}天</span>
+          <span>{{ t("agent.stats.runs", { n: days }) }}</span>
           <strong>{{ stats.total }}</strong>
-          <small>失败 {{ stats.failed }} · 停止 {{ stats.stopped }}</small>
+          <small>{{ t("agent.stats.runsHint", { failed: stats.failed, stopped: stats.stopped }) }}</small>
         </article>
       </div>
 
@@ -314,24 +323,24 @@ function openAgent(group: StatisticGroup) {
         <header>
           <h2>{{ chartTitle }}</h2>
           <div class="usage-controls">
-            <div class="ds-segmented" aria-label="统计粒度">
+            <div class="ds-segmented" :aria-label="t('stats.dim')">
               <button
                 v-for="item in dims"
                 :key="item"
                 type="button"
                 :class="{ active: dim === item }"
                 @click="dim = item"
-              >{{ item === "daily" ? "按天" : "按周" }}</button>
+              >{{ item === "daily" ? t("stats.dim.daily") : t("stats.dim.weekly") }}</button>
             </div>
-            <div class="ds-segmented" aria-label="统计指标">
-              <button type="button" :class="{ active: metric === 'cost' }" @click="metric = 'cost'">金额</button>
-              <button type="button" :class="{ active: metric === 'tokens' }" @click="metric = 'tokens'">Token</button>
-              <button type="button" :class="{ active: metric === 'tasks' }" @click="metric = 'tasks'">运行数</button>
-              <button type="button" :class="{ active: metric === 'time' }" @click="metric = 'time'">耗时</button>
+            <div class="ds-segmented" :aria-label="t('stats.metric')">
+              <button type="button" :class="{ active: metric === 'cost' }" @click="metric = 'cost'">{{ t("stats.metric.cost") }}</button>
+              <button type="button" :class="{ active: metric === 'tokens' }" @click="metric = 'tokens'">{{ t("stats.metric.tokens") }}</button>
+              <button type="button" :class="{ active: metric === 'tasks' }" @click="metric = 'tasks'">{{ t("stats.metric.tasks") }}</button>
+              <button type="button" :class="{ active: metric === 'time' }" @click="metric = 'time'">{{ t("stats.metric.time") }}</button>
             </div>
           </div>
         </header>
-        <p v-if="buckets.every((item) => chartValue(item) === 0)" class="muted">所选时间范围内暂无运行。</p>
+        <p v-if="buckets.every((item) => chartValue(item) === 0)" class="muted">{{ t("stats.noRangeData") }}</p>
         <div v-else class="usage-chart" role="img" :aria-label="chartTitle">
           <div v-for="(item, index) in buckets" :key="item.date" class="usage-bar" :title="barTitle(item)">
             <span class="usage-bar-fill" :style="{ height: barHeight(item) }" />
@@ -344,31 +353,31 @@ function openAgent(group: StatisticGroup) {
       <section class="usage-card">
         <header>
           <div>
-            <h2>排行榜</h2>
-            <p>{{ sortedAgents.length }} 个智能体</p>
+            <h2>{{ t("stats.leaderboard") }}</h2>
+            <p>{{ t("stats.agentCount", { n: sortedAgents.length }) }}</p>
           </div>
           <div class="usage-controls">
-            <span class="usage-sort-label">排序</span>
-            <div class="ds-segmented" aria-label="智能体排序依据">
-            <button type="button" :class="{ active: agentSort === 'cost' }" @click="agentSort = 'cost'">金额</button>
-            <button type="button" :class="{ active: agentSort === 'tokens' }" @click="agentSort = 'tokens'">Token</button>
-            <button type="button" :class="{ active: agentSort === 'tasks' }" @click="agentSort = 'tasks'">运行数</button>
-            <button type="button" :class="{ active: agentSort === 'time' }" @click="agentSort = 'time'">耗时</button>
-            <button type="button" :class="{ active: agentSort === 'failed' }" @click="agentSort = 'failed'">失败数</button>
+            <span class="usage-sort-label">{{ t("stats.sort") }}</span>
+            <div class="ds-segmented" :aria-label="t('stats.sortBy')">
+            <button type="button" :class="{ active: agentSort === 'cost' }" @click="agentSort = 'cost'">{{ t("stats.metric.cost") }}</button>
+            <button type="button" :class="{ active: agentSort === 'tokens' }" @click="agentSort = 'tokens'">{{ t("stats.metric.tokens") }}</button>
+            <button type="button" :class="{ active: agentSort === 'tasks' }" @click="agentSort = 'tasks'">{{ t("stats.metric.tasks") }}</button>
+            <button type="button" :class="{ active: agentSort === 'time' }" @click="agentSort = 'time'">{{ t("stats.metric.time") }}</button>
+            <button type="button" :class="{ active: agentSort === 'failed' }" @click="agentSort = 'failed'">{{ t("stats.failedCount") }}</button>
             </div>
           </div>
         </header>
-        <p v-if="!sortedAgents.length" class="muted">所选时间范围内暂无智能体活动。</p>
+        <p v-if="!sortedAgents.length" class="muted">{{ t("stats.noAgentActivity") }}</p>
         <table v-else class="usage-table">
           <thead>
             <tr>
-              <th>智能体</th>
+              <th>{{ t("stats.col.agent") }}</th>
               <th class="usage-rank-col" />
-              <th :class="{ 'is-metric': agentSort === 'cost' }">金额</th>
-              <th :class="{ 'is-metric': agentSort === 'tokens' }">Token</th>
-              <th :class="{ 'is-metric': agentSort === 'time' }">耗时</th>
-              <th :class="{ 'is-metric': agentSort === 'tasks' }">运行数</th>
-              <th :class="{ 'is-metric': agentSort === 'failed' }">失败</th>
+              <th :class="{ 'is-metric': agentSort === 'cost' }">{{ t("stats.metric.cost") }}</th>
+              <th :class="{ 'is-metric': agentSort === 'tokens' }">{{ t("stats.metric.tokens") }}</th>
+              <th :class="{ 'is-metric': agentSort === 'time' }">{{ t("stats.metric.time") }}</th>
+              <th :class="{ 'is-metric': agentSort === 'tasks' }">{{ t("stats.metric.tasks") }}</th>
+              <th :class="{ 'is-metric': agentSort === 'failed' }">{{ t("stats.col.failed") }}</th>
             </tr>
           </thead>
           <tbody>
@@ -391,21 +400,21 @@ function openAgent(group: StatisticGroup) {
           </tbody>
         </table>
         <button v-if="sortedAgents.length > 8" type="button" class="usage-more" @click="showAllAgents = !showAllAgents">
-          {{ showAllAgents ? "只看前 8 个" : "展开全部" }}
+          {{ showAllAgents ? t("stats.showTop8") : t("stats.showAll") }}
         </button>
       </section>
 
       <section v-if="stats.byRuntime.length" class="usage-card">
-        <header><h2>按运行时</h2></header>
+        <header><h2>{{ t("stats.byRuntime") }}</h2></header>
         <table class="usage-table">
           <thead>
             <tr>
-              <th>运行时</th>
-              <th>金额</th>
-              <th>Token</th>
-              <th>耗时</th>
-              <th>运行数</th>
-              <th>失败</th>
+              <th>{{ t("stats.col.runtime") }}</th>
+              <th>{{ t("stats.metric.cost") }}</th>
+              <th>{{ t("stats.metric.tokens") }}</th>
+              <th>{{ t("stats.metric.time") }}</th>
+              <th>{{ t("stats.metric.tasks") }}</th>
+              <th>{{ t("stats.col.failed") }}</th>
             </tr>
           </thead>
           <tbody>
@@ -425,39 +434,39 @@ function openAgent(group: StatisticGroup) {
     <template v-else>
       <div class="usage-kpis usage-kpis-3">
         <article>
-          <span>失败运行 · {{ days }}天</span>
+          <span>{{ t("stats.failedRuns", { n: days }) }}</span>
           <strong>{{ stats.failed }}</strong>
-          <small>共 {{ stats.total }} 次运行</small>
+          <small>{{ t("stats.failedRunsHint", { n: stats.total }) }}</small>
         </article>
         <article>
-          <span>失败率 · {{ days }}天</span>
+          <span>{{ t("stats.failRate", { n: days }) }}</span>
           <strong>{{ formatRate(failureRate) }}</strong>
-          <small v-if="stats.total < 5">运行不足 5 次，失败率参考价值有限。</small>
+          <small v-if="stats.total < 5">{{ t("stats.failRateLowSample") }}</small>
           <small v-else>{{ stats.failed }} / {{ stats.total }}</small>
         </article>
         <article>
-          <span>受影响智能体 · {{ days }}天</span>
+          <span>{{ t("stats.affectedAgents", { n: days }) }}</span>
           <strong>{{ failingAgents.length }}</strong>
-          <small v-if="topFailure && topFailure.failed">最多 {{ topFailure.name }} · {{ topFailure.failed }} 次</small>
-          <small v-else>没有失败记录</small>
+          <small v-if="topFailure && topFailure.failed">{{ t("stats.topFailure", { name: topFailure.name, n: topFailure.failed }) }}</small>
+          <small v-else>{{ t("stats.noFailures") }}</small>
         </article>
       </div>
 
       <section class="usage-card">
         <header>
           <h2>{{ chartTitle }}</h2>
-          <div class="ds-segmented usage-controls" aria-label="统计粒度">
+          <div class="ds-segmented usage-controls" :aria-label="t('stats.dim')">
             <button
               v-for="item in dims"
               :key="item"
               type="button"
               :class="{ active: dim === item }"
               @click="dim = item"
-            >{{ item === "daily" ? "按天" : "按周" }}</button>
+            >{{ item === "daily" ? t("stats.dim.daily") : t("stats.dim.weekly") }}</button>
           </div>
         </header>
-        <p v-if="stats.failed === 0" class="muted">所选时间范围内没有失败的运行。</p>
-        <div v-else class="usage-chart" role="img" aria-label="错误趋势">
+        <p v-if="stats.failed === 0" class="muted">{{ t("stats.noFailedRuns") }}</p>
+        <div v-else class="usage-chart" role="img" :aria-label="t('stats.errorTrend')">
           <div v-for="(item, index) in buckets" :key="item.date" class="usage-bar" :title="barTitle(item)">
             <span class="usage-bar-fill is-error" :style="{ height: barHeight(item) }" />
             <small v-if="index % labelEvery === 0">{{ item.label }}</small>
@@ -469,22 +478,22 @@ function openAgent(group: StatisticGroup) {
       <section class="usage-card">
         <header>
           <div>
-            <h2>问题最多的智能体</h2>
-            <p>{{ stats.total }} 次运行中有 {{ stats.failed }} 次失败 · {{ formatRate(failureRate) }}</p>
+            <h2>{{ t("stats.problemAgents") }}</h2>
+            <p>{{ t("stats.problemSummary", { total: stats.total, failed: stats.failed, rate: formatRate(failureRate) }) }}</p>
           </div>
-          <div class="ds-segmented usage-controls" aria-label="错误榜排序依据">
-            <button type="button" :class="{ active: errorSort === 'failed' }" @click="errorSort = 'failed'">失败数</button>
-            <button type="button" :class="{ active: errorSort === 'rate' }" @click="errorSort = 'rate'">失败率</button>
+          <div class="ds-segmented usage-controls" :aria-label="t('stats.errorSort')">
+            <button type="button" :class="{ active: errorSort === 'failed' }" @click="errorSort = 'failed'">{{ t("stats.failedCount") }}</button>
+            <button type="button" :class="{ active: errorSort === 'rate' }" @click="errorSort = 'rate'">{{ t("stats.failRateLabel") }}</button>
           </div>
         </header>
-        <p v-if="!failingAgents.length" class="muted">所选时间范围内没有失败的运行。</p>
+        <p v-if="!failingAgents.length" class="muted">{{ t("stats.noFailedRuns") }}</p>
         <table v-else class="usage-table">
           <thead>
             <tr>
-              <th>智能体</th>
-              <th>失败数</th>
-              <th>运行数</th>
-              <th>失败率</th>
+              <th>{{ t("stats.col.agent") }}</th>
+              <th>{{ t("stats.failedCount") }}</th>
+              <th>{{ t("stats.metric.tasks") }}</th>
+              <th>{{ t("stats.failRateLabel") }}</th>
             </tr>
           </thead>
           <tbody>
@@ -502,7 +511,7 @@ function openAgent(group: StatisticGroup) {
           </tbody>
         </table>
         <button v-if="failingAgents.length > 8" type="button" class="usage-more" @click="showAllErrors = !showAllErrors">
-          {{ showAllErrors ? "只看前 8 个" : `展开全部 ${failingAgents.length} 个` }}
+          {{ showAllErrors ? t("stats.showTop8") : t("stats.showAllN", { n: failingAgents.length }) }}
         </button>
       </section>
     </template>

@@ -18,6 +18,7 @@ import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
 import { extractQuestions } from "../components/chat/question-block";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
+import { t, translate } from "../i18n";
 
 // 跳过的提问按消息 id 记在本地，刷新后卡片不会再弹出来；只留最近 200 条
 const DISMISSED_QUESTIONS_KEY = "multara.dismissedQuestions";
@@ -245,7 +246,9 @@ export const useAppStore = defineStore("app", () => {
           if (payload.status === "failed") {
             existing.failureReason = payload.error;
             if (!existing.content.trim()) {
-              existing.content = `任务执行失败：${payload.error ?? "未知错误"}`;
+              existing.content = t("app.taskRunFailed", {
+                error: payload.error ?? t("app.taskRunFailedUnknown"),
+              });
             }
           }
         }
@@ -511,15 +514,15 @@ export const useAppStore = defineStore("app", () => {
     if (!task) return false;
     const running = sessionHasActiveRuns(task.sessionId);
     const prompt = running
-      ? `任务「${task.title}」正在执行，是否停止并删除？`
-      : `删除任务「${task.title}」？`;
+      ? t("app.taskDeleteRunning", { title: task.title })
+      : t("app.taskDeleteConfirm", { title: task.title });
     if (!window.confirm(prompt)) return false;
     try {
       await deleteTask(taskId, { force: running });
       return true;
     } catch (cause) {
       if (running || !isTaskRunningDeleteError(cause)) throw cause;
-      if (!window.confirm(`任务「${task.title}」正在执行，是否停止并删除？`)) return false;
+      if (!window.confirm(t("app.taskDeleteRunning", { title: task.title }))) return false;
       await deleteTask(taskId, { force: true });
       return true;
     }
@@ -599,7 +602,7 @@ export const useAppStore = defineStore("app", () => {
 
   /** CLI（如对话里 `multara agent create`）只写库，需主动拉回前端缓存。 */
   async function refreshAgentsAndSquads() {
-    const next = await backend.bootstrap();
+    const next = await backend.listAgentsAndSquads();
     if (!data.value) return;
     data.value.agents = next.agents;
     data.value.squads = next.squads;
@@ -841,13 +844,13 @@ export const useAppStore = defineStore("app", () => {
         : "";
     const [targetType, targetId] = (targetValue || fallback).split(":", 2);
     if (!targetId || !["agent", "squad"].includes(targetType)) {
-      throw new Error("请先创建智能体或小队");
+      throw new Error(t("app.needAgentOrSquad"));
     }
     const session = await backend.createChatSession({
       projectId,
       targetType: targetType as "agent" | "squad",
       targetId,
-      title: "新对话",
+      title: t("chat.newChatLabel"),
     });
     data.value.sessions.unshift(session);
     messages.value[session.id] = [];
@@ -866,7 +869,9 @@ export const useAppStore = defineStore("app", () => {
   }
 
   function isUntitledSession(title: string) {
-    return !title.trim() || title === "新对话" || /^与 .+ 对话$/.test(title);
+    const untitled = t("chat.newChatLabel");
+    const legacyUntitled = translate("chat.newChatLabel", "zh-CN");
+    return !title.trim() || title === untitled || title === legacyUntitled || /^与 .+ 对话$/.test(title);
   }
 
   async function updateSessionTitle(sessionId: string, title: string) {
@@ -1039,13 +1044,13 @@ export const useAppStore = defineStore("app", () => {
     if (miku) return { type: "agent" as const, id: miku.id };
     const squad = data.value?.squads[0];
     if (squad) return { type: "squad" as const, id: squad.id };
-    throw new Error("请先创建智能体或小队");
+    throw new Error(t("app.needAgentOrSquad"));
   }
 
   async function mergeIntoBranch(workspaceId: string, target: string, push: boolean) {
-    if (!data.value) throw new Error("数据还没有加载");
+    if (!data.value) throw new Error(t("app.dataNotLoaded"));
     const workspace = data.value.workspaces.find((item) => item.id === workspaceId);
-    if (!workspace) throw new Error("工作区不存在");
+    if (!workspace) throw new Error(t("app.workspaceMissing"));
     const chat = mergeChatTarget(workspace.projectId);
     const result = await backend.gitMergeIntoBranch({
       workspaceId,
@@ -1213,7 +1218,7 @@ export const useAppStore = defineStore("app", () => {
     }
     if (unreadable) {
       const name = resolvedPath.split(/[\\/]/).pop() || resolvedPath;
-      composerNotice.value = `未能读取 ${name}，已添加空引用`;
+      composerNotice.value = t("chat.attachEmpty", { name });
     }
     addComposerContext({
       workspaceId,
@@ -1361,7 +1366,7 @@ export const useAppStore = defineStore("app", () => {
           sessionId: next.sessionId,
           content: next.content,
           attachments: next.attachments,
-          message: `没有发出：${message}`,
+          message: t("app.sendFailed", { message }),
         };
       }
     } finally {

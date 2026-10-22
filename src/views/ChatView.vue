@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import ChatPanel from "../components/ChatPanel.vue";
 import { useAppStore } from "../stores/app";
+import { t } from "../i18n";
 
 const store = useAppStore();
 const selectedProjectId = ref<string | null>(null);
@@ -14,11 +15,11 @@ watch(projects, (items) => {
 <template>
   <div class="chat-page">
     <div class="chat-project-bar">
-      <strong>聊天</strong>
-      <label>需求
+      <strong>{{ t('chat.pageTitle') }}</strong>
+      <label>{{ t('nav.projects') }}
         <UiSelect
           v-model="selectedProjectId"
-          :options="[{ value: null, label: '通用对话' }, ...projects.map((project) => ({ value: project.id, label: project.name }))]"
+          :options="[{ value: null, label: t('chat.generalSession') }, ...projects.map((project) => ({ value: project.id, label: project.name }))]"
         />
       </label>
     </div>

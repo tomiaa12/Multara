@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, beforeAll } from "vitest";
+import { applyLanguageSetting } from "../../../i18n";
 import { compareExplorerEntries, sortExplorerEntries } from "./explorer-compare";
 import { canDropInExplorer, dropFolderFor, isCopyDrag } from "./explorer-dnd";
 import { globMatch, isExcluded } from "./explorer-glob";
@@ -18,6 +19,8 @@ import {
 import { explorerHoverTitle, formatByteSize, highlightName } from "./explorer-format";
 import { DEFAULT_EXPLORER_SETTINGS, applySeparator, filesExcludeFromText, filesExcludeToText, parseExplorerSettings, serializeExplorerSettings } from "./explorer-settings";
 import { ExplorerUndoStack } from "./explorer-undo";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 describe("incrementFileName (VS Code fileActions.test.ts)", () => {
   test.each([

@@ -70,7 +70,7 @@ const previewData: BootstrapData = {
       id: "miku",
       name: "Miku",
       avatar: "/miku-avatar.jpg",
-      description: "你的工作区总管。Miku 把目标变成任务、协调智能体，并帮你建可复用工作流。",
+      description: "",
       instructions: "",
       runtimeId: "cursor",
       model: "auto",
@@ -137,6 +137,23 @@ function inTauri(): boolean {
 export async function bootstrap(): Promise<BootstrapData> {
   if (!inTauri()) return structuredClone(previewData);
   return invoke<BootstrapData>("bootstrap");
+}
+
+/** 智能体/小队页轻量刷新，避免整包 bootstrap（含 detect）卡住首屏。 */
+export async function listAgentsAndSquads(): Promise<{
+  agents: BootstrapData["agents"];
+  squads: BootstrapData["squads"];
+}> {
+  if (!inTauri()) {
+    return {
+      agents: structuredClone(previewData.agents),
+      squads: structuredClone(previewData.squads),
+    };
+  }
+  const [agents, squads] = await invoke<[BootstrapData["agents"], BootstrapData["squads"]]>(
+    "list_agents_and_squads",
+  );
+  return { agents, squads };
 }
 
 export async function detectRuntimes(): Promise<BootstrapData["runtimes"]> {

@@ -1,4 +1,5 @@
 import type { McpInput } from "../domain/types";
+import { t } from "../i18n";
 
 export function emptyMcpInput(owner = "multara"): McpInput {
   return {
@@ -46,11 +47,11 @@ function serverEntry(form: McpInput, argsText: string): Record<string, unknown> 
 
 export function jsonToMcpInputs(raw: string): McpInput[] {
   const parsed = JSON.parse(raw) as unknown;
-  if (!parsed || typeof parsed !== "object") throw new Error("JSON 必须是对象");
+  if (!parsed || typeof parsed !== "object") throw new Error(t("mcp.json.error.rootObject"));
   const root = parsed as Record<string, unknown>;
   const servers = asRecord(root.mcpServers) ?? asRecord(root.servers) ?? singleServerMap(root);
   const entries = Object.entries(servers);
-  if (!entries.length) throw new Error("JSON 里没有 MCP 服务");
+  if (!entries.length) throw new Error(t("mcp.json.error.noServers"));
   return entries.map(([name, value]) => entryToInput(name, value));
 }
 
@@ -96,7 +97,7 @@ export function parseArgsText(text: string): string[] {
   if (!trimmed) return [];
   if (trimmed.startsWith("[")) {
     const parsed = JSON.parse(trimmed) as unknown;
-    if (!Array.isArray(parsed)) throw new Error("参数 JSON 必须是数组");
+    if (!Array.isArray(parsed)) throw new Error(t("mcp.json.error.argsMustArray"));
     return parsed.map((item) => String(item));
   }
   if (trimmed.includes("\n")) {

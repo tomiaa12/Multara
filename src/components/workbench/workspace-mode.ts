@@ -1,4 +1,5 @@
 import type { Workspace } from "../../domain/types";
+import { t } from "../../i18n";
 
 export type WorkspaceMode = "worktree" | "direct" | "folder";
 
@@ -9,18 +10,17 @@ export function workspaceMode(workspace: Workspace): WorkspaceMode {
 
 export function workspaceModeLabel(workspace: Workspace): string {
   const mode = workspaceMode(workspace);
-  if (mode === "worktree") return "Worktree";
-  if (mode === "direct") return "当前分支";
-  return "非 Git";
+  if (mode === "worktree") return t("workspace.mode.worktree");
+  if (mode === "direct") return t("workspace.mode.direct");
+  return t("workspace.mode.folder");
 }
 
 export function workspaceModeHint(workspace: Workspace): string {
   const mode = workspaceMode(workspace);
-  if (mode === "worktree") return "Git Worktree：独立检出，不会改动原仓库当前分支";
-  if (mode === "direct") return "直接在 Git 当前真实分支上修改，提交会写回原仓库";
-  return workspace.isolationMode === "copy"
-    ? "普通文件夹的隔离副本，不是 Git 项目"
-    : "普通文件夹，直接使用原目录，不是 Git 项目";
+  if (mode === "worktree") return t("workspace.modeHint.worktree");
+  if (mode === "direct") return t("workspace.modeHint.direct");
+  if (workspace.isolationMode === "copy") return t("workspace.modeHint.folderCopy");
+  return t("workspace.modeHint.folderDirect");
 }
 
 /** 从需求里拿掉一个项目前的确认文案。非 Worktree 只解除关联，不删真实目录。 */
@@ -36,55 +36,41 @@ export function detachWorkspacePrompt(input: {
   sharedCheckout: boolean;
 }): string {
   const branch = input.branch.trim();
-  const branchText = branch ? `（分支 ${branch}）` : "";
+  const branchText = branch ? t("workspace.detach.branchSuffix", { branch }) : "";
   const lines: string[] = [];
   if (input.mode === "folder") {
     lines.push(
       input.isolationMode === "copy"
-        ? `从这条需求移除「${input.name}」。这是隔离副本，不会删除原始文件夹，副本目录也会留在磁盘上，只解除关联。`
-        : `从这条需求移除「${input.name}」。这是原目录，磁盘上的文件会保留，只是不再挂在这条需求上。`,
+        ? t("workspace.detach.folderCopy", { name: input.name })
+        : t("workspace.detach.folderDirect", { name: input.name }),
     );
   } else if (input.mode === "worktree") {
     if (input.sharedCheckout) {
-      lines.push(
-        `从这条需求移除 Worktree「${input.name}」${branchText}。这个工作树目录还被其他地方使用，这次只解除关联，不会删除目录，也不会动原仓库。`,
-      );
+      lines.push(t("workspace.detach.worktreeShared", { name: input.name, branch: branchText }));
     } else if (input.dirtyCount === null) {
-      lines.push(
-        `从这条需求移除 Worktree「${input.name}」${branchText}。独立工作树目录会被删除，原仓库不会动，分支会留在原仓库里。还没核对到未提交更改，如果工作树里有未提交代码，删除后会丢失。`,
-      );
+      lines.push(t("workspace.detach.worktreeUnknownDirty", { name: input.name, branch: branchText }));
     } else if (input.dirtyCount > 0) {
       lines.push(
-        `Worktree「${input.name}」${branchText}还有 ${input.dirtyCount} 个未提交更改。移除会删除这个独立工作树目录，这些未提交改动会丢失。原仓库不会被删除，已经提交的分支会保留。`,
+        t("workspace.detach.worktreeDirty", { name: input.name, branch: branchText, count: input.dirtyCount }),
       );
     } else {
-      lines.push(
-        `从这条需求移除 Worktree「${input.name}」${branchText}。工作树是干净的。独立工作树目录会被删除，原仓库不会动，这个分支会留在原仓库里。`,
-      );
+      lines.push(t("workspace.detach.worktreeClean", { name: input.name, branch: branchText }));
     }
   } else if (input.isolationMode === "copy") {
-    lines.push(
-      `从这条需求移除「${input.name}」${branchText}。不会删除原始代码文件夹，副本目录也会留在磁盘上，只解除关联。`,
-    );
+    lines.push(t("workspace.detach.gitCopy", { name: input.name, branch: branchText }));
   } else if (input.dirtyCount === null) {
-    lines.push(
-      `从这条需求移除「${input.name}」${branchText}。这是真实仓库的当前分支，不会删除磁盘上的代码。还没核对到未提交更改，文件都会留在原处。`,
-    );
+    lines.push(t("workspace.detach.gitUnknownDirty", { name: input.name, branch: branchText }));
   } else if (input.dirtyCount > 0) {
     lines.push(
-      `「${input.name}」${branchText}正在直接使用真实分支，还有 ${input.dirtyCount} 个未提交更改。移除只会从这条需求拿掉，磁盘上的代码和这些未提交改动都会保留。`,
+      t("workspace.detach.gitDirty", { name: input.name, branch: branchText, count: input.dirtyCount }),
     );
   } else {
-    lines.push(
-      `从这条需求移除「${input.name}」${branchText}。这是真实仓库的当前分支，没有未提交更改。不会删除磁盘上的代码，只解除关联。`,
-    );
+    lines.push(t("workspace.detach.gitClean", { name: input.name, branch: branchText }));
   }
   if (input.unsavedCount > 0) {
-    lines.push(
-      `编辑器里还有 ${input.unsavedCount} 个未保存文件，移除后这些标签会关掉，未保存内容会丢失。`,
-    );
+    lines.push(t("workspace.detach.unsavedEditors", { count: input.unsavedCount }));
   }
-  lines.push("确定移除？");
+  lines.push(t("workspace.detach.confirm"));
   return lines.join("\n\n");
 }
 
@@ -165,12 +151,14 @@ export function defaultNewBranchName(
 
 export function workspaceSubtitle(workspace: Workspace, liveBranch?: string | null): string {
   const mode = workspaceMode(workspace);
-  const branch = liveBranch || workspace.branch;
+  const branch = liveBranch || workspace.branch || "HEAD";
   if (mode === "folder") {
-    return workspace.isolationMode === "copy" ? "普通文件夹 · 隔离副本" : "普通文件夹 · 原目录";
+    return workspace.isolationMode === "copy"
+      ? t("workspace.subtitle.folderCopy")
+      : t("workspace.subtitle.folderDirect");
   }
-  if (mode === "worktree") return `${branch || "HEAD"} · 独立工作树`;
-  return `${branch || "HEAD"} · 正在改真实分支`;
+  if (mode === "worktree") return t("workspace.subtitle.worktree", { branch });
+  return t("workspace.subtitle.direct", { branch });
 }
 
 export function fileNameOf(path: string): string {

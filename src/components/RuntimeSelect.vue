@@ -14,12 +14,14 @@ const props = withDefaults(defineProps<{
   disabled?: boolean;
   placeholder?: string;
   clearable?: boolean;
+  size?: "sm" | "md" | "lg";
 }>(), {
   onlineOnly: true,
   required: false,
   disabled: false,
   placeholder: "选择运行时",
   clearable: false,
+  size: "md",
 });
 
 const store = useAppStore();
@@ -53,6 +55,7 @@ function providerOf(option?: SelectOption | null) {
     :disabled="disabled || !options.length"
     :placeholder="options.length ? placeholder : '没有可用运行时'"
     :clearable="clearable"
+    :size="size"
   >
     <template #option-leading="{ option }">
       <ProviderLogo v-if="option" class="runtime-select-logo" :provider="providerOf(option)" :size="18" />
