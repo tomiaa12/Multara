@@ -183,6 +183,12 @@ export const useAppStore = defineStore("app", () => {
           if (payload.status === "completed") data.value.stats.completedToday += 1;
           if (payload.status === "failed") data.value.stats.failedToday += 1;
         }
+        // CLI `multara task create` 只写库；跑起来时若本地还没有这条任务/会话，拉回看板。
+        const knownSession = data.value.sessions.some((item) => item.id === payload.sessionId);
+        const knownTask = data.value.tasks.some((item) => item.sessionId === payload.sessionId);
+        if (!knownSession || !knownTask) {
+          void refreshTaskInboxSurfaces();
+        }
         syncTaskStatusFromRunEvent(payload);
       }
       const sessionMessages = messages.value[payload.sessionId] ?? [];
@@ -755,7 +761,16 @@ export const useAppStore = defineStore("app", () => {
   }
 
   async function loadMessages(sessionId: string) {
-    if (!sessionId || messages.value[sessionId]) return;
+    if (!sessionId) return;
+    const current = messages.value[sessionId];
+    // 已有进行中的流式正文时不要用空库结果盖掉；否则进任务详情再返回会「回答消失」。
+    const hasLive = (current ?? []).some((message) => {
+      if (!message.runId) return false;
+      const status = runStates.value[message.runId]?.status;
+      return status === "queued" || status === "running";
+    });
+    if (hasLive) return;
+    if (current?.length) return;
     messages.value[sessionId] = await backend.listChatMessages(sessionId);
   }
 

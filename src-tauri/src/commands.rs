@@ -3106,7 +3106,7 @@ pub fn list_chat_messages(
         )
         .map_err(|error| error.to_string())?;
     let messages = statement
-        .query_map([session_id], |row| {
+        .query_map([&session_id], |row| {
             let role: String = row.get(3)?;
             let audience_type: Option<String> = row.get(12)?;
             let target_type: Option<String> = row.get(14)?;
@@ -3156,6 +3156,13 @@ pub fn list_chat_messages(
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
     let mut messages = messages;
+    // 旧缺陷：重启把 running 标 failed 却没写 messages。用 run_events 补一条，避免任务详情空白。
+    messages.extend(orphan_run_messages(&db, &session_id, &messages)?);
+    messages.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     for message in &mut messages {
         if let Some(run_id) = &message.run_id {
             message.timeline = load_run_timeline(&db, run_id)?;
@@ -3163,6 +3170,96 @@ pub fn list_chat_messages(
         message.attachments = load_message_attachments(&db, &message.id)?;
     }
     Ok(messages)
+}
+
+fn orphan_run_messages(
+    db: &Connection,
+    session_id: &str,
+    existing: &[ChatMessage],
+) -> Result<Vec<ChatMessage>, String> {
+    let known = existing
+        .iter()
+        .filter_map(|message| message.run_id.as_deref())
+        .collect::<std::collections::HashSet<_>>();
+    let mut statement = db
+        .prepare(
+            "SELECT id, agent_id, status, COALESCE(completed_at, started_at, created_at)
+             FROM agent_runs WHERE session_id=?1 ORDER BY created_at, rowid",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([session_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    let mut out = Vec::new();
+    for (run_id, agent_id, status, created_at) in rows {
+        if known.contains(run_id.as_str()) {
+            continue;
+        }
+        let has_events: bool = db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM run_events WHERE run_id=?1)",
+                [&run_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if !has_events {
+            continue;
+        }
+        let mut content = String::new();
+        if let Ok(mut events) = db.prepare(
+            "SELECT content FROM run_events
+             WHERE run_id=?1 AND event_type='text' AND content IS NOT NULL AND trim(content) != ''
+             ORDER BY seq",
+        ) {
+            if let Ok(mapped) = events.query_map([&run_id], |row| row.get::<_, String>(0)) {
+                content = mapped
+                    .flatten()
+                    .max_by_key(|text| text.chars().count())
+                    .unwrap_or_default();
+            }
+        }
+        let failure_reason = match status.as_str() {
+            "failed" => Some("这次运行没有成功完成。".to_string()),
+            "stopped" => Some("运行已停止。".to_string()),
+            _ => None,
+        };
+        if content.trim().is_empty() {
+            content = failure_reason
+                .clone()
+                .unwrap_or_else(|| "这次运行没有留下可显示的正文。".to_string());
+        }
+        out.push(ChatMessage {
+            id: format!("run:{run_id}"),
+            session_id: session_id.to_string(),
+            turn_id: None,
+            role: "assistant",
+            content,
+            run_id: Some(run_id),
+            agent_id,
+            audience_type: Some("user"),
+            audience_id: None,
+            target_type: None,
+            target_id: None,
+            failure_reason,
+            elapsed_ms: None,
+            message_kind: "message",
+            quick_actions: Vec::new(),
+            timeline: Vec::new(),
+            attachments: Vec::new(),
+            created_at,
+            feedback: None,
+        });
+    }
+    Ok(out)
 }
 
 #[tauri::command]
@@ -4883,8 +4980,9 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
         let timeout = timeout
             .parse::<u32>()
             .map_err(|_| "任务超时必须是数字".to_string())?;
-        if !(1..=1440).contains(&timeout) {
-            return Err("任务超时必须在 1 到 1440 分钟之间".to_string());
+        // 0 = 不限制；正数按分钟封顶 1440。
+        if timeout > 1440 {
+            return Err("任务超时必须在 0 到 1440 分钟之间".to_string());
         }
     }
     if let Some(port) = settings.get("webhookPort") {
@@ -5133,8 +5231,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_timeout_setting() {
+    fn accepts_unlimited_timeout_setting() {
         let settings = HashMap::from([("runTimeoutMinutes".to_string(), "0".to_string())]);
+        assert!(validate_settings(&settings).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_timeout_setting() {
+        let settings = HashMap::from([("runTimeoutMinutes".to_string(), "1441".to_string())]);
         assert!(validate_settings(&settings).is_err());
     }
 

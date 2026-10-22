@@ -1151,7 +1151,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             if let Some(status) = result {
                 break status;
             }
-            if started.elapsed() >= timeout {
+            if timeout.is_some_and(|limit| started.elapsed() >= limit) {
                 timed_out = true;
                 kill_child(&child);
             }
@@ -1176,15 +1176,13 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             .unwrap_or_default();
         let stopped = current_status(&app, &run.id).as_deref() == Some("stopped");
         if timed_out {
+            let minutes = timeout.map(|limit| limit.as_secs() / 60).unwrap_or(0);
             finish(
                 &app,
                 &run,
                 "failed",
                 &text,
-                Some(format!(
-                    "任务超过 {} 分钟，已自动停止",
-                    timeout.as_secs() / 60
-                )),
+                Some(format!("任务超过 {minutes} 分钟，已自动停止")),
             );
         } else if stopped {
             finish(&app, &run, "stopped", &text, None);
@@ -1248,7 +1246,8 @@ fn truncate_error(value: &str, max_chars: usize) -> String {
     )
 }
 
-fn run_timeout(app: &AppHandle) -> Duration {
+/// `0` 或未设置 = 不限时（长任务可能跑很久）。正数按分钟封顶 1440。
+fn run_timeout(app: &AppHandle) -> Option<Duration> {
     let state = app.state::<AppState>();
     let minutes = state
         .db
@@ -1263,9 +1262,11 @@ fn run_timeout(app: &AppHandle) -> Duration {
             .ok()
         })
         .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(30)
-        .clamp(1, 1440);
-    Duration::from_secs(minutes * 60)
+        .unwrap_or(0);
+    if minutes == 0 {
+        return None;
+    }
+    Some(Duration::from_secs(minutes.clamp(1, 1440) * 60))
 }
 
 #[allow(clippy::too_many_arguments)]
