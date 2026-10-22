@@ -2,6 +2,7 @@
 import { reactive } from "vue";
 import { X } from "@lucide/vue";
 import { TAG_COLORS, type RequirementCategory } from "../../views/dashboard/requirement-categories";
+import { t } from "../../i18n";
 
 defineProps<{
   tags: RequirementCategory[];
@@ -34,15 +35,15 @@ function commit(id: string, fallback: string) {
   <div class="modal-backdrop" @click.self="emit('close')">
     <div class="modal">
       <div class="modal-heading">
-        <h2>管理标签</h2>
-        <UiButton class="icon-button" size="icon" title="关闭" @click="emit('close')">
+        <h2>{{ t('dashboard.manageTags') }}</h2>
+        <UiButton class="icon-button" size="icon" :title="t('common.close')" @click="emit('close')">
           <X :size="15" />
         </UiButton>
       </div>
       <form class="tag-manage-create" @submit.prevent="submitCreate">
-        <span>新建标签</span>
-        <UiInput v-model="name.value" placeholder="标签名称" />
-        <UiButton type="submit" :disabled="!name.value.trim()">添加</UiButton>
+        <span>{{ t('tags.createNew') }}</span>
+        <UiInput v-model="name.value" :placeholder="t('tags.namePlaceholder')" />
+        <UiButton type="submit" :disabled="!name.value.trim()">{{ t('tags.add') }}</UiButton>
       </form>
       <div v-if="tags.length" class="tag-pop-list">
         <div v-for="tag in tags" :key="tag.id" class="tag-manage-row">
@@ -53,7 +54,7 @@ function commit(id: string, fallback: string) {
             @blur="commit(tag.id, tag.name)"
             @keydown.enter.prevent="commit(tag.id, tag.name)"
           />
-          <UiButton size="small" variant="danger" @click="emit('remove', tag.id)">删除</UiButton>
+          <UiButton size="small" variant="danger" @click="emit('remove', tag.id)">{{ t('common.delete') }}</UiButton>
           <div class="tag-color-row">
             <button
               v-for="color in TAG_COLORS"
@@ -68,7 +69,7 @@ function commit(id: string, fallback: string) {
           </div>
         </div>
       </div>
-      <p v-else class="tag-empty">还没有标签。在上面输入名称即可创建。</p>
+      <p v-else class="tag-empty">{{ t('tags.emptyHint') }}</p>
     </div>
   </div>
 </template>

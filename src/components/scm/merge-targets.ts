@@ -1,4 +1,5 @@
 import type { MergeIntoResult, MergePreview } from "../../domain/types";
+import { t } from "../../i18n";
 
 export const MERGE_FILTER_ALL = "all";
 export const MERGE_FILTER_RECENT = "recent";
@@ -25,31 +26,31 @@ export interface MergeBranchGroup {
 type TargetPreview = NonNullable<MergePreview["target"]>;
 
 export function mergePlanBadge(plan: string) {
-  if (plan === MERGE_PLAN_FAST_FORWARD) return "可快进";
-  if (plan === MERGE_PLAN_MERGE) return "合并提交";
-  if (plan === MERGE_PLAN_CONFLICT) return "预计冲突";
-  if (plan === MERGE_PLAN_UP_TO_DATE) return "已包含";
-  if (plan === MERGE_PLAN_MISSING) return "找不到";
+  if (plan === MERGE_PLAN_FAST_FORWARD) return t("scm.merge.plan.fastForward");
+  if (plan === MERGE_PLAN_MERGE) return t("scm.merge.plan.mergeCommit");
+  if (plan === MERGE_PLAN_CONFLICT) return t("scm.merge.plan.conflict");
+  if (plan === MERGE_PLAN_UP_TO_DATE) return t("scm.merge.plan.upToDate");
+  if (plan === MERGE_PLAN_MISSING) return t("scm.merge.plan.missing");
   return "";
 }
 
 export function mergeQueueSummary(preview: TargetPreview | null, loading: boolean, error: string) {
   if (error) return error;
-  if (loading || !preview) return "正在查看…";
+  if (loading || !preview) return t("scm.merge.queue.loading");
   if (preview.plan === MERGE_PLAN_FAST_FORWARD) {
-    return `合入 ${preview.commits} 个提交 · ${preview.files} 个文件`;
+    return t("scm.merge.queue.ffSummary", { commits: preview.commits, files: preview.files });
   }
   if (preview.plan === MERGE_PLAN_MERGE) {
-    return `将生成合并提交 · 目标领先 ${preview.targetAhead} 个提交`;
+    return t("scm.merge.queue.mergeSummary", { ahead: preview.targetAhead });
   }
   if (preview.plan === MERGE_PLAN_CONFLICT) {
-    const names = preview.conflictFiles.join("、");
-    if (!names) return `预计 ${preview.conflictFiles.length} 个文件冲突`;
-    return `预计 ${preview.conflictFiles.length} 个文件冲突：${names}`;
+    const names = preview.conflictFiles.join(t("common.listSep"));
+    if (!names) return t("scm.merge.queue.conflicts", { count: preview.conflictFiles.length });
+    return t("scm.merge.queue.conflictsNamed", { count: preview.conflictFiles.length, names });
   }
-  if (preview.plan === MERGE_PLAN_UP_TO_DATE) return "已经包含当前分支的所有提交";
-  if (preview.plan === MERGE_PLAN_MISSING) return "找不到这个分支，请先获取远程更新";
-  return "正在查看…";
+  if (preview.plan === MERGE_PLAN_UP_TO_DATE) return t("scm.merge.queue.upToDate");
+  if (preview.plan === MERGE_PLAN_MISSING) return t("scm.merge.queue.missing");
+  return t("scm.merge.queue.loading");
 }
 
 export function canMergePlan(plan: string) {
@@ -91,16 +92,16 @@ export function mergeBranchGroups(input: {
   }
   if (input.filter === MERGE_FILTER_RECENT) {
     const rows = input.recent.filter(visible).map(row);
-    return rows.length ? [{ label: "常用 · 上次选过", rows }] : [];
+    return rows.length ? [{ label: t("scm.merge.group.recent"), rows }] : [];
   }
   const recentNames = input.recent.filter(visible);
   const recentSet = new Set(recentNames);
   const groups: MergeBranchGroup[] = [];
-  if (recentNames.length) groups.push({ label: "常用 · 上次选过", rows: recentNames.map(row) });
+  if (recentNames.length) groups.push({ label: t("scm.merge.group.recent"), rows: recentNames.map(row) });
   const locals = input.locals.filter((name) => !recentSet.has(name) && match(name));
   const remotes = input.remotes.filter((name) => !recentSet.has(name) && match(name));
-  if (locals.length) groups.push({ label: "本地分支", rows: locals.map(row) });
-  if (remotes.length) groups.push({ label: "远程分支", rows: remotes.map(row) });
+  if (locals.length) groups.push({ label: t("scm.localBranches"), rows: locals.map(row) });
+  if (remotes.length) groups.push({ label: t("scm.remoteBranches"), rows: remotes.map(row) });
   return groups;
 }
 
@@ -115,18 +116,18 @@ export function mergeResultLines(input: {
   error?: string;
   pushRequested: boolean;
 }): MergeResultLine[] {
-  if (input.status === "error") return [{ text: input.error || "合并失败", warn: true }];
-  if (input.status === "pending") return [{ text: "还没开始，先处理前面的冲突", warn: false }];
+  if (input.status === "error") return [{ text: input.error || t("scm.merge.result.failed"), warn: true }];
+  if (input.status === "pending") return [{ text: t("scm.merge.result.pending"), warn: false }];
   const result = input.result;
   if (!result || result.status === "up_to_date") {
-    return [{ text: "已经包含当前分支的所有提交", warn: false }];
+    return [{ text: t("scm.merge.result.upToDate"), warn: false }];
   }
-  const how = result.fastForward ? "已快进到" : "已生成合并提交";
+  const how = result.fastForward ? t("scm.merge.result.fastForward") : t("scm.merge.result.mergeCommit");
   const commit = result.commit ? ` ${result.commit}` : "";
   const facts = [`${how}${commit}`];
-  if (result.localUpdated) facts.push("已更新本地分支");
+  if (result.localUpdated) facts.push(t("scm.merge.result.localUpdated"));
   if (input.pushRequested) {
-    facts.push(result.pushed ? `已推送到 ${result.targetDisplay}` : "未推送到远程");
+    facts.push(result.pushed ? t("scm.merge.result.pushedTo", { target: result.targetDisplay }) : t("scm.merge.result.notPushed"));
   }
   const lines: MergeResultLine[] = [{ text: facts.join(" · "), warn: false }];
   for (const note of result.notes) lines.push({ text: note, warn: true });

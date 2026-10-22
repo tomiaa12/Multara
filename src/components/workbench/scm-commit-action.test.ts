@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import {
   canPublishBranch,
   canSyncChanges,
@@ -11,6 +12,10 @@ import {
   rememberCommitMessage,
   resetCommitMessageCursor,
 } from "./scm-commit-action";
+
+beforeEach(() => {
+  applyLanguageSetting("zh-CN");
+});
 
 const published = { hasRemote: true, upstream: "origin/main", merging: false };
 const unpublished = { hasRemote: true, upstream: null, merging: false };

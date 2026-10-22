@@ -5,6 +5,7 @@ import type { CatalogItem, ResourceKind, ResourceSource } from "../domain/types"
 import CliSourceIcon from "../components/CliSourceIcon.vue";
 import { cliSkillsDisplay } from "../domain/cli-catalog";
 import * as backend from "../services/backend";
+import { t } from "../i18n";
 
 const CATALOG_SKELETON_ROWS = 6;
 
@@ -29,7 +30,7 @@ let debounce = 0;
 const ownerOptions = computed(() =>
   sources.value.map((item) => {
     let meta: string | undefined;
-    if (item.scope === "workspace") meta = "工作区";
+    if (item.scope === "workspace") meta = t("common.workspaceScope");
     else if (props.kind === "skill") meta = cliSkillsDisplay(item.owner);
     return { value: item.owner, label: item.label, meta };
   }),
@@ -71,10 +72,10 @@ onMounted(() => {
   <div class="modal-backdrop" @click.self="emit('close')">
     <div class="modal domain-modal catalog-dialog">
       <header class="modal-heading">
-        <h2>{{ kind === "skill" ? "浏览 Skills" : "浏览 MCP" }}</h2>
+        <h2>{{ kind === "skill" ? t("catalog.browseSkills") : t("catalog.browseMcp") }}</h2>
         <UiButton class="icon-button" @click="emit('close')"><X :size="16" /></UiButton>
       </header>
-      <label>安装到
+      <label>{{ t("catalog.installTo") }}
         <UiSelect v-model="owner" :options="ownerOptions">
           <template #option-leading="{ option }">
             <CliSourceIcon v-if="option" :owner="String(option.value)" :size="16" />
@@ -83,10 +84,10 @@ onMounted(() => {
       </label>
       <label class="ds-search collection-search">
         <Search :size="14" />
-        <UiInput v-model="query" :placeholder="kind === 'skill' ? '搜索官方 Skills…' : '搜索 MCP Registry…'" />
+        <UiInput v-model="query" :placeholder="kind === 'skill' ? t('catalog.searchSkills') : t('catalog.searchMcp')" />
       </label>
       <p v-if="error" class="form-error">{{ error }}</p>
-      <div v-else-if="loading" class="catalog-list" aria-busy="true" aria-label="正在加载商店">
+      <div v-else-if="loading" class="catalog-list" aria-busy="true" :aria-label="t('catalog.loadingAria')">
         <article
           v-for="index in CATALOG_SKELETON_ROWS"
           :key="index"
@@ -99,19 +100,19 @@ onMounted(() => {
           <span class="ds-skeleton catalog-skeleton-action" />
         </article>
       </div>
-      <p v-else-if="!items.length" class="empty-copy">没有匹配的项。</p>
+      <p v-else-if="!items.length" class="empty-copy">{{ t("catalog.noMatch") }}</p>
       <div v-else class="catalog-list">
         <article v-for="item in items" :key="item.id" class="catalog-row">
           <span>
             <strong>{{ item.name }}</strong>
             <small>{{ item.description || item.source }}</small>
           </span>
-          <UiButton variant="primary" size="small" @click="emit('install', item, owner)">安装</UiButton>
+          <UiButton variant="primary" size="small" @click="emit('install', item, owner)">{{ t("catalog.install") }}</UiButton>
         </article>
       </div>
       <p class="catalog-hint">
         <Store :size="14" />
-        {{ kind === "skill" ? "来源：GitHub anthropics/skills，安装会浅克隆到所选目录。" : "来源：MCP Registry，安装写入所选来源的配置文件。" }}
+        {{ kind === "skill" ? t("catalog.sourceSkills") : t("catalog.sourceMcp") }}
       </p>
     </div>
   </div>

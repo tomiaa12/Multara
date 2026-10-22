@@ -8,11 +8,13 @@ use crate::{
 };
 
 pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
+    let locale = crate::app_locale::from_db(db);
     let mut statement = db
         .prepare(
             "SELECT id, name, avatar, description, instructions, runtime_id, model,
                     max_concurrent_tasks, system_key
-             FROM agents ORDER BY name",
+             FROM agents
+             ORDER BY CASE WHEN system_key = 'miku' THEN 0 ELSE 1 END, name",
         )
         .map_err(|error| error.to_string())?;
     let mut agents = statement
@@ -21,7 +23,7 @@ pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
             let name: String = row.get(1)?;
             let instructions: String = row.get(4)?;
             let system_instructions = if builtin_agents::is_miku_key(system_key.as_deref()) {
-                Some(builtin_agents::miku_system_instructions(&name))
+                Some(builtin_agents::miku_system_instructions(&name, locale))
             } else {
                 None
             };

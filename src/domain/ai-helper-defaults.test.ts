@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { applyLanguageSetting } from "../i18n";
 import {
-  DEFAULT_BRANCH_PROMPT,
-  DEFAULT_COMMIT_PROMPT,
+  defaultBranchPrompt,
+  defaultCommitPrompt,
   displayPrompt,
   normalizeGenMode,
   persistPrompt,
 } from "./ai-helper-defaults";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 describe("ai-helper-defaults", () => {
   it("normalizes generator mode", () => {
@@ -16,14 +19,25 @@ describe("ai-helper-defaults", () => {
   });
 
   it("shows default prompt when stored value is empty", () => {
-    expect(displayPrompt("", DEFAULT_BRANCH_PROMPT)).toBe(DEFAULT_BRANCH_PROMPT);
-    expect(displayPrompt("  ", DEFAULT_COMMIT_PROMPT)).toBe(DEFAULT_COMMIT_PROMPT);
-    expect(displayPrompt("自定义", DEFAULT_BRANCH_PROMPT)).toBe("自定义");
+    const branch = defaultBranchPrompt();
+    const commit = defaultCommitPrompt();
+    expect(displayPrompt("", branch)).toBe(branch);
+    expect(displayPrompt("  ", commit)).toBe(commit);
+    expect(displayPrompt("自定义", branch)).toBe("自定义");
   });
 
   it("persists empty string for default prompt text", () => {
-    expect(persistPrompt(DEFAULT_BRANCH_PROMPT, DEFAULT_BRANCH_PROMPT)).toBe("");
-    expect(persistPrompt(`  ${DEFAULT_COMMIT_PROMPT}  `, DEFAULT_COMMIT_PROMPT)).toBe("");
-    expect(persistPrompt("自定义规则", DEFAULT_BRANCH_PROMPT)).toBe("自定义规则");
+    const branch = defaultBranchPrompt();
+    const commit = defaultCommitPrompt();
+    expect(persistPrompt(branch, branch)).toBe("");
+    expect(persistPrompt(`  ${commit}  `, commit)).toBe("");
+    expect(persistPrompt("自定义规则", branch)).toBe("自定义规则");
+  });
+
+  it("localizes default prompts", () => {
+    applyLanguageSetting("en");
+    expect(defaultCommitPrompt()).toContain("Conventional Commit");
+    applyLanguageSetting("zh-CN");
+    expect(defaultCommitPrompt()).toContain("已暂存");
   });
 });

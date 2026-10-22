@@ -1,5 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import { mergeTimeline, relativeTimelineTime, renameLocalHistoryPath, registerLocalHistory, listLocalHistory } from "./local-history";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 const now = Date.parse("2026-09-25T12:00:00Z");
 

@@ -1,12 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { t } from "../i18n";
 
 function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function requireTauri(action: string): void {
-  if (!inTauri()) throw new Error(`浏览器预览不能${action}`);
+function requireTauri(actionKey: string): void {
+  if (!inTauri()) {
+    throw new Error(t("explorer.browserPreviewBlocked", { action: t(actionKey) }));
+  }
 }
 
 export interface ExplorerEntry {
@@ -78,7 +81,7 @@ export async function listDirectory(workspaceId: string, path?: string): Promise
 }
 
 export async function statEntry(workspaceId: string, path: string): Promise<ExplorerStat> {
-  requireTauri("读取文件信息");
+  requireTauri("explorer.action.readStat");
   return invoke<ExplorerStat>("explorer_stat", { workspaceId, path });
 }
 
@@ -87,12 +90,12 @@ export async function deleteEntries(
   paths: string[],
   useTrash: boolean,
 ): Promise<ExplorerDeleteResult[]> {
-  requireTauri("删除本机文件");
+  requireTauri("explorer.action.deleteEntries");
   return invoke<ExplorerDeleteResult[]>("explorer_delete_entries", { workspaceId, paths, useTrash });
 }
 
 export async function restoreEntry(workspaceId: string, path: string, backupId: string): Promise<void> {
-  requireTauri("恢复本机文件");
+  requireTauri("explorer.action.restoreEntry");
   await invoke("explorer_restore_entry", { workspaceId, path, backupId });
 }
 
@@ -101,12 +104,12 @@ export async function transferEntries(
   copy: boolean,
   overwrite = false,
 ): Promise<ExplorerTransferResult[]> {
-  requireTauri(copy ? "复制本机文件" : "移动本机文件");
+  requireTauri(copy ? "explorer.action.copyEntries" : "explorer.action.moveEntries");
   return invoke<ExplorerTransferResult[]>("explorer_transfer_entries", { operations, copy, overwrite });
 }
 
 export async function createEntry(workspaceId: string, path: string, isDirectory: boolean): Promise<void> {
-  requireTauri("创建本机文件");
+  requireTauri("explorer.action.createEntry");
   await invoke("explorer_create_entry", { workspaceId, path, isDirectory });
 }
 
@@ -116,7 +119,7 @@ export async function writeFileBytes(
   bytes: Uint8Array,
   overwrite = false,
 ): Promise<void> {
-  requireTauri("写入本机文件");
+  requireTauri("explorer.action.writeFile");
   await invoke("explorer_write_file", { workspaceId, path, base64: bytesToBase64(bytes), overwrite });
 }
 
@@ -131,12 +134,12 @@ export async function gitRemote(workspaceId: string): Promise<ExplorerGitRemote 
 }
 
 export async function openExternal(workspaceId: string, path: string): Promise<void> {
-  requireTauri("用系统程序打开文件");
+  requireTauri("explorer.action.openExternal");
   await invoke("explorer_open_external", { workspaceId, path });
 }
 
 export async function absolutePath(workspaceId: string, path: string): Promise<string> {
-  requireTauri("读取本机路径");
+  requireTauri("explorer.action.readPath");
   return invoke<string>("explorer_absolute_path", { workspaceId, path });
 }
 

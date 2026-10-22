@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+
 type LeaveHandler = () => Promise<boolean>;
 type DirtyChecker = () => boolean;
 type DirtyPathsGetter = () => string[];
@@ -39,7 +41,7 @@ export function listDirtyEditorPaths(): string[] {
 }
 
 export function formatRollbackDirtyMessage(paths: string[]) {
-  return `以下文件有未保存修改，Rollback 将覆盖：${paths.join("、")}`;
+  return t("unsavedEditor.rollbackDirty", { paths: paths.join(t("common.listSep")) });
 }
 
 export async function confirmRollbackIfDirty(
@@ -71,7 +73,7 @@ function notifyPrompt() {
   for (const listener of listeners) listener();
 }
 
-export function askUnsaved(message: string, title = "文件尚未保存"): Promise<UnsavedAction> {
+export function askUnsaved(message: string, title = t("unsavedEditor.fileNotSaved")): Promise<UnsavedAction> {
   pending?.resolve("cancel");
   return new Promise((resolve) => {
     pending = { prompt: { title, message }, resolve };
@@ -93,8 +95,8 @@ export async function confirmLeaveUnsavedEditors() {
     if (!hasUnsavedEditors()) return true;
     if (leaveHandler) return await leaveHandler();
     const action = await askUnsaved(
-      "有文件尚未保存。关闭窗口将丢失未保存的更改。",
-      "有未保存的更改",
+      t("unsavedEditor.closeLoseChanges"),
+      t("unsavedEditor.unsavedChangesTitle"),
     );
     return action !== "cancel";
   } catch {

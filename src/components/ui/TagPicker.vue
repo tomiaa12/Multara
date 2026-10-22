@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { Check, Plus, Settings2, Tag, X } from "@lucide/vue";
+import { t } from "../../i18n";
 
 export interface TagOption {
   id: string;
@@ -117,14 +118,14 @@ onBeforeUnmount(unbindPopover);
         <span v-for="tag in selected" :key="tag.id" class="tag-chip">
           <i class="tag-dot" :style="{ background: tag.color }" />
           <span>{{ tag.name }}</span>
-          <button type="button" class="tag-chip-remove" :aria-label="`移除 ${tag.name}`" @click="remove(tag.id, $event)">
+          <button type="button" class="tag-chip-remove" :aria-label="t('tags.remove', { name: tag.name })" @click="remove(tag.id, $event)">
             <X :size="12" />
           </button>
         </span>
       </template>
       <template v-else>
         <Tag :size="14" />
-        <span>{{ placeholder || "选择标签" }}</span>
+        <span>{{ placeholder || t("tasks.selectTags") }}</span>
       </template>
     </div>
     <Teleport to="body">
@@ -133,7 +134,7 @@ onBeforeUnmount(unbindPopover);
         <input
           v-model="query"
           class="ui-input"
-          placeholder="搜索标签"
+          :placeholder="t('tasks.searchTags')"
           @keydown.enter.prevent="createTag"
         />
       </label>
@@ -151,13 +152,13 @@ onBeforeUnmount(unbindPopover);
         </button>
         <button v-if="canCreate" type="button" class="tag-option" @click="createTag">
           <Plus :size="14" />
-          <span>创建「{{ query.trim() }}」</span>
+          <span>{{ t('tags.createNamed', { name: query.trim() }) }}</span>
         </button>
-        <p v-else-if="!filtered.length" class="tag-empty">没有标签</p>
+        <p v-else-if="!filtered.length" class="tag-empty">{{ t('tags.empty') }}</p>
       </div>
       <button type="button" class="tag-pop-foot" @click="open = false; emit('manage')">
         <Settings2 :size="14" />
-        管理标签
+        {{ t('dashboard.manageTags') }}
       </button>
     </div>
     </Teleport>

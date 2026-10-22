@@ -23,6 +23,7 @@ import {
 } from "../workbench/scm-history";
 import type { ScmOpenTarget } from "../workbench/scm-groups";
 import { gitStatusClass } from "../workbench/tree-git-status";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   workspaces: Workspace[];
@@ -45,17 +46,17 @@ const menu = ref<{
 } | null>(null);
 
 const menuItems = computed(() => menu.value?.file
-  ? [{ id: "open-file", label: "打开文件" }]
+  ? [{ id: "open-file", label: t("scm.graph.openFile") }]
   : [
-      { id: "changes", label: "打开更改" },
+      { id: "changes", label: t("scm.graph.openChanges") },
       { type: "sep" as const },
-      { id: "detach", label: "检出（分离）" },
-      { id: "branch", label: "创建分支…" },
-      { id: "tag", label: "创建标记…" },
-      { id: "cherry-pick", label: "拣选" },
+      { id: "detach", label: t("scm.graph.detachCheckout") },
+      { id: "branch", label: t("scm.graph.createBranch") },
+      { id: "tag", label: t("scm.graph.createTag") },
+      { id: "cherry-pick", label: t("scm.graph.cherryPick") },
       { type: "sep" as const },
-      { id: "copy-hash", label: "复制提交哈希" },
-      { id: "copy-message", label: "复制提交说明" },
+      { id: "copy-hash", label: t("scm.graph.copyHash") },
+      { id: "copy-message", label: t("scm.graph.copyMessage") },
     ]);
 
 const previewHistory: GitHistoryItem[] = [
@@ -143,7 +144,7 @@ async function onMenu(id: string) {
     await navigator.clipboard.writeText(text);
     return;
   }
-  const promptLabel = id === "branch" ? "分支名称" : "标记名称";
+  const promptLabel = id === "branch" ? t("scm.graph.branchNamePrompt") : t("scm.graph.tagNamePrompt");
   const name = id === "branch" || id === "tag" ? window.prompt(promptLabel)?.trim() ?? "" : "";
   if ((id === "branch" || id === "tag") && !name) return;
   try {
@@ -202,7 +203,7 @@ function letter(status: string) {
 <template>
   <UiPane
     v-model:expanded="graphExpanded"
-    title="提交图"
+    :title="t('scm.graph.title')"
     storage-key="multara.scm.graphCollapsed"
     size-key="multara.scm.graphSize"
     :default-size="200"
@@ -216,7 +217,7 @@ function letter(status: string) {
         v-if="live !== false"
         variant="ghost"
         size="icon"
-        title="刷新提交图"
+        :title="t('scm.graph.refresh')"
         :disabled="loading"
         @click="load(true)"
       >
@@ -225,8 +226,8 @@ function letter(status: string) {
       </UiButton>
     </template>
     <div class="scm-graph-body">
-      <p v-if="loading && !rows.length" class="tree-empty">正在读取提交…</p>
-      <p v-else-if="!rows.length" class="tree-empty">还没有提交</p>
+      <p v-if="loading && !rows.length" class="tree-empty">{{ t('scm.graph.loadingCommits') }}</p>
+      <p v-else-if="!rows.length" class="tree-empty">{{ t('scm.graph.noCommits') }}</p>
       <div
         v-for="row in rows"
         :key="row.commit.hash"
@@ -272,7 +273,7 @@ function letter(status: string) {
           </span>
         </button>
         <div v-if="openHash === row.commit.hash" class="scm-history-files">
-          <p v-if="filesLoading === row.commit.hash" class="tree-empty">正在读取文件…</p>
+          <p v-if="filesLoading === row.commit.hash" class="tree-empty">{{ t('scm.graph.loadingFiles') }}</p>
           <div
             v-for="file in filesByHash[row.commit.hash] ?? []"
             :key="file.path"
@@ -308,7 +309,7 @@ function letter(status: string) {
         :disabled="loading"
         @click="load(false)"
       >
-        加载更多
+        {{ t('scm.graph.loadMore') }}
       </UiButton>
     </div>
     <ContextMenu

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import {
   MERGE_FILTER_ALL,
   MERGE_FILTER_RECENT,
@@ -14,6 +15,10 @@ import {
   mergeRunOrder,
   rememberMergeTargets,
 } from "./merge-targets";
+
+beforeEach(() => {
+  applyLanguageSetting("zh-CN");
+});
 
 describe("merge targets", () => {
   test("groups recent branches once and keeps the rest under local or remote", () => {

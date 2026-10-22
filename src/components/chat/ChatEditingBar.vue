@@ -6,6 +6,7 @@ import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
 import * as backend from "../../services/backend";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   workspaceIds: string[];
@@ -138,8 +139,8 @@ function openFirst() {
         type="button"
         class="working-set-title chat-editing-overview-open"
         @click="openFirst"
-      >{{ rows.length }} 个文件</button>
-      <span v-else class="working-set-title">{{ rows.length }} 个文件</span>
+      >{{ t('chat.editingFilesCount', { count: rows.length }) }}</button>
+      <span v-else class="working-set-title">{{ t('chat.editingFilesCount', { count: rows.length }) }}</span>
       <span class="working-set-line-counts">
         <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
         <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
@@ -155,8 +156,8 @@ function openFirst() {
         <span v-if="row.removed" class="working-set-lines-removed">−{{ row.removed }}</span>
       </span>
       <span class="chat-editing-file-actions">
-        <UiButton variant="ghost" size="small" title="保留这个文件的改动" :disabled="busy" @click="keep(row.workspaceId, row.filePath)">保留</UiButton>
-        <UiButton variant="ghost" size="small" title="撤销这个文件的改动" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">撤销</UiButton>
+        <UiButton variant="ghost" size="small" :title="t('chat.editingKeepTitle')" :disabled="busy" @click="keep(row.workspaceId, row.filePath)">{{ t('chat.editingKeep') }}</UiButton>
+        <UiButton variant="ghost" size="small" :title="t('chat.editingUndoTitle')" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">{{ t('chat.editingUndo') }}</UiButton>
       </span>
     </div>
   </section>

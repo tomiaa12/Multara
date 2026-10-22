@@ -1,7 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import { formatAbsoluteTime, formatRelativeTime, parseTimeMs } from "./relative-time";
 
 describe("formatRelativeTime", () => {
+  beforeAll(() => applyLanguageSetting("zh-CN"));
   const now = Date.parse("2026-10-20T12:00:00.000Z");
 
   test("formats minute hour day month year", () => {

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import {
   confirmLeaveUnsavedEditors,
   confirmRollbackIfDirty,
@@ -8,6 +9,8 @@ import {
   registerUnsavedDirtyChecker,
   registerUnsavedLeaveHandler,
 } from "./unsaved-editor";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 describe("confirmLeaveUnsavedEditors", () => {
   test("allows close when nothing is dirty", async () => {

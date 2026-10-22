@@ -1,4 +1,5 @@
 import type { ChatMessage, TimelineItem } from "../../domain/types";
+import { t } from "../../i18n";
 import {
   exploreDetail,
   inferToolName,
@@ -44,16 +45,17 @@ export interface TraceLanes {
   totalMs: number;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  queued: "排队中",
-  running: "运行中",
-  completed: "已完成",
-  failed: "失败",
-  stopped: "已停止",
+const STATUS_KEYS: Record<string, string> = {
+  queued: "agent.run.queued",
+  running: "agent.run.running",
+  completed: "agent.run.completed",
+  failed: "agent.run.failed",
+  stopped: "agent.run.stopped",
 };
 
 export function runStatusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status;
+  const key = STATUS_KEYS[status];
+  return key ? t(key) : status;
 }
 
 /** 运行状态对应的徽标色调（ds-badge 的 data-tone）；未知状态返回 undefined 即中性色 */
@@ -355,9 +357,9 @@ export function laneSegmentStyle(segment: LaneSegment, totalMs: number): Record<
 
 export function stepTitle(step: RunLogStep): string {
   if (step.kind === "call") return step.tool || inferToolName(step.call ?? step.result!) || "Tool";
-  if (step.kind === "thinking") return "思考";
-  if (step.kind === "error") return "错误";
-  return "回复";
+  if (step.kind === "thinking") return t("runLog.step.thinking");
+  if (step.kind === "error") return t("runLog.step.error");
+  return t("runLog.step.reply");
 }
 
 export function stepSummary(step: RunLogStep): string {
@@ -387,10 +389,10 @@ export function stepHaystack(step: RunLogStep): string {
 export function stepDetailText(step: RunLogStep): string {
   if (step.kind !== "call") return step.item.content ?? "";
   const parts: string[] = [];
-  if (step.call?.input) parts.push(`输入\n${JSON.stringify(step.call.input, null, 2)}`);
-  else if (step.call?.content) parts.push(`输入\n${step.call.content}`);
+  if (step.call?.input) parts.push(`${t("runLog.detail.input")}\n${JSON.stringify(step.call.input, null, 2)}`);
+  else if (step.call?.content) parts.push(`${t("runLog.detail.input")}\n${step.call.content}`);
   const output = step.result?.output ?? step.result?.content;
-  if (output) parts.push(`结果\n${output}`);
+  if (output) parts.push(`${t("runLog.detail.result")}\n${output}`);
   return parts.join("\n\n");
 }
 

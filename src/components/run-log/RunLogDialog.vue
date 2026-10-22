@@ -42,6 +42,7 @@ import {
   type RunLogRow,
   type RunLogStep,
 } from "./build-run-log";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   payload: OpenRunLogOptions;
@@ -292,14 +293,14 @@ async function copyTranscript() {
     >
       <header class="run-log-header">
         <div class="run-log-header-main">
-          <h2 id="run-log-title" class="run-log-sr">{{ payload.title || "执行日志" }}</h2>
+          <h2 id="run-log-title" class="run-log-sr">{{ payload.title || t("runLog.title") }}</h2>
           <p class="run-log-facts">
             <span class="run-log-status" :data-status="payload.status">{{ runStatusLabel(payload.status) }}</span>
             <template v-if="payload.agentName">
               <span class="run-log-agent">{{ payload.agentName }}</span>
             </template>
             <span aria-hidden="true">·</span>
-            <span>用时 {{ formatElapsedMs(durationMs) }}</span>
+            <span>{{ t("runLog.elapsed", { time: formatElapsedMs(durationMs) }) }}</span>
             <template v-if="payload.createdAt">
               <span aria-hidden="true">·</span>
               <span>{{ formatRunTime(payload.createdAt) }}</span>
@@ -307,32 +308,32 @@ async function copyTranscript() {
           </p>
           <p v-if="payload.error" class="run-log-error">{{ payload.error }}</p>
         </div>
-        <button type="button" class="run-log-close" title="关闭" aria-label="关闭" @click="emit('close')">
+        <button type="button" class="run-log-close" :title="t('common.close')" :aria-label="t('common.close')" @click="emit('close')">
           <X :size="16" />
         </button>
       </header>
 
       <div v-if="outcome" class="run-log-outcome">
-        <span class="run-log-outcome-label">产出</span>
+        <span class="run-log-outcome-label">{{ t("runLog.outcome") }}</span>
         <span v-if="outcome.paths.length" class="run-log-chip" :title="outcome.paths.join('\n')">
           <FilePen :size="12" />
-          {{ outcome.paths.length }} 个文件
+          {{ t("runLog.filesCount", { n: outcome.paths.length }) }}
         </span>
         <span v-if="outcome.commandCount" class="run-log-chip">
           <Terminal :size="12" />
-          {{ outcome.commandCount }} 条命令
+          {{ t("runLog.commandsCount", { n: outcome.commandCount }) }}
         </span>
       </div>
 
-      <section v-if="showTimeline && lanes" class="run-log-timeline" aria-label="模型与工具用时">
+      <section v-if="showTimeline && lanes" class="run-log-timeline" :aria-label="t('runLog.timelineAria')">
         <div class="run-log-lane-labels">
           <div class="run-log-lane-spacer" />
           <div class="run-log-lane-label">
-            <span>模型</span>
+            <span>{{ t("runLog.laneModel") }}</span>
             <span>{{ formatLaneTotal(lanes.modelMs) }}</span>
           </div>
           <div class="run-log-lane-label">
-            <span>工具</span>
+            <span>{{ t("runLog.laneTool") }}</span>
             <span>{{ formatLaneTotal(lanes.toolMs) }}</span>
           </div>
         </div>
@@ -360,7 +361,7 @@ async function copyTranscript() {
                 class="run-log-seg"
                 :class="segmentClass(segment.kind)"
                 :style="laneSegmentStyle(segment, lanes.totalMs)"
-                :title="`模型 · ${formatLaneTotal(segment.durationMs)}`"
+                :title="t('runLog.laneTitleModel', { time: formatLaneTotal(segment.durationMs) })"
                 @click="seek(segment.startMs)"
               />
             </div>
@@ -371,18 +372,18 @@ async function copyTranscript() {
                 type="button"
                 class="run-log-seg is-tool"
                 :style="laneSegmentStyle(segment, lanes.totalMs)"
-                :title="`工具 · ${formatLaneTotal(segment.durationMs)}`"
+                :title="t('runLog.laneTitleTool', { time: formatLaneTotal(segment.durationMs) })"
                 @click="seek(segment.startMs)"
               />
             </div>
           </div>
         </div>
         <div class="run-log-zoom" :class="{ 'is-on': zoom > 1 }">
-          <button type="button" title="缩小" :disabled="!canZoomOut" @click="setZoom(ZOOM_STEPS[zoomIndex - 1] ?? 1)">
+          <button type="button" :title="t('runLog.zoomOut')" :disabled="!canZoomOut" @click="setZoom(ZOOM_STEPS[zoomIndex - 1] ?? 1)">
             <Minus :size="12" />
           </button>
           <span>{{ zoom }}×</span>
-          <button type="button" title="放大" :disabled="!canZoomIn" @click="setZoom(ZOOM_STEPS[zoomIndex + 1] ?? zoom)">
+          <button type="button" :title="t('runLog.zoomIn')" :disabled="!canZoomIn" @click="setZoom(ZOOM_STEPS[zoomIndex + 1] ?? zoom)">
             <Plus :size="12" />
           </button>
         </div>
@@ -394,24 +395,24 @@ async function copyTranscript() {
           <input
             v-model="query"
             type="search"
-            placeholder="搜索这次运行…"
-            aria-label="搜索这次运行"
+            :placeholder="t('runLog.searchPlaceholder')"
+            :aria-label="t('runLog.searchAria')"
           />
         </label>
         <span class="run-log-count">
-          <template v-if="query.trim() || filterKeys.length">{{ filteredSteps.length }} / {{ steps.length }} 个步骤</template>
-          <template v-else>{{ steps.length }} 个步骤</template>
+          <template v-if="query.trim() || filterKeys.length">{{ t("runLog.stepsFiltered", { filtered: filteredSteps.length, total: steps.length }) }}</template>
+          <template v-else>{{ t("runLog.stepsCount", { n: steps.length }) }}</template>
         </span>
         <div v-if="filterOptions.length" class="run-log-menu-wrap">
           <button
             type="button"
             class="run-log-menu-btn"
             :class="{ 'is-on': filterKeys.length }"
-            title="筛选"
+            :title="t('common.filter')"
             @click="filterOpen = !filterOpen; moreOpen = false"
           >
             <Filter :size="13" />
-            筛选
+            {{ t("common.filter") }}
             <span v-if="filterKeys.length">{{ filterKeys.length }}</span>
           </button>
           <div v-if="filterOpen" class="run-log-menu" role="menu">
@@ -426,25 +427,25 @@ async function copyTranscript() {
               <span class="run-log-check" :class="{ 'is-on': filterKeys.includes(key) }" />
               {{ label }}
             </button>
-            <button v-if="filterKeys.length" type="button" class="is-muted" @click="filterKeys = []">清除筛选</button>
+            <button v-if="filterKeys.length" type="button" class="is-muted" @click="filterKeys = []">{{ t("runLog.clearFilters") }}</button>
           </div>
         </div>
         <div class="run-log-menu-wrap">
           <button
             type="button"
             class="run-log-menu-btn is-icon"
-            title="更多"
+            :title="t('scm.moreActions')"
             @click="moreOpen = !moreOpen; filterOpen = false"
           >
             <MoreHorizontal :size="14" />
           </button>
           <div v-if="moreOpen" class="run-log-menu" role="menu">
             <button type="button" @click="sortNewest = !sortNewest; moreOpen = false">
-              {{ sortNewest ? "按时间正序" : "最新在前" }}
+              {{ sortNewest ? t("runLog.sortOldest") : t("runLog.sortNewest") }}
             </button>
             <button type="button" @click="copyTranscript(); moreOpen = false">
               <Copy :size="13" />
-              {{ copied ? "已复制" : "复制这次运行" }}
+              {{ copied ? t("runLog.copied") : t("runLog.copyRun") }}
             </button>
           </div>
         </div>
@@ -452,8 +453,8 @@ async function copyTranscript() {
 
       <div class="run-log-body">
         <div class="run-log-steps vs-scroll">
-          <p v-if="!steps.length" class="run-log-empty">暂无步骤记录。</p>
-          <p v-else-if="!rows.length" class="run-log-empty">没有匹配的步骤。</p>
+          <p v-if="!steps.length" class="run-log-empty">{{ t("runLog.emptySteps") }}</p>
+          <p v-else-if="!rows.length" class="run-log-empty">{{ t("runLog.noMatchSteps") }}</p>
           <ul v-else class="run-log-step-list">
             <li
               v-for="row in rows"
@@ -468,7 +469,7 @@ async function copyTranscript() {
                   <ChevronRight class="run-log-chevron" :size="12" />
                   <span class="run-log-step-kind">{{ row.tool }}</span>
                   <span class="run-log-step-summary">{{ stepSummary(row.steps[0]!) }}</span>
-                  <span class="run-log-group-count">{{ row.steps.length }} 次</span>
+                  <span class="run-log-group-count">{{ t("runLog.groupCount", { n: row.steps.length }) }}</span>
                   <span class="run-log-step-meta">
                     <span v-if="row.durationMs != null">{{ formatStepDuration(row.durationMs) }}</span>
                   </span>
@@ -498,7 +499,7 @@ async function copyTranscript() {
                 <span class="run-log-step-summary">{{ stepSummary(row) }}</span>
                 <span class="run-log-step-meta">
                   <span v-if="row.kind === 'call' && row.durationMs != null">{{ formatStepDuration(row.durationMs) }}</span>
-                  <span v-else-if="row.kind === 'call' && !row.result && isLive">进行中</span>
+                  <span v-else-if="row.kind === 'call' && !row.result && isLive">{{ t("runLog.inProgress") }}</span>
                 </span>
               </button>
               <div v-else class="run-log-prose">
@@ -514,11 +515,11 @@ async function copyTranscript() {
           <header>
             <strong>{{ stepTitle(selectedStep) }}</strong>
             <span>{{ offsetLabel(selectedStep.startedAt) }}</span>
-            <button type="button" title="关闭详情" aria-label="关闭详情" @click="selectedSeq = null">
+            <button type="button" :title="t('runLog.closeDetail')" :aria-label="t('runLog.closeDetail')" @click="selectedSeq = null">
               <X :size="14" />
             </button>
           </header>
-          <pre class="vs-scroll">{{ stepDetailText(selectedStep) || "没有更多内容" }}</pre>
+          <pre class="vs-scroll">{{ stepDetailText(selectedStep) || t("runLog.noDetail") }}</pre>
         </aside>
       </div>
     </div>

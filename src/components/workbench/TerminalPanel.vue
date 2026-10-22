@@ -9,6 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { listen } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
+import { t } from "../../i18n";
 import * as backend from "../../services/backend";
 import type { TerminalProfile } from "../../services/backend";
 import { composerClipboardHtml } from "../chat/composer-clipboard";
@@ -169,22 +170,22 @@ const tabMenuItems = computed<ContextMenuItem[]>(() => {
   const index = props.sessions.findIndex((item) => item.id === id);
   const session = props.sessions[index];
   return [
-    { id: "split", label: "拆分", key: mac ? "⌘\\" : "Ctrl+Shift+5", disabled: !session?.live },
-    { id: "rename", label: "重命名..." },
-    { id: "icon", label: "更改图标..." },
-    { id: "color", label: "更改颜色..." },
-    { id: "size", label: "按内容宽度调整大小" },
+    { id: "split", label: t("terminal.split"), key: mac ? "⌘\\" : "Ctrl+Shift+5", disabled: !session?.live },
+    { id: "rename", label: t("terminal.rename") },
+    { id: "icon", label: t("terminal.changeIcon") },
+    { id: "color", label: t("terminal.changeColor") },
+    { id: "size", label: t("terminal.sizeToContent") },
     { type: "sep" },
-    { id: "close", label: "关闭" },
-    { id: "close-others", label: "关闭其他", disabled: props.sessions.length < 2 },
-    { id: "close-right", label: "关闭右侧", disabled: index < 0 || index >= props.sessions.length - 1 },
-    { id: "close-all", label: "全部关闭", disabled: props.sessions.length === 0 },
+    { id: "close", label: t("common.close") },
+    { id: "close-others", label: t("workbench.closeOthers"), disabled: props.sessions.length < 2 },
+    { id: "close-right", label: t("workbench.closeRight"), disabled: index < 0 || index >= props.sessions.length - 1 },
+    { id: "close-all", label: t("workbench.closeAll"), disabled: props.sessions.length === 0 },
   ];
 });
 
 const emptyMenuItems = computed<ContextMenuItem[]>(() => [
-  { id: "new", label: "新建终端" },
-  { id: "profile", label: "用配置文件新建..." },
+  { id: "new", label: t("terminal.new") },
+  { id: "profile", label: t("terminal.newWithProfile") },
 ]);
 
 const instanceMenuItems = computed<ContextMenuItem[]>(() => {
@@ -192,15 +193,15 @@ const instanceMenuItems = computed<ContextMenuItem[]>(() => {
   const term = id ? hosts.get(id)?.term : undefined;
   const hasSelection = Boolean(term?.getSelection()?.trim());
   return [
-    { id: "copy", label: "复制", key: mac ? "⌘C" : "Ctrl+C", disabled: !hasSelection },
-    { id: "copy-html", label: "复制为 HTML", disabled: !hasSelection },
-    { id: "paste", label: "粘贴", key: mac ? "⌘V" : "Ctrl+V" },
-    { id: "select-all", label: "全选" },
+    { id: "copy", label: t("common.copy"), key: mac ? "⌘C" : "Ctrl+C", disabled: !hasSelection },
+    { id: "copy-html", label: t("terminal.copyHtml"), disabled: !hasSelection },
+    { id: "paste", label: t("workbench.paste"), key: mac ? "⌘V" : "Ctrl+V" },
+    { id: "select-all", label: t("terminal.selectAll") },
     { type: "sep" },
-    { id: "clear", label: "清除" },
-    { id: "size", label: "按内容宽度调整大小" },
+    { id: "clear", label: t("terminal.clear") },
+    { id: "size", label: t("terminal.sizeToContent") },
     { type: "sep" },
-    { id: "kill", label: "终止终端" },
+    { id: "kill", label: t("terminal.kill") },
   ];
 });
 
@@ -213,9 +214,9 @@ const newMenuItems = computed<ContextMenuItem[]>(() => {
   }));
   if (items.length) items.push({ type: "sep" });
   items.push(
-    { id: "split", label: "拆分终端", disabled: !props.activeId },
-    { id: "run-file", label: "在终端中运行活动文件" },
-    { id: "run-selection", label: "在终端中运行所选文本" },
+    { id: "split", label: t("terminal.splitTerminal"), disabled: !props.activeId },
+    { id: "run-file", label: t("terminal.runActiveFile") },
+    { id: "run-selection", label: t("terminal.runSelection") },
   );
   return items;
 });
@@ -240,7 +241,7 @@ function tabTooltip(session: TerminalTab) {
   if (session.shell) lines.push(session.shell);
   if (session.pid) lines.push(`PID: ${session.pid}`);
   if (session.cwd) lines.push(session.cwd);
-  if (session.exitCode != null) lines.push(`退出码 ${session.exitCode}`);
+  if (session.exitCode != null) lines.push(t("terminal.exitCode", { code: session.exitCode }));
   return lines.join("\n");
 }
 
@@ -540,7 +541,7 @@ async function mount(session: TerminalTab) {
         const decoration = term.registerDecoration({ marker: command.promptMarker, width: 2 });
         decoration?.onRender((el) => {
           el.className = "terminal-quick-fix";
-          el.title = "快速修复";
+          el.title = t("terminal.quickFix");
           el.onclick = (event) => {
             event.stopPropagation();
             const rect = el.getBoundingClientRect();
@@ -553,7 +554,7 @@ async function mount(session: TerminalTab) {
   });
   const stops: Array<() => void> = [];
   if (!session.live) {
-    term.write(`${session.message || "终端需要在桌面应用里运行"}\r\n`);
+    term.write(`${session.message || t("terminal.desktopOnly")}\r\n`);
   } else {
     term.onData((data) => {
       const current = props.sessions.find((item) => item.id === session.id);
@@ -594,7 +595,7 @@ async function mount(session: TerminalTab) {
     const exit = await listen<{ id: string; exitCode?: number }>("terminal-exit", (event) => {
       if (event.payload.id !== session.id) return;
       const code = event.payload.exitCode ?? 1;
-      term.write(`\r\n\x1b[90m进程已退出，退出码 ${code}\x1b[0m\r\n`);
+      term.write(`\r\n\x1b[90m${t("terminal.processExited", { code })}\x1b[0m\r\n`);
       emit("patch", session.id, { live: false, busy: false, exitCode: code });
     });
     stops.push(data, exit, () => links.dispose());
@@ -624,7 +625,7 @@ function decorateCommand(term: Terminal, marker: IMarker | undefined, exitCode: 
   });
   decoration?.onRender((el) => {
     el.className = `terminal-command-decoration ${exitCode ? "error" : "success"}`;
-    el.title = exitCode ? `退出码 ${exitCode}` : "成功";
+    el.title = exitCode ? t("terminal.exitCode", { code: exitCode }) : t("terminal.success");
   });
 }
 
@@ -1064,7 +1065,7 @@ function writeClipboard(clipboard: DataTransfer, text: string, startLine: number
   const chip = {
     type: "chip" as const,
     id: crypto.randomUUID(),
-    path: "终端",
+    path: t("terminal.label"),
     startLine,
     endLine,
     text,
@@ -1231,7 +1232,7 @@ async function applyQuickFix(item: TerminalQuickFix) {
     try {
       await backend.terminalFreePort(item.port);
     } catch (error) {
-      hosts.get(id)?.term.write(`\r\n\x1b[31m${error instanceof Error ? error.message : "无法释放端口"}\x1b[0m\r\n`);
+      hosts.get(id)?.term.write(`\r\n\x1b[31m${error instanceof Error ? error.message : t("terminal.freePortFailed")}\x1b[0m\r\n`);
     }
     return;
   }
@@ -1314,7 +1315,7 @@ defineExpose({
       class="bottom-panel-resize"
       role="separator"
       aria-orientation="horizontal"
-      aria-label="调整终端高度"
+      :aria-label="t('terminal.resizeHeight')"
       @pointerdown="onResize"
     />
     <header class="bottom-panel-bar">
@@ -1355,32 +1356,32 @@ defineExpose({
             @keydown.escape.stop="renameId = ''"
             @blur="commitRename"
           />
-          <i title="终止终端" @click.stop="emit('kill', session.id)">
+          <i :title="t('terminal.kill')" @click.stop="emit('kill', session.id)">
             <Codicon name="close" :size="12" />
           </i>
         </button>
-        <span v-if="!sessions.length" class="bottom-panel-empty">终端</span>
+        <span v-if="!sessions.length" class="bottom-panel-empty">{{ t('terminal.label') }}</span>
       </div>
       <div class="bottom-panel-actions">
         <button type="button" :title="newTitle" @click="onNewButton">
           <Codicon name="add" :size="16" />
         </button>
-        <button type="button" title="新建终端下拉菜单" @click="openNewMenu">
+        <button type="button" :title="t('terminal.newMenu')" @click="openNewMenu">
           <Codicon name="chevron-down" :size="12" />
         </button>
-        <button type="button" title="拆分终端" :disabled="!activeId" @click="emit('split')">
+        <button type="button" :title="t('terminal.splitTerminal')" :disabled="!activeId" @click="emit('split')">
           <Codicon name="split-horizontal" :size="16" />
         </button>
-        <button type="button" title="清除终端" :disabled="!activeId" @click="hosts.get(activeId)?.term.clear()">
+        <button type="button" :title="t('terminal.clearTerminal')" :disabled="!activeId" @click="hosts.get(activeId)?.term.clear()">
           <Codicon name="clear-all" :size="16" />
         </button>
-        <button type="button" title="在终端中查找" :disabled="!activeId" @click="openFind">
+        <button type="button" :title="t('terminal.findInTerminal')" :disabled="!activeId" @click="openFind">
           <Codicon name="search" :size="16" />
         </button>
-        <button type="button" title="终止终端" :disabled="!activeId" @click="emit('kill', activeId)">
+        <button type="button" :title="t('terminal.kill')" :disabled="!activeId" @click="emit('kill', activeId)">
           <Codicon name="trash" :size="16" />
         </button>
-        <button type="button" title="隐藏面板" @click="emit('close')">
+        <button type="button" :title="t('terminal.hidePanel')" @click="emit('close')">
           <Codicon name="chevron-down" :size="16" />
         </button>
       </div>
@@ -1396,13 +1397,13 @@ defineExpose({
       <div v-if="sticky" class="terminal-sticky">{{ sticky }}</div>
       <div v-if="overlay" class="terminal-size-overlay">{{ overlay }}</div>
       <div v-if="linkHint" class="terminal-link-hint" :style="{ left: `${linkHint.x}px`, top: `${linkHint.y}px` }">
-        {{ mac ? "按 ⌘ 单击打开链接" : "按 Ctrl 单击打开链接" }}
+        {{ mac ? t('terminal.openLinkMac') : t('terminal.openLinkWin') }}
       </div>
       <ul
         v-if="suggestions.length"
         class="terminal-suggest"
         role="listbox"
-        aria-label="终端补全"
+        :aria-label="t('terminal.completion')"
         :style="{ left: `${suggestPlace.x}px`, top: `${suggestPlace.y}px` }"
       >
         <li
@@ -1424,7 +1425,7 @@ defineExpose({
         @pointerdown.stop.prevent
         @click="confirmAddChat"
       >
-        添加到聊天
+        {{ t('workbench.attachChat') }}
       </button>
       <div class="terminal-panes">
         <template v-for="(session, index) in sessions" :key="session.id">
@@ -1445,13 +1446,13 @@ defineExpose({
           />
         </template>
       </div>
-      <p v-if="!sessions.length" class="terminal-placeholder">没有打开的终端</p>
+      <p v-if="!sessions.length" class="terminal-placeholder">{{ t('terminal.noOpen') }}</p>
     </div>
     <div v-if="palette" class="terminal-palette">
       <input
         ref="paletteInput"
         v-model="palette.query"
-        :placeholder="palette.kind === 'command' ? '运行最近的命令' : '切换到最近的目录'"
+        :placeholder="palette.kind === 'command' ? t('terminal.recentCommands') : t('terminal.recentDirectories')"
         @keydown.escape.stop="palette = null"
         @keydown.enter.prevent="confirmPalette"
         @keydown.down.prevent="palette.index = Math.min(palette.index + 1, Math.max(0, paletteItems.length - 1))"
@@ -1465,12 +1466,12 @@ defineExpose({
         @mouseenter="palette.index = index"
         @click="confirmPalette"
       >{{ item }}</button>
-      <p v-if="!paletteItems.length">没有记录</p>
+      <p v-if="!paletteItems.length">{{ t('terminal.noHistory') }}</p>
     </div>
     <div v-if="pasteConfirm" class="terminal-paste-confirm">
-      <p>要把 {{ pasteConfirm.lines }} 行粘贴到终端吗？</p>
-      <button type="button" @click="confirmPaste">粘贴</button>
-      <button type="button" @click="pasteConfirm = null">取消</button>
+      <p>{{ t('terminal.pasteConfirm', { lines: pasteConfirm.lines }) }}</p>
+      <button type="button" @click="confirmPaste">{{ t('workbench.paste') }}</button>
+      <button type="button" @click="pasteConfirm = null">{{ t('common.cancel') }}</button>
     </div>
     <ContextMenu
       v-if="tabMenu"
@@ -1516,7 +1517,7 @@ defineExpose({
       v-if="colorPicker"
       :x="colorPicker.x"
       :y="colorPicker.y"
-      :items="TAB_COLORS.map((name) => ({ id: name || 'none', label: name || '默认' }))"
+      :items="TAB_COLORS.map((name) => ({ id: name || 'none', label: name || t('terminal.colorDefault') }))"
       @select="(name) => { emit('patch', colorPicker!.id, { color: name === 'none' ? undefined : name }); colorPicker = null; }"
       @close="colorPicker = null"
     />

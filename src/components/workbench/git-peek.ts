@@ -1,6 +1,7 @@
 import type * as Monaco from "monaco-editor";
 import { monaco } from "../../monaco";
 import * as backend from "../../services/backend";
+import { t } from "../../i18n";
 import { blameAgo, type GitBlameInfo } from "./git-blame";
 import { gitChangeAtLine, gitPeekBodyLines, type GitChange } from "./git-gutter-marks";
 
@@ -99,9 +100,9 @@ export class GitPeek {
     const actions = document.createElement("span");
     actions.className = "dirty-diff-peek-actions";
     actions.append(
-      this.action("上一个更改", "↑", () => this.step(-1)),
-      this.action("下一个更改", "↓", () => this.step(1)),
-      this.action("关闭", "×", () => this.close()),
+      this.action(t("scm.peek.prevChange"), "↑", () => this.step(-1)),
+      this.action(t("scm.peek.nextChange"), "↓", () => this.step(1)),
+      this.action(t("common.close"), "×", () => this.close()),
     );
     title.append(label, detail, record, actions);
     const body = document.createElement("div");
@@ -142,7 +143,10 @@ export class GitPeek {
     const name = filePath.split(/[/\\]/).pop() || filePath;
     if (labelEl) labelEl.textContent = name;
     if (detailEl && this.index >= 0) {
-      detailEl.textContent = `工作区更改 · ${this.index + 1} / ${this.changes.length}`;
+      detailEl.textContent = t("scm.peek.workspaceChanges", {
+        current: this.index + 1,
+        total: this.changes.length,
+      });
     }
   }
 

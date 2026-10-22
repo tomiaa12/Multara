@@ -1,18 +1,36 @@
 import type { Task, TaskStatus } from "../domain/types";
+import { t } from "../i18n";
 
-export const TASK_COLUMNS: Array<{ id: TaskStatus; label: string; optional?: boolean }> = [
-  { id: "backlog", label: "待规划" },
-  { id: "todo", label: "待办" },
-  { id: "in_progress", label: "进行中" },
-  { id: "in_review", label: "审核中" },
-  { id: "done", label: "已完成", optional: true },
-  { id: "blocked", label: "已阻塞" },
-  { id: "cancelled", label: "已取消", optional: true },
+const TASK_STATUS_KEY: Record<TaskStatus, string> = {
+  backlog: "tasks.status.backlog",
+  todo: "tasks.status.todo",
+  in_progress: "tasks.status.in_progress",
+  in_review: "tasks.status.in_review",
+  done: "tasks.status.done",
+  blocked: "tasks.status.blocked",
+  cancelled: "tasks.status.cancelled",
+};
+
+const TASK_COLUMN_META: Array<{ id: TaskStatus; optional?: boolean }> = [
+  { id: "backlog" },
+  { id: "todo" },
+  { id: "in_progress" },
+  { id: "in_review" },
+  { id: "done", optional: true },
+  { id: "blocked" },
+  { id: "cancelled", optional: true },
 ];
 
 export function taskStatusLabel(status: TaskStatus) {
-  return TASK_COLUMNS.find((column) => column.id === status)?.label ?? status;
+  return t(TASK_STATUS_KEY[status]);
 }
+
+export const TASK_COLUMNS: Array<{ id: TaskStatus; label: string; optional?: boolean }> = TASK_COLUMN_META.map((column) => ({
+  ...column,
+  get label() {
+    return taskStatusLabel(column.id);
+  },
+}));
 
 export function taskCode(task: Task, tasks: Task[]) {
   const ordered = [...tasks].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));

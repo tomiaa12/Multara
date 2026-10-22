@@ -82,14 +82,86 @@ const backCrumb = computed(() => backTarget());
 function goBack() {
   if (backCrumb.value) void router.push(backCrumb.value.fullPath);
 }
-const SIDEBAR_KEY = "multara.sidebar-collapsed";
-const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_KEY) === "true");
+const SIDEBAR_COLLAPSED_KEY = "multara.sidebar-collapsed";
+const SIDEBAR_WIDTH_KEY = "multara.sidebar-width";
+/** 收起态固定宽（与 layout.css 一致） */
+const SIDEBAR_COLLAPSED_WIDTH = 56;
+const SIDEBAR_DEFAULT_WIDTH = 208;
+const SIDEBAR_MIN_WIDTH = 160;
+const SIDEBAR_MAX_WIDTH = 400;
+/** 拖到此宽度以下视为收起 */
+const SIDEBAR_COLLAPSE_THRESHOLD = 120;
+/** 收起态向右拖过此宽度则展开 */
+const SIDEBAR_EXPAND_THRESHOLD = 88;
+
+function clampSidebarWidth(width: number) {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+function readStoredSidebarWidth() {
+  const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  if (!Number.isFinite(raw)) return SIDEBAR_DEFAULT_WIDTH;
+  return clampSidebarWidth(raw);
+}
+
+const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true");
+const sidebarWidth = ref(readStoredSidebarWidth());
+const sidebarResizing = ref(false);
+const shellSidebarPx = computed(() =>
+  sidebarCollapsed.value ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth.value,
+);
 const documentTheme = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
 let themeObserver: MutationObserver | undefined;
 
+function persistSidebar() {
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed.value));
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value));
+}
+
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value;
-  localStorage.setItem(SIDEBAR_KEY, String(sidebarCollapsed.value));
+  persistSidebar();
+}
+
+function beginSidebarResize(event: PointerEvent) {
+  const handle = event.currentTarget;
+  if (!(handle instanceof HTMLElement) || event.button !== 0) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  sidebarResizing.value = true;
+  document.body.classList.add("is-resizing-panels");
+  const startX = event.clientX;
+  const originCollapsed = sidebarCollapsed.value;
+  const startWidth = originCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth.value;
+
+  const move = (moveEvent: PointerEvent) => {
+    const next = startWidth + (moveEvent.clientX - startX);
+    if (sidebarCollapsed.value) {
+      if (next < SIDEBAR_EXPAND_THRESHOLD) return;
+      sidebarCollapsed.value = false;
+      sidebarWidth.value = clampSidebarWidth(Math.max(next, SIDEBAR_MIN_WIDTH));
+      return;
+    }
+    if (next < SIDEBAR_COLLAPSE_THRESHOLD) {
+      sidebarCollapsed.value = true;
+      return;
+    }
+    sidebarWidth.value = clampSidebarWidth(next);
+  };
+
+  const finish = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", finish);
+    handle.removeEventListener("pointercancel", finish);
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    document.body.classList.remove("is-resizing-panels");
+    sidebarResizing.value = false;
+    persistSidebar();
+  };
+
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
 }
 
 async function toggleTheme() {
@@ -342,7 +414,13 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="app-shell"
-    :class="{ 'is-macos': isMacOS, 'is-windows': isWindows, 'is-sidebar-collapsed': sidebarCollapsed }"
+    :class="{
+      'is-macos': isMacOS,
+      'is-windows': isWindows,
+      'is-sidebar-collapsed': sidebarCollapsed,
+      'is-sidebar-resizing': sidebarResizing,
+    }"
+    :style="{ '--shell-sidebar': `${shellSidebarPx}px` }"
   >
     <header class="titlebar" data-tauri-drag-region>
       <div class="titlebar-drag" data-tauri-drag-region @dblclick="toggleMaximizeWindow" />
@@ -400,6 +478,7 @@ onBeforeUnmount(() => {
       :collapsed="sidebarCollapsed"
       :aria-label="t('app.mainNav')"
       @select="onNavSelect"
+      @resize-start="beginSidebarResize"
     >
       <template #footer>
         <button

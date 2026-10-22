@@ -8,14 +8,15 @@ import { useAppStore } from "../stores/app";
 import { runStatusLabel, runStatusTone } from "../components/run-log";
 import {
   COMMON_TIMEZONES,
-  RUNBOOK_TEMPLATE,
+  runbookTemplate,
   browserTimezone,
   buildSchedulePreview,
   defaultScheduleDraft,
   formatNextLabel,
   fromCron,
   toCron,
-  WEEKDAY_LABELS,
+  WEEKDAY_DAYS,
+  weekdayLabel,
   type ScheduleDraft,
   type ScheduleRepeat,
 } from "./automation-schedule";
@@ -84,7 +85,7 @@ function edit(item?: Automation) {
     name: item?.name ?? "",
     projectId: item?.projectId ?? "",
     target: item ? `${item.targetType}:${item.targetId}` : targets.value[0]?.value ?? "",
-    prompt: item?.prompt ?? RUNBOOK_TEMPLATE,
+    prompt: item?.prompt ?? runbookTemplate(),
     triggerType: item?.triggerType ?? "schedule",
     eventName: item?.eventName ?? "",
     signingSecret: "",
@@ -280,7 +281,7 @@ function toggleWeekday(day: number) {
               class="automation-runbook"
               required
               rows="18"
-              placeholder="# 目标"
+              :placeholder="t('automation.promptPlaceholder')"
             />
           </section>
 
@@ -325,87 +326,87 @@ function toggleWeekday(day: number) {
 
             <template v-if="form.triggerType === 'schedule'">
               <div v-if="form.schedule.raw" class="automation-config-card">
-                <div class="automation-field-label">高级 Cron</div>
-                <p class="automation-hint">当前表达式无法用简化编辑器表示，可直接修改或恢复为定点/间隔。</p>
+                <div class="automation-field-label">{{ t("automation.cronAdvanced") }}</div>
+                <p class="automation-hint">{{ t("automation.cronAdvancedHint") }}</p>
                 <UiInput v-model="form.schedule.raw" required placeholder="0 9 * * *" />
-                <UiButton type="button" data-variant="ghost" data-size="small" @click="clearAdvancedCron">改用简化编辑器</UiButton>
+                <UiButton type="button" data-variant="ghost" data-size="small" @click="clearAdvancedCron">{{ t("automation.useSimpleEditor") }}</UiButton>
               </div>
 
               <template v-else>
                 <div class="automation-field">
-                  <span class="automation-field-label">时间</span>
+                  <span class="automation-field-label">{{ t("automation.timeMode") }}</span>
                   <div class="automation-segment">
                     <button
                       type="button"
                       class="automation-segment-btn"
                       :class="{ active: form.schedule.mode === 'at' }"
                       @click="form.schedule.mode = 'at'"
-                    >定点</button>
+                    >{{ t("automation.atTime") }}</button>
                     <button
                       type="button"
                       class="automation-segment-btn"
                       :class="{ active: form.schedule.mode === 'every' }"
                       @click="form.schedule.mode = 'every'"
-                    >按间隔</button>
+                    >{{ t("automation.everyInterval") }}</button>
                   </div>
                 </div>
 
                 <label v-if="form.schedule.mode === 'at'">
-                  时刻
+                  {{ t("automation.timeOfDay") }}
                   <UiInput v-model="form.schedule.time" type="time" required />
                 </label>
                 <label v-else>
-                  每隔（小时）
+                  {{ t("automation.everyHours") }}
                   <UiInput v-model.number="form.schedule.everyHours" type="number" min="1" max="23" required />
                 </label>
 
                 <div v-if="form.schedule.mode === 'at'" class="automation-field">
-                  <span class="automation-field-label">重复</span>
+                  <span class="automation-field-label">{{ t("automation.repeat") }}</span>
                   <div class="automation-segment">
                     <button
                       type="button"
                       class="automation-segment-btn"
                       :class="{ active: form.schedule.repeat === 'daily' }"
                       @click="setRepeat('daily')"
-                    >每天</button>
+                    >{{ t("automation.daily") }}</button>
                     <button
                       type="button"
                       class="automation-segment-btn"
                       :class="{ active: form.schedule.repeat === 'weekly' }"
                       @click="setRepeat('weekly')"
-                    >每周</button>
+                    >{{ t("automation.weekly") }}</button>
                     <button
                       type="button"
                       class="automation-segment-btn"
                       :class="{ active: form.schedule.repeat === 'monthly' }"
                       @click="setRepeat('monthly')"
-                    >每月</button>
+                    >{{ t("automation.monthly") }}</button>
                   </div>
                   <div v-if="form.schedule.repeat === 'weekly'" class="automation-weekdays">
                     <button
-                      v-for="(label, day) in WEEKDAY_LABELS"
-                      :key="label"
+                      v-for="day in WEEKDAY_DAYS"
+                      :key="day"
                       type="button"
                       class="automation-weekday"
                       :class="{ active: form.schedule.weekdays.includes(day) }"
                       @click="toggleWeekday(day)"
-                    >{{ label }}</button>
+                    >{{ weekdayLabel(day) }}</button>
                   </div>
                   <label v-else-if="form.schedule.repeat === 'monthly'" class="automation-month-day">
-                    日期
+                    {{ t("automation.monthDay") }}
                     <UiInput v-model.number="form.schedule.monthDay" type="number" min="1" max="31" required />
-                    <small v-if="form.schedule.monthDay >= 29" class="automation-hint">没有这一天的月份会跳过。</small>
+                    <small v-if="form.schedule.monthDay >= 29" class="automation-hint">{{ t("automation.monthDaySkipHint") }}</small>
                   </label>
                 </div>
               </template>
 
               <label>
-                时区
+                {{ t("automation.timezone") }}
                 <UiSelect
                   v-model="form.schedule.timezone"
                   required
                   searchable
-                  search-placeholder="搜索时区"
+                  :search-placeholder="t('automation.searchTimezone')"
                   :options="timezoneOptions.map((zone) => ({ value: zone, label: zone }))"
                 />
               </label>
@@ -414,42 +415,42 @@ function toggleWeekday(day: number) {
                 <strong>{{ schedulePreview.label }}</strong>
                 <code>{{ schedulePreview.cron }}</code>
                 <div class="automation-preview-next">
-                  <span class="automation-field-label">接下来</span>
+                  <span class="automation-field-label">{{ t("automation.upcoming") }}</span>
                   <ul v-if="schedulePreview.next.length">
                     <li v-for="(item, index) in schedulePreview.next" :key="index">
                       <span>{{ formatNextLabel(item.at, form.schedule.timezone) }}</span>
                       <small>{{ item.relative }}</small>
                     </li>
                   </ul>
-                  <p v-else class="automation-hint">无法预览下次运行时间</p>
+                  <p v-else class="automation-hint">{{ t("automation.noNextPreview") }}</p>
                 </div>
               </div>
             </template>
 
             <template v-else-if="form.triggerType === 'webhook'">
               <div class="automation-config-card">
-                <p class="automation-hint">保存后会生成本地 Webhook URL。调用方需提供唯一的 <code>X-Multara-Delivery</code>；可选 HMAC 签名头 <code>X-Multara-Signature: sha256=&lt;hex&gt;</code>。</p>
+                <p class="automation-hint">{{ t("automation.webhookHint") }}</p>
               </div>
               <label>
-                事件过滤（可选）
-                <UiInput v-model="form.eventName" placeholder="例如：build.completed" />
+                {{ t("automation.eventFilterOptional") }}
+                <UiInput v-model="form.eventName" :placeholder="t('automation.eventFilterExample')" />
               </label>
               <label>
-                HMAC 签名密钥（可选）
-                <UiInput v-model="form.signingSecret" type="password" placeholder="留空表示不校验；编辑时留空保留原值" />
+                {{ t("automation.hmacSecretOptional") }}
+                <UiInput v-model="form.signingSecret" type="password" :placeholder="t('automation.hmacSecretPlaceholder')" />
               </label>
             </template>
 
             <template v-else-if="form.triggerType === 'api'">
               <label>
-                事件过滤（可选）
-                <UiInput v-model="form.eventName" placeholder="例如：deploy.finished" />
+                {{ t("automation.eventFilterOptional") }}
+                <UiInput v-model="form.eventName" :placeholder="t('automation.eventFilterDeployExample')" />
               </label>
-              <p class="automation-hint">通过应用 API 触发；仅编辑已有自动化时可用。</p>
+              <p class="automation-hint">{{ t("automation.apiHint") }}</p>
             </template>
 
             <template v-else>
-              <p class="automation-hint">仅可通过列表中的「立即运行」手动触发。</p>
+              <p class="automation-hint">{{ t("automation.manualOnlyHint") }}</p>
             </template>
 
             <label class="check-row"><UiInput v-model="form.enabled" type="checkbox" />{{ t("automation.enable") }}</label>
@@ -458,9 +459,9 @@ function toggleWeekday(day: number) {
 
         <footer class="automation-dialog-foot">
           <p class="automation-foot-hint">
-            <template v-if="form.triggerType === 'schedule'">保存后会按计划运行；Multara 需保持打开。</template>
-            <template v-else-if="form.triggerType === 'webhook'">保存后即可接收 Webhook 请求。</template>
-            <template v-else>保存后可在列表中手动运行。</template>
+            <template v-if="form.triggerType === 'schedule'">{{ t("automation.footSchedule") }}</template>
+            <template v-else-if="form.triggerType === 'webhook'">{{ t("automation.footWebhook") }}</template>
+            <template v-else>{{ t("automation.footDefault") }}</template>
           </p>
           <div class="modal-actions">
             <p v-if="error" class="form-error">{{ error }}</p>

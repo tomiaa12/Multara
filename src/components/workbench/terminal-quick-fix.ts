@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+
 export type TerminalQuickFix =
   | { kind: "run"; label: string; command: string }
   | { kind: "freePort"; label: string; port: number }
@@ -16,7 +18,8 @@ export function detectQuickFixes(command: string, output: string, exitCode: numb
 
   const upstream = output.match(/git push --set-upstream (\S+) (\S+)/);
   if (upstream) {
-    push({ kind: "run", label: `运行 git push --set-upstream ${upstream[1]} ${upstream[2]}`, command: `git push --set-upstream ${upstream[1]} ${upstream[2]}` });
+    const cmd = `git push --set-upstream ${upstream[1]} ${upstream[2]}`;
+    push({ kind: "run", label: t("terminal.fix.run", { command: cmd }), command: cmd });
   }
 
   const similar = output.match(/git: '([^']+)' is not a git command[\s\S]*?The most similar commands? (?:is|are)\s*\n((?:\s+\S+\s*\n?)+)/);
@@ -24,26 +27,27 @@ export function detectQuickFixes(command: string, output: string, exitCode: numb
     const typo = similar[1]!;
     for (const suggestion of similar[2]!.split("\n").map((item) => item.trim()).filter(Boolean)) {
       const fixed = trimmed.replace(new RegExp(`^git\\s+${escapeRegExp(typo)}\\b`), `git ${suggestion}`);
-      if (fixed !== trimmed) push({ kind: "run", label: `运行 ${fixed}`, command: fixed });
+      if (fixed !== trimmed) push({ kind: "run", label: t("terminal.fix.run", { command: fixed }), command: fixed });
     }
   }
 
   const pathspec = output.match(/error: pathspec '([^']+)' did not match any file\(s\) known to git/);
   if (pathspec && /^git\s+(checkout|switch)\b/.test(trimmed)) {
     const verb = /^git\s+switch\b/.test(trimmed) ? "switch -c" : "checkout -b";
-    push({ kind: "run", label: `创建分支：git ${verb} ${pathspec[1]}`, command: `git ${verb} ${pathspec[1]}` });
+    const branchCmd = `git ${verb} ${pathspec[1]}`;
+    push({ kind: "run", label: t("terminal.fix.createBranch", { command: branchCmd }), command: branchCmd });
   }
 
   const pullRequest = output.match(/(?:Create a pull request|create a merge request)[^\n]*\n(?:remote:)?\s*(https?:\/\/\S+)/i);
-  if (pullRequest) push({ kind: "openUrl", label: "打开链接创建 Pull Request", url: pullRequest[1]! });
+  if (pullRequest) push({ kind: "openUrl", label: t("terminal.fix.openPullRequest"), url: pullRequest[1]! });
 
   if (exitCode !== 0) {
     const port = detectPortInUse(output);
-    if (port) push({ kind: "freePort", label: `结束占用端口 ${port} 的进程`, port });
+    if (port) push({ kind: "freePort", label: t("terminal.fix.freePort", { port }), port });
   }
 
   const pip = output.match(/To update, run:\s*(\S*python[\w.]*\s+-m\s+pip\s+install\s+--upgrade\s+pip)/i);
-  if (pip) push({ kind: "run", label: `运行 ${pip[1]}`, command: pip[1]! });
+  if (pip) push({ kind: "run", label: t("terminal.fix.run", { command: pip[1]! }), command: pip[1]! });
 
   return fixes.slice(0, MAX_FIXES);
 }

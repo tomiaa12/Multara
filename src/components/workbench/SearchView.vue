@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import type { Workspace } from "../../domain/types";
+import { t } from "../../i18n";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import * as backend from "../../services/backend";
 import { previewSearchFiles, setPreviewFileContent } from "./preview-workspace";
@@ -82,8 +83,9 @@ const groups = computed(() => {
 const summary = computed(() => {
   const fileCount = groups.value.reduce((sum, folder) => sum + folder.files.length, 0);
   if (!options.value.query || searching.value) return "";
-  if (!matches.value.length) return error.value ? "" : "未找到结果";
-  return `${matches.value.length} 个结果，${fileCount} 个文件${truncated.value ? "（结果已截断）" : ""}`;
+  if (!matches.value.length) return error.value ? "" : t("search.noResults");
+  const key = truncated.value ? "search.summaryTruncated" : "search.summary";
+  return t(key, { matches: matches.value.length, files: fileCount });
 });
 
 watch(() => props.active, (active) => {
@@ -258,7 +260,7 @@ async function runSearch() {
   } catch (caught) {
     if (current !== request) return;
     matches.value = [];
-    error.value = caught instanceof Error ? caught.message : "搜索失败";
+    error.value = caught instanceof Error ? caught.message : t("search.failed");
   } finally {
     if (current === request) searching.value = false;
   }
@@ -279,7 +281,7 @@ async function replaceAll() {
     try {
       next = replaceInDocument(content, options.value, replacement.value);
     } catch (caught) {
-      error.value = caught instanceof Error ? caught.message : "替换失败";
+      error.value = caught instanceof Error ? caught.message : t("search.replaceFailed");
       return;
     }
     if (next === content) continue;
@@ -291,8 +293,8 @@ async function replaceAll() {
     }
   }
   status.value = skipped
-    ? `已替换 ${replaced} 个文件，跳过 ${skipped} 个未保存文件`
-    : `已替换 ${replaced} 个文件`;
+    ? t("search.replaceDoneSkipped", { replaced, skipped })
+    : t("search.replaceDone", { count: replaced });
   await runSearch();
 }
 
@@ -320,7 +322,7 @@ async function readFile(workspaceId: string, path: string) {
   try {
     return (await backend.readWorkspaceFile(workspaceId, path)).content;
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "无法读取文件";
+    error.value = caught instanceof Error ? caught.message : t("search.readFailed");
     return null;
   }
 }
@@ -329,20 +331,20 @@ async function readFile(workspaceId: string, path: string) {
 <template>
   <section class="search-view">
     <div class="search-toolbar">
-      <button type="button" :title="searching ? '取消搜索' : '刷新'" :disabled="!searching && !options.query" @click="searching ? cancelSearch() : runSearch()">
+      <button type="button" :title="searching ? t('search.cancel') : t('search.refresh')" :disabled="!searching && !options.query" @click="searching ? cancelSearch() : runSearch()">
         <Codicon :name="searching ? 'search-stop' : 'refresh'" :size="16" />
       </button>
-      <button type="button" title="清除搜索结果" :disabled="!options.query && !replacement && !matches.length" @click="clearSearch">
+      <button type="button" :title="t('search.clearResults')" :disabled="!options.query && !replacement && !matches.length" @click="clearSearch">
         <Codicon name="clear-all" :size="16" />
       </button>
       <button
         type="button"
-        :title="viewAsTree ? '以列表形式查看' : '以树形式查看'"
+        :title="viewAsTree ? t('search.viewAsList') : t('search.viewAsTree')"
         @click="viewAsTree = !viewAsTree"
       >
         <Codicon :name="viewAsTree ? 'list-tree' : 'list-flat'" :size="16" />
       </button>
-      <button type="button" :title="allCollapsed() ? '全部展开' : '全部折叠'" :disabled="!matches.length" @click="toggleAll">
+      <button type="button" :title="allCollapsed() ? t('search.expandAll') : t('search.collapseAll')" :disabled="!matches.length" @click="toggleAll">
         <Codicon :name="allCollapsed() ? 'expand-all' : 'collapse-all'" :size="16" />
       </button>
     </div>
@@ -351,7 +353,7 @@ async function readFile(workspaceId: string, path: string) {
         <button
           type="button"
           class="search-toggle"
-          :title="showReplace ? '隐藏替换' : '替换'"
+          :title="showReplace ? t('search.hideReplace') : t('search.replaceToggle')"
           :aria-expanded="showReplace"
           @click="showReplace = !showReplace"
         >
@@ -361,47 +363,47 @@ async function readFile(workspaceId: string, path: string) {
           <input
             ref="input"
             v-model="options.query"
-            placeholder="搜索"
-            aria-label="搜索"
+            :placeholder="t('search.placeholder')"
+            :aria-label="t('search.placeholder')"
             spellcheck="false"
           />
           <span class="search-input-actions">
-            <button type="button" title="区分大小写" :class="{ active: options.caseSensitive }" @click="options.caseSensitive = !options.caseSensitive">Aa</button>
-            <button type="button" title="全字匹配" :class="{ active: options.wholeWord }" @click="options.wholeWord = !options.wholeWord">ab</button>
-            <button type="button" title="使用正则表达式" :class="{ active: options.regex }" @click="options.regex = !options.regex">.*</button>
+            <button type="button" :title="t('search.caseSensitive')" :class="{ active: options.caseSensitive }" @click="options.caseSensitive = !options.caseSensitive">Aa</button>
+            <button type="button" :title="t('search.wholeWord')" :class="{ active: options.wholeWord }" @click="options.wholeWord = !options.wholeWord">ab</button>
+            <button type="button" :title="t('search.regex')" :class="{ active: options.regex }" @click="options.regex = !options.regex">.*</button>
           </span>
         </label>
       </div>
       <div v-if="showReplace" class="search-row">
         <span class="search-toggle" />
         <label class="search-input">
-          <input v-model="replacement" placeholder="替换" aria-label="替换" spellcheck="false" />
+          <input v-model="replacement" :placeholder="t('search.replacePlaceholder')" :aria-label="t('search.replacePlaceholder')" spellcheck="false" />
           <span class="search-input-actions">
-            <button type="button" title="保留大小写" :class="{ active: options.preserveCase }" @click="options.preserveCase = !options.preserveCase">AB</button>
+            <button type="button" :title="t('search.preserveCase')" :class="{ active: options.preserveCase }" @click="options.preserveCase = !options.preserveCase">AB</button>
           </span>
         </label>
-        <button type="button" class="search-outside" title="全部替换" :disabled="!matches.length" @click="replaceAll">
+        <button type="button" class="search-outside" :title="t('search.replaceAll')" :disabled="!matches.length" @click="replaceAll">
           <Codicon name="replace-all" :size="16" />
         </button>
       </div>
       <div class="search-details-bar">
-        <span>{{ showDetails ? "" : "要包含的文件" }}</span>
-        <button type="button" title="搜索详细信息" :aria-expanded="showDetails" @click="showDetails = !showDetails">
+        <span>{{ showDetails ? "" : t('search.includeFiles') }}</span>
+        <button type="button" :title="t('search.details')" :aria-expanded="showDetails" @click="showDetails = !showDetails">
           <Codicon name="ellipsis" :size="16" />
         </button>
       </div>
       <div v-if="showDetails" class="search-details">
         <label class="search-file-pattern">
-          <span>要包含的文件</span>
-          <input v-model="options.include" placeholder="例如 src/**/*.ts" aria-label="要包含的文件" spellcheck="false" />
+          <span>{{ t('search.includeFiles') }}</span>
+          <input v-model="options.include" :placeholder="t('search.includePlaceholder')" :aria-label="t('search.includeFiles')" spellcheck="false" />
         </label>
         <label class="search-file-pattern">
-          <span>要排除的文件</span>
+          <span>{{ t('search.excludeFiles') }}</span>
           <span class="search-pattern-input">
-            <input v-model="options.exclude" placeholder="例如 **/node_modules, **/*.spec.ts" aria-label="要排除的文件" spellcheck="false" />
+            <input v-model="options.exclude" :placeholder="t('search.excludePlaceholder')" :aria-label="t('search.excludeFiles')" spellcheck="false" />
             <button
               type="button"
-              title="使用排除设置和忽略文件"
+              :title="t('search.useExclude')"
               :class="{ active: options.useExcludeSettings }"
               @click="options.useExcludeSettings = !options.useExcludeSettings"
             >
@@ -411,7 +413,7 @@ async function readFile(workspaceId: string, path: string) {
         </label>
       </div>
     </div>
-    <p v-if="searching" class="search-status">正在搜索…</p>
+    <p v-if="searching" class="search-status">{{ t('search.searching') }}</p>
     <p v-else-if="error" class="search-status is-error">{{ error }}</p>
     <p v-else-if="summary || status" class="search-status">{{ status || summary }}</p>
     <div class="search-results vs-scroll">
