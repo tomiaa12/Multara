@@ -313,20 +313,20 @@ button.nav-item,
   text-align: left;
 }
 
-/* 折叠为图标栏 */
-.app-shell.is-sidebar-collapsed .nav-label,
-.app-shell.is-sidebar-collapsed .nav-item-label {
+/* 折叠为图标栏：只作用主侧栏（> .sidebar），避免 MCP/Skills/设置页内部来源菜单被一起藏字 */
+.app-shell.is-sidebar-collapsed > .sidebar .nav-label,
+.app-shell.is-sidebar-collapsed > .sidebar .nav-item-label {
   display: none;
 }
-.app-shell.is-sidebar-collapsed .nav-group {
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group {
   justify-items: center;
 }
-.app-shell.is-sidebar-collapsed .nav-item {
+.app-shell.is-sidebar-collapsed > .sidebar .nav-item {
   justify-content: center;
   width: 36px;
   padding: 0;
 }
-.app-shell.is-sidebar-collapsed .nav-badge {
+.app-shell.is-sidebar-collapsed > .sidebar .nav-badge {
   position: absolute;
   top: 2px;
   right: 2px;
@@ -335,7 +335,7 @@ button.nav-item,
   padding: 0 3px;
   font-size: 9px;
 }
-.app-shell.is-sidebar-collapsed .nav-badge[data-digits="1"] {
+.app-shell.is-sidebar-collapsed > .sidebar .nav-badge[data-digits="1"] {
   width: 14px;
   min-width: 14px;
   padding: 0;
