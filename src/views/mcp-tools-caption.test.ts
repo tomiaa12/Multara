@@ -39,4 +39,10 @@ describe("mcpToolsCaption", () => {
       probe: probe({ tools: [{ name: "a", title: "", description: "", uri: "" }] }),
     })).toBe("已禁用");
   });
+
+  it("shows needs auth before treating as failed", () => {
+    expect(mcpToolsCaption({
+      probe: probe({ status: "needs_auth", ok: false, error: "HTTP 401", tools: [] }),
+    })).toBe("需要授权");
+  });
 });

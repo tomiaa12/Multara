@@ -20,9 +20,10 @@ jobs:
           - platform: macos-15
             args: --target aarch64-apple-darwin --bundles app,dmg
             rust_targets: aarch64-apple-darwin
-          - platform: macos-15
-            args: --target x86_64-apple-darwin --bundles app,dmg
-            rust_targets: x86_64-apple-darwin
+          # Intel Mac：装机量少，暂时不打包
+          # - platform: macos-15
+          #   args: --target x86_64-apple-darwin --bundles app,dmg
+          #   rust_targets: x86_64-apple-darwin
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5

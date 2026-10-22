@@ -805,8 +805,29 @@ fn well_known_bin_dirs() -> Vec<PathBuf> {
         PathBuf::from("/opt/homebrew/bin"),
         PathBuf::from("/usr/local/bin"),
     ];
-    if let Some(home) = std::env::var_os("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/bin"));
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return dirs;
+    };
+    dirs.push(home.join(".local/bin"));
+    dirs.push(home.join(".volta/bin"));
+    dirs.push(home.join(".bun/bin"));
+    dirs.push(home.join(".cargo/bin"));
+    dirs.push(home.join(".asdf/shims"));
+    dirs.push(home.join(".local/share/mise/shims"));
+    dirs.push(home.join(".mise/shims"));
+    dirs.push(home.join(".fnm/aliases/default/bin"));
+    dirs.push(home.join(".local/share/fnm/aliases/default/bin"));
+    // nvm：取版本目录名最大的一个（通常是最新），避免扫全部。
+    if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+        let mut versions: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        versions.sort();
+        if let Some(latest) = versions.pop() {
+            dirs.push(latest.join("bin"));
+        }
     }
     dirs
 }
@@ -928,11 +949,24 @@ fn refresh_login_path_dirs() {
     }
 }
 
+/// 与 VS Code `shellEnv.ts` 一致：用标记包住 PATH，避免 oh-my-zsh 等往 stdout 打横幅污染首行。
+#[cfg(unix)]
+const PATH_MARK: &str = "__MULTARA_PATH__";
+
+#[cfg(unix)]
+fn dump_path_command() -> String {
+    format!("printf '{PATH_MARK}%s{PATH_MARK}\\n' \"$PATH\"")
+}
+
 #[cfg(unix)]
 fn load_login_path_dirs() -> Vec<PathBuf> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    dump_login_path(&shell, &["-lc", "printenv PATH"])
-        .or_else(|| dump_login_path(&shell, &["-lic", "printenv PATH"]))
+    let cmd = dump_path_command();
+    // 必须优先 interactive+login（-ilc）。nvm/fnm 多半写在 .zshrc，纯 -lc 常「成功」
+    // 但 PATH 很短；旧逻辑用 or_else，短 PATH 成功后永远不会再试 -lic。
+    dump_login_path(&shell, &["-ilc", &cmd])
+        .or_else(|| dump_login_path(&shell, &["-i", "-l", "-c", &cmd]))
+        .or_else(|| dump_login_path(&shell, &["-lc", &cmd]))
         .unwrap_or_default()
         .split(':')
         .filter(|part| !part.is_empty())
@@ -941,14 +975,25 @@ fn load_login_path_dirs() -> Vec<PathBuf> {
 }
 
 #[cfg(unix)]
+fn extract_marked_path(text: &str) -> Option<String> {
+    let start = text.find(PATH_MARK)? + PATH_MARK.len();
+    let rest = &text[start..];
+    let end = rest.find(PATH_MARK)?;
+    let path = rest[..end].trim();
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+#[cfg(unix)]
 fn dump_login_path(shell: &str, args: &[&str]) -> Option<String> {
     let mut child = Command::new(shell)
         .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    if !wait_with_timeout(&mut child, Duration::from_secs(2)) {
+    // VS Code 默认 10s；nvm 初始化经常超过原先的 2s。
+    if !wait_with_timeout(&mut child, Duration::from_secs(10)) {
         let _ = child.kill();
         let _ = child.wait();
         return None;
@@ -956,8 +1001,7 @@ fn dump_login_path(shell: &str, args: &[&str]) -> Option<String> {
     let mut stdout = child.stdout.take()?;
     let mut text = String::new();
     stdout.read_to_string(&mut text).ok()?;
-    let path = text.lines().next()?.trim();
-    (!path.is_empty()).then(|| path.to_string())
+    extract_marked_path(&text)
 }
 
 #[cfg(unix)]
@@ -1100,6 +1144,16 @@ mod tests {
                 std::path::PathBuf::from("/opt/homebrew/bin"),
                 std::path::PathBuf::from("/usr/local/bin"),
             ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn marked_path_ignores_shell_banner_lines() {
+        let raw = "Welcome\n__MULTARA_PATH__/opt/homebrew/bin:/Users/me/.nvm/versions/node/v22/bin__MULTARA_PATH__\n";
+        assert_eq!(
+            super::extract_marked_path(raw).as_deref(),
+            Some("/opt/homebrew/bin:/Users/me/.nvm/versions/node/v22/bin")
         );
     }
 
