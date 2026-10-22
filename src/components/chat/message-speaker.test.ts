@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { applyLanguageSetting, t } from "../../i18n";
 import type { Agent, ChatMessage, ChatSession, Squad } from "../../domain/types";
 import { resolveTurnTarget, speakerForMessage } from "./message-speaker";
 
@@ -57,6 +58,9 @@ function message(partial: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role"
 }
 
 describe("resolveTurnTarget / speaker role", () => {
+  beforeEach(() => {
+    applyLanguageSetting("zh-CN");
+  });
   it("单独对智能体时不显示队长队员，即使该智能体在别的小队里", () => {
     const user = message({
       id: "u1",
@@ -74,7 +78,7 @@ describe("resolveTurnTarget / speaker role", () => {
     const speaker = speakerForMessage(assistant, agents, squads, null, {
       messages: [user, assistant],
     });
-    expect(speaker?.roleLabel).toBe("智能体");
+    expect(speaker?.roleLabel).toBe(t("chat.role.agent"));
     expect(speaker?.roleKind).toBe("solo");
   });
 
@@ -114,10 +118,10 @@ describe("resolveTurnTarget / speaker role", () => {
       audienceId: "lead",
     });
     const messages = [soloUser, soloAssistant, squadUser, leadReply, memberReply];
-    expect(speakerForMessage(soloAssistant, agents, squads, null, { messages })?.roleLabel).toBe("智能体");
-    expect(speakerForMessage(leadReply, agents, squads, null, { messages })?.roleLabel).toBe("队长");
-    expect(speakerForMessage(memberReply, agents, squads, null, { messages })?.roleLabel).toBe("队员");
-    expect(speakerForMessage(memberReply, agents, squads, null, { messages })?.audienceRole).toBe("队长");
+    expect(speakerForMessage(soloAssistant, agents, squads, null, { messages })?.roleLabel).toBe(t("chat.role.agent"));
+    expect(speakerForMessage(leadReply, agents, squads, null, { messages })?.roleLabel).toBe(t("chat.role.lead"));
+    expect(speakerForMessage(memberReply, agents, squads, null, { messages })?.roleLabel).toBe(t("chat.role.member"));
+    expect(speakerForMessage(memberReply, agents, squads, null, { messages })?.audienceRole).toBe(t("chat.role.lead"));
   });
 
   it("助手消息没有 target 时，从同 turn 用户消息解析", () => {

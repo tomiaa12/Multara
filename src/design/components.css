@@ -86,6 +86,16 @@
   border-color: var(--color-primary-active);
   background: var(--color-primary-active);
 }
+/* 主按钮禁用：不用整钮 opacity（会发灰），改成淡化主色底 */
+.ui-button.primary:disabled,
+.ui-button[data-variant="primary"]:disabled,
+.ds-button[data-variant="primary"]:disabled {
+  opacity: 1;
+  border-color: transparent;
+  background: var(--color-primary-subtle);
+  color: var(--color-text-secondary);
+  box-shadow: none;
+}
 
 /* Danger：默认是低调的红字次级按钮，hover 时出现红色底 */
 .ui-button.danger,
@@ -1472,7 +1482,7 @@ button.ds-stat.is-on {
 .agent-directory-head,
 .agent-directory-row {
   display: grid;
-  grid-template-columns: var(--ui-directory-columns, minmax(0, 1.6fr) 88px minmax(0, 1fr) minmax(0, 0.8fr) 56px 36px);
+  grid-template-columns: var(--ui-directory-columns, minmax(0, 1.5fr) minmax(140px, 1.1fr) minmax(140px, 1fr) 72px 56px 36px);
   gap: var(--spacing-3);
   align-items: center;
   min-width: 0;
@@ -1569,15 +1579,61 @@ button.ds-stat.is-on {
 }
 .agent-directory-identity strong,
 .agent-directory-identity small,
-.agent-directory-row > span {
+.agent-directory-row > span:not(.agent-directory-field):not(.runtime-directory-actions) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .agent-directory-identity small,
-.agent-directory-row > span:not(.agent-directory-identity):not(.agent-directory-status) {
+.agent-directory-row > span:not(.agent-directory-identity):not(.agent-directory-status):not(.agent-directory-runtime):not(.agent-directory-field):not(.runtime-directory-actions) {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+}
+.agent-directory-runtime {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+.agent-directory-runtime .agent-status-dot {
+  flex: 0 0 auto;
+}
+.agent-directory-field {
+  min-width: 0;
+}
+.agent-directory-field .ds-select,
+.agent-directory-field .runtime-model-select,
+.agent-directory-field .runtime-model-control {
+  width: 100%;
+  min-width: 0;
+}
+.runtime-directory {
+  --ui-directory-columns: minmax(0, 1.4fr) 88px minmax(0, 1.4fr) 96px 72px;
+}
+.runtime-directory-path {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font: var(--font-size-xs) / 1.4 var(--font-family-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runtime-directory-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--spacing-1);
+  min-height: var(--control-height-sm);
+}
+.runtime-directory .agent-directory-row > .runtime-directory-actions .ui-button.icon-button {
+  opacity: 0;
+}
+.runtime-directory .agent-directory-row:hover > .runtime-directory-actions .ui-button.icon-button,
+.runtime-directory .agent-directory-row > .runtime-directory-actions .ui-button.icon-button:focus-visible {
+  opacity: 1;
 }
 .agent-directory-status {
   display: inline-flex;
@@ -1600,9 +1656,15 @@ button.ds-stat.is-on {
   background: var(--color-success);
   box-shadow: 0 0 0 3px var(--color-success-subtle);
 }
+.agent-directory-status[data-status="online"]::before,
 .agent-directory-status[data-status="idle"]::before,
-.agent-directory-status[data-status="空闲"]::before {
+.agent-directory-status[data-status="空闲"]::before,
+.agent-directory-status[data-status="在线"]::before {
   background: var(--color-primary);
+}
+.agent-directory-status[data-status="offline"]::before,
+.agent-directory-status[data-status="离线"]::before {
+  background: var(--color-text-tertiary);
 }
 .agent-directory-status[data-status="需要授权"]::before {
   background: var(--color-warning);

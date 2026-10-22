@@ -4,12 +4,13 @@ import { ChevronDown } from "@lucide/vue";
 import type { DiffLine, PairedTool } from "./timeline-display";
 import { DIFF_COLLAPSE_LINES, diffStats, editDiff, fileName, fileRevealTarget, toolPath } from "./timeline-display";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
-import { translate } from "../../i18n";
+import { translate, useI18n } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import { useDiffStore } from "../../stores/diff";
 import * as backend from "../../services/backend";
 
 const props = defineProps<{ item: PairedTool }>();
+const { t } = useI18n();
 const store = useAppStore();
 const diffStore = useDiffStore();
 const expanded = ref(false);
@@ -132,8 +133,8 @@ async function undoFile() {
       <span v-if="stats.added" class="diff-added">+{{ stats.added }}</span>
       <span v-if="stats.deleted" class="diff-deleted">-{{ stats.deleted }}</span>
       <template v-if="usingLiveDiff">
-        <UiButton variant="ghost" size="small" title="保留这个文件的改动" :disabled="busy" @click.stop="keepFile">保留</UiButton>
-        <UiButton variant="ghost" size="small" title="撤销这个文件的改动" :disabled="busy" @click.stop="undoFile">撤销</UiButton>
+        <UiButton variant="ghost" size="small" :title="t('diff.keepFileTitle')" :disabled="busy" @click.stop="keepFile">{{ t('diff.keep') }}</UiButton>
+        <UiButton variant="ghost" size="small" :title="t('diff.undoFileTitle')" :disabled="busy" @click.stop="undoFile">{{ t('diff.undo') }}</UiButton>
       </template>
     </summary>
     <div class="diff-body vs-scroll" :class="{ 'is-collapsed': folded, 'is-expanded': !folded }">
@@ -151,7 +152,7 @@ async function undoFile() {
         v-if="lines.length > DIFF_COLLAPSE_LINES"
         class="diff-expand"
         type="button"
-        :title="expanded ? '收起其余改动' : '展开其余改动'"
+        :title="expanded ? t('diff.collapseRest') : t('diff.expandRest')"
         @click="expanded = !expanded"
       >
         <ChevronDown :size="14" />
@@ -160,6 +161,6 @@ async function undoFile() {
   </details>
   <div v-else class="diff-card diff-card-empty">
     <button class="diff-file" type="button" :title="pathTitle" @click="openFile">{{ editingLabel }}</button>
-    <span>已写入工作区，但没有可展示的差异</span>
+    <span>{{ t('diff.noVisualDiff') }}</span>
   </div>
 </template>

@@ -11,13 +11,26 @@ description: 创建、更新任务，并列出任务与运行。用户提到任�
 
 ## 创建
 
-`multara task create --title "…" [--description "…"] [--assignee <id>] [--project <id>] [--status todo|backlog]`
+`multara task create --title "…" [--description "…"] [--assignee <agentId>] [--project <id>] [--status todo|backlog] [--parent <taskId>]`
 
 - 默认 `--status todo`：有负责人时立刻排队一次运行。
 - `--status backlog`：只落库，不跑。
-- `--assignee` 省略则指派给当前智能体。
+- `--assignee` 省略则指派给当前智能体；要派给别人时必须传对方的 agent id（先 `multara agent list`）。
 - `--project` 可省略；绑定需求后，运行会带上需求工作区。
+- `--parent`：挂到父任务下，父任务详情右侧才会显示子任务，并在父会话写一条 `@指派`。当前任务 id 在环境变量 `MULTARA_TASK_ID`；在某个任务的 run 里建子任务时，未传 `--parent` 也会自动挂到当前任务。
 - 成功时 stdout 是任务 JSON（含 `id`）。
+
+## 派活（含子任务）
+
+需要别的智能体或小队成员并行时，建子任务并指派，不要只在正文里写「已派给某某」：
+
+```bash
+multara task create --title "…" --description "…" --assignee <agentId> --parent "$MULTARA_TASK_ID" --status todo
+```
+
+- 父任务保持 `in_progress`；派活本身不算交付。
+- 子任务都收口（不再是 backlog/todo/in_progress/blocked）后，系统会再唤起父任务负责人做汇总；被唤起后看子任务结果，再决定父任务进 `in_review` / `done`。
+- 不要对同一人既建子任务又指望同会话自动 fan-out；看板子任务与小队聊天派活是两套路径。
 
 ## 更新
 

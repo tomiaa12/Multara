@@ -1,4 +1,5 @@
 import type { UsageDay } from "../domain/types";
+import { t } from "../i18n";
 
 export function emptyUsageDay(date: string): UsageDay {
   return {
@@ -38,13 +39,15 @@ export function addUsageDays(left: UsageDay, right: UsageDay): UsageDay {
 }
 
 export function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0分钟";
-  if (seconds < 60) return "<1分钟";
+  if (!Number.isFinite(seconds) || seconds <= 0) return t("duration.zero");
+  if (seconds < 60) return t("duration.lt1");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}分钟`;
+  if (minutes < 60) return t("duration.minutes", { n: minutes });
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hours}小时${rest}分钟` : `${hours}小时`;
+  return rest
+    ? t("duration.hoursMinutes", { h: hours, m: rest })
+    : t("duration.hours", { n: hours });
 }
 
 export function formatUsd(value: number): string {

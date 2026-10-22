@@ -1,6 +1,11 @@
 // @vitest-environment node
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import { loadScmDiff, scmDiffPlan } from "./scm-diff";
+
+beforeEach(() => {
+  applyLanguageSetting("zh-CN");
+});
 
 describe("scmDiffPlan", () => {
   test("compares staged files with HEAD and the index", () => {

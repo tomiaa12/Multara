@@ -13,6 +13,7 @@ import type { ExplorerRowNode } from "../components/workbench/explorer/explorer-
 import { nestExplorerRows, type ExplorerTreeNode } from "../components/workbench/explorer-tree";
 import { monaco, monacoLanguageId } from "../monaco";
 import { currentDocumentTheme, monacoThemeName, watchDocumentTheme } from "../editor/monaco-workspace";
+import { t } from "../i18n";
 import { relativeTime } from "./task-board";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
@@ -194,7 +195,7 @@ async function copyPath() {
   try {
     await navigator.clipboard.writeText(skill.value.sourcePath);
   } catch {
-    window.prompt("路径", skill.value.sourcePath);
+    window.prompt(t("common.path"), skill.value.sourcePath);
   }
 }
 
@@ -209,7 +210,7 @@ async function reveal() {
 
 async function removeSkill() {
   if (!skill.value) return;
-  if (!window.confirm(`把 Skill「${skill.value.name}」移到回收站？`)) return;
+  if (!window.confirm(t("skills.deleteConfirm", { name: skill.value.name }))) return;
   try {
     await store.deleteSkill(skill.value.id);
     await router.push("/skills");
@@ -224,40 +225,40 @@ async function removeSkill() {
     <header class="agent-detail-header">
       <div class="grow">
         <h1>{{ skill.name }}</h1>
-        <p>{{ skill.description || "还没有描述" }}</p>
+        <p>{{ skill.description || t("skills.detail.noDescription") }}</p>
         <small class="skill-meta">
-          <span v-if="fileCount !== null">{{ fileCount }} 个文件</span>
-          <span>{{ users.length }} 个智能体在用</span>
-          <span v-if="skill.updatedAt">{{ relativeTime(skill.updatedAt) }}更新</span>
+          <span v-if="fileCount !== null">{{ t("skills.detail.fileCount", { n: fileCount }) }}</span>
+          <span>{{ t("skills.detail.agentCount", { n: users.length }) }}</span>
+          <span v-if="skill.updatedAt">{{ t("skills.detail.updated", { time: relativeTime(skill.updatedAt) }) }}</span>
           <span>{{ sourceName }}</span>
         </small>
       </div>
       <div class="header-actions">
-        <UiButton @click="copyPath">复制路径</UiButton>
-        <UiButton @click="reveal">打开目录</UiButton>
-        <UiButton class="mcp-delete" @click="removeSkill">删除</UiButton>
+        <UiButton @click="copyPath">{{ t("common.copyPath") }}</UiButton>
+        <UiButton @click="reveal">{{ t("skills.detail.reveal") }}</UiButton>
+        <UiButton class="mcp-delete" @click="removeSkill">{{ t("common.delete") }}</UiButton>
       </div>
     </header>
 
-    <nav class="ds-tabs agent-detail-tabs" role="tablist" aria-label="技能分区">
-      <button type="button" role="tab" :aria-selected="pane === 'overview'" :class="{ active: pane === 'overview' }" @click="pane = 'overview'"><LayoutDashboard :size="14" /> 概览</button>
-      <button type="button" role="tab" :aria-selected="pane === 'files'" :class="{ active: pane === 'files' }" @click="pane = 'files'"><FileText :size="14" /> 文件<em v-if="fileCount !== null">{{ fileCount }}</em></button>
+    <nav class="ds-tabs agent-detail-tabs" role="tablist" :aria-label="t('skills.detail.tabsAria')">
+      <button type="button" role="tab" :aria-selected="pane === 'overview'" :class="{ active: pane === 'overview' }" @click="pane = 'overview'"><LayoutDashboard :size="14" /> {{ t("skills.detail.tab.overview") }}</button>
+      <button type="button" role="tab" :aria-selected="pane === 'files'" :class="{ active: pane === 'files' }" @click="pane = 'files'"><FileText :size="14" /> {{ t("skills.detail.tab.files") }}<em v-if="fileCount !== null">{{ fileCount }}</em></button>
     </nav>
 
     <main v-if="pane === 'overview'" class="agent-detail-body skill-overview">
       <section class="agent-settings-card">
-        <h2>属性</h2>
-        <p>这些字段来自 SKILL.md。要修改，打开「文件」里的 SKILL.md。</p>
+        <h2>{{ t("skills.detail.props") }}</h2>
+        <p>{{ t("skills.detail.propsHint") }}</p>
         <dl class="squad-detail-list">
-          <div><dt>名称</dt><dd>{{ skill.name }}</dd></div>
-          <div class="is-multiline"><dt>描述</dt><dd>{{ skill.description || "暂无描述" }}</dd></div>
-          <div><dt>来源</dt><dd>{{ sourceName }}</dd></div>
-          <div><dt>路径</dt><dd :title="skill.sourcePath">{{ skill.sourcePath }}</dd></div>
+          <div><dt>{{ t("common.name") }}</dt><dd>{{ skill.name }}</dd></div>
+          <div class="is-multiline"><dt>{{ t("skills.detail.field.description") }}</dt><dd>{{ skill.description || t("common.noDescription") }}</dd></div>
+          <div><dt>{{ t("common.source") }}</dt><dd>{{ sourceName }}</dd></div>
+          <div><dt>{{ t("common.path") }}</dt><dd :title="skill.sourcePath">{{ skill.sourcePath }}</dd></div>
         </dl>
       </section>
       <section class="agent-settings-card">
-        <h2>被 {{ users.length }} 个智能体使用</h2>
-        <p v-if="!users.length">还未分配给任何智能体。打开某个智能体的 Skills 标签页进行分配。</p>
+        <h2>{{ t("skills.detail.usedBy", { n: users.length }) }}</h2>
+        <p v-if="!users.length">{{ t("skills.detail.unusedHint") }}</p>
         <button v-for="agent in users" :key="agent.id" type="button" class="skill-user-row" @click="router.push(`/agents/${agent.id}`)">
           <AgentAvatar :value="agent.avatar" :name="agent.name" :size="28" />
           <span>{{ agent.name }}</span>
@@ -304,7 +305,7 @@ async function removeSkill() {
       <section class="skill-editor">
         <header v-if="openFile">
           <strong>{{ openFile.path }}</strong>
-          <UiButton variant="primary" size="small" :class="{ 'is-loading': saving }" :disabled="!dirty || saving || openFile.readOnly" @click="saveFile">{{ saving ? "保存中…" : "保存" }}</UiButton>
+          <UiButton variant="primary" size="small" :class="{ 'is-loading': saving }" :disabled="!dirty || saving || openFile.readOnly" @click="saveFile">{{ saving ? t("common.saving") : t("common.save") }}</UiButton>
         </header>
         <p v-if="fileError" class="form-error">{{ fileError }}</p>
         <VueMonacoEditor
@@ -334,8 +335,8 @@ async function removeSkill() {
         />
         <div v-else class="ds-empty skill-editor-empty">
           <span class="ds-empty-icon"><FileText :size="18" /></span>
-          <h3>未打开文件</h3>
-          <p>选择左侧文件查看或编辑。</p>
+          <h3>{{ t("skills.detail.noFileOpen") }}</h3>
+          <p>{{ t("skills.detail.pickFile") }}</p>
         </div>
       </section>
     </main>
@@ -343,8 +344,8 @@ async function removeSkill() {
 
   <section v-else class="page panel placeholder">
     <span class="ds-empty-icon"><Sparkles :size="18" /></span>
-    <h2>未找到 skill</h2>
-    <p>它可能已被移走。返回列表后重新扫描。</p>
-    <UiButton @click="router.push('/skills')">返回 Skills</UiButton>
+    <h2>{{ t("skills.detail.notFound") }}</h2>
+    <p>{{ t("skills.detail.notFoundHint") }}</p>
+    <UiButton @click="router.push('/skills')">{{ t("skills.detail.back") }}</UiButton>
   </section>
 </template>

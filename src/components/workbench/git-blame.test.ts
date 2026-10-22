@@ -1,6 +1,9 @@
 // @vitest-environment node
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import { blameAgo, blameEditorText, blameStatusText, type GitBlameInfo } from "./git-blame";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 const now = Date.parse("2026-09-26T02:00:00Z");
 

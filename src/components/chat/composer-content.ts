@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+
 export type ComposerChipNode = {
   type: "chip";
   id: string;
@@ -43,7 +45,7 @@ export function chipLabel(item: {
   isDirectory?: boolean;
   source?: "terminal";
 }) {
-  if (item.source === "terminal") return `终端 ${lineRange(item)}`;
+  if (item.source === "terminal") return t("chat.chip.terminal", { range: lineRange(item) });
   if (item.isDirectory || isWholeFileChip(item)) return fileName(item.path) || item.path;
   return `${fileName(item.path)} ${lineRange(item)}`;
 }

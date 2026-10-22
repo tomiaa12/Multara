@@ -9,6 +9,7 @@ import AvatarPicker from "../components/AvatarPicker.vue";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import RuntimeModelSelect from "../components/RuntimeModelSelect.vue";
 import RuntimeSelect from "../components/RuntimeSelect.vue";
+import { locale, t } from "../i18n";
 import { agentSystemContext, getRunStatistics, listAgentRuns, type AgentSystemContext } from "../services/backend";
 import { useAppStore } from "../stores/app";
 import { relativeTime, taskStatusLabel } from "./task-board";
@@ -17,18 +18,18 @@ import { emptyUsageDay, formatDuration, formatTokens, formatUsd, totalTokens } f
 type DetailSection = "overview" | "tasks" | "stats" | "capabilities" | "settings";
 type CapabilityTab = "instructions" | "skills" | "mcp";
 
-const SECTION_TABS: Array<{ id: DetailSection; label: string }> = [
-  { id: "overview", label: "概览" },
-  { id: "tasks", label: "任务" },
-  { id: "stats", label: "统计" },
-  { id: "capabilities", label: "能力" },
-  { id: "settings", label: "设置" },
-];
-const STAT_RANGES = [
-  { days: "7", label: "7 天" },
-  { days: "30", label: "30 天" },
-  { days: "90", label: "90 天" },
-] as const;
+const SECTION_TABS = computed(() => [
+  { id: "overview" as const, label: t("agent.tab.overview") },
+  { id: "tasks" as const, label: t("agent.tab.tasks") },
+  { id: "stats" as const, label: t("agent.tab.stats") },
+  { id: "capabilities" as const, label: t("agent.tab.capabilities") },
+  { id: "settings" as const, label: t("agent.tab.settings") },
+]);
+const STAT_RANGES = computed(() => [
+  { days: "7", label: t("agent.stats.days", { n: 7 }) },
+  { days: "30", label: t("agent.stats.days", { n: 30 }) },
+  { days: "90", label: t("agent.stats.days", { n: 90 }) },
+]);
 
 const route = useRoute();
 const router = useRouter();
@@ -75,10 +76,22 @@ function matchesQuery(...texts: Array<string | undefined>) {
 
 /** needsAuth 表示配置要求 OAuth；是否已授权看 configStatus */
 function mcpAuthLabel(resource: { needsAuth: boolean; configStatus: string }) {
-  if (resource.configStatus === "needs_auth") return "需要授权";
-  if (resource.needsAuth) return "已授权";
-  return "不需要授权";
+  if (resource.configStatus === "needs_auth") return t("agent.mcp.needsAuth");
+  if (resource.needsAuth) return t("agent.mcp.authorized");
+  return t("agent.mcp.noAuth");
 }
+
+function agentDescription(item: Agent) {
+  if (isMiku(item)) return t("miku.description");
+  return item.description || t("agent.noDescription");
+}
+
+const sectionHeading = computed(() => {
+  if (section.value !== "capabilities") return t("agent.settings.general");
+  if (capabilityTab.value === "instructions") return t("agent.cap.instructions");
+  if (capabilityTab.value === "skills") return t("agent.cap.skills");
+  return t("agent.cap.mcp");
+});
 
 const visibleResources = computed(() =>
   tabResources.value.filter((item) => {
@@ -128,13 +141,26 @@ function toggleResource(id: string, on: boolean) {
   });
 }
 
-watch(() => agent.value?.id, (id) => {
+function loadSystemContext(id: string) {
   systemContext.value = null;
-  if (!id) return;
   void agentSystemContext(id).then((context) => {
     if (agent.value?.id === id) systemContext.value = context;
   }).catch(() => undefined);
+}
+
+watch(() => agent.value?.id, (id) => {
+  if (!id) {
+    systemContext.value = null;
+    return;
+  }
+  loadSystemContext(id);
 }, { immediate: true });
+
+watch(locale, () => {
+  const id = agent.value?.id;
+  if (id) loadSystemContext(id);
+  void store.refreshAgentsAndSquads();
+});
 
 const activeRuns = computed(() => runs.value.filter((item) => item.status === "running" || item.status === "queued"));
 const recentRuns = computed(() => runs.value.filter((item) => item.status !== "running" && item.status !== "queued"));
@@ -238,23 +264,23 @@ async function save() {
 }
 
 async function remove() {
-  if (!agent.value || !window.confirm(`确认删除智能体“${agent.value.name}”？`)) return;
+  if (!agent.value || !window.confirm(t("agent.deleteConfirm", { name: agent.value.name }))) return;
   await store.deleteAgent(agent.value.id);
   await router.push("/agents");
 }
 
 function runStatusLabel(status: string) {
-  if (status === "running") return "运行中";
-  if (status === "queued") return "排队中";
-  if (status === "completed") return "已完成";
-  if (status === "failed") return "失败";
-  if (status === "stopped") return "已停止";
+  if (status === "running") return t("agent.run.running");
+  if (status === "queued") return t("agent.run.queued");
+  if (status === "completed") return t("agent.run.completed");
+  if (status === "failed") return t("agent.run.failed");
+  if (status === "stopped") return t("agent.run.stopped");
   return status;
 }
 
 function runTitle(run: AgentActivityRecord) {
   const line = run.assignment.split("\n").map((item) => item.trim()).find(Boolean);
-  return line || run.sessionTitle || "一次运行";
+  return line || run.sessionTitle || t("agent.run.untitled");
 }
 
 function openRun(run: AgentActivityRecord) {
@@ -270,15 +296,15 @@ function openRun(run: AgentActivityRecord) {
       <div class="grow">
         <div class="agent-title-line">
           <h1>{{ agent.name }}</h1>
-          <span v-if="isChief" class="ds-badge" data-tone="purple">总管</span>
-          <span class="ds-badge" :data-tone="runtime?.status === 'online' ? 'success' : 'warning'"><i class="ds-dot" />{{ runtime?.status === "online" ? "可用" : "运行时离线" }}</span>
+          <span v-if="isChief" class="ds-badge" data-tone="purple">{{ t("miku.steward") }}</span>
+          <span class="ds-badge" :data-tone="runtime?.status === 'online' ? 'success' : 'warning'"><i class="ds-dot" />{{ runtime?.status === "online" ? t("agent.runtimeOnline") : t("agent.runtimeOffline") }}</span>
         </div>
-        <p>{{ agent.description || "还没有智能体描述" }}</p>
+        <p>{{ agentDescription(agent) }}</p>
       </div>
-      <UiButton v-if="!isChief" variant="ghost" size="icon" class="agent-delete" title="删除智能体" @click="remove"><Trash2 :size="15" /></UiButton>
+      <UiButton v-if="!isChief" variant="ghost" size="icon" class="agent-delete" :title="t('agent.delete')" @click="remove"><Trash2 :size="15" /></UiButton>
     </header>
 
-    <nav class="ds-tabs agent-detail-tabs" role="tablist" aria-label="智能体页面">
+    <nav class="ds-tabs agent-detail-tabs" role="tablist" :aria-label="t('agent.tabsAria')">
       <button
         v-for="tab in SECTION_TABS"
         :key="tab.id"
@@ -297,8 +323,8 @@ function openRun(run: AgentActivityRecord) {
         <div class="agent-run-column">
           <section>
             <header>
-              <h2>正在运行</h2>
-              <p v-if="!activeRuns.length">现在没有进行中的运行。</p>
+              <h2>{{ t("agent.runningNow") }}</h2>
+              <p v-if="!activeRuns.length">{{ t("agent.noActiveRuns") }}</p>
             </header>
             <div v-if="activeRuns.length" class="agent-run-list">
               <button v-for="run in activeRuns" :key="run.id" type="button" class="agent-run-row" @click="openRun(run)">
@@ -312,8 +338,8 @@ function openRun(run: AgentActivityRecord) {
           </section>
           <section>
             <header>
-              <h2>最近运行</h2>
-              <p v-if="!recentRuns.length">还没有结束的运行记录。</p>
+              <h2>{{ t("agent.recentRuns") }}</h2>
+              <p v-if="!recentRuns.length">{{ t("agent.noRecentRuns") }}</p>
             </header>
             <div v-if="recentRuns.length" class="agent-run-list">
               <button v-for="run in recentRuns" :key="run.id" type="button" class="agent-run-row" @click="openRun(run)">
@@ -328,33 +354,33 @@ function openRun(run: AgentActivityRecord) {
         </div>
 
         <aside class="agent-side-card">
-          <h2>智能体</h2>
+          <h2>{{ t("agent.sideTitle") }}</h2>
           <dl>
             <div>
-              <dt>运行时</dt>
+              <dt>{{ t("agent.field.runtime") }}</dt>
               <dd>
                 <span class="agent-status-dot" :data-online="runtime?.status === 'online'" />
                 <ProviderLogo :provider="runtime?.provider ?? ''" :size="14" />
-                {{ runtime?.name ?? "未绑定" }}
+                {{ runtime?.name ?? t("collection.unbound") }}
               </dd>
             </div>
-            <div><dt>模型</dt><dd>{{ agent.model || "auto" }}</dd></div>
-            <div><dt>并发</dt><dd>{{ agent.maxConcurrentTasks }}</dd></div>
-            <div><dt>任务</dt><dd>{{ tasks.length }}</dd></div>
+            <div><dt>{{ t("agent.field.model") }}</dt><dd>{{ agent.model || "auto" }}</dd></div>
+            <div><dt>{{ t("agent.field.concurrency") }}</dt><dd>{{ agent.maxConcurrentTasks }}</dd></div>
+            <div><dt>{{ t("agent.field.tasks") }}</dt><dd>{{ tasks.length }}</dd></div>
           </dl>
           <section>
-            <header><h3>Skills</h3><span>{{ selectedSkills.length }}</span></header>
+            <header><h3>{{ t("agent.cap.skills") }}</h3><span>{{ selectedSkills.length }}</span></header>
             <div v-if="selectedSkills.length" class="agent-chip-row">
               <span v-for="skill in selectedSkills" :key="skill.id">{{ skill.name }}</span>
             </div>
-            <p v-else>还没有允许访问的 Skill。</p>
+            <p v-else>{{ t("agent.noSkills") }}</p>
           </section>
           <section>
-            <header><h3>MCP</h3><span>{{ selectedMcps.length }}</span></header>
+            <header><h3>{{ t("agent.cap.mcp") }}</h3><span>{{ selectedMcps.length }}</span></header>
             <div v-if="selectedMcps.length" class="agent-chip-row">
               <span v-for="item in selectedMcps" :key="item.id">{{ item.name }}</span>
             </div>
-            <p v-else>还没有允许访问的 MCP。</p>
+            <p v-else>{{ t("agent.noMcp") }}</p>
           </section>
         </aside>
       </div>
@@ -364,8 +390,8 @@ function openRun(run: AgentActivityRecord) {
       <div class="agent-stats">
         <div class="usage-toolbar">
           <label>
-            时间范围
-            <UiSelect v-model="statsRange" aria-label="时间范围" :options="STAT_RANGES.map((item) => ({ value: item.days, label: item.label }))" />
+            {{ t("agent.stats.range") }}
+            <UiSelect v-model="statsRange" :aria-label="t('agent.stats.range')" :options="STAT_RANGES.map((item) => ({ value: item.days, label: item.label }))" />
           </label>
         </div>
         <p v-if="statsError" class="form-error">{{ statsError }}</p>
@@ -376,38 +402,38 @@ function openRun(run: AgentActivityRecord) {
         </div>
         <div v-else-if="stats.total === 0" class="ds-card ds-empty usage-empty">
           <span class="ds-empty-icon"><BarChart3 :size="18" /></span>
-          <h3>暂无运行数据</h3>
-          <p>这个智能体开始运行后，次数、Token 和金额会出现在这里。</p>
+          <h3>{{ t("agent.stats.emptyTitle") }}</h3>
+          <p>{{ t("agent.stats.emptyHint") }}</p>
         </div>
         <template v-else>
           <div class="usage-kpis">
             <article>
-              <span>金额 · {{ statsRange }}天</span>
+              <span>{{ t("agent.stats.cost", { n: statsRange }) }}</span>
               <strong>{{ formatUsd(stats.costUsd) }}</strong>
-              <small>按模型单价估算，CLI 上报的费用优先</small>
+              <small>{{ t("agent.stats.costHint") }}</small>
             </article>
             <article>
-              <span>Token · {{ statsRange }}天</span>
+              <span>{{ t("agent.stats.tokens", { n: statsRange }) }}</span>
               <strong>{{ formatTokens(totalTokens(stats)) }}</strong>
-              <small>输入 {{ formatTokens(stats.inputTokens) }} · 输出 {{ formatTokens(stats.outputTokens) }}</small>
+              <small>{{ t("agent.stats.tokensHint", { input: formatTokens(stats.inputTokens), output: formatTokens(stats.outputTokens) }) }}</small>
             </article>
             <article>
-              <span>耗时 · {{ statsRange }}天</span>
+              <span>{{ t("agent.stats.duration", { n: statsRange }) }}</span>
               <strong>{{ formatDuration(stats.totalSeconds) }}</strong>
-              <small>成功率 {{ stats.successRate.toFixed(1) }}%</small>
+              <small>{{ t("agent.stats.successRate", { rate: stats.successRate.toFixed(1) }) }}</small>
             </article>
             <article>
-              <span>运行数 · {{ statsRange }}天</span>
+              <span>{{ t("agent.stats.runs", { n: statsRange }) }}</span>
               <strong>{{ stats.total }}</strong>
-              <small>失败 {{ stats.failed }} · 停止 {{ stats.stopped }}</small>
+              <small>{{ t("agent.stats.runsHint", { failed: stats.failed, stopped: stats.stopped }) }}</small>
             </article>
           </div>
           <section class="usage-card">
             <header>
-              <h2>每日 Token</h2>
+              <h2>{{ t("agent.stats.dailyTokens") }}</h2>
             </header>
-            <p v-if="statsDays.every((item) => totalTokens(item) === 0 && item.total === 0)" class="muted">所选时间范围内暂无运行。</p>
-            <div v-else class="usage-chart" role="img" aria-label="每日 Token">
+            <p v-if="statsDays.every((item) => totalTokens(item) === 0 && item.total === 0)" class="muted">{{ t("agent.stats.noRangeData") }}</p>
+            <div v-else class="usage-chart" role="img" :aria-label="t('agent.stats.dailyTokens')">
               <div v-for="item in statsDays" :key="item.date" class="usage-bar" :title="`${item.date} ${formatTokens(totalTokens(item))} · ${formatUsd(item.costUsd)}`">
                 <span class="usage-bar-fill" :style="{ height: statsBarHeight(item) }" />
               </div>
@@ -421,8 +447,8 @@ function openRun(run: AgentActivityRecord) {
       <div class="agent-task-list">
         <div v-if="!tasks.length" class="ds-empty">
           <span class="ds-empty-icon"><ListTodo :size="18" /></span>
-          <h3>还没有任务</h3>
-          <p>分配给这个智能体的任务会出现在这里。</p>
+          <h3>{{ t("agent.tasks.emptyTitle") }}</h3>
+          <p>{{ t("agent.tasks.emptyHint") }}</p>
         </div>
         <button
           v-for="task in tasks"
@@ -440,25 +466,25 @@ function openRun(run: AgentActivityRecord) {
 
     <div v-else class="agent-split">
       <aside>
-        <div v-if="section === 'capabilities'" class="ds-nav-list" role="tablist" aria-label="能力">
-          <button type="button" :class="{ active: capabilityTab === 'instructions' }" @click="capabilityTab = 'instructions'">指令</button>
-          <button type="button" :class="{ active: capabilityTab === 'skills' }" @click="capabilityTab = 'skills'">Skills</button>
-          <button type="button" :class="{ active: capabilityTab === 'mcp' }" @click="capabilityTab = 'mcp'">MCP</button>
+        <div v-if="section === 'capabilities'" class="ds-nav-list" role="tablist" :aria-label="t('agent.tab.capabilities')">
+          <button type="button" :class="{ active: capabilityTab === 'instructions' }" @click="capabilityTab = 'instructions'">{{ t("agent.cap.instructions") }}</button>
+          <button type="button" :class="{ active: capabilityTab === 'skills' }" @click="capabilityTab = 'skills'">{{ t("agent.cap.skills") }}</button>
+          <button type="button" :class="{ active: capabilityTab === 'mcp' }" @click="capabilityTab = 'mcp'">{{ t("agent.cap.mcp") }}</button>
         </div>
-        <div v-else class="ds-nav-list" role="tablist" aria-label="设置">
-          <button type="button" class="active">通用</button>
+        <div v-else class="ds-nav-list" role="tablist" :aria-label="t('agent.tab.settings')">
+          <button type="button" class="active">{{ t("agent.settings.general") }}</button>
         </div>
       </aside>
       <section class="vs-scroll">
         <header class="agent-section-heading">
           <div>
-            <h2>{{ section === 'capabilities' ? (capabilityTab === 'instructions' ? '指令' : capabilityTab === 'skills' ? 'Skills' : 'MCP') : '通用' }}</h2>
-            <p v-if="section === 'capabilities' && capabilityTab === 'instructions' && isChief">系统智能体的指令只能查看。</p>
-            <p v-else-if="section === 'capabilities' && capabilityTab === 'instructions'">这些指令会附加到该智能体发起的每次任务中。</p>
-            <p v-else-if="section === 'capabilities'">打开开关后，这个智能体才能使用外层菜单里对应的 {{ capabilityTab === 'skills' ? 'Skill' : 'MCP' }}，切换后立即生效。</p>
-            <p v-else>名称、头像、运行时和模型会显示在聊天与任务记录中。</p>
+            <h2>{{ sectionHeading }}</h2>
+            <p v-if="section === 'capabilities' && capabilityTab === 'instructions' && isChief">{{ t("agent.cap.instructionsReadonly") }}</p>
+            <p v-else-if="section === 'capabilities' && capabilityTab === 'instructions'">{{ t("agent.cap.instructionsHint") }}</p>
+            <p v-else-if="section === 'capabilities'">{{ t("agent.cap.resourceHint", { kind: capabilityTab === 'skills' ? t('agent.cap.skills') : t('agent.cap.mcp') }) }}</p>
+            <p v-else>{{ t("agent.settings.hint") }}</p>
           </div>
-          <span v-if="saved" class="save-success"><Check :size="14" /> 已保存</span>
+          <span v-if="saved" class="save-success"><Check :size="14" /> {{ t("agent.saved") }}</span>
           <!-- Skill / MCP 开关即时保存；系统智能体的指令只读，都不需要保存按钮 -->
           <UiButton
             v-if="section !== 'capabilities' || (capabilityTab === 'instructions' && !isChief)"
@@ -467,35 +493,35 @@ function openRun(run: AgentActivityRecord) {
             :disabled="busy || !draft.name.trim()"
             @click="save"
           >
-            <Save :size="15" />{{ busy ? "保存中…" : "保存更改" }}
+            <Save :size="15" />{{ busy ? t("common.saving") : t("agent.saveChanges") }}
           </UiButton>
         </header>
 
         <div v-if="section === 'capabilities'" class="agent-settings-card">
           <template v-if="capabilityTab === 'instructions'">
             <label v-if="isChief">
-              产品身份
+              {{ t("agent.productIdentity") }}
               <UiTextarea :model-value="agent.systemInstructions ?? ''" rows="10" readonly />
-              <small>这段说明嵌在应用里，不能在这里改。</small>
+              <small>{{ t("agent.productIdentityHint") }}</small>
             </label>
             <label>
-              {{ isChief ? "工作区备注" : "系统指令" }}
-              <UiTextarea v-model="draft.instructions" :rows="isChief ? 8 : 14" :readonly="isChief" placeholder="说明角色职责、回答风格和执行约束" />
+              {{ isChief ? t("agent.workspaceNotes") : t("agent.systemInstructions") }}
+              <UiTextarea v-model="draft.instructions" :rows="isChief ? 8 : 14" :readonly="isChief" :placeholder="t('agent.instructionsPlaceholder')" />
             </label>
             <!-- 平台层的运行说明对所有智能体都会附加，只读展示，让用户知道模型实际收到了什么 -->
             <details v-if="systemContext" class="agent-system-brief">
-              <summary>平台运行说明 <small>每次运行自动附加在最前面，只读</small></summary>
+              <summary>{{ t("agent.platformBrief") }} <small>{{ t("agent.platformBriefHint") }}</small></summary>
               <UiTextarea :model-value="systemContext.runtimeBrief" rows="16" readonly />
             </details>
           </template>
           <template v-else>
             <div class="resource-toolbar">
-              <nav class="ds-segmented" aria-label="按开启状态筛选">
-                <button type="button" :class="{ active: resourceFilter === 'all' }" @click="resourceFilter = 'all'">全部 {{ resourceCounts.all }}</button>
-                <button type="button" :class="{ active: resourceFilter === 'on' }" @click="resourceFilter = 'on'">已开启 {{ resourceCounts.on }}</button>
-                <button type="button" :class="{ active: resourceFilter === 'off' }" @click="resourceFilter = 'off'">未开启 {{ resourceCounts.off }}</button>
+              <nav class="ds-segmented" :aria-label="t('common.filter')">
+                <button type="button" :class="{ active: resourceFilter === 'all' }" @click="resourceFilter = 'all'">{{ t("agent.filter.all", { n: resourceCounts.all }) }}</button>
+                <button type="button" :class="{ active: resourceFilter === 'on' }" @click="resourceFilter = 'on'">{{ t("agent.filter.on", { n: resourceCounts.on }) }}</button>
+                <button type="button" :class="{ active: resourceFilter === 'off' }" @click="resourceFilter = 'off'">{{ t("agent.filter.off", { n: resourceCounts.off }) }}</button>
               </nav>
-              <UiInput v-model="resourceQuery" type="search" :placeholder="`搜索 ${capabilityTab === 'skills' ? 'Skill' : 'MCP'}`" />
+              <UiInput v-model="resourceQuery" type="search" :placeholder="t('agent.searchResource', { kind: capabilityTab === 'skills' ? t('agent.cap.skills') : t('agent.cap.mcp') })" />
             </div>
             <div class="resource-check-list">
               <label v-for="resource in visibleResources" :key="resource.id">
@@ -509,25 +535,25 @@ function openRun(run: AgentActivityRecord) {
                   class="ds-switch"
                   type="checkbox"
                   :checked="enabledIds.includes(resource.id)"
-                  :aria-label="`${resource.name} 开关`"
+                  :aria-label="resource.name"
                   @change="toggleResource(resource.id, ($event.target as HTMLInputElement).checked)"
                 />
               </label>
               <template v-if="visibleBuiltinSkills.length">
-                <p class="resource-group-label">系统内置 · 所有智能体都会加载，不能关闭</p>
+                <p class="resource-group-label">{{ t("agent.builtinGroup") }}</p>
                 <label v-for="item in visibleBuiltinSkills" :key="`builtin:${item.name}`" class="is-locked">
                   <span>
                     <strong>{{ item.name }}</strong>
                     <small>{{ item.description }}</small>
                   </span>
-                  <span class="ds-badge" data-tone="purple">内置</span>
-                  <input class="ds-switch" type="checkbox" checked disabled :aria-label="`${item.name} 始终开启`" />
+                  <span class="ds-badge" data-tone="purple">{{ t("agent.builtinBadge") }}</span>
+                  <input class="ds-switch" type="checkbox" checked disabled :aria-label="item.name" />
                 </label>
               </template>
               <p v-if="!tabResources.length && !builtinSkills.length" class="empty-copy">
-                外层{{ capabilityTab === 'skills' ? ' Skills ' : ' MCP ' }}菜单里还没有可授权的项。
+                {{ t("agent.noAuthItems", { kind: capabilityTab === 'skills' ? t('agent.cap.skills') : t('agent.cap.mcp') }) }}
               </p>
-              <p v-else-if="!visibleResources.length && !visibleBuiltinSkills.length" class="empty-copy">没有符合条件的项。</p>
+              <p v-else-if="!visibleResources.length && !visibleBuiltinSkills.length" class="empty-copy">{{ t("agent.noMatchItems") }}</p>
             </div>
           </template>
         </div>
@@ -536,31 +562,32 @@ function openRun(run: AgentActivityRecord) {
           <section class="agent-settings-group">
             <div class="agent-settings-card">
               <header>
-                <h3>资料</h3>
-                <p>管理这个智能体在列表和聊天里的展示。</p>
+                <h3>{{ t("agent.profile") }}</h3>
+                <p>{{ t("agent.profileHint") }}</p>
               </header>
               <AvatarPicker v-model="draft.avatar" :name="draft.name" :locked="isChief" @error="error = $event" />
-              <label>名称<UiInput v-model="draft.name" required /></label>
-              <label>描述<UiTextarea v-model="draft.description" rows="4" placeholder="这个智能体负责什么" /></label>
+              <label>{{ t("agent.field.name") }}<UiInput v-model="draft.name" required /></label>
+              <label v-if="isChief">{{ t("agent.field.description") }}<UiTextarea :model-value="t('miku.description')" rows="4" readonly /></label>
+              <label v-else>{{ t("agent.field.description") }}<UiTextarea v-model="draft.description" rows="4" :placeholder="t('agent.descPlaceholder')" /></label>
             </div>
           </section>
           <section class="agent-settings-group">
             <div class="agent-settings-card">
               <header>
-                <h3>执行配置</h3>
-                <p>选择本机运行时、模型和同时进行的任务数。</p>
+                <h3>{{ t("agent.execConfig") }}</h3>
+                <p>{{ t("agent.execConfigHint") }}</p>
               </header>
               <div class="agent-settings-fields">
-                <label>运行时
+                <label>{{ t("agent.field.runtime") }}
                   <RuntimeSelect
                     v-model="draft.runtimeId"
                     required
-                    placeholder="选择运行时"
+                    :placeholder="t('agent.pickRuntime')"
                     @update:model-value="draft.model = 'auto'"
                   />
                 </label>
-                <label>模型<RuntimeModelSelect v-model="draft.model" :runtime-id="draft.runtimeId" /></label>
-                <label>最大并发任务
+                <label>{{ t("agent.field.model") }}<RuntimeModelSelect v-model="draft.model" :runtime-id="draft.runtimeId" /></label>
+                <label>{{ t("agent.maxConcurrent") }}
                   <UiSelect v-model="draft.maxConcurrentTasks" :options="Array.from({ length: 6 }, (_, index) => ({ value: index + 1, label: String(index + 1) }))" />
                 </label>
               </div>

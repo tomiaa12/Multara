@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import { parseQuickOpenQuery, rankQuickOpenFiles, type QuickOpenFile } from "./quick-open";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   files: QuickOpenFile[];
@@ -58,19 +59,19 @@ void nextTick(() => input.value?.focus());
 </script>
 
 <template>
-  <div class="quick-pick quick-open" role="dialog" aria-label="转到文件" @focusout="onFocusOut">
+  <div class="quick-pick quick-open" role="dialog" :aria-label="t('workbench.quickOpen.title')" @focusout="onFocusOut">
     <input
       ref="input"
       v-model="query"
-      placeholder="按名称搜索文件"
-      aria-label="按名称搜索文件"
+      :placeholder="t('workbench.quickOpen.placeholder')"
+      :aria-label="t('workbench.quickOpen.placeholder')"
       @keydown.escape.stop="emit('close')"
       @keydown.enter.prevent="confirm"
       @keydown.down.prevent="move(1)"
       @keydown.up.prevent="move(-1)"
     />
     <div ref="list" class="quick-open-list vs-scroll">
-      <p v-if="loading">正在读取文件…</p>
+      <p v-if="loading">{{ t('workbench.loadingTree') }}</p>
       <button
         v-for="(file, itemIndex) in matches"
         :key="`${file.workspaceId}:${file.path}`"
@@ -83,7 +84,7 @@ void nextTick(() => input.value?.focus());
         <span>{{ file.label }}</span>
         <small :title="file.detail">{{ file.detail }}</small>
       </button>
-      <p v-if="!loading && !matches.length">没有匹配的文件</p>
+      <p v-if="!loading && !matches.length">{{ t('workbench.quickOpen.noMatch') }}</p>
     </div>
   </div>
 </template>

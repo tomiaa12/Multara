@@ -1,3 +1,5 @@
+import { t } from "../../../i18n";
+
 export interface DragSource {
   workspaceId: string;
   path: string;
@@ -55,11 +57,14 @@ export function moveConfirmMessage(sources: readonly { path: string }[], targetN
   const name = (path: string) => path.slice(path.lastIndexOf("/") + 1);
   if (sources.length > 1) {
     return {
-      message: `确定要将以下 ${sources.length} 个文件移动到“${targetName}”吗？`,
+      message: t("explorer.dnd.moveMany", { count: sources.length, target: targetName }),
       detail: fileNamesMessage(sources.map((source) => name(source.path))),
     };
   }
-  return { message: `确定要将“${name(sources[0].path)}”移动到“${targetName}”吗？`, detail: "" };
+  return {
+    message: t("explorer.dnd.moveOne", { name: name(sources[0].path), target: targetName }),
+    detail: "",
+  };
 }
 
 /** VS Code `getFileNamesMessage`：最多列 10 个，剩余的合并成一行。 */
@@ -67,7 +72,11 @@ export function fileNamesMessage(names: readonly string[]) {
   const max = 10;
   const lines = names.slice(0, max);
   if (names.length > max) {
-    lines.push(names.length - max === 1 ? "...1 个其他文件未显示" : `...${names.length - max} 个其他文件未显示`);
+    lines.push(
+      names.length - max === 1
+        ? t("explorer.dnd.moreFilesOne")
+        : t("explorer.dnd.moreFilesMany", { count: names.length - max }),
+    );
   }
   return lines.join("\n");
 }

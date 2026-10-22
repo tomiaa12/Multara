@@ -17,6 +17,7 @@ import {
   type LocalHistoryEntry,
   type TimelineEntry,
 } from "./local-history";
+import { t } from "../../i18n";
 
 const PAGE = 20;
 
@@ -90,7 +91,7 @@ const rows = computed(() => {
       entries.push({
         id: item.id,
         source: "local",
-        label: item.source || "保存",
+        label: item.source || t("workbench.timeline.localSave"),
         detail: "",
         at: item.savedAt,
       });
@@ -111,9 +112,9 @@ const rows = computed(() => {
 });
 
 function emptyMessage() {
-  if (!activePath.value) return "活动编辑器无法提供时间线信息。";
-  if (!localSource.value && !gitSource.value) return "所有时间线源都已筛除。";
-  if (!loading.value && !rows.value.length) return "未提供时间线信息。";
+  if (!activePath.value) return t("workbench.timeline.emptyNoEditor");
+  if (!localSource.value && !gitSource.value) return t("workbench.timeline.emptyFiltered");
+  if (!loading.value && !rows.value.length) return t("workbench.timeline.emptyNoData");
   return "";
 }
 
@@ -209,19 +210,19 @@ const rowMenuItems = computed<ContextMenuItem[]>(() => {
   if (!menu) return [];
   if (menu.source === "local") {
     return [
-      { id: "compare", label: "与当前文件比较" },
-      { id: "restore", label: "还原内容" },
-      { id: "rename", label: "重命名…" },
-      { id: "delete", label: "删除" },
+      { id: "compare", label: t("workbench.timeline.compareCurrent") },
+      { id: "restore", label: t("workbench.revert") },
+      { id: "rename", label: t("workbench.rename") },
+      { id: "delete", label: t("common.delete") },
     ];
   }
   const item = gitItems.value.find((entry) => entry.hash === menu.id);
   return [
-    { id: "compare", label: "与当前文件比较" },
-    { id: "compare-prev", label: "与上一版本比较", disabled: !item?.parents[0] },
+    { id: "compare", label: t("workbench.timeline.compareCurrent") },
+    { id: "compare-prev", label: t("workbench.timeline.comparePrevious"), disabled: !item?.parents[0] },
     { type: "sep" },
-    { id: "copy-id", label: "复制提交 ID" },
-    { id: "copy-message", label: "复制提交消息" },
+    { id: "copy-id", label: t("workbench.timeline.copyCommitId") },
+    { id: "copy-message", label: t("workbench.timeline.copyCommitMessage") },
   ];
 });
 
@@ -275,7 +276,7 @@ function onRowMenuSelect(id: string) {
   }
   if (id === "rename") {
     const entry = listLocalHistory(activeWorkspaceId.value, activePath.value).find((item) => item.id === menu.id);
-    const next = window.prompt("条目名称", entry?.source ?? "");
+    const next = window.prompt(t("workbench.timeline.entryNamePrompt"), entry?.source ?? "");
     if (next != null) renameLocalHistorySource(menu.id, next);
     return;
   }
@@ -311,7 +312,7 @@ defineExpose({ openFilter, refresh: () => load(true), togglePin, pinned });
       :disabled="loading"
       @click="load(false)"
     >
-      {{ loading ? "正在加载…" : "加载更多" }}
+      {{ loading ? t('workbench.timeline.loading') : t('workbench.timeline.loadMore') }}
     </button>
     <Teleport to="body">
       <ContextMenu
@@ -319,8 +320,8 @@ defineExpose({ openFilter, refresh: () => load(true), togglePin, pinned });
         :x="filterMenu.x"
         :y="filterMenu.y"
         :items="[
-          { id: 'local', label: '本地历史', checked: localSource },
-          { id: 'git', label: 'Git 历史', checked: gitSource },
+          { id: 'local', label: t('workbench.timeline.localHistory'), checked: localSource },
+          { id: 'git', label: t('workbench.timeline.gitHistory'), checked: gitSource },
         ]"
         @select="toggleSource"
         @close="filterMenu = null"

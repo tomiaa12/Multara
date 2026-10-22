@@ -15,6 +15,7 @@ import { speakerForMessage } from "../components/chat/message-speaker";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
+import { t } from "../i18n";
 
 const props = withDefaults(defineProps<{
   sessionId: string;
@@ -70,7 +71,7 @@ const workingAgents = computed(() => {
     const found = store.data?.agents.find((item) => item.id === event.agentId);
     agents.push({
       id: event.agentId,
-      name: found?.name ?? agent.value?.name ?? "智能体",
+      name: found?.name ?? agent.value?.name ?? t("inbox.agentFallback"),
       avatar: found?.avatar ?? agent.value?.avatar ?? "M",
     });
   }
@@ -138,7 +139,7 @@ const pendingQuestion = computed(() => {
     if (message.role !== "assistant" || message.failureReason) continue;
     const questions = extractQuestions(message.content).questions;
     if (!questions.length) continue;
-    return { messageId: message.id, questions, agentName: agent.value?.name ?? "智能体" };
+    return { messageId: message.id, questions, agentName: agent.value?.name ?? t("inbox.agentFallback") };
   }
   return null;
 });
@@ -181,13 +182,13 @@ async function pasteImages(files: File[]) {
     try {
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
       if (bytes.length > 25 * 1024 * 1024) {
-        pasteError.value = "粘贴的图片超过 25 MB";
+        pasteError.value = t("chat.pasteTooLarge");
         continue;
       }
       const saved = await backend.savePastedAttachment(bytes, file.type || "image/png", file.name || undefined);
       pastes.value.push({ ...saved, previewUrl: URL.createObjectURL(file) });
     } catch (cause) {
-      pasteError.value = cause instanceof Error ? cause.message : "粘贴图片失败";
+      pasteError.value = cause instanceof Error ? cause.message : t("chat.pasteFailed");
     }
   }
 }
@@ -251,13 +252,13 @@ watch(
           role="separator"
           :data-message-id="message.id"
         >
-          <span>新消息</span>
+          <span>{{ t('chat.newMessages') }}</span>
         </div>
         <UserPrompt
           v-if="message.role === 'user'"
           :data-message-id="message.id"
           :message="message"
-          :target-label="agent?.name ?? '智能体'"
+          :target-label="agent?.name ?? t('inbox.agentFallback')"
           :target-avatar="agent?.avatar ?? 'M'"
           :target-value="agent ? `agent:${agent.id}` : ''"
           :allow-target-change="false"
@@ -314,7 +315,7 @@ watch(
         </span>
       </span>
     </p>
-    <p v-else class="task-activity-empty">还没有动态。发一条消息后，智能体会在这个任务里回复。</p>
+    <p v-else class="task-activity-empty">{{ t('tasks.activityEmpty') }}</p>
     <p v-if="pasteError" class="task-create-error">{{ pasteError }}</p>
     <ChatQuestionCarousel
       v-if="pendingQuestion"
@@ -326,10 +327,10 @@ watch(
     />
     <ChatComposer
       ref="composer"
-      placeholder="回复…"
+      :placeholder="t('tasks.activityReply')"
       :initial-nodes="emptyNodes"
       :contexts="[]"
-      :target-label="agent?.name ?? '未分配'"
+      :target-label="agent?.name ?? t('common.unassigned')"
       :target-avatar="agent?.avatar ?? 'M'"
       :allow-target-change="false"
       :show-context-usage="false"
@@ -344,10 +345,10 @@ watch(
         @remove="removePaste"
       />
       <template #actions>
-        <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" title="停止" @click="stop">
+        <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" :title="t('chat.stop')" @click="stop">
           <Square :size="14" />
         </UiButton>
-        <UiButton v-else class="ds-send-button send-button" type="submit" :title="sessionRunning ? '加入队列' : '发送'" :disabled="!canSend">
+        <UiButton v-else class="ds-send-button send-button" type="submit" :title="sessionRunning ? t('chat.enqueue') : t('chat.send')" :disabled="!canSend">
           <ArrowUp :size="16" />
         </UiButton>
       </template>

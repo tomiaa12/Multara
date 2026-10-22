@@ -7,6 +7,7 @@ import {
   type ChatQuestion,
   type ChatQuestionAnswer,
 } from "./question-block";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   questions: ChatQuestion[];
@@ -27,6 +28,8 @@ const answers = ref<Record<string, ChatQuestionAnswer>>({});
 const focused = ref(0);
 const collapsed = ref(false);
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const agentFallback = computed(() => props.agentName ?? t("chat.role.agent"));
+const submitMod = computed(() => (isMac ? "⌘" : "Ctrl"));
 
 const current = computed(() => props.questions[index.value]);
 const total = computed(() => props.questions.length);
@@ -204,20 +207,20 @@ defineExpose({ focus: () => root.value?.focus() });
     :class="{ collapsed, 'is-multiple': multiple }"
     tabindex="0"
     role="group"
-    :aria-label="`${agentName ?? '智能体'}的提问：${current.question}`"
+    :aria-label="t('chat.question.aria', { name: agentFallback, question: current.question })"
     @keydown="onKeydown"
   >
     <header class="chat-question-head">
       <MessageCircleQuestion :size="14" />
       <span class="chat-question-title">
-        {{ agentName ?? "智能体" }}在等你回答<template v-if="multiple"> · {{ total }} 个问题</template>
+        {{ t("chat.question.waitingTitle", { name: agentFallback }) }}<template v-if="multiple">{{ t("chat.question.multiSuffix", { n: total }) }}</template>
       </span>
       <template v-if="multiple">
         <UiButton
           class="icon-button"
           variant="ghost"
           size="icon"
-          title="上一题（←）"
+          :title="t('chat.question.prev')"
           :disabled="index === 0"
           @click="activate(index - 1)"
         ><ChevronUp :size="14" /></UiButton>
@@ -226,7 +229,7 @@ defineExpose({ focus: () => root.value?.focus() });
           class="icon-button"
           variant="ghost"
           size="icon"
-          title="下一题（→）"
+          :title="t('chat.question.next')"
           :disabled="isLast"
           @click="activate(index + 1)"
         ><ChevronDown :size="14" /></UiButton>
@@ -235,7 +238,7 @@ defineExpose({ focus: () => root.value?.focus() });
         class="icon-button chat-question-collapse"
         variant="ghost"
         size="icon"
-        :title="collapsed ? '展开问题' : '收起问题'"
+        :title="collapsed ? t('chat.question.expand') : t('chat.question.collapse')"
         :aria-expanded="!collapsed"
         @click="collapsed = !collapsed"
       >
@@ -296,7 +299,7 @@ defineExpose({ focus: () => root.value?.focus() });
           class="chat-question-custom"
           rows="1"
           :value="answers[question.id]?.custom ?? ''"
-          :placeholder="question.options.length ? '其他想法，直接写在这里…' : '写下你的回答…'"
+          :placeholder="question.options.length ? t('chat.question.customWithOptions') : t('chat.question.customOnly')"
           @input="onCustomInput(question, $event)"
           @focus="index = questionIndex; focused = question.options.length"
         />
@@ -304,18 +307,18 @@ defineExpose({ focus: () => root.value?.focus() });
     </div>
     <footer v-show="!collapsed" class="chat-question-foot">
       <span class="chat-question-hint">
-        <template v-if="current.options.length">1–{{ Math.min(current.options.length, 9) }} 选择 · </template>
-        <template v-if="multiple">←→ 切题 · </template>Enter {{ isLast || answeredCount === total ? "提交" : "下一题" }} · Esc 跳过
+        <template v-if="current.options.length">{{ t("chat.question.hintPick", { range: `1–${Math.min(current.options.length, 9)}` }) }}</template>
+        <template v-if="multiple">{{ t("chat.question.hintSwitch") }}</template>Enter {{ isLast || answeredCount === total ? t("chat.question.hintEnterSubmit") : t("chat.question.hintEnterNext") }}{{ t("chat.question.hintEsc") }}
       </span>
       <div class="chat-question-actions">
-        <UiButton variant="ghost" size="small" @click="emit('skip')">跳过</UiButton>
+        <UiButton variant="ghost" size="small" @click="emit('skip')">{{ t("chat.question.skip") }}</UiButton>
         <UiButton
           class="primary"
           size="small"
-          :title="`${isMac ? '⌘' : 'Ctrl'}+Enter 提交`"
+          :title="t('chat.question.submitShortcut', { mod: submitMod })"
           :disabled="!answeredCount"
           @click="submit"
-        >{{ multiple ? `提交 ${answeredCount}/${total}` : "提交" }}</UiButton>
+        >{{ multiple ? t("chat.question.submitProgress", { answered: answeredCount, total }) : t("chat.question.submit") }}</UiButton>
       </div>
     </footer>
   </section>

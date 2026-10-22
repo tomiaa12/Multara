@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { applyLanguageSetting } from "../i18n";
 import type { Task } from "../domain/types";
 import { moveTask, orderColumn, relativeTime, taskCode, boardStatusFromRun } from "./task-board";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 function task(id: string, updatedAt: string, createdAt = updatedAt): Task {
   return {

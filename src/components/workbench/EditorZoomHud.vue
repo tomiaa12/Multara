@@ -9,6 +9,7 @@ import {
   zoomEditorIn,
   zoomEditorOut,
 } from "./monaco-zoom";
+import { t } from "../../i18n";
 </script>
 
 <template>
@@ -20,13 +21,13 @@ import {
     @pointerdown.stop
     @click.stop
   >
-    <button type="button" title="缩小" :disabled="!canZoomOut" @pointerdown.prevent.stop="zoomEditorOut">
+    <button type="button" :title="t('workbench.shortcut.zoomOut')" :disabled="!canZoomOut" @pointerdown.prevent.stop="zoomEditorOut">
       <Minus :size="13" />
     </button>
     <strong>{{ editorZoomLabel }}</strong>
-    <button type="button" title="放大" :disabled="!canZoomIn" @pointerdown.prevent.stop="zoomEditorIn">
+    <button type="button" :title="t('workbench.shortcut.zoomIn')" :disabled="!canZoomIn" @pointerdown.prevent.stop="zoomEditorIn">
       <Plus :size="13" />
     </button>
-    <button type="button" class="is-reset" title="重置为 100%" @pointerdown.prevent.stop="resetEditorZoom">重置</button>
+    <button type="button" class="is-reset" :title="t('workbench.editorZoomReset')" @pointerdown.prevent.stop="resetEditorZoom">{{ t('workbench.editorZoomResetShort') }}</button>
   </div>
 </template>

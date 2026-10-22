@@ -1,8 +1,14 @@
+import { t } from "../i18n";
+
 export type ScheduleTimeMode = "at" | "every";
 /** 每天 / 每周指定星期 / 每月某一天。星期 0=周日 … 6=周六，与 cron 一致。 */
 export type ScheduleRepeat = "daily" | "weekly" | "monthly";
 
-export const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"] as const;
+export const WEEKDAY_DAYS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+export function weekdayLabel(day: number): string {
+  return t(`automation.weekday.${day}`);
+}
 
 export type ScheduleDraft = {
   mode: ScheduleTimeMode;
@@ -177,21 +183,21 @@ export function describeSchedule(draft: ScheduleDraft): string {
   if (draft.raw?.trim()) return draft.raw.trim();
   if (draft.mode === "every") {
     const hours = Math.min(23, Math.max(1, Math.floor(draft.everyHours) || 1));
-    return hours === 1 ? "每小时" : `每 ${hours} 小时`;
+    return hours === 1 ? t("automation.everyHour") : t("automation.everyNHours", { n: hours });
   }
   const time = parseTime(draft.time);
   const clock = time ? `${pad2(time.hour)}:${pad2(time.minute)}` : draft.time;
   if (draft.repeat === "monthly") {
     const day = Math.min(31, Math.max(1, Math.floor(draft.monthDay) || 1));
-    return `${clock} · 每月 ${day} 日`;
+    return t("automation.scheduleMonthly", { time: clock, day });
   }
   if (draft.repeat === "weekly") {
     const labels = [...new Set(draft.weekdays.filter((day) => day >= 0 && day <= 6))]
       .sort((a, b) => a - b)
-      .map((day) => WEEKDAY_LABELS[day]);
-    return `${clock} · 每周 ${labels.join("、") || "一"}`;
+      .map((day) => weekdayLabel(day));
+    return t("automation.scheduleWeekly", { time: clock, days: labels.join("、") || weekdayLabel(1) });
   }
-  return `${clock} · 每天`;
+  return t("automation.scheduleDaily", { time: clock });
 }
 
 type ZoneParts = {
@@ -288,23 +294,29 @@ export function formatRelative(target: Date, now = new Date()): string {
   const minute = 60_000;
   const hour = 60 * minute;
   const day = 24 * hour;
-  if (diffMs < minute) return "不到 1 分钟后";
-  if (diffMs < hour) return `${Math.floor(diffMs / minute)} 分钟后`;
+  if (diffMs < minute) return t("automation.relativeUnderMinute");
+  if (diffMs < hour) return t("automation.relativeMinutes", { n: Math.floor(diffMs / minute) });
   if (diffMs < day) {
     const hours = Math.floor(diffMs / hour);
     const minutes = Math.floor((diffMs % hour) / minute);
-    return minutes ? `${hours} 小时 ${minutes} 分后` : `${hours} 小时后`;
+    return minutes
+      ? t("automation.relativeHoursMinutes", { hours, minutes })
+      : t("automation.relativeHours", { hours });
   }
   const days = Math.floor(diffMs / day);
   const hours = Math.floor((diffMs % day) / hour);
   const minutes = Math.floor((diffMs % hour) / minute);
-  return `${days} 天 ${hours} 小时 ${minutes} 分后`;
+  return t("automation.relativeDays", { days, hours, minutes });
 }
 
 /** Prefer a readable Chinese date like `9月29日 09:00`. */
 export function formatNextLabel(date: Date, timeZone: string): string {
   const parts = zonedParts(date, timeZone);
-  return `${parts.month}月${parts.day}日 ${pad2(parts.hour)}:${pad2(parts.minute)}`;
+  return t("automation.nextAt", {
+    month: parts.month,
+    day: parts.day,
+    time: `${pad2(parts.hour)}:${pad2(parts.minute)}`,
+  });
 }
 
 export function buildSchedulePreview(draft: ScheduleDraft, now = new Date()): SchedulePreview {
@@ -320,13 +332,7 @@ export function buildSchedulePreview(draft: ScheduleDraft, now = new Date()): Sc
   };
 }
 
-export const RUNBOOK_TEMPLATE = `# 目标
-你希望智能体完成什么？
-
-# 上下文
-这是给谁的？有什么约束？
-
-# 步骤
-1. …
-2. …
-`;
+/** 新建自动化时的默认 runbook；文案走 i18n。 */
+export function runbookTemplate(): string {
+  return t("automation.runbookTemplate");
+}

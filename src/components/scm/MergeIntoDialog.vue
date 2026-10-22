@@ -7,6 +7,7 @@ import { computed, onMounted, ref } from "vue";
 import { X } from "@lucide/vue";
 import type { GitRepositoryStatus, MergeIntoResult, MergePreview, Workspace } from "../../domain/types";
 import * as backend from "../../services/backend";
+import { t } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import UiButton from "../ui/UiButton.vue";
 import UiInput from "../ui/UiInput.vue";
@@ -75,36 +76,36 @@ const groups = computed(() => mergeBranchGroups({
   selected: picked.value.map((item) => item.name),
 }));
 const filterTabs = computed(() => [
-  { id: MERGE_FILTER_ALL, label: "全部" },
-  { id: MERGE_FILTER_RECENT, label: "常用" },
-  { id: MERGE_FILTER_SELECTED, label: "已选", count: picked.value.length, pinCount: true },
+  { id: MERGE_FILTER_ALL, label: t("scm.merge.filter.all") },
+  { id: MERGE_FILTER_RECENT, label: t("scm.merge.filter.recent") },
+  { id: MERGE_FILTER_SELECTED, label: t("scm.merge.filter.selected"), count: picked.value.length, pinCount: true },
 ]);
 const actionable = computed(() => picked.value.filter((item) => item.preview && canMergePlan(item.preview.plan)));
 const remoteCount = computed(() => picked.value.filter((item) => item.preview?.remote).length);
 const canPush = computed(() => remoteCount.value > 0);
 const pushLabel = computed(() => {
-  if (!picked.value.length) return "合并后推送到各目标的远程";
-  return `合并后推送到各目标的远程（${remoteCount.value}/${picked.value.length} 有远程）`;
+  if (!picked.value.length) return t("scm.merge.pushAfter");
+  return t("scm.merge.pushAfterCount", { remote: remoteCount.value, total: picked.value.length });
 });
 const loadingPreview = computed(() => picked.value.some((item) => item.loading));
 const canStart = computed(() => actionable.value.length > 0 && !loadingPreview.value && !running.value);
 const startLabel = computed(() => {
-  if (running.value) return "正在合并…";
-  if (actionable.value.length) return `合并到 ${actionable.value.length} 个分支`;
-  return "开始合并";
+  if (running.value) return t("scm.merge.running");
+  if (actionable.value.length) return t("scm.merge.startCount", { count: actionable.value.length });
+  return t("scm.merge.start");
 });
 const checkoutNotes = computed(() => picked.value.flatMap((item) => {
   const path = item.preview?.checkedOutAt;
   if (!path) return [];
-  return [`${item.preview?.branch || item.name} 正在 ${path} 检出：那里干净时一起快进，否则只推送远程。`];
+  return [t("scm.merge.checkoutNote", { branch: item.preview?.branch || item.name, path })];
 }));
 const conflictOutcome = computed(() => outcomes.value.find((item) => item.status === "conflict" && item.result?.mergeSession) ?? null);
 const finishedCount = computed(() => outcomes.value.filter((item) => item.status === "merged" || item.status === "up_to_date").length);
 const resultTitle = computed(() => {
   const conflicts = outcomes.value.filter((item) => item.status === "conflict").length;
-  if (conflicts) return `合并完成 · ${conflicts} 个分支需要处理冲突`;
-  if (outcomes.value.some((item) => item.status === "error")) return "合并未完成";
-  return "合并完成";
+  if (conflicts) return t("scm.merge.doneConflicts", { count: conflicts });
+  if (outcomes.value.some((item) => item.status === "error")) return t("scm.merge.incomplete");
+  return t("scm.merge.done");
 });
 const blocked = computed(() => running.value || Boolean(conflictOutcome.value));
 
@@ -161,7 +162,7 @@ async function loadOne(name: string) {
     if (!item) return;
     item.preview = preview.target ?? null;
     item.loading = false;
-    item.error = preview.target ? "" : "找不到这个分支";
+    item.error = preview.target ? "" : t("scm.merge.branchMissing");
     applySource(preview);
   } catch (cause) {
     const item = picked.value.find((row) => row.name === name);
@@ -295,14 +296,14 @@ onMounted(async () => {
 <template>
   <Teleport to="body">
     <div class="modal-backdrop merge-backdrop" @click.self="!blocked && emit('close')">
-      <section class="modal merge-dialog" role="dialog" aria-label="合并到其他分支">
+      <section class="modal merge-dialog" role="dialog" :aria-label="t('scm.merge.title')">
         <div class="modal-heading">
-          <h2>{{ outcomes.length ? resultTitle : "合并到其他分支" }}</h2>
+          <h2>{{ outcomes.length ? resultTitle : t('scm.merge.title') }}</h2>
           <UiButton
             v-if="!conflictOutcome"
             class="icon-button"
             size="icon"
-            title="关闭"
+            :title="t('common.close')"
             :disabled="running"
             @click="emit('close')"
           >
@@ -313,21 +314,21 @@ onMounted(async () => {
         <template v-if="!outcomes.length">
           <div class="merge-source">
             <div class="merge-source-main">
-              <span class="merge-chip">当前</span>
+              <span class="merge-chip">{{ t('scm.merge.current') }}</span>
               <strong>{{ sourceLabel }}</strong>
               <code v-if="sourceCommit">{{ sourceCommit }}</code>
             </div>
             <small v-if="origin">
-              从 {{ origin.baseRef }} @ {{ origin.baseCommit }} 迁出 · 新增 {{ origin.commits }} 个提交 · {{ origin.files }} 个文件
+              {{ t('scm.merge.originSummary', { baseRef: origin.baseRef, baseCommit: origin.baseCommit, commits: origin.commits, files: origin.files }) }}
             </small>
           </div>
 
           <div class="merge-body">
             <div class="merge-picker">
-              <UiInput v-model="query" type="search" placeholder="搜索分支" aria-label="搜索分支" />
-              <SegmentedTabs v-model="filter" :items="filterTabs" label="分支筛选" />
+              <UiInput v-model="query" type="search" :placeholder="t('workspace.searchBranch')" :aria-label="t('workspace.searchBranch')" />
+              <SegmentedTabs v-model="filter" :items="filterTabs" :label="t('scm.merge.branchFilter')" />
               <div class="merge-branch-list vs-scroll">
-                <p v-if="!groups.length" class="merge-empty">没有匹配的分支</p>
+                <p v-if="!groups.length" class="merge-empty">{{ t('scm.merge.noMatch') }}</p>
                 <section v-for="group in groups" :key="group.label || 'selected'">
                   <h3 v-if="group.label">{{ group.label }}</h3>
                   <label v-for="row in group.rows" :key="row.name" class="check-row merge-branch">
@@ -340,15 +341,15 @@ onMounted(async () => {
                   </label>
                 </section>
               </div>
-              <p class="merge-picker-foot">已排除当前分支及其同名远程</p>
+              <p class="merge-picker-foot">{{ t('scm.merge.excludedHint') }}</p>
             </div>
 
             <div class="merge-queue">
               <div class="merge-queue-head">
-                <strong>{{ picked.length ? `将依次合并到 ${picked.length} 个分支` : "选择要合并到的分支" }}</strong>
-                <span v-if="picked.length > 1">拖动调整顺序</span>
+                <strong>{{ picked.length ? t('scm.merge.pickCount', { count: picked.length }) : t('scm.merge.pickPrompt') }}</strong>
+                <span v-if="picked.length > 1">{{ t('scm.merge.dragOrder') }}</span>
               </div>
-              <p v-if="!picked.length" class="merge-empty">从左侧勾选目标分支。无冲突的会直接完成，冲突留到最后处理。</p>
+              <p v-if="!picked.length" class="merge-empty">{{ t('scm.merge.pickHint') }}</p>
               <ol v-else>
                 <li
                   v-for="(item, index) in picked"
@@ -366,14 +367,14 @@ onMounted(async () => {
                     <small>{{ mergeQueueSummary(item.preview, item.loading, item.error) }}</small>
                   </div>
                   <em v-if="item.preview">{{ mergePlanBadge(item.preview.plan) }}</em>
-                  <Codicon name="gripper" :size="14" title="拖动调整顺序" />
+                  <Codicon name="gripper" :size="14" :title="t('scm.merge.dragOrder')" />
                 </li>
               </ol>
               <p v-if="picked.length" class="merge-note">
-                无冲突的分支在后台直接完成；有冲突的分支会各开一个临时工作区，排在队列最后逐个处理。当前工作区不会切换。
+                {{ t('scm.merge.queueNote') }}
               </p>
               <div v-if="dirty || checkoutNotes.length" class="merge-warn-box">
-                <p v-if="dirty">当前有未提交的改动，不会被合并。</p>
+                <p v-if="dirty">{{ t('scm.merge.dirtyWarning') }}</p>
                 <p v-for="note in checkoutNotes" :key="note">{{ note }}</p>
               </div>
             </div>
@@ -387,7 +388,7 @@ onMounted(async () => {
               {{ pushLabel }}
             </label>
             <div class="modal-actions">
-              <UiButton :disabled="running" @click="emit('close')">取消</UiButton>
+              <UiButton :disabled="running" @click="emit('close')">{{ t('common.cancel') }}</UiButton>
               <UiButton variant="primary" :disabled="!canStart" @click="start">{{ startLabel }}</UiButton>
             </div>
           </div>
@@ -395,7 +396,7 @@ onMounted(async () => {
 
         <template v-else>
           <p class="merge-note">
-            {{ sourceLabel }} → {{ outcomes.length }} 个分支 · 已完成 {{ finishedCount }}/{{ outcomes.length }}
+            {{ t('scm.merge.progressSummary', { source: sourceLabel, count: outcomes.length, finished: finishedCount, total: outcomes.length }) }}
           </p>
           <div class="merge-results">
             <article
@@ -411,7 +412,7 @@ onMounted(async () => {
                   <Codicon v-else name="check" :size="14" />
                 </span>
                 <b>{{ item.result?.targetDisplay || item.name }}</b>
-                <span v-if="item.status === 'conflict'">· {{ item.result?.conflicts.length || 0 }} 个文件冲突</span>
+                <span v-if="item.status === 'conflict'">{{ t('scm.merge.fileConflicts', { count: item.result?.conflicts.length || 0 }) }}</span>
               </header>
               <ul v-if="item.status === 'conflict'" class="merge-conflicts">
                 <li v-for="file in item.result?.conflicts || []" :key="file">
@@ -426,20 +427,20 @@ onMounted(async () => {
               >
                 {{ line.text }}
               </p>
-              <p v-if="item.status === 'conflict'" class="merge-note">已在临时工作区开始合并，当前工作区没有变化</p>
+              <p v-if="item.status === 'conflict'" class="merge-note">{{ t('scm.merge.conflictStarted') }}</p>
             </article>
           </div>
           <p v-if="conflictOutcome" class="merge-note">
-            冲突分支会保留为待办：解决后在源码管理点「完成合并」，会提交合并{{ conflictOutcome.result?.mergeSession?.push ? "并推送" : "" }}，再自动删除临时工作区。
+            {{ t('scm.merge.conflictTodo', { pushSuffix: conflictOutcome.result?.mergeSession?.push ? t('scm.merge.conflictPushSuffix') : '' }) }}
           </p>
           <p v-if="error" class="merge-note is-error">{{ error }}</p>
           <div class="modal-actions" :class="{ 'merge-conflict-actions': conflictOutcome }">
             <template v-if="conflictOutcome">
-              <UiButton variant="danger" :disabled="running" @click="abort">放弃冲突分支</UiButton>
-              <UiButton :disabled="running" @click="resolveManually">手动解决</UiButton>
-              <UiButton variant="primary" :disabled="running" @click="resolveWithAi">交给 AI 解决</UiButton>
+              <UiButton variant="danger" :disabled="running" @click="abort">{{ t('scm.merge.abortConflict') }}</UiButton>
+              <UiButton :disabled="running" @click="resolveManually">{{ t('scm.merge.resolveManual') }}</UiButton>
+              <UiButton variant="primary" :disabled="running" @click="resolveWithAi">{{ t('scm.aiResolve') }}</UiButton>
             </template>
-            <UiButton v-else variant="primary" @click="emit('close')">好</UiButton>
+            <UiButton v-else variant="primary" @click="emit('close')">{{ t('common.ok') }}</UiButton>
           </div>
         </template>
       </section>

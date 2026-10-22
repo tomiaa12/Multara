@@ -13,7 +13,7 @@ import {
 } from "../components/run-log";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
-import { relativeTime, TASK_COLUMNS } from "./task-board";
+import { relativeTime, TASK_COLUMNS, taskStatusLabel } from "./task-board";
 import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import {
@@ -27,6 +27,15 @@ import {
 } from "./dashboard/requirement-categories";
 import { PRIORITY_OPTIONS, readTaskMeta, writeTaskMeta, type TaskPriority } from "./task-meta";
 import TaskActivity from "./TaskActivity.vue";
+import { t } from "../i18n";
+
+const PRIORITY_KEYS: Record<TaskPriority, string> = {
+  none: "tasks.priority.none",
+  urgent: "tasks.priority.urgent",
+  high: "tasks.priority.high",
+  medium: "tasks.priority.medium",
+  low: "tasks.priority.low",
+};
 
 const store = useAppStore();
 const route = useRoute();
@@ -140,7 +149,7 @@ watch(descriptionDraft, () => {
 function formatDate(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return t("tasks.dateMonthDay", { month: date.getMonth() + 1, day: date.getDate() });
 }
 
 async function saveTitle() {
@@ -237,6 +246,14 @@ async function savePr() {
 const childTasks = computed(() =>
   (store.data?.tasks ?? []).filter((item) => item.parentTaskId === task.value?.id),
 );
+
+watch(
+  () => childTasks.value.map((item) => item.id).join(","),
+  async (current, previous) => {
+    if (!task.value || current === previous) return;
+    await store.loadMessages(task.value.sessionId);
+  },
+);
 const childDraft = ref("");
 
 async function createChild() {
@@ -284,7 +301,7 @@ function openRun(run: TaskRunRecord) {
         ?? agent.value?.name,
       error: live?.error ?? failureFromMessages(messages, run.id),
       timeline: timelineFromMessages(messages, run.id),
-      title: "执行日志",
+      title: t("tasks.runLog"),
     });
   });
 }
@@ -300,15 +317,15 @@ function openLatestRunLog() {
   <div v-if="task" class="task-issue">
     <header class="task-issue-bar">
       <span class="task-issue-crumb" />
-      <UiButton variant="ghost" size="icon" class="task-issue-delete" title="删除任务" aria-label="删除任务" @click="removeTask">
+      <UiButton variant="ghost" size="icon" class="task-issue-delete" :title="t('tasks.delete')" :aria-label="t('tasks.delete')" @click="removeTask">
         <Trash2 :size="15" />
       </UiButton>
       <UiButton
         variant="ghost"
         size="icon"
         :class="{ active: sideOpen }"
-        title="属性面板"
-        aria-label="属性面板"
+        :title="t('tasks.propertiesPanel')"
+        :aria-label="t('tasks.propertiesPanel')"
         :aria-pressed="sideOpen"
         @click="sideOpen = !sideOpen"
       >
@@ -323,7 +340,7 @@ function openLatestRunLog() {
               ref="titleEl"
               v-model="titleDraft"
               class="task-issue-title"
-              aria-label="任务标题"
+              :aria-label="t('tasks.titleField')"
               @blur="saveTitle"
               @keydown.enter.prevent="titleEl?.blur()"
             />
@@ -331,13 +348,13 @@ function openLatestRunLog() {
               ref="descriptionEl"
               v-model="descriptionDraft"
               class="task-issue-description"
-              placeholder="添加描述..."
+              :placeholder="t('tasks.addDescription')"
               rows="1"
               @input="fitDescription"
               @blur="saveDescription"
             />
             <section class="task-feed">
-              <header>动态</header>
+              <header>{{ t('tasks.activity') }}</header>
               <TaskActivity :session-id="task.sessionId" :agent-id="task.agentId" />
             </section>
           </div>
@@ -346,31 +363,31 @@ function openLatestRunLog() {
       </main>
       <aside v-if="sideOpen" class="task-issue-side vs-scroll">
         <section>
-          <h2>属性</h2>
+          <h2>{{ t('tasks.properties') }}</h2>
           <div class="task-prop-row">
-            <span>状态</span>
+            <span>{{ t('tasks.field.status') }}</span>
             <span class="task-prop-status">
               <i :data-status="task.status" />
               <UiSelect
                 class="task-prop-select"
                 variant="ghost"
                 size="sm"
-                aria-label="状态"
+                :aria-label="t('tasks.field.status')"
                 :model-value="task.status"
-                :options="TASK_COLUMNS.map((column) => ({ value: column.id, label: column.label }))"
+                :options="TASK_COLUMNS.map((column) => ({ value: column.id, label: taskStatusLabel(column.id) }))"
                 @change="changeStatus($event as TaskStatus)"
               />
             </span>
           </div>
           <div class="task-prop-row">
-            <span>负责人</span>
+            <span>{{ t('tasks.assignee') }}</span>
             <span class="task-prop-person">
               <UiSelect
                 class="task-prop-select"
                 variant="ghost"
                 size="sm"
-                aria-label="负责人"
-                placeholder="未分配"
+                :aria-label="t('tasks.assignee')"
+                :placeholder="t('common.unassigned')"
                 :model-value="task.agentId"
                 :options="(store.data?.agents ?? []).map((item) => ({ value: item.id, label: item.name, avatar: item.avatar }))"
                 @change="changeAgent(String($event))"
@@ -378,27 +395,27 @@ function openLatestRunLog() {
             </span>
           </div>
           <div class="task-prop-row">
-            <span>项目</span>
-            <span>{{ project?.name ?? "无项目" }}</span>
+            <span>{{ t('tasks.project') }}</span>
+            <span>{{ project?.name ?? t('tasks.noProject') }}</span>
           </div>
           <div class="task-prop-row">
-            <span>优先级</span>
+            <span>{{ t('tasks.priority') }}</span>
             <UiSelect
               class="task-prop-select"
               variant="ghost"
               size="sm"
-              aria-label="优先级"
+              :aria-label="t('tasks.priority')"
               :model-value="meta.priority"
-              :options="PRIORITY_OPTIONS.map((option) => ({ value: option.id, label: option.label }))"
+              :options="PRIORITY_OPTIONS.map((option) => ({ value: option.id, label: t(PRIORITY_KEYS[option.id]) }))"
               @change="changePriority($event as TaskPriority)"
             />
           </div>
           <div class="task-prop-row">
-            <span>标签</span>
+            <span>{{ t('tasks.tags') }}</span>
             <TagPicker
               :model-value="taskLabelIds"
               :tags="categories.categories"
-              placeholder="添加标签"
+              :placeholder="t('tasks.addTags')"
               @update:model-value="setTaskLabels"
               @create="onTagCreate"
               @manage="showTagManage = true"
@@ -406,7 +423,7 @@ function openLatestRunLog() {
           </div>
         </section>
         <section>
-          <h2>检查项</h2>
+          <h2>{{ t('tasks.checklist') }}</h2>
           <ul v-if="task.checklist?.length" class="task-checklist">
             <li v-for="item in task.checklist" :key="item.id">
               <label>
@@ -415,20 +432,20 @@ function openLatestRunLog() {
               </label>
             </li>
           </ul>
-          <input v-model="checklistDraft" class="task-prop-input" placeholder="添加检查项" @keydown.enter.prevent="addChecklist" />
+          <input v-model="checklistDraft" class="task-prop-input" :placeholder="t('tasks.addChecklist')" @keydown.enter.prevent="addChecklist" />
         </section>
         <section>
-          <h2>子任务</h2>
+          <h2>{{ t('tasks.subtasks') }}</h2>
           <ul v-if="childTasks.length" class="task-runs">
             <li v-for="child in childTasks" :key="child.id">
               <button type="button" class="task-run-row" @click="router.push(`/tasks/${child.id}`)">
                 <span>{{ child.title }}</span>
-                <span>{{ child.status }}</span>
+                <span>{{ taskStatusLabel(child.status) }}</span>
               </button>
             </li>
           </ul>
-          <p v-else>还没有子任务。</p>
-          <input v-model="childDraft" class="task-prop-input" placeholder="新建子任务" @keydown.enter.prevent="createChild" />
+          <p v-else>{{ t('tasks.noSubtasks') }}</p>
+          <input v-model="childDraft" class="task-prop-input" :placeholder="t('tasks.newSubtask')" @keydown.enter.prevent="createChild" />
         </section>
         <section>
           <h2>Pull Request</h2>
@@ -436,16 +453,16 @@ function openLatestRunLog() {
         </section>
         <section>
           <div class="task-side-heading">
-            <h2>执行日志</h2>
+            <h2>{{ t('tasks.runLog') }}</h2>
             <UiButton
               v-if="runs.length"
               variant="ghost"
               size="small"
               class="task-run-log-btn"
               @click="openLatestRunLog"
-            ><ScrollText :size="14" />最新日志</UiButton>
+            ><ScrollText :size="14" />{{ t('tasks.latestRunLog') }}</UiButton>
           </div>
-          <p v-if="!runs.length">暂无运行记录。</p>
+          <p v-if="!runs.length">{{ t('tasks.noRunHistory') }}</p>
           <ul v-else class="task-runs">
             <li v-for="run in runs" :key="run.id">
               <button type="button" class="task-run-row" @click="openRun(run)">
@@ -456,17 +473,17 @@ function openLatestRunLog() {
           </ul>
         </section>
         <section>
-          <h2>详情</h2>
+          <h2>{{ t('tasks.meta') }}</h2>
           <div class="task-prop-row">
-            <span>创建者</span>
-            <span class="task-prop-person"><i class="task-creator-mark" aria-hidden="true"><User :size="10" /></i>我</span>
+            <span>{{ t('tasks.creator') }}</span>
+            <span class="task-prop-person"><i class="task-creator-mark" aria-hidden="true"><User :size="10" /></i>{{ t('tasks.creatorMe') }}</span>
           </div>
           <div class="task-prop-row">
-            <span>创建时间</span>
+            <span>{{ t('tasks.createdAt') }}</span>
             <span>{{ formatDate(task.createdAt) }}</span>
           </div>
           <div class="task-prop-row">
-            <span>更新时间</span>
+            <span>{{ t('tasks.updatedAtLabel') }}</span>
             <span>{{ formatDate(task.updatedAt) }}</span>
           </div>
         </section>
@@ -476,9 +493,9 @@ function openLatestRunLog() {
   <div v-else class="tasks-page task-issue-missing">
     <div class="ds-empty">
       <span class="ds-empty-icon"><ListTodo :size="20" /></span>
-      <h3>任务不存在</h3>
-      <p>它可能已被删除，或链接已失效。</p>
-      <UiButton @click="router.push('/tasks')"><ArrowLeft :size="14" />返回任务</UiButton>
+      <h3>{{ t('tasks.notFoundTitle') }}</h3>
+      <p>{{ t('tasks.notFoundHint') }}</p>
+      <UiButton @click="router.push('/tasks')"><ArrowLeft :size="14" />{{ t('tasks.back') }}</UiButton>
     </div>
   </div>
   <TagManageDialog

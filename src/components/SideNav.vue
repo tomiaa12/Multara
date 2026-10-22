@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Component } from "vue";
 import { RouterLink } from "vue-router";
+import { t } from "../i18n";
 import UiCountBadge from "./ui/UiCountBadge.vue";
 
 export type SideNavItem = {
@@ -27,6 +28,7 @@ defineProps<{
 
 const emit = defineEmits<{
   select: [item: SideNavItem];
+  resizeStart: [event: PointerEvent];
 }>();
 </script>
 
@@ -61,5 +63,13 @@ const emit = defineEmits<{
     <div v-if="$slots.footer" class="nav-group sidebar-footer">
       <slot name="footer" />
     </div>
+    <div
+      class="panel-resize-handle sidebar-resize-handle"
+      role="separator"
+      :aria-label="t('app.resizeSidebar')"
+      aria-orientation="vertical"
+      tabindex="0"
+      @pointerdown="emit('resizeStart', $event)"
+    />
   </nav>
 </template>

@@ -555,8 +555,9 @@ pub async fn generate_git_commit_message(
         let db = state.lock_db()?;
         let prompt = setting_value(&db, "commitPrompt", "");
         let source = helper_source_from_db(&db, "commit");
+        let locale = crate::app_locale::from_db(&db);
         drop(db);
-        executor::generate_commit_message(&handle, &diff, &prompt, &source)
+        executor::generate_commit_message(&handle, &diff, &prompt, &source, locale)
     })
     .await
 }
@@ -577,15 +578,23 @@ pub async fn generate_branch_name(
         let prefix = setting_value(&db, "branchPrefix", "feat");
         let prompt = setting_value(&db, "branchPrompt", "");
         let source = helper_source_from_db(&db, "branch");
+        let locale = crate::app_locale::from_db(&db);
         drop(db);
         let prefix = sanitize_branch_prefix(&prefix).unwrap_or_else(|_| "feat".to_string());
         // 点「生成」就要走智能体。没写自定义提示词时用默认说明，避免把整段需求标题原样拼进分支名。
         let instruction = if prompt.trim().is_empty() {
-            DEFAULT_BRANCH_PROMPT
+            crate::app_locale::default_branch_prompt(locale)
         } else {
             prompt.trim()
         };
-        let raw = executor::generate_branch_name(&handle, requirement, &prefix, instruction, &source)?;
+        let raw = executor::generate_branch_name(
+            &handle,
+            requirement,
+            &prefix,
+            instruction,
+            &source,
+            locale,
+        )?;
         Ok(coerce_branch_name(&raw, &prefix))
     })
     .await
@@ -2358,10 +2367,12 @@ pub fn get_run_statistics(
 #[tauri::command]
 pub fn save_settings(
     settings: HashMap<String, String>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<HashMap<String, String>, String> {
     let _span = crate::diag::span("save_settings");
     validate_settings(&settings)?;
+    let language_changed = settings.contains_key("language");
     let db = state.lock_db()?;
     for (key, value) in settings {
         if ![
@@ -2399,6 +2410,15 @@ pub fn save_settings(
             params![key, value],
         )
         .map_err(|error| error.to_string())?;
+    }
+    if language_changed {
+        let locale = crate::app_locale::from_db(&db);
+        let skill_root = app
+            .path()
+            .app_data_dir()
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join("builtin-skills");
+        let _ = crate::builtin_skills::materialize(&skill_root, locale);
     }
     settings_map(&db)
 }
@@ -2812,10 +2832,14 @@ pub fn agent_system_context(
         )
         .map_err(|error| error.to_string())?
     };
+    let locale = {
+        let db = state.lock_db()?;
+        crate::app_locale::from_db(&db)
+    };
     let identity = if crate::builtin_agents::is_miku_key(system_key.as_deref()) {
-        crate::builtin_agents::compose_miku_instructions(&name, &instructions)
+        crate::builtin_agents::compose_miku_instructions(&name, &instructions, locale)
     } else if instructions.trim().is_empty() {
-        format!("你是 {name}。按用户交待的任务执行。")
+        crate::builtin_agents::generic_agent_identity(&name, locale)
     } else {
         instructions
     };
@@ -2839,7 +2863,12 @@ pub fn agent_system_context(
     });
     let builtin: Vec<serde_json::Value> = crate::builtin_skills::ALL
         .iter()
-        .map(|skill| serde_json::json!({ "name": skill.name, "description": skill.description }))
+        .map(|skill| {
+            serde_json::json!({
+                "name": skill.name,
+                "description": skill.description_for(locale),
+            })
+        })
         .collect();
     Ok(serde_json::json!({ "runtimeBrief": brief, "builtinSkills": builtin }))
 }
@@ -4170,6 +4199,15 @@ fn list_squads(db: &Connection) -> Result<Vec<Squad>, String> {
     ops::squad::list(db)
 }
 
+/// 智能体/小队页刷新：只读库，不跑 runtime detect / resource scan（bootstrap 太重会卡首屏）。
+#[tauri::command]
+pub fn list_agents_and_squads(
+    state: State<'_, AppState>,
+) -> Result<(Vec<Agent>, Vec<Squad>), String> {
+    let db = state.lock_db()?;
+    Ok((list_agents(&db)?, list_squads(&db)?))
+}
+
 fn list_inbox(db: &Connection) -> Result<Vec<InboxItem>, String> {
     crate::ops::inbox::list(db)
 }
@@ -4944,7 +4982,7 @@ fn settings_map(db: &Connection) -> Result<HashMap<String, String>, String> {
 fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
     if settings
         .get("language")
-        .is_some_and(|value| !["system", "zh-CN", "en"].contains(&value.as_str()))
+        .is_some_and(|value| !crate::app_locale::is_supported_setting(value))
     {
         return Err("无效的语言设置".to_string());
     }
@@ -5044,11 +5082,6 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
     }
     Ok(())
 }
-
-/// 设置里没写提示词时，生成按钮仍交给智能体，要求短名而不是整段需求标题。
-const DEFAULT_BRANCH_PROMPT: &str = "\
-根据需求名起一个简短的 Git 分支名。不要把整段需求标题原样拼进去，提炼 2～5 个关键词。\
-优先小写英文和连字符，专有名词可以保留原文。只输出一行分支名。";
 
 fn sanitize_branch_prefix(prefix: &str) -> Result<String, String> {
     let value = prefix.trim();

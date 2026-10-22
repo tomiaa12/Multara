@@ -33,6 +33,7 @@ pub fn build(brief: RuntimeBrief<'_>) -> String {
 - 任务模式仍然可用：工作要留下负责人、状态和结果，或要交给别的智能体、拆成多轮时，建成任务再执行。建任务不是改代码的前置条件。
 - 本次运行已经被指派了一个任务时，直接执行，把进度写在任务上。
 - 任务状态：开始做本任务交付时立刻 `multara task status <id> in_progress`；本轮交付完等人审用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改状态。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
+- 派活：需要别的智能体/队员并行时，用 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` 建子任务（未传 `--parent` 时也会自动挂到当前任务）。先 `multara agent list` 拿 id。子任务都收口后系统会再唤起你汇总。
 - 只改上面列出的工作区目录。用户消息里附带的工作区外文件可以阅读，不要改那些文件。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。"
     } else {
@@ -40,6 +41,7 @@ pub fn build(brief: RuntimeBrief<'_>) -> String {
 ## Workflow
 这次运行没有关联项目。生成或修改文件时，只写上面列出的工作目录，不要改目录以外的路径。要改已有仓库，创建任务时选择项目，或让用户打开一个需求。
 本次运行已经被指派了一个任务时，直接执行该任务。开始做交付时 `multara task status <id> in_progress`；交付完等人审用 `in_review`；真正完成再用 `done`。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
+- 派活：需要别的智能体/队员并行时，用 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` 建子任务（未传 `--parent` 时也会自动挂到当前任务）。先 `multara agent list` 拿 id。子任务都收口后系统会再唤起你汇总。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。"
     };
     // 无头 CLI 运行中拿不到用户输入（AskUserQuestion 已禁用），提问统一写成代码块，界面渲染成输入框上方的选项卡片。
@@ -81,9 +83,10 @@ pub fn build(brief: RuntimeBrief<'_>) -> String {
 
 ## Available Commands
 multara task get <id>
-multara task create --title \"...\" --description \"...\" --assignee <id> --status todo|backlog --project <id>
+multara task create --title \"...\" --description \"...\" --assignee <agentId> --status todo|backlog --project <id> [--parent <taskId>]
 multara task status <id> <status>
-multara task assign <id> --to <id>
+multara task assign <id> --to <agentId>
+当前任务 id 在环境变量 `MULTARA_TASK_ID`；派生子任务务必带 `--parent`（或依赖自动挂接）。
 multara agent list
 multara agent get <id>
 multara agent create --name \"...\" --runtime-id <id>

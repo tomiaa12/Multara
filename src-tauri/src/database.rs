@@ -789,6 +789,7 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
             crate::builtin_agents::MIKU_ID
         ],
     )?;
+    let locale = crate::app_locale::from_db(db);
     let now = chrono::Utc::now().to_rfc3339();
     db.execute(
         "INSERT OR IGNORE INTO chat_sessions
@@ -796,7 +797,7 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
          VALUES (?1, NULL, ?2, 'agent', ?3, ?4, ?4)",
         params![
             crate::builtin_agents::MIKU_WELCOME_SESSION_ID,
-            crate::builtin_agents::MIKU_WELCOME_TITLE,
+            crate::builtin_agents::welcome_title(locale),
             crate::builtin_agents::MIKU_ID,
             now
         ],
@@ -807,8 +808,8 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
          VALUES ('welcome-opening', ?1, 'assistant', ?2, 'message', ?3, ?4, ?5, 'user')",
         params![
             crate::builtin_agents::MIKU_WELCOME_SESSION_ID,
-            crate::builtin_agents::welcome_opening(crate::builtin_agents::MIKU_DEFAULT_NAME),
-            crate::builtin_agents::welcome_quick_actions_json(),
+            crate::builtin_agents::welcome_opening(crate::builtin_agents::MIKU_DEFAULT_NAME, locale),
+            crate::builtin_agents::welcome_quick_actions_json(locale),
             now,
             crate::builtin_agents::MIKU_ID,
         ],

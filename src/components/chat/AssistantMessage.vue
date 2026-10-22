@@ -12,6 +12,7 @@ import RichContent from "./RichContent.vue";
 import { useAppStore } from "../../stores/app";
 import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
 import { extractQuestions } from "./question-block";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   message: ChatMessage;
@@ -46,14 +47,14 @@ const bodyText = computed(() => {
 /** 失败消息没有正文时，复制内容取失败摘要 + 技术详情 */
 const footerText = computed(() => {
   if (bodyText.value.trim() || !props.message.failureReason) return bodyText.value;
-  const summary = props.message.content || "这次运行没有成功完成。";
+  const summary = props.message.content || t("chat.runFailedSummary");
   return `${summary}\n\n${props.message.failureReason}`;
 });
 const questions = computed(() => extracted.value.questions);
 const questionStateLabel = computed(() => {
-  if (props.questionState === "answered") return "已回答";
-  if (props.questionState === "skipped") return "已跳过";
-  if (props.questionState === "pending") return "在输入框上方回答";
+  if (props.questionState === "answered") return t("chat.questionState.answered");
+  if (props.questionState === "skipped") return t("chat.questionState.skipped");
+  if (props.questionState === "pending") return t("chat.questionState.pending");
   return "";
 });
 const showAssignmentOriginal = computed(() =>
@@ -74,7 +75,7 @@ const showAssignmentOriginal = computed(() =>
       <div class="speaker-meta">
         <b>{{ speaker.name }}</b>
         <span class="speaker-pill" :class="speaker.roleKind">{{ speaker.roleLabel }}</span>
-        <span v-if="message.failureReason" class="speaker-pill fail">失败</span>
+        <span v-if="message.failureReason" class="speaker-pill fail">{{ t("chat.failPill") }}</span>
       </div>
     </div>
     <p v-if="speaker?.internal && speaker.audienceName" class="to-member">
@@ -88,7 +89,7 @@ const showAssignmentOriginal = computed(() =>
         :elapsed-ms="message.elapsedMs"
       />
       <RichContent v-if="bodyText.trim()" :content="bodyText" />
-      <p v-if="running && extracted.streaming" class="question-summary-pending">正在整理要问你的问题…</p>
+      <p v-if="running && extracted.streaming" class="question-summary-pending">{{ t("chat.questionPreparing") }}</p>
       <div v-else-if="questions.length && !running" class="question-summary" :class="questionState ?? ''">
         <div v-for="question in questions" :key="question.id" class="question-summary-item">
           <span class="question-summary-q">{{ question.question }}</span>
@@ -106,10 +107,10 @@ const showAssignmentOriginal = computed(() =>
         @continue="emit('pick-action', CONTINUE_ASSIGNMENT)"
       />
       <div v-else-if="message.messageKind === 'no_response'" class="empty-answer">
-        {{ message.content || "运行已结束，但没有返回可展示的文本。" }}
+        {{ message.content || t("chat.runNoText") }}
       </div>
       <details v-if="showAssignmentOriginal" class="assignment-original">
-        <summary>查看派活原文</summary>
+        <summary>{{ t("chat.viewAssignmentOriginal") }}</summary>
         <pre>{{ bodyRaw }}</pre>
       </details>
       <MessageFooter

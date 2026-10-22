@@ -1,4 +1,5 @@
 import type { Agent, ChatMessage, ChatSession, Squad } from "../../domain/types";
+import { t } from "../../i18n";
 
 export type SpeakerRole = "lead" | "member" | "solo";
 
@@ -6,7 +7,7 @@ export interface SpeakerInfo {
   agentId: string;
   name: string;
   avatar: string;
-  roleLabel: "队长" | "队员" | "智能体";
+  roleLabel: string;
   roleKind: SpeakerRole;
   internal: boolean;
   audienceName: string | null;
@@ -48,13 +49,13 @@ function roleInSquad(agentId: string, squads: Squad[], squadId: string | null | 
 export interface MentionInfo {
   id: string;
   name: string;
-  roleLabel: "队长" | "队员" | "智能体";
+  roleLabel: string;
 }
 
-function roleLabel(kind: SpeakerRole): MentionInfo["roleLabel"] {
-  if (kind === "lead") return "队长";
-  if (kind === "member") return "队员";
-  return "智能体";
+function roleLabel(kind: SpeakerRole): string {
+  if (kind === "lead") return t("chat.role.lead");
+  if (kind === "member") return t("chat.role.member");
+  return t("chat.role.agent");
 }
 
 /**
@@ -117,7 +118,13 @@ export function assignmentVisibleText(content: string): string {
   const text = content.trim();
   if (!text) return "请按刚才的拆分处理你负责的部分，完成后向我汇报。";
   const first = text.split(/\n/)[0]?.trim() || text;
-  if (first.startsWith("请按刚才的拆分") || first.startsWith("请按用户这句话处理")) return first;
+  if (
+    first.startsWith("请按刚才的拆分")
+    || first.startsWith("请按用户这句话处理")
+    || first.startsWith("请处理子任务")
+  ) {
+    return first;
+  }
   return "请按刚才的拆分处理你负责的部分，完成后向我汇报。";
 }
 
@@ -138,7 +145,7 @@ export function speakerForMessage(
   const internal = message.audienceType === "agent" && Boolean(message.audienceId);
   return {
     agentId,
-    name: agent?.name || "智能体",
+    name: agent?.name || t("chat.role.agent"),
     avatar: agent?.avatar || "M",
     roleLabel: roleLabel(kind),
     roleKind: kind,
@@ -162,14 +169,14 @@ export function sentTargetForMessage(
     const leader = agentById(agents, squad?.leaderAgentId);
     return {
       value: `squad:${targetId}`,
-      label: squad ? `小队 · ${squad.name}` : "小队",
+      label: squad ? t("chat.squadLabel", { name: squad.name }) : t("inbox.squadFallback"),
       avatar: leader?.avatar || "◉",
     };
   }
   const agent = agentById(agents, targetId);
   return {
     value: `agent:${targetId}`,
-    label: agent?.name || "智能体",
+    label: agent?.name || t("inbox.agentFallback"),
     avatar: agent?.avatar || "M",
   };
 }

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { Check, Copy, ThumbsDown, ThumbsUp } from "@lucide/vue";
 import { formatAbsoluteTime, formatRelativeTime } from "./message-time";
 import { useAppStore } from "../../stores/app";
+import { t } from "../../i18n";
 
 const props = defineProps<{
   content: string;
@@ -41,13 +42,13 @@ onBeforeUnmount(() => {
 
 <template>
   <footer class="assistant-message-footer">
-    <span v-if="elapsedMs != null" class="message-elapsed">{{ (elapsedMs / 1000).toFixed(1) }} 秒</span>
+    <span v-if="elapsedMs != null" class="message-elapsed">{{ t('chat.elapsedSeconds', { seconds: (elapsedMs / 1000).toFixed(1) }) }}</span>
     <UiButton
       v-if="messageId"
       class="message-copy"
       variant="ghost"
       size="icon"
-      title="有帮助"
+      :title="t('chat.feedbackHelpful')"
       :aria-pressed="feedback === 'up'"
       @click="store.setMessageFeedback(messageId, feedback === 'up' ? null : 'up')"
     >
@@ -58,7 +59,7 @@ onBeforeUnmount(() => {
       class="message-copy"
       variant="ghost"
       size="icon"
-      title="没帮助"
+      :title="t('chat.feedbackUnhelpful')"
       :aria-pressed="feedback === 'down'"
       @click="store.setMessageFeedback(messageId, feedback === 'down' ? null : 'down')"
     >
@@ -68,8 +69,8 @@ onBeforeUnmount(() => {
       class="message-copy"
       variant="ghost"
       size="icon"
-      :title="copied ? '已复制' : '复制'"
-      :aria-label="copied ? '已复制' : '复制消息'"
+      :title="copied ? t('chat.copied') : t('common.copy')"
+      :aria-label="copied ? t('chat.copied') : t('chat.copyMessage')"
       @click="copyMessage"
     >
       <Check v-if="copied" :size="13" /><Copy v-else :size="13" />

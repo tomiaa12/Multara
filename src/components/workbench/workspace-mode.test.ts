@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, beforeAll } from "vitest";
+import { applyLanguageSetting } from "../../i18n";
 import type { Workspace } from "../../domain/types";
 import {
   branchNameFromRequirement,
@@ -22,6 +23,8 @@ function workspace(patch: Partial<Workspace> & Pick<Workspace, "id" | "projectId
     ...patch,
   };
 }
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 describe("workspaceBranchName", () => {
   test("prefers the live branch", () => {

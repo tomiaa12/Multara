@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { OutlineItem } from "../../editor/outline";
+import { t } from "../../i18n";
 
 const KIND_ORDER: Record<OutlineItem["kind"], number> = {
   class: 0,
@@ -10,14 +11,6 @@ const KIND_ORDER: Record<OutlineItem["kind"], number> = {
   property: 4,
 };
 
-const KIND_LABEL: Record<OutlineItem["kind"], string> = {
-  class: "类",
-  type: "类型",
-  function: "函数",
-  heading: "标题",
-  property: "属性",
-};
-
 const KIND_ICON: Record<OutlineItem["kind"], string> = {
   class: "symbol-class",
   type: "symbol-interface",
@@ -25,6 +18,10 @@ const KIND_ICON: Record<OutlineItem["kind"], string> = {
   heading: "symbol-misc",
   property: "symbol-property",
 };
+
+function kindLabel(kind: OutlineItem["kind"]) {
+  return t(`outline.kind.${kind}`);
+}
 
 const props = withDefaults(
   defineProps<{
@@ -45,7 +42,7 @@ const hiddenKinds = ref(new Set<OutlineItem["kind"]>());
 
 const availableKinds = computed(() => {
   const kinds = new Set(props.items.map((item) => item.kind));
-  return (Object.keys(KIND_LABEL) as Array<OutlineItem["kind"]>).filter((kind) => kinds.has(kind));
+  return (["class", "type", "function", "heading", "property"] as Array<OutlineItem["kind"]>).filter((kind) => kinds.has(kind));
 });
 
 const visible = computed(() => {
@@ -83,13 +80,13 @@ defineExpose({ collapseAll, clearFilter: () => { query.value = ""; } });
         v-model="query"
         class="editor-outline-filter"
         type="search"
-        placeholder="筛选符号"
+        :placeholder="t('outline.filterPlaceholder')"
         spellcheck="false"
       />
-      <select v-model="sort" class="editor-outline-sort" title="排序" aria-label="大纲排序">
-        <option value="position">位置</option>
-        <option value="name">名称</option>
-        <option value="type">类型</option>
+      <select v-model="sort" class="editor-outline-sort" :title="t('outline.sortTitle')" :aria-label="t('outline.sortAria')">
+        <option value="position">{{ t("outline.sort.position") }}</option>
+        <option value="name">{{ t("outline.sort.name") }}</option>
+        <option value="type">{{ t("outline.sort.type") }}</option>
       </select>
     </div>
     <div v-if="availableKinds.length > 1" class="editor-outline-kinds">
@@ -99,15 +96,15 @@ defineExpose({ collapseAll, clearFilter: () => { query.value = ""; } });
         type="button"
         class="editor-outline-kind"
         :class="{ 'is-off': hiddenKinds.has(kind) }"
-        :title="KIND_LABEL[kind]"
+        :title="kindLabel(kind)"
         @click="toggleKind(kind)"
       >
-        {{ KIND_LABEL[kind] }}
+        {{ kindLabel(kind) }}
       </button>
     </div>
     <div class="editor-outline-list vs-scroll">
-      <div v-if="!items.length" class="tree-empty">当前文件没有可识别的符号。</div>
-      <div v-else-if="!visible.length" class="tree-empty">没有匹配的符号。</div>
+      <div v-if="!items.length" class="tree-empty">{{ t("outline.emptyFile") }}</div>
+      <div v-else-if="!visible.length" class="tree-empty">{{ t("outline.noMatch") }}</div>
       <button
         v-for="item in visible"
         :key="`${item.line}-${item.label}`"

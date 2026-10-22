@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { applyLanguageSetting } from "../i18n";
 import { formatRollbackDirtyMessage } from "../components/workbench/unsaved-editor";
 import { countMessagesFrom, executeReask, reaskBannerText, reaskTouchesFiles, reshuffleHintText } from "./reask";
 
@@ -69,6 +70,7 @@ describe("executeReask", () => {
   });
 
   test("T-RA01 counts messages after the target, not the target itself", () => {
+    applyLanguageSetting("zh-CN");
     const messages = [
       { id: "msg1" },
       { id: "reply1" },

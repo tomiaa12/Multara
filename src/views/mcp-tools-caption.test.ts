@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { McpProbe } from "../domain/types";
+import { applyLanguageSetting } from "../i18n";
 import { mcpToolsCaption } from "./mcp-tools-caption";
+
+beforeAll(() => applyLanguageSetting("zh-CN"));
 
 function probe(partial: Partial<McpProbe>): McpProbe {
   return {
@@ -37,7 +40,7 @@ describe("mcpToolsCaption", () => {
     expect(mcpToolsCaption({
       enabled: false,
       probe: probe({ tools: [{ name: "a", title: "", description: "", uri: "" }] }),
-    })).toBe("已禁用");
+    })).toBe("已停用");
   });
 
   it("shows needs auth before treating as failed", () => {

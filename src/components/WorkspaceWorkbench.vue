@@ -636,7 +636,7 @@ const treeMenuItems = computed<ContextMenuItem[]>(() => {
   items.push(
     { type: "sep" },
     { id: "rename", label: t("workbench.rename"), key: explorerKeys.rename, disabled: multi },
-    { id: "delete", label: multi ? `删除 ${targets.length} 项` : "删除", key: explorerKeys.delete },
+    { id: "delete", label: multi ? t("workbench.deleteMany", { count: targets.length }) : t("common.delete"), key: explorerKeys.delete },
   );
   return items;
 });
@@ -1563,9 +1563,9 @@ function treeGitBadgeTitle(workspaceId: string, entry: FileEntry) {
 
 function editorTabTitle(tab: EditorTab) {
   const diff = tab.gitDiff ? ` · ${tab.gitDiff.label}` : "";
-  const base = tab.pinned ? tab.path : `${tab.path} · 预览`;
+  const base = tab.pinned ? tab.path : `${tab.path} · ${t("workbench.tabPreview")}`;
   if (!isEditorTabDirty(tab)) return `${base}${diff}`;
-  return `${base}${diff} · 有未保存的修改，相对上次打开或保存，不是 Git 状态`;
+  return `${base}${diff} · ${t("workbench.tabDirtyHint")}`;
 }
 
 function treeGitClass(workspaceId: string, entry: FileEntry) {
@@ -1667,7 +1667,7 @@ async function copyText(value: string) {
   try {
     await navigator.clipboard.writeText(value);
   } catch {
-    error.value = "无法复制到剪贴板";
+    error.value = t("explorer.clipboard.failed");
   }
 }
 
@@ -1720,7 +1720,7 @@ function applyLocalCreate(
   const path = joinRelative(parentPath, name);
   const current = readTreeLevel(workspaceId, parentPath);
   if (current.some((item) => item.name === name)) {
-    throw new Error(isDirectory ? "文件夹已存在" : "文件已存在");
+    throw new Error(isDirectory ? t("workbench.error.folderExists") : t("workbench.error.fileExists"));
   }
   writeTreeLevel(workspaceId, parentPath, [
     ...current,
@@ -1738,7 +1738,7 @@ function applyLocalRename(
 ) {
   const current = readTreeLevel(workspaceId, parentPath);
   if (current.some((item) => item.path !== from && item.name === name)) {
-    throw new Error("目标已存在");
+    throw new Error(t("workbench.error.targetExists"));
   }
   writeTreeLevel(
     workspaceId,
@@ -1873,7 +1873,7 @@ async function commitTreeEdit() {
             [{ sourceWorkspaceId: edit.workspaceId, source: edit.path, targetWorkspaceId: edit.workspaceId, target: nextPath }],
             false,
           );
-          if (result?.error) throw new Error(result.error.replace(explorerBackend.TARGET_EXISTS_PREFIX, "已存在："));
+          if (result?.error) throw new Error(result.error.replace(explorerBackend.TARGET_EXISTS_PREFIX, t("explorer.error.existsPrefix")));
         } else {
           await backend.renameWorkspaceEntry(edit.workspaceId, edit.path, nextPath);
         }
@@ -1890,7 +1890,7 @@ async function commitTreeEdit() {
       } else {
         await explorerBackend.createEntry(edit.workspaceId, nextPath, isDirectory).catch((cause) => {
           const message = cause instanceof Error ? cause.message : String(cause);
-          throw new Error(message.replace(explorerBackend.TARGET_EXISTS_PREFIX, "已存在："));
+          throw new Error(message.replace(explorerBackend.TARGET_EXISTS_PREFIX, t("explorer.error.existsPrefix")));
         });
         explorer.recordCreate(edit.workspaceId, nextPath, isDirectory);
         await reloadTreeLevel(edit.workspaceId, edit.parentPath);
@@ -2104,13 +2104,13 @@ async function runTreeGitAction(id: "git-stage" | "git-unstage" | "git-discard",
       message:
         untracked.length === paths.length
           ? paths.length === 1
-            ? `确定要删除“${fileNameOf(paths[0])}”吗？`
-            : `确定要删除 ${paths.length} 个未跟踪的文件吗？`
+            ? t("workbench.gitDiscardDeleteOne", { name: fileNameOf(paths[0]) })
+            : t("workbench.gitDiscardDeleteMany", { count: paths.length })
           : paths.length === 1
-            ? `确定要放弃“${fileNameOf(paths[0])}”中的更改吗？`
-            : `确定要放弃 ${paths.length} 个文件中的更改吗？`,
-      detail: untracked.length ? "未跟踪的文件会被永久删除，此操作不可逆！" : "此操作不可逆！",
-      primary: untracked.length === paths.length ? "删除文件" : "放弃更改",
+            ? t("workbench.gitDiscardRevertOne", { name: fileNameOf(paths[0]) })
+            : t("workbench.gitDiscardRevertMany", { count: paths.length }),
+      detail: untracked.length ? t("workbench.gitDiscardUntrackedDetail") : t("workbench.gitDiscardIrreversible"),
+      primary: untracked.length === paths.length ? t("workbench.gitDiscardDeleteFiles") : t("workbench.gitDiscard"),
       danger: true,
     });
     if (!answer.confirmed) return;
@@ -2169,7 +2169,7 @@ async function copyRemoteLink(workspaceId: string, path: string) {
     const info = await explorerBackend.gitRemote(workspaceId);
     const base = info ? remoteWebUrl(info.remote) : null;
     if (!info || !base) {
-      error.value = "该项目没有可识别的远程仓库（origin）";
+      error.value = t("workbench.error.noOrigin");
       return;
     }
     const ref = info.commit || info.branch;
@@ -2209,7 +2209,7 @@ async function compareTreeFiles(left: ExplorerItem, right: ExplorerItem) {
       readOnly: true,
     };
     const existing = editorTabs.value.find((tab) => tab.gitDiff?.id === id);
-    const gitDiff = { id, original: original.content, modified: modified.content, binary: false, label, short: "比较" };
+    const gitDiff = { id, original: original.content, modified: modified.content, binary: false, label, short: t("workbench.compareShort") };
     if (existing) {
       existing.gitDiff = gitDiff;
       existing.file = file;
@@ -2607,7 +2607,7 @@ function discardEditorChanges(tab: EditorTab) {
 async function confirmCloseTab(tab: EditorTab) {
   if (!isEditorTabDirty(tab)) return true;
   const action = await askUnsaved(
-    `是否保存对 “${fileNameOf(tab.path)}” 的更改？`,
+    t("workbench.unsavedSaveOne", { name: fileNameOf(tab.path) }),
   );
   if (action === "cancel") return false;
   if (action === "save") return saveTab(tab);
@@ -2617,14 +2617,14 @@ async function confirmCloseTab(tab: EditorTab) {
 
 async function confirmLeaveDirtyEditors() {
   if (terminalTabs.value.some((item) => item.busy)) {
-    if (!window.confirm("有终端正在运行命令。确定离开？")) return false;
+    if (!window.confirm(t("workbench.terminalBusyLeave"))) return false;
   }
   const dirtyTabs = dirtyEditorTabs();
   if (!dirtyTabs.length) return true;
   if (dirtyTabs.length === 1) return confirmCloseTab(dirtyTabs[0]);
   const action = await askUnsaved(
-    `有 ${dirtyTabs.length} 个文件尚未保存。是否全部保存？`,
-    "有未保存的更改",
+    t("workbench.unsavedSaveMany", { count: dirtyTabs.length }),
+    t("dialog.unsavedTitle"),
   );
   if (action === "cancel") return false;
   if (action === "discard") {
@@ -2849,8 +2849,8 @@ async function compareTabWithSaved(tab: EditorTab) {
     original: tab.original,
     modified: current,
     binary: false,
-    label: `${fileNameOf(tab.path)} (已保存) ↔ 当前`,
-    short: "已保存",
+    label: t("workbench.savedCompareLabel", { name: fileNameOf(tab.path) }),
+    short: t("workbench.savedShort"),
   };
   const existing = editorTabs.value.find((item) => item.gitDiff?.id === id);
   if (existing) {
@@ -3064,7 +3064,7 @@ async function startTerminal(
   } catch (error) {
     live = false;
     id = `offline-${crypto.randomUUID()}`;
-    message = error instanceof Error ? error.message : "无法启动终端";
+    message = error instanceof Error ? error.message : t("workbench.error.terminalStart");
   }
   if (live && !props.preview) {
     trackTerminal({ id, title, projectId: projectId.value, workspaceId });
@@ -3640,7 +3640,7 @@ async function saveTab(tab: EditorTab) {
       recordLocalHistory({
         workspaceId: tab.workspaceId,
         path: tab.path,
-        source: "保存",
+        source: t("workbench.historySaveSource"),
         content: file.content,
       });
     }
@@ -3778,7 +3778,7 @@ function onGitStatusUpdated(repositories: GitRepositoryStatus[]) {
 
 async function loadLocalHistoryDiff(workspaceId: string, path: string, localId: string) {
   const entry = localHistoryEntry(localId);
-  if (!entry) throw new Error("找不到这份本地历史");
+  if (!entry) throw new Error(t("workbench.error.localHistoryMissing"));
   const current = props.preview
     ? previewFileContent(path, workspaceId)
     : await backend.readWorkspaceFile(workspaceId, path).catch(() => null);
@@ -3788,7 +3788,7 @@ async function loadLocalHistoryDiff(workspaceId: string, path: string, localId: 
     binary: false,
     language: current?.language || "plaintext",
     label: t("workbench.compareLocalHistory"),
-    short: "本地历史",
+    short: t("workbench.localHistoryShort"),
   };
 }
 
@@ -3894,7 +3894,7 @@ function onTreePointerDown(
     { workspaceId, path: entry.path, isDirectory: entry.isDirectory },
     {
       label: explorer.isSelected(item.key) && explorer.selectedItems.value.length > 1
-        ? `${explorer.selectedItems.value.length} 个项目`
+        ? t("workbench.selectedItems", { count: explorer.selectedItems.value.length })
         : entry.name,
       onStart: () => {
         draggingTreeKey.value = treeKey(workspaceId, entry.path);
@@ -3948,13 +3948,13 @@ async function finishTreeDrag(
     return;
   }
   explorer.endDrag();
-  if (zone) store.reportComposerNotice("请拖到聊天输入框、文件树或编辑器中");
+  if (zone) store.reportComposerNotice(t("workbench.composerDropHint"));
 }
 
 function insertPathInTerminal(workspaceId: string, path: string) {
   const tab = terminalTabs.value.find((item) => item.id === activeTerminalId.value);
   if (!tab?.live) {
-    store.reportComposerNotice("请先打开集成终端");
+    store.reportComposerNotice(t("workbench.openTerminalFirst"));
     return;
   }
   const workspace = workspaceById(workspaceId);
@@ -4265,7 +4265,7 @@ function addTerminalSelectionToChat(payload: { text: string; startLine: number; 
   const context: EditorSelectionContext = {
     id: crypto.randomUUID(),
     workspaceId: tab?.workspaceId ?? workspaces.value[0]?.id ?? "",
-    path: tab?.title || "终端",
+    path: tab?.title || t("workbench.terminalTab"),
     startLine: payload.startLine,
     endLine: payload.endLine,
     text: payload.text,
@@ -4295,7 +4295,7 @@ function addSelectionToChat(
     : selection;
   const text = model.getValueInRange(range);
   if (!text.trim()) {
-    store.reportComposerNotice("这一行是空的，没有加入引用");
+    store.reportComposerNotice(t("workbench.emptyLineReference"));
     return;
   }
   const context = {
@@ -4538,7 +4538,7 @@ watch(
     if (store.fileReveal?.nonce !== nonce) return;
     if (!matches.length || matches.some((match) => !match.path)) {
       const shown = pathWithoutWorktreeDir(request.path);
-      store.reportComposerNotice(`未找到对应文件：${shown}`, shown);
+      store.reportComposerNotice(t("workbench.fileNotFound", { path: shown }), shown);
       return;
     }
     if (matches.length === 1) {
@@ -4762,8 +4762,8 @@ watch(leftTab, async (next, previous) => {
   const dirtyTabs = props.preview ? [] : dirtyEditorTabs();
   if (dirtyTabs.length) {
     const prompt = dirtyTabs.length === 1
-      ? `打开 Git 会先保存未保存的 ${fileNameOf(dirtyTabs[0].path)}。是否保存并继续？`
-      : `打开 Git 会先保存 ${dirtyTabs.length} 个未保存的文件。是否保存并继续？`;
+      ? t("workbench.openGitSaveOne", { name: fileNameOf(dirtyTabs[0].path) })
+      : t("workbench.openGitSaveMany", { count: dirtyTabs.length });
     if (!window.confirm(prompt)) {
       revertSidebarTab = true;
       leftTab.value = previous && previous !== "git" ? previous : "files";
@@ -4958,7 +4958,7 @@ defineExpose({
           v-if="sidebarTabsOverflow"
           variant="ghost"
           class="sidebar-tab-arrow"
-          title="上一项"
+          :title="t('workbench.sidebarPrev')"
           :disabled="leftTab === 'files'"
           @click="shiftSidebarTab(-1)"
         >
@@ -4967,36 +4967,36 @@ defineExpose({
         <div ref="sidebarTabsEl" class="workspace-sidebar-tablist">
           <UiButton
             :class="{ active: leftTab === 'files' }"
-            title="文件"
+            :title="t('workbench.files')"
             :aria-pressed="leftTab === 'files'"
             @click="leftTab = 'files'"
           >
-            <Codicon name="files" /><span class="sidebar-tab-label">文件</span>
+            <Codicon name="files" /><span class="sidebar-tab-label">{{ t('workbench.files') }}</span>
           </UiButton>
           <UiButton
             :class="{ active: leftTab === 'git' }"
-            title="Git"
-            :aria-label="gitChangeCount ? `Git，${gitChangeCount} 个变更` : 'Git'"
+            :title="t('workbench.git')"
+            :aria-label="gitChangeCount ? t('workbench.gitChangesAria', { count: gitChangeCount }) : t('workbench.git')"
             :aria-pressed="leftTab === 'git'"
             @click="leftTab = 'git'"
           >
-            <Codicon name="source-control" /><span class="sidebar-tab-label">Git</span>
+            <Codicon name="source-control" /><span class="sidebar-tab-label">{{ t('workbench.git') }}</span>
             <span v-if="gitChangeCount" class="sidebar-tab-badge">{{ gitChangeCount > 99 ? "99+" : gitChangeCount }}</span>
           </UiButton>
           <UiButton
             :class="{ active: leftTab === 'search' }"
-            title="搜索"
+            :title="t('workbench.search')"
             :aria-pressed="leftTab === 'search'"
             @click="leftTab = 'search'"
           >
-            <Codicon name="search" /><span class="sidebar-tab-label">搜索</span>
+            <Codicon name="search" /><span class="sidebar-tab-label">{{ t('workbench.search') }}</span>
           </UiButton>
         </div>
         <UiButton
           v-if="sidebarTabsOverflow"
           variant="ghost"
           class="sidebar-tab-arrow"
-          title="下一项"
+          :title="t('workbench.sidebarNext')"
           :disabled="leftTab === 'search'"
           @click="shiftSidebarTab(1)"
         >
@@ -5033,7 +5033,7 @@ defineExpose({
       <UiPaneView v-else class="explorer-pane">
         <UiPane
           v-if="showOpenEditors"
-          title="打开的编辑器"
+          :title="t('workbench.openEditors')"
           storage-key="multara.explorer.openEditors"
           size-key="multara.explorer.openEditorsSize"
           :default-expanded="false"
@@ -5043,7 +5043,7 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              title="全部保存"
+              :title="t('workbench.saveAll')"
               :disabled="!dirtyEditorTabs().length"
               @click="saveAllOpenEditors"
             >
@@ -5052,14 +5052,14 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              title="全部关闭"
+              :title="t('workbench.closeAll')"
               :disabled="!editorTabs.length"
               @click="closeAllEditorTabs"
             >
             <Codicon name="close-all" />
             </UiButton>
           </template>
-          <p v-if="!editorTabs.length" class="ui-pane-empty">没有打开的编辑器。</p>
+          <p v-if="!editorTabs.length" class="ui-pane-empty">{{ t('workbench.noOpenEditors') }}</p>
           <div
             v-for="tab in editorTabs"
             :key="tabKey(tab)"
@@ -5080,19 +5080,19 @@ defineExpose({
               class="ui-pane-close"
               variant="ghost"
               size="icon"
-              title="关闭"
+              :title="t('common.close')"
               @click="closeEditorTab(tab, $event)"
             >
               <Codicon name="close" />
             </UiButton>
           </div>
         </UiPane>
-        <UiPane title="文件夹" fill actions-visible storage-key="multara.explorer.folders" :min-body="120" @contextmenu="openExplorerViewMenu">
+        <UiPane :title="t('workbench.folders')" fill actions-visible storage-key="multara.explorer.folders" :min-body="120" @contextmenu="openExplorerViewMenu">
           <template #actions>
           <UiButton
             variant="ghost"
             size="icon"
-            title="新建文件"
+            :title="t('workbench.newFile')"
             @click="startCreateInSelection(false)"
           >
             <Codicon name="new-file" />
@@ -5100,7 +5100,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="新建文件夹"
+            :title="t('workbench.newFolder')"
             @click="startCreateInSelection(true)"
           >
             <Codicon name="new-folder" />
@@ -5108,7 +5108,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="刷新"
+            :title="t('workbench.refresh')"
             @click="refreshExplorer"
           >
             <Codicon name="refresh" />
@@ -5116,7 +5116,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="全部折叠"
+            :title="t('workbench.collapseAll')"
             @click="collapseExplorer"
           >
             <Codicon name="collapse-all" />
@@ -5124,7 +5124,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="在资源管理器中定位当前文件"
+            :title="t('workbench.revealActiveFile')"
             :disabled="!openedFileTarget()"
             @click="revealActiveExplorerFile"
           >
@@ -5133,7 +5133,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="`查找 (${explorerKeys.find})`"
+            :title="t('workbench.findWithShortcut', { keys: explorerKeys.find })"
             @click="explorerFindOpen = true"
           >
             <Codicon name="search" />
@@ -5141,7 +5141,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="视图"
+            :title="t('workbench.view')"
             @click="openExplorerViewMenu"
           >
             <Codicon name="more" />
@@ -5153,19 +5153,19 @@ defineExpose({
             v-model="explorerFindQuery"
             class="explorer-find-input"
             type="search"
-            placeholder="查找"
+            :placeholder="t('workbench.findPlaceholder')"
             spellcheck="false"
             @keydown.escape.stop.prevent="explorer.closeFind()"
           />
           <button
             type="button"
             class="explorer-find-mode"
-            :title="explorerFindMode === 'filter' ? '筛选模式' : '高亮模式'"
+            :title="explorerFindMode === 'filter' ? t('workbench.filterMode') : t('workbench.highlightMode')"
             @click="explorerFindMode = explorerFindMode === 'filter' ? 'highlight' : 'filter'"
           >
             <Codicon :name="explorerFindMode === 'filter' ? 'filter' : 'search'" />
           </button>
-          <button type="button" class="explorer-find-mode" title="关闭" @click="explorer.closeFind()">
+          <button type="button" class="explorer-find-mode" :title="t('common.close')" @click="explorer.closeFind()">
             <Codicon name="close" />
           </button>
         </div>
@@ -5346,7 +5346,7 @@ defineExpose({
                   <span
                     v-if="entry.symlinkTarget"
                     class="tree-symlink"
-                    :title="`${entry.symlinkTarget} · 符号链接`"
+                    :title="`${entry.symlinkTarget} · ${t('workbench.symlinkSuffix')}`"
                   >
                     <ArrowUpRight :size="12" />
                   </span>
@@ -5408,7 +5408,7 @@ defineExpose({
         </UiPane>
         <UiPane
           v-if="showOutlineView"
-          title="大纲"
+          :title="t('workbench.outline')"
           storage-key="multara.explorer.outline"
           size-key="multara.explorer.outlineSize"
           :default-expanded="false"
@@ -5418,13 +5418,13 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="outlineFollowCursor ? '跟随光标' : '不跟随光标'"
+              :title="outlineFollowCursor ? t('workbench.outlineFollowOn') : t('workbench.outlineFollowOff')"
               :class="{ 'is-active-action': outlineFollowCursor }"
               @click="toggleOutlineFollow"
             >
               <Codicon name="target" />
             </UiButton>
-            <UiButton variant="ghost" size="icon" title="全部折叠" @click="outlinePane?.collapseAll()">
+            <UiButton variant="ghost" size="icon" :title="t('workbench.collapseAll')" @click="outlinePane?.collapseAll()">
               <Codicon name="collapse-all" />
             </UiButton>
           </template>
@@ -5439,7 +5439,7 @@ defineExpose({
         <UiPane
           v-if="showTimeline"
           ref="timelineUiPane"
-          title="时间线"
+          :title="t('workbench.timeline')"
           storage-key="multara.explorer.timeline"
           size-key="multara.explorer.timelineSize"
           :default-expanded="false"
@@ -5449,18 +5449,18 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="timelinePane?.pinned ? '取消固定' : '固定当前文件'"
+              :title="timelinePane?.pinned ? t('workbench.timelineUnpin') : t('workbench.timelinePinFile')"
               @click="timelinePane?.togglePin()"
             >
               <Codicon :name="timelinePane?.pinned ? 'pinned' : 'pin'" />
             </UiButton>
-            <UiButton variant="ghost" size="icon" title="刷新" @click="timelinePane?.refresh()">
+            <UiButton variant="ghost" size="icon" :title="t('workbench.refresh')" @click="timelinePane?.refresh()">
               <Codicon name="refresh" />
             </UiButton>
             <UiButton
               variant="ghost"
               size="icon"
-              title="筛选时间线"
+              :title="t('workbench.filterTimeline')"
               @click="timelinePane?.openFilter($event)"
             >
               <Codicon name="filter" />
@@ -5520,7 +5520,7 @@ defineExpose({
     <div
       class="panel-resize-handle"
       role="separator"
-      aria-label="调整项目侧栏宽度"
+      :aria-label="t('workbench.resizeProjectSidebar')"
       aria-orientation="vertical"
       tabindex="0"
       @pointerdown="beginResize('left', $event)"
@@ -5554,7 +5554,7 @@ defineExpose({
             <span
               class="tab-close"
               :class="{ 'is-dirty': isEditorTabDirty(tab) }"
-              title="关闭"
+              :title="t('common.close')"
               @click="closeEditorTab(tab, $event)"
             >
               <X :size="12" />
@@ -5565,14 +5565,14 @@ defineExpose({
           v-if="markdownToggleVisible"
           class="md-editor-switch"
           role="tablist"
-          aria-label="Markdown 视图"
+          :aria-label="t('workbench.markdownView')"
         >
           <button
             type="button"
             role="tab"
             :class="{ active: markdownMode === 'preview' }"
             :aria-selected="markdownMode === 'preview'"
-            title="预览渲染结果"
+            :title="t('workbench.markdownPreviewTitle')"
             @click="setMarkdownMode('preview')"
           >
             Preview
@@ -5582,7 +5582,7 @@ defineExpose({
             role="tab"
             :class="{ active: markdownMode === 'source' }"
             :aria-selected="markdownMode === 'source'"
-            title="编辑 Markdown 源码"
+            :title="t('workbench.markdownSourceTitle')"
             @click="setMarkdownMode('source')"
           >
             Markdown
@@ -5600,10 +5600,10 @@ defineExpose({
       <div v-if="externalChangePending" class="editor-external-change">
         <span>{{ externalChangeMessage }}</span>
         <UiButton size="small" @click="externalChangePending = false"
-          >保留当前内容</UiButton
+          >{{ t('workbench.keepEditorContent') }}</UiButton
         >
         <UiButton size="small" @click="refreshActiveFile(true)"
-          >加载磁盘版本</UiButton
+          >{{ t('workbench.loadDiskVersion') }}</UiButton
         >
       </div>
       <EditorBreadcrumbs
@@ -5617,7 +5617,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="上一个改动文件"
+            :title="t('diff.prevPendingFile')"
             @click="goPendingDiffFile(-1)"
           >
             <ChevronLeft :size="13" />
@@ -5626,7 +5626,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            title="下一个改动文件"
+            :title="t('diff.nextPendingFile')"
             @click="goPendingDiffFile(1)"
           >
             <ChevronRight :size="13" />
@@ -5636,7 +5636,7 @@ defineExpose({
               class="diff-hunk-nav"
               variant="ghost"
               size="icon"
-              title="上一个差异"
+              :title="t('diff.prevHunk')"
               @click="stepDiffGroup(-1)"
             >
               <ChevronUp :size="13" />
@@ -5645,7 +5645,7 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              title="下一个差异"
+              :title="t('diff.nextHunk')"
               @click="stepDiffGroup(1)"
             >
               <ChevronDown :size="13" />
@@ -5654,21 +5654,21 @@ defineExpose({
           <UiButton
             class="diff-file-action diff-file-action-keep"
             size="small"
-            :title="activeFileBeingWritten ? '正在修改此文件' : '保留当前文件的全部改动'"
+            :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.keepAllTitle')"
             :disabled="acceptFileActionDisabled"
             @click="acceptAllCurrentFile"
           >
-            保留
+            {{ t('diff.keep') }}
           </UiButton>
           <UiButton
             class="diff-file-action"
             variant="ghost"
             size="small"
-            :title="activeFileBeingWritten ? '正在修改此文件' : '撤销当前文件的全部改动，写回改之前的内容'"
+            :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.undoAllWriteBackTitle')"
             :disabled="undoFileActionDisabled"
             @click="undoAllCurrentFile"
           >
-            撤销
+            {{ t('diff.undo') }}
           </UiButton>
         </div>
         <MediaPreview
@@ -5766,13 +5766,13 @@ defineExpose({
         ref="terminalPickEl"
         class="quick-pick"
         role="dialog"
-        aria-label="选择要打开终端的项目"
+        :aria-label="t('workbench.terminalPickTitle')"
       >
         <input
           ref="terminalPickInput"
           v-model="terminalPickQuery"
-          placeholder="选择要打开终端的项目"
-          aria-label="选择要打开终端的项目"
+          :placeholder="t('workbench.terminalPickPlaceholder')"
+          :aria-label="t('workbench.terminalPickTitle')"
           @keydown.escape.stop="terminalPick = false"
           @keydown.enter.prevent="confirmTerminalPick"
           @keydown.down.prevent="moveTerminalPick(1)"
@@ -5790,7 +5790,7 @@ defineExpose({
           <span>{{ workspace.name }}</span>
           <small :title="workspace.workPath || workspace.sourcePath">{{ workspace.workPath || workspace.sourcePath }}</small>
         </button>
-        <p v-if="!terminalPickChoices.length">没有匹配的项目</p>
+        <p v-if="!terminalPickChoices.length">{{ t('workbench.noMatchingProjects') }}</p>
       </div>
       <EditorZoomHud v-if="activeFile" />
     </section>
@@ -5798,7 +5798,7 @@ defineExpose({
     <div
       class="panel-resize-handle"
       role="separator"
-      aria-label="调整聊天侧栏宽度"
+      :aria-label="t('workbench.resizeChatSidebar')"
       aria-orientation="vertical"
       tabindex="0"
       @pointerdown="beginResize('right', $event)"
@@ -5831,11 +5831,11 @@ defineExpose({
         class="modal file-pick"
         role="dialog"
         aria-modal="true"
-        aria-label="选择要打开的文件"
+        :aria-label="t('workbench.filePickTitle')"
         tabindex="-1"
         @keydown.escape="filePick = null"
       >
-        <h2>选择要打开的文件</h2>
+        <h2>{{ t('workbench.filePickTitle') }}</h2>
         <div class="file-pick-list vs-scroll">
           <button
             v-for="choice in filePick.choices"

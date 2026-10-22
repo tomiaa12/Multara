@@ -9,6 +9,7 @@ import {
   runningTerminals,
   type RunningTerminal,
 } from "../../stores/running-terminals";
+import { t } from "../../i18n";
 
 const VIEWPORT_GAP_PX = 8;
 
@@ -103,11 +104,11 @@ onBeforeUnmount(() => {
     type="button"
     class="statusbar-item terminal-activity-button"
     :aria-expanded="open"
-    title="正在监听端口的终端"
+    :title="t('terminal.activity.monitoringTitle')"
     @click="toggle"
   >
     <i class="ds-dot" data-tone="success" />
-    {{ serving.length }} 个终端运行中
+    {{ t('terminal.activity.runningCount', { count: serving.length }) }}
   </button>
   <div
     v-if="open"
@@ -115,7 +116,7 @@ onBeforeUnmount(() => {
     class="terminal-activity-popover"
     :style="menuStyle"
     role="dialog"
-    aria-label="运行中的终端"
+    :aria-label="t('terminal.activity.dialogAria')"
   >
     <ul>
       <li v-for="item in serving" :key="item.id">
@@ -123,8 +124,8 @@ onBeforeUnmount(() => {
           <strong>{{ item.title }}</strong>
           <span>{{ formatTerminalPorts(item.ports) }}</span>
         </div>
-        <UiButton size="small" variant="ghost" @click="preview(item)">查看</UiButton>
-        <UiButton size="small" @click="openWorkbench(item)">工作台</UiButton>
+        <UiButton size="small" variant="ghost" @click="preview(item)">{{ t('terminal.activity.view') }}</UiButton>
+        <UiButton size="small" @click="openWorkbench(item)">{{ t('terminal.activity.workbench') }}</UiButton>
       </li>
     </ul>
   </div>

@@ -23,7 +23,7 @@ import {
   discardConfirmMessage,
   publishSkipsStagedChanges,
   publishWithoutCommitConfirm,
-  PUBLISH_STAGED_LEFT_NOTICE,
+  publishStagedLeftNotice,
   rememberCommitMessage,
 } from "./workbench/scm-commit-action";
 import { renameBranchNotice } from "./workbench/scm-branch";
@@ -231,7 +231,7 @@ function publishBranch(workspace: Workspace, repository: GitRepositoryStatus) {
   if (!confirmDirect(workspace, repository, t("scm.action.publish"))) return;
   return run(`push:${workspace.id}`, async () => {
     await backend.gitPushWorkspace(workspace.id);
-    if (publishSkipsStagedChanges(message, stagedCount)) notice.value = PUBLISH_STAGED_LEFT_NOTICE;
+    if (publishSkipsStagedChanges(message, stagedCount)) notice.value = publishStagedLeftNotice();
   }, { workspaceId: workspace.id, kind: "push" });
 }
 

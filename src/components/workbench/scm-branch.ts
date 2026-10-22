@@ -36,26 +36,32 @@ export function branchAction(repository: GitRepositoryStatus): BranchAction {
   else if (staged) icon = "git-branch-staged-changes";
   else if (dirty) icon = "git-branch-changes";
   const label = `${repository.branch || "HEAD"}${dirty ? "*" : ""}${staged ? "+" : ""}${repository.merging ? "!" : ""}`;
-  return { icon, label, tooltip: `${label}，检出分支或标记…` };
+  return { icon, label, tooltip: t("scm.branchPickerTooltip", { label }) };
 }
 
 export function syncAction(repository: GitRepositoryStatus): SyncAction | null {
   if (!repository.hasRemote) return null;
   if (!repository.upstream) {
-    return { icon: "cloud-upload", text: "", tooltip: "发布分支", kind: "publish" };
+    return { icon: "cloud-upload", text: "", tooltip: t("scm.publishBranch"), kind: "publish" };
   }
   const slash = repository.upstream.indexOf("/");
   const remote = slash > 0 ? repository.upstream.slice(0, slash) : repository.upstream;
   const name = slash > 0 ? repository.upstream.slice(slash + 1) : repository.upstream;
   if (!repository.ahead && !repository.behind) {
-    return { icon: "sync", text: "", tooltip: "同步更改", kind: "sync" };
+    return { icon: "sync", text: "", tooltip: t("scm.syncChanges"), kind: "sync" };
   }
   const text = `${repository.behind}↓ ${repository.ahead}↑`;
-  const tooltip = !repository.ahead
-    ? `从 ${remote}/${name} 拉取 ${repository.behind} 个提交`
-    : !repository.behind
-      ? `将 ${repository.ahead} 个提交推送到 ${remote}/${name}`
-      : `在 ${remote}/${name} 之间拉取 ${repository.behind} 个提交并推送 ${repository.ahead} 个提交`;
+  const remoteRef = `${remote}/${name}`;
+  let tooltip = t("scm.syncBoth", {
+    remote: remoteRef,
+    behind: repository.behind,
+    ahead: repository.ahead,
+  });
+  if (!repository.ahead) {
+    tooltip = t("scm.syncPull", { remote: remoteRef, count: repository.behind });
+  } else if (!repository.behind) {
+    tooltip = t("scm.syncPush", { remote: remoteRef, count: repository.ahead });
+  }
   return { icon: "sync", text, tooltip, kind: "sync" };
 }
 

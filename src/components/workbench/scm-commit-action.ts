@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+
 export type ScmPrimaryAction = "commit" | "publish" | "sync";
 
 export function canPublishBranch(repository: {
@@ -36,7 +38,7 @@ export function scmPrimaryAction(
 
 export function scmBusyTitle(busy: string, own: string | string[], title: string) {
   const keys = Array.isArray(own) ? own : [own];
-  if (busy && !keys.includes(busy)) return GIT_BUSY_TITLE;
+  if (busy && !keys.includes(busy)) return t("scm.busyOtherWorkspace");
   return title;
 }
 
@@ -90,15 +92,16 @@ export function canSyncChanges(repository: {
   );
 }
 
-export const GIT_BUSY_TITLE = "另一个工作区正在执行 Git 操作";
-export const PUBLISH_STAGED_LEFT_NOTICE = "分支已发布。暂存的更改未提交，仍在本地。";
+export function publishStagedLeftNotice() {
+  return t("scm.publish.stagedLeftNotice");
+}
 
 export function publishSkipsStagedChanges(message: string, stagedCount: number) {
   return stagedCount > 0 && !message.trim();
 }
 
 export function publishWithoutCommitConfirm(stagedCount: number) {
-  return `暂存的 ${stagedCount} 个更改不会被提交，仍留在本地。仍要发布分支吗？`;
+  return t("scm.publish.skipStagedConfirm", { count: stagedCount });
 }
 
 function discardName(path: string) {
@@ -118,20 +121,20 @@ export function discardConfirmMessage(
   );
   const tracked = files.length - untrackedDirs.length - untrackedFiles.length;
   if (files.length === 1 && untrackedFiles.length === 1) {
-    return `确定永久删除未跟踪文件 ${discardName(untrackedFiles[0].path)}？此操作不可撤销。`;
+    return t("scm.discard.confirmDeleteUntrackedFile", { name: discardName(untrackedFiles[0].path) });
   }
   if (files.length === 1 && untrackedDirs.length === 1) {
-    return `确定永久删除未跟踪目录 ${discardName(untrackedDirs[0].path)} 及其内部所有未跟踪文件？此操作不可撤销。`;
+    return t("scm.discard.confirmDeleteUntrackedDir", { name: discardName(untrackedDirs[0].path) });
   }
   if (files.length === 1 && tracked === 1) {
-    return `确定撤回 ${discardName(files[0].path)} 的本地更改？未保存的修改将丢失。`;
+    return t("scm.discard.confirmRevertFile", { name: discardName(files[0].path) });
   }
   const parts: string[] = [];
-  if (tracked) parts.push(`撤回 ${tracked} 个文件的本地更改`);
-  if (untrackedFiles.length) parts.push(`永久删除 ${untrackedFiles.length} 个未跟踪文件`);
+  if (tracked) parts.push(t("scm.discard.partRevertTracked", { count: tracked }));
+  if (untrackedFiles.length) parts.push(t("scm.discard.partDeleteUntrackedFiles", { count: untrackedFiles.length }));
   if (untrackedDirs.length) {
-    parts.push(`永久删除 ${untrackedDirs.length} 个未跟踪目录及其内部所有未跟踪文件`);
+    parts.push(t("scm.discard.partDeleteUntrackedDirs", { count: untrackedDirs.length }));
   }
   if (!parts.length) return null;
-  return `确定${parts.join("，并")}？此操作不可撤销。`;
+  return t("scm.discard.confirmIrreversible", { detail: parts.join(t("common.joinAnd")) });
 }

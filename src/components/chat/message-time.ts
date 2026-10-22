@@ -1,12 +1,8 @@
+import { t } from "../../i18n";
+import { formatAbsoluteTime as formatAbsoluteLocale } from "../ui/relative-time";
+
 export function formatAbsoluteTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${y}年${Number(m)}月${Number(d)}日 ${h}:${min}`;
+  return formatAbsoluteLocale(iso);
 }
 
 export function formatRelativeTime(iso: string, now = Date.now()): string {
@@ -14,12 +10,12 @@ export function formatRelativeTime(iso: string, now = Date.now()): string {
   if (Number.isNaN(date.getTime())) return "";
   const elapsed = Math.max(0, now - date.getTime());
   const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 1) return t("time.justNow");
+  if (minutes < 60) return t("time.minutesAgo", { n: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (hours < 24) return t("time.hoursAgo", { n: hours });
   const days = Math.floor(hours / 24);
-  if (days === 1) return "昨天";
-  if (days < 30) return `${days} 天前`;
-  return formatAbsoluteTime(iso);
+  if (days === 1) return t("time.yesterday");
+  if (days < 30) return t("time.daysAgo", { n: days });
+  return formatAbsoluteLocale(iso);
 }

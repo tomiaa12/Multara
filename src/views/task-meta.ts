@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 export type TaskPriority = "none" | "urgent" | "high" | "medium" | "low";
 
 export interface TaskMeta {
@@ -5,12 +7,20 @@ export interface TaskMeta {
   labels: string[];
 }
 
-export const PRIORITY_OPTIONS: Array<{ id: TaskPriority; label: string }> = [
-  { id: "none", label: "无优先级" },
-  { id: "urgent", label: "紧急" },
-  { id: "high", label: "高" },
-  { id: "medium", label: "中" },
-  { id: "low", label: "低" },
+const PRIORITY_KEYS: Record<TaskPriority, string> = {
+  none: "tasks.priority.none",
+  urgent: "tasks.priority.urgent",
+  high: "tasks.priority.high",
+  medium: "tasks.priority.medium",
+  low: "tasks.priority.low",
+};
+
+export const PRIORITY_OPTIONS: Array<{ id: TaskPriority }> = [
+  { id: "none" },
+  { id: "urgent" },
+  { id: "high" },
+  { id: "medium" },
+  { id: "low" },
 ];
 
 const KEY = "multara.task-meta";
@@ -50,5 +60,5 @@ export function writeTaskMeta(taskId: string, patch: Partial<TaskMeta>) {
 }
 
 export function priorityLabel(priority: TaskPriority) {
-  return PRIORITY_OPTIONS.find((option) => option.id === priority)?.label ?? "无优先级";
+  return t(PRIORITY_KEYS[priority] ?? PRIORITY_KEYS.none);
 }

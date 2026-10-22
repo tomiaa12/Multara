@@ -131,10 +131,6 @@ pub fn generate_chat_title(app: &AppHandle, prompt: &str) -> Result<String, Stri
     Ok(title.chars().take(24).collect())
 }
 
-const DEFAULT_COMMIT_PROMPT: &str = "\
-只根据已暂存的 Git diff 写一条 Conventional Commit 信息。只输出一行，不超过 100 个字符，\
-使用 feat/fix/refactor 等前缀，不要解释。";
-
 /// 分支名 / Commit 生成：智能体或自定义 Chat Completions。
 pub struct HelperSource {
     pub mode: String,
@@ -149,13 +145,18 @@ pub fn generate_commit_message(
     diff: &str,
     extra_prompt: &str,
     source: &HelperSource,
+    locale: &str,
 ) -> Result<String, String> {
     let rules = extra_prompt.trim();
     let using_default = rules.is_empty();
+    let rules_text = if using_default {
+        crate::app_locale::default_commit_prompt(locale)
+    } else {
+        rules
+    };
     let prompt = format!(
-        "{}\n\n只根据以下已暂存 Git diff 生成提交信息。\
-         只输出提交信息，不要解释，不要使用 Markdown，不要调用工具。\n\n{diff}",
-        if using_default { DEFAULT_COMMIT_PROMPT } else { rules }
+        "{rules_text}\n\n{}{diff}",
+        crate::app_locale::commit_diff_wrapper(locale),
     );
     let message = generate_plain_line(app, &prompt, "提交信息", Duration::from_secs(60), Some(source))?;
     let conventional = [
@@ -182,10 +183,11 @@ pub fn generate_branch_name(
     prefix: &str,
     prompt: &str,
     source: &HelperSource,
+    locale: &str,
 ) -> Result<String, String> {
     let instruction = format!(
-        "{prompt}\n\n只输出一行 Git 分支名，不要解释，不要使用 Markdown，不要调用工具。\
-         默认前缀是 {prefix}。\n\n需求名：{requirement}"
+        "{prompt}{}",
+        crate::app_locale::branch_name_wrapper(locale, prefix, requirement)
     );
     generate_plain_line(app, &instruction, "分支名", Duration::from_secs(45), Some(source))
 }
@@ -866,10 +868,20 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 }
             };
         let prompt = {
+            let locale = app
+                .state::<AppState>()
+                .lock_db()
+                .ok()
+                .map(|db| crate::app_locale::from_db(&db))
+                .unwrap_or("zh-CN");
             let identity = if builtin_agents::is_miku_key(run.system_key.as_deref()) {
-                builtin_agents::compose_miku_instructions(&run.agent_name, &run.instructions)
+                builtin_agents::compose_miku_instructions(
+                    &run.agent_name,
+                    &run.instructions,
+                    locale,
+                )
             } else if run.instructions.trim().is_empty() {
-                format!("你是 {}。按用户交待的任务执行。", run.agent_name)
+                builtin_agents::generic_agent_identity(&run.agent_name, locale)
             } else {
                 run.instructions.clone()
             };
@@ -878,7 +890,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 .app_data_dir()
                 .unwrap_or_else(|_| std::env::temp_dir())
                 .join("builtin-skills");
-            let _ = builtin_skills::materialize(&skill_root);
+            let _ = builtin_skills::materialize(&skill_root, locale);
             let skill_root_text = skill_root.to_string_lossy().to_string();
             let skill_names = builtin_skills::names();
             let brief = runtime_brief::build(runtime_brief::RuntimeBrief {
@@ -939,6 +951,15 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 .env("CI", "1")
                 .env("MULTARA_SESSION_ID", &run.session_id)
                 .env("MULTARA_AGENT_ID", &run.agent_id);
+            if let Ok(db) = app.state::<AppState>().lock_db() {
+                if let Ok(task_id) = db.query_row(
+                    "SELECT id FROM tasks WHERE session_id = ?1 LIMIT 1",
+                    [&run.session_id],
+                    |row| row.get::<_, String>(0),
+                ) {
+                    command.env("MULTARA_TASK_ID", task_id);
+                }
+            }
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let bin_dir = cli::ensure_shim(&data_dir);
                 command.env("PATH", cli::path_env(&bin_dir));
@@ -1409,6 +1430,7 @@ fn finish(
     let completed_at = Utc::now();
     let mut elapsed_ms = None;
     let mut member_runs = Vec::new();
+    let mut parent_resume: Option<(String, String, String)> = None;
     if let Ok(db) = state.lock_db() {
         elapsed_ms = db
             .query_row(
@@ -1561,6 +1583,13 @@ fn finish(
             status,
             &completed_at.to_rfc3339(),
         );
+        if status == "completed" || status == "failed" {
+            if let Ok(Some(resume)) =
+                crate::ops::task::maybe_resume_parent(&db, &run.session_id, &completed_at.to_rfc3339())
+            {
+                parent_resume = Some(resume);
+            }
+        }
     }
     if let Some(turn_id) = &run.turn_id {
         let _ = session::complete_turn(app, turn_id);
@@ -1579,6 +1608,9 @@ fn finish(
     );
     for (run_id, agent_id) in &member_runs {
         notify_run(app, run_id, &run.session_id, agent_id, "queued");
+    }
+    if let Some((run_id, session_id, agent_id)) = &parent_resume {
+        notify_run(app, run_id, session_id, agent_id, "queued");
     }
     dispatch(app.clone());
 }

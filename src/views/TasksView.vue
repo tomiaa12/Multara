@@ -365,12 +365,14 @@ function onColumnMenu(id: string) {
             :options="tagFilterOptions"
             :empty-text="t('tasks.noTags')"
           />
-          <button type="button" :class="{ active: displayOpen }" @click="displayOpen = !displayOpen">
-            <Rows3 :size="14" />{{ t("tasks.display") }}
-          </button>
-          <div v-if="displayOpen" class="task-popover task-popover-start">
-            <label><input v-model="showDone" type="checkbox" @change="persistDisplay" />{{ t("tasks.showDone") }}</label>
-            <label><input v-model="showCancelled" type="checkbox" @change="persistDisplay" />{{ t("tasks.showCancelled") }}</label>
+          <div class="task-toolbar-display">
+            <button type="button" :class="{ active: displayOpen }" @click="displayOpen = !displayOpen">
+              <Rows3 :size="14" />{{ t("tasks.display") }}
+            </button>
+            <div v-if="displayOpen" class="task-popover task-popover-start">
+              <label><input v-model="showDone" type="checkbox" @change="persistDisplay" />{{ t("tasks.showDone") }}</label>
+              <label><input v-model="showCancelled" type="checkbox" @change="persistDisplay" />{{ t("tasks.showCancelled") }}</label>
+            </div>
           </div>
         </div>
       </div>

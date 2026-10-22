@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import type { IDisposable } from "@xterm/xterm";
+import { t } from "../../i18n";
 import { isLightTheme } from "./terminal-theme";
 
 const props = defineProps<{
@@ -24,9 +25,13 @@ let resultsListener: IDisposable | undefined;
 const summary = computed(() => {
   if (!query.value) return "";
   const found = results.value;
-  if (!found || found.count === 0) return "无结果";
-  return found.index < 0 ? `${found.count} 项` : `${found.index + 1}/${found.count}`;
+  if (!found || found.count === 0) return t("terminal.find.noResults");
+  return found.index < 0
+    ? t("terminal.find.countOnly", { count: found.count })
+    : t("terminal.find.position", { index: found.index + 1, count: found.count });
 });
+
+const summaryEmpty = computed(() => summary.value === t("terminal.find.noResults"));
 
 function options(incremental: boolean): ISearchOptions {
   const light = isLightTheme();
@@ -135,25 +140,25 @@ defineExpose({
 <template>
   <div class="terminal-find" role="search" @keydown="onKey">
     <div class="terminal-find-field">
-      <input ref="input" v-model="query" type="text" placeholder="查找" aria-label="在终端中查找" spellcheck="false" />
-      <button type="button" :class="{ on: caseSensitive }" title="区分大小写 (Alt+C)" @click="toggle('caseSensitive')">
+      <input ref="input" v-model="query" type="text" :placeholder="t('terminal.find.placeholder')" :aria-label="t('terminal.find.aria')" spellcheck="false" />
+      <button type="button" :class="{ on: caseSensitive }" :title="t('terminal.find.caseSensitive')" @click="toggle('caseSensitive')">
         <Codicon name="case-sensitive" :size="14" />
       </button>
-      <button type="button" :class="{ on: wholeWord }" title="全字匹配 (Alt+W)" @click="toggle('wholeWord')">
+      <button type="button" :class="{ on: wholeWord }" :title="t('terminal.find.wholeWord')" @click="toggle('wholeWord')">
         <Codicon name="whole-word" :size="14" />
       </button>
-      <button type="button" :class="{ on: regex }" title="使用正则表达式 (Alt+R)" @click="toggle('regex')">
+      <button type="button" :class="{ on: regex }" :title="t('terminal.find.regex')" @click="toggle('regex')">
         <Codicon name="regex" :size="14" />
       </button>
     </div>
-    <span class="terminal-find-count" :class="{ empty: summary === '无结果' }">{{ summary }}</span>
-    <button type="button" title="上一个匹配项 (Shift+Enter)" :disabled="!query" @click="findPrevious">
+    <span class="terminal-find-count" :class="{ empty: summaryEmpty }">{{ summary }}</span>
+    <button type="button" :title="t('terminal.find.previous')" :disabled="!query" @click="findPrevious">
       <Codicon name="arrow-up" :size="14" />
     </button>
-    <button type="button" title="下一个匹配项 (Enter)" :disabled="!query" @click="findNext()">
+    <button type="button" :title="t('terminal.find.next')" :disabled="!query" @click="findNext()">
       <Codicon name="arrow-down" :size="14" />
     </button>
-    <button type="button" title="关闭 (Escape)" @click="close">
+    <button type="button" :title="t('terminal.find.close')" @click="close">
       <Codicon name="close" :size="14" />
     </button>
   </div>

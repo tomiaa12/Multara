@@ -7,6 +7,7 @@ import type {
   Squad,
   Workspace,
 } from "../../domain/types";
+import { t } from "../../i18n";
 
 export type HomeFilter = "all" | "running" | "archived";
 export type HomePill = "running" | "ready" | "setup";
@@ -45,11 +46,13 @@ export interface SentencePart {
   bold?: boolean;
 }
 
-function pushJoinedNames(parts: SentencePart[], names: string[], lastJoiner: "、" | "和") {
+function pushJoinedNames(parts: SentencePart[], names: string[]) {
   names.forEach((name, index) => {
     if (index > 0) {
       parts.push({
-        text: lastJoiner === "和" && index === names.length - 1 ? " 和 " : "、",
+        text: index === names.length - 1 && names.length > 1
+          ? t("projectHome.listJoinerLast")
+          : t("projectHome.listJoiner"),
       });
     }
     parts.push({ text: name, bold: true });
@@ -60,13 +63,13 @@ export function workerSentenceParts(working: string[], queued: string[]): Senten
   const parts: SentencePart[] = [];
   if (working.length || queued.length) {
     if (working.length) {
-      pushJoinedNames(parts, working, "、");
-      parts.push({ text: "正在工作" });
+      pushJoinedNames(parts, working);
+      parts.push({ text: t("projectHome.working") });
     }
     if (queued.length) {
-      if (parts.length) parts.push({ text: "，" });
-      pushJoinedNames(parts, queued, "和");
-      parts.push({ text: "排队中" });
+      if (parts.length) parts.push({ text: t("projectHome.clauseJoiner") });
+      pushJoinedNames(parts, queued);
+      parts.push({ text: t("projectHome.queued") });
     }
     return parts;
   }
@@ -76,11 +79,11 @@ export function workerSentenceParts(working: string[], queued: string[]): Senten
 export function relativeEndedAt(iso: string, now = Date.now()): string {
   const elapsed = Math.max(0, now - new Date(iso).getTime());
   const hours = Math.floor(elapsed / 3_600_000);
-  if (hours < 1) return "刚刚结束";
-  if (hours < 24) return `${hours} 小时前结束`;
+  if (hours < 1) return t("projectHome.justEnded");
+  if (hours < 24) return t("projectHome.endedHoursAgo", { n: hours });
   const days = Math.floor(hours / 24);
-  if (days === 1) return "昨天结束";
-  return `${days} 天前结束`;
+  if (days === 1) return t("projectHome.endedYesterday");
+  return t("projectHome.endedDaysAgo", { n: days });
 }
 
 function initialOf(name: string, fallback: string): string {
@@ -103,7 +106,7 @@ function sessionActivity(
 function targetWorker(session: ChatSession, data: BootstrapData, kind?: HomeWorker["kind"]): HomeWorker {
   if (session.targetType === "squad") {
     const squad = data.squads.find((item: Squad) => item.id === session.targetId);
-    const name = squad?.name || session.title || "小队";
+    const name = squad?.name || session.title || t("projectHome.squadFallback");
     return {
       key: `squad:${session.targetId}`,
       name,
@@ -114,7 +117,7 @@ function targetWorker(session: ChatSession, data: BootstrapData, kind?: HomeWork
     };
   }
   const agent = data.agents.find((item: Agent) => item.id === session.targetId);
-  const name = agent?.name || session.title || "智能体";
+  const name = agent?.name || session.title || t("projectHome.agentFallback");
   const avatar = agent?.avatar ?? "";
   return {
     key: `agent:${session.targetId}`,
@@ -122,12 +125,14 @@ function targetWorker(session: ChatSession, data: BootstrapData, kind?: HomeWork
     kind: kind ?? "agent",
     initial: initialOf(name, "智"),
     image: avatar.startsWith("data:image/") ? avatar : "",
-    title: `${name} · 智能体`,
+    title: t("projectHome.agentTitle", { name }),
   };
 }
 
 function workingMetaOf(working: string[]): string {
-  return working.length ? `${working.join("、")}正在工作` : "";
+  return working.length
+    ? t("projectHome.workingMeta", { names: working.join(t("projectHome.listJoiner")) })
+    : "";
 }
 
 export function buildHomeProject(
@@ -172,8 +177,11 @@ export function buildHomeProject(
   const workerSentence = workerParts.map((part) => part.text).join("");
   const latest = sessions[0];
   const idleLine = latest
-    ? `空闲 · ${targetWorker(latest, data).name} ${relativeEndedAt(latest.updatedAt, now)}`
-    : "空闲";
+    ? t("projectHome.idleLine", {
+      name: targetWorker(latest, data).name,
+      ended: relativeEndedAt(latest.updatedAt, now),
+    })
+    : t("projectHome.idlePrefix");
 
   const gitCount = workspaces.filter((item) => item.kind === "git").length;
   const folderCount = workspaces.length - gitCount;
@@ -191,10 +199,13 @@ export function buildHomeProject(
     note: project.note,
     workspaces,
     pill,
-    pillText: pill === "running" ? "运行中" : "",
+    pillText: pill === "running" ? t("projectHome.pillRunning") : "",
     archived: Boolean(project.archivedAt),
     filters,
-    meta: `${workspaces.length} 个关联项目 · ${workingMetaOf(working.map((item) => item.name))}`,
+    meta: t("projectHome.metaProjects", {
+      n: workspaces.length,
+      working: workingMetaOf(working.map((item) => item.name)),
+    }),
     workingMeta: workingMetaOf(working.map((item) => item.name)),
     workerSentence,
     workerParts,
@@ -219,8 +230,8 @@ export function matchesHomeFilter(project: HomeProject, filter: HomeFilter, quer
 }
 
 export function workspaceKindLabel(gitCount: number, folderCount: number): string {
-  const parts = ["关联项目"];
-  if (gitCount) parts.push(`${gitCount} Git`);
-  if (folderCount) parts.push(`${folderCount} 文件夹`);
-  return parts.join(" · ");
+  const parts = [t("projectHome.linkedProjects")];
+  if (gitCount) parts.push(t("projectHome.gitCount", { n: gitCount }));
+  if (folderCount) parts.push(t("projectHome.folderCount", { n: folderCount }));
+  return parts.join(t("projectHome.metaJoiner"));
 }

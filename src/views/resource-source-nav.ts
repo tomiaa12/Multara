@@ -1,5 +1,6 @@
 import type { GlobalResource, Workspace } from "../domain/types";
 import type { SideNavGroup, SideNavItem } from "../components/SideNav.vue";
+import { t } from "../i18n";
 
 export const ALL_SOURCES = "all";
 export const MULTARA_OWNER = "multara";
@@ -105,7 +106,7 @@ export function buildResourceSourceNav(input: {
   const knownIds = [ALL_SOURCES];
   const globalItems: SideNavItem[] = [{
     id: ALL_SOURCES,
-    label: "全部",
+    label: t("common.all"),
     badge: input.resources.length,
     active: input.activeSource === ALL_SOURCES,
   }];
@@ -124,7 +125,7 @@ export function buildResourceSourceNav(input: {
     });
   }
 
-  const groups: SideNavGroup[] = [{ label: "来源", items: globalItems }];
+  const groups: SideNavGroup[] = [{ label: t("common.source"), items: globalItems }];
   if (!projects.size) return { groups, knownIds };
 
   const projectItems: SideNavItem[] = [...projects.entries()]
@@ -153,6 +154,6 @@ export function buildResourceSourceNav(input: {
     })
     .sort((left, right) => left.label.localeCompare(right.label, "zh"));
 
-  groups.push({ label: "项目", items: projectItems });
+  groups.push({ label: t("resourceNav.projects"), items: projectItems });
   return { groups, knownIds };
 }

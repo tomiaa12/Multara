@@ -239,6 +239,14 @@ const targetLabel = computed(() =>
     ? t("chat.sampleAgent")
     : targetOptions.value.find((option) => option.value === targetValue.value)?.label ?? t("chat.pickTarget"),
 );
+const headerSubtitle = computed(() =>
+  !props.preview && store.processingMessage
+    ? t("chat.executingQueued", { n: store.queuedMessages.length })
+    : targetLabel.value,
+);
+const composerPlaceholder = computed(() =>
+  session.value ? t("chat.messageTo", { name: targetLabel.value }) : t("chat.pickTargetFirst"),
+);
 const targetAvatar = computed(() =>
   props.preview
     ? "M"
@@ -888,7 +896,7 @@ async function pasteImages(files: File[]) {
       );
       next.push({ ...attachment, previewUrl: URL.createObjectURL(file) });
     } catch (error) {
-      composerError.value = error instanceof Error ? error.message : "粘贴图片失败";
+      composerError.value = error instanceof Error ? error.message : t("chat.pasteFailed");
     }
   }
   pendingPastes.value[session.value.id] = next.slice(0, 10);
@@ -1019,7 +1027,7 @@ const queueHeld = computed(() =>
 
 function editQueued(index: number) {
   if (composerHasContent()) {
-    composerError.value = "输入框里还有内容，先发出或清空后再编辑这条排队消息";
+    composerError.value = t("chat.composerBlockedEdit");
     return;
   }
   const item = store.takeQueuedMessage(index);
@@ -1030,7 +1038,7 @@ function restoreFailedDraft() {
   const failure = pendingFailure.value;
   if (!failure) return;
   if (composerHasContent()) {
-    composerError.value = "输入框里还有内容，先发出或清空后再放回这条消息";
+    composerError.value = t("chat.composerBlockedRestore");
     return;
   }
   void applyFailedDraft(failure).then(() => store.dismissSendFailure());
@@ -1228,7 +1236,7 @@ function addPreviewAttachment(name: string, mimeType: string) {
 
 function addPreviewPastedImage() {
   if (!session.value) return;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" rx="12" fill="#2b4c73"/><text x="120" y="86" text-anchor="middle" fill="#d6e8ff" font-size="18" font-family="sans-serif">粘贴截图</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" rx="12" fill="#2b4c73"/><text x="120" y="86" text-anchor="middle" fill="#d6e8ff" font-size="18" font-family="sans-serif">${t("chat.pasteScreenshot")}</text></svg>`;
   const previewUrl = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   const current = pendingPastes.value[session.value.id] ?? [];
   pendingPastes.value[session.value.id] = [
@@ -1285,8 +1293,8 @@ defineExpose({
   >
     <aside v-if="showSessionList" class="thread-list">
       <div class="thread-heading">
-        <strong>对话</strong>
-        <UiButton class="icon-button" title="新建对话" :disabled="!targetOptions.length" @click="createSession">
+        <strong>{{ t("chat.threadsTitle") }}</strong>
+        <UiButton class="icon-button" :title="t('chat.newChat')" :disabled="!targetOptions.length" @click="createSession">
           <MessageSquarePlus :size="15" />
         </UiButton>
       </div>
@@ -1299,7 +1307,7 @@ defineExpose({
           @click="selectSession(item.id)"
         >
           <strong>{{ item.title }}</strong>
-          <small>{{ item.targetType === "squad" ? "小队" : "智能体" }}</small>
+          <small>{{ item.targetType === "squad" ? t("nav.squads") : t("nav.agents") }}</small>
         </UiButton>
       </div>
     </aside>
@@ -1308,7 +1316,7 @@ defineExpose({
       <header v-if="!embedded" class="chat-surface-header" :class="{ 'is-tabs': !showSessionList }">
         <div v-if="showSessionList">
           <strong>{{ session?.title ?? t("chat.newChatLabel") }}</strong>
-          <small>{{ !preview && store.processingMessage ? `正在执行 · ${store.queuedMessages.length} 条排队` : targetLabel }}</small>
+          <small>{{ headerSubtitle }}</small>
         </div>
         <div v-else class="chat-session-bar">
           <div ref="sessionTabs" class="chat-session-tabs vs-scroll">
@@ -1330,7 +1338,7 @@ defineExpose({
               <span>{{ item.title }}</span>
               <span
                 class="tab-close"
-                title="从标签栏关闭"
+                :title="t('chat.closeTab')"
                 @click="closeSessionTab(item.id, $event)"
               >
                 <X :size="12" />
@@ -1357,8 +1365,8 @@ defineExpose({
       <div ref="messageList" class="message-list vs-scroll" @scroll.passive="handleScroll">
         <div v-if="!sessionMessages.length" class="chat-welcome">
           <AgentAvatar :value="targetAvatar" :name="targetLabel" :size="34" />
-          <h2>今天要完成什么？</h2>
-          <p>选择智能体或小队后开始对话；执行期间发送的新消息会自动排队。</p>
+          <h2>{{ t("chat.welcomeTitle") }}</h2>
+          <p>{{ t("chat.welcomeHint") }}</p>
         </div>
         <section
           v-for="(group, groupIndex) in messageGroups"
@@ -1372,7 +1380,7 @@ defineExpose({
               role="separator"
               :data-message-id="message.id"
             >
-              <span>新消息</span>
+              <span>{{ t("chat.newMessagesDivider") }}</span>
             </div>
             <ChatMessageItem
               :data-message-id="message.id"
@@ -1421,12 +1429,12 @@ defineExpose({
       </div>
       <div v-if="pendingFailure" class="chat-send-failure vs-scroll">
         <div class="chat-queue-heading">
-          <span>没有发出</span>
+          <span>{{ t("chat.sendNotDelivered") }}</span>
         </div>
         <div class="chat-queue-item">
           <span :title="queuePreview(pendingFailure.content, pendingFailure.attachments.map((item) => item.name))">{{ queuePreviewShort(pendingFailure.content, pendingFailure.attachments.map((item) => item.name)) || pendingFailure.message }}</span>
-          <UiButton variant="ghost" size="small" @click="restoreFailedDraft">放回输入框</UiButton>
-          <UiButton class="icon-button" variant="ghost" size="icon" title="关闭" @click="store.dismissSendFailure()">
+          <UiButton variant="ghost" size="small" @click="restoreFailedDraft">{{ t("chat.restoreToComposer") }}</UiButton>
+          <UiButton class="icon-button" variant="ghost" size="icon" :title="t('common.close')" @click="store.dismissSendFailure()">
             <X :size="12" />
           </UiButton>
         </div>
@@ -1438,7 +1446,7 @@ defineExpose({
           variant="outline"
           size="small"
           @click="scrollToBottom()"
-        ><ArrowDown :size="14" />回到底部</UiButton>
+        ><ArrowDown :size="14" />{{ t("chat.scrollToBottom") }}</UiButton>
       </div>
 
       <div class="chat-editing-dock">
@@ -1457,9 +1465,9 @@ defineExpose({
       >
         <button type="button" class="chat-queue-heading" :aria-expanded="!queueCollapsed" @click="queueCollapsed = !queueCollapsed">
           <ChevronDown class="chat-queue-chevron" :size="13" />
-          <span>{{ sessionQueue.length }} 条排队消息</span>
-          <small v-if="queueHeld">回答提问后继续发送</small>
-          <small v-else-if="sessionProcessing">本轮结束后依次发送</small>
+          <span>{{ t("chat.queueCount", { n: sessionQueue.length }) }}</span>
+          <small v-if="queueHeld">{{ t("chat.queueHeldHint") }}</small>
+          <small v-else-if="sessionProcessing">{{ t("chat.queueAfterTurnHint") }}</small>
         </button>
         <ol v-show="!queueCollapsed" class="chat-queue-list vs-scroll">
           <li v-for="queued in sessionQueue" :key="queued.index" class="chat-queue-item">
@@ -1469,13 +1477,13 @@ defineExpose({
               <UiButton
                 variant="ghost"
                 size="small"
-                :title="sessionProcessing ? '排到最前，本轮结束后第一个发送' : queueHeld ? '不回答提问，直接发送这条' : '立即发送'"
+                :title="sessionProcessing ? t('chat.queuePromoteRunning') : queueHeld ? t('chat.queueSkipQuestion') : t('chat.queueSendImmediate')"
                 @click="store.promoteQueuedMessage(queued.index)"
-              >立即发送</UiButton>
-              <UiButton class="icon-button" variant="ghost" size="icon" title="放回输入框编辑" @click="editQueued(queued.index)">
+              >{{ t("chat.queueSendNow") }}</UiButton>
+              <UiButton class="icon-button" variant="ghost" size="icon" :title="t('chat.queueEdit')" @click="editQueued(queued.index)">
                 <Pencil :size="12" />
               </UiButton>
-              <UiButton class="icon-button" variant="ghost" size="icon" title="移出队列" @click="store.removeQueuedMessage(queued.index)">
+              <UiButton class="icon-button" variant="ghost" size="icon" :title="t('chat.queueRemove')" @click="store.removeQueuedMessage(queued.index)">
                 <Trash2 :size="12" />
               </UiButton>
             </span>
@@ -1491,7 +1499,7 @@ defineExpose({
       <ChatComposer
         :key="session?.id ?? 'none'"
         ref="composerInput"
-        :placeholder="session ? `给 ${targetLabel} 发消息…` : '先选择智能体或小队'"
+        :placeholder="composerPlaceholder"
         :initial-nodes="composerDraft"
         :contexts="composerContexts"
         :target-label="targetLabel"
@@ -1517,7 +1525,7 @@ defineExpose({
           <div v-for="attachment in attachments" :key="attachment.path" class="composer-attachment">
             <FileText :size="15" />
             <span>{{ attachment.name }}</span>
-            <UiButton type="button" variant="ghost" size="icon" title="移除附件" @click="removeAttachment(attachment.path)">
+            <UiButton type="button" variant="ghost" size="icon" :title="t('chat.removeAttachment')" @click="removeAttachment(attachment.path)">
               <X :size="12" />
             </UiButton>
           </div>
@@ -1531,21 +1539,21 @@ defineExpose({
               size="small"
               variant="ghost"
               @click="searchMissingFile"
-            >全局搜索</UiButton>
-            <UiButton type="button" size="icon" variant="ghost" title="关闭" @click="dismissComposerMessage">
+            >{{ t("chat.globalSearch") }}</UiButton>
+            <UiButton type="button" size="icon" variant="ghost" :title="t('common.close')" @click="dismissComposerMessage">
               <X :size="12" />
             </UiButton>
           </span>
         </p>
         <template #actions>
-            <UiButton type="button" class="icon-button" variant="ghost" title="添加附件" @click="chooseAttachments">
+            <UiButton type="button" class="icon-button" variant="ghost" :title="t('chat.addAttachment')" @click="chooseAttachments">
               <Paperclip :size="15" />
             </UiButton>
             <UiButton
               v-if="canStop"
               type="button"
               class="icon-button"
-              title="停止当前任务 (Ctrl+C)"
+              :title="t('chat.stopTaskShortcut')"
               @click="stopAgent"
             ><Square :size="14" /></UiButton>
             <UiButton
@@ -1553,7 +1561,7 @@ defineExpose({
               class="ds-send-button send-button"
               type="submit"
               :disabled="!canSend"
-              :title="canStop ? '加入队列' : '发送'"
+              :title="canStop ? t('chat.enqueue') : t('chat.send')"
             >
               <ArrowUp :size="16" />
             </UiButton>
@@ -1570,22 +1578,22 @@ defineExpose({
       />
       <div v-if="rollbackFailureOpen" class="modal-backdrop" @click.self="finishRollbackFailure(false)">
         <div class="modal" role="dialog" aria-modal="true">
-          <h2>文件回滚失败</h2>
-          <p>文件没有恢复到提问前的状态。是否仍要删除之后的对话？</p>
+          <h2>{{ t("chat.rollbackFailTitle") }}</h2>
+          <p>{{ t("chat.rollbackFailBody") }}</p>
           <p>{{ rollbackFailureMessage }}</p>
           <div class="modal-actions">
-            <UiButton @click="finishRollbackFailure(false)">取消</UiButton>
-            <UiButton variant="danger" @click="finishRollbackFailure(true)">仍然删除对话</UiButton>
+            <UiButton @click="finishRollbackFailure(false)">{{ t("common.cancel") }}</UiButton>
+            <UiButton variant="danger" @click="finishRollbackFailure(true)">{{ t("chat.rollbackFailConfirm") }}</UiButton>
           </div>
         </div>
       </div>
       <div v-if="dirtyRollbackOpen" class="modal-backdrop" @click.self="finishDirtyRollback(false)">
         <div class="modal" role="dialog" aria-modal="true">
-          <h2>有未保存的更改</h2>
+          <h2>{{ t("dialog.unsavedTitle") }}</h2>
           <p>{{ dirtyRollbackMessage }}</p>
           <div class="modal-actions">
-            <UiButton @click="finishDirtyRollback(false)">取消</UiButton>
-            <UiButton variant="danger" @click="finishDirtyRollback(true)">继续</UiButton>
+            <UiButton @click="finishDirtyRollback(false)">{{ t("common.cancel") }}</UiButton>
+            <UiButton variant="danger" @click="finishDirtyRollback(true)">{{ t("chat.dirtyRollbackContinue") }}</UiButton>
           </div>
         </div>
       </div>
