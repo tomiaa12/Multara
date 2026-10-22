@@ -104,7 +104,11 @@ Multara 把這些智能體放進同一個本機工作區。任務派給智能體
 | macOS（Apple Silicon） | `.dmg` |
 | macOS（Intel） | `.dmg` |
 
-macOS 上將 `Multara.app` 拖進「應用程式」。
+macOS 上將 `Multara.app` 拖進「應用程式」。若提示「已損壞，無法打開」，在終端機執行：
+
+```bash
+xattr -cr /Applications/Multara.app
+```
 
 ---
 

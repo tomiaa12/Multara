@@ -106,7 +106,11 @@ Multara는 그 에이전트들을 하나의 로컬 워크스페이스에 둡니�
 | macOS（Apple Silicon） | `.dmg` |
 | macOS（Intel） | `.dmg` |
 
-macOS에서는 `Multara.app`을「응용 프로그램」으로 드래그하세요.
+macOS에서는 `Multara.app`을「응용 프로그램」으로 드래그하세요. 「손상되었기 때문에 열 수 없습니다」라고 나오면 터미널에서 다음을 실행하세요:
+
+```bash
+xattr -cr /Applications/Multara.app
+```
 
 ---
 

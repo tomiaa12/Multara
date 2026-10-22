@@ -107,7 +107,11 @@ nothing lands without you looking at it.
 | macOS (Apple Silicon) | `.dmg` |
 | macOS (Intel) | `.dmg` |
 
-On macOS, drag `Multara.app` into Applications.
+On macOS, drag `Multara.app` into Applications. If macOS says the app is damaged, run:
+
+```bash
+xattr -cr /Applications/Multara.app
+```
 
 ---
 
