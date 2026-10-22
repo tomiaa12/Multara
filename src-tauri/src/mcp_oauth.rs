@@ -1,5 +1,5 @@
 //! MCP 远程服务的 OAuth：发现元数据、动态注册、打开系统浏览器、本地回调换 token。
-//! 流程对齐 Multica `remotemcp` 和 VS Code 的 MCP 授权，浏览器走系统默认（macOS 的 `open`）。
+//! 流程对齐常见 MCP OAuth（受保护资源元数据 + PKCE），浏览器走系统默认（macOS 的 `open`）。
 
 use std::fs;
 use std::io::Write;

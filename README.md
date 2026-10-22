@@ -137,5 +137,5 @@ authenticated — so switching providers is a dropdown, not a migration.
 
 ## Inspiration
 
-Multara is inspired by [Multica](https://github.com/multica-ai/multica) — agents on the board,
-work handed off like teammates. Multara takes that idea into a local-first desktop workspace.
+Agents on the board, work handed off like teammates — Multara takes that idea into a
+local-first desktop workspace.

@@ -10,7 +10,7 @@ import {
 } from "./runtime-catalog";
 
 describe("runtime catalog", () => {
-  it("lets every catalog family be created, matching Multica", () => {
+  it("lets every catalog family be created", () => {
     expect(RUNTIME_FAMILIES.every((item) => item.supported)).toBe(true);
     expect(RUNTIME_FAMILIES.find((item) => item.id === "kimi")?.supported).toBe(true);
     expect(RUNTIME_FAMILIES.find((item) => item.id === "cursor")?.supported).toBe(true);

@@ -603,7 +603,7 @@ pub fn resolve_runtime_command(command: &str, provider: &str) -> Option<PathBuf>
     path
 }
 
-/// Same rule as Multica's `detectCLIVersion`: run `<cli> --version` and keep
+/// Run `<cli> --version` and keep
 /// the first line that contains a semver token, such as `2.1.5 (Claude Code)`
 /// or `codex-cli 0.118.0`.
 fn cli_version(path: &Path) -> Option<String> {

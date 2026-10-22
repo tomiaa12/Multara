@@ -51,7 +51,7 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-/** 时间轴缩放档位，和 Multica 一样：1 / 2 / 4 / 8。 */
+/** 时间轴缩放档位：1 / 2 / 4 / 8。 */
 const ZOOM_STEPS = [1, 2, 4, 8] as const;
 
 const query = ref("");

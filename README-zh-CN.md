@@ -133,5 +133,4 @@ Multara 不内置模型。它驱动你本机已经安装并登录好的智能体
 
 ## 灵感来源
 
-Multara 的灵感来自 [Multica](https://github.com/multica-ai/multica)——智能体也在看板上，
-像队友一样接活。Multara 把这一想法落到本地优先的桌面工作区。
+智能体也在看板上，像队友一样接活。Multara 把这一想法落到本地优先的桌面工作区。

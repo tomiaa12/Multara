@@ -69,7 +69,16 @@ function skipQuestion() {
 }
 
 function speaker(message: ChatMessage) {
-  return speakerForMessage(message, store.data?.agents ?? [], store.data?.squads ?? [], props.agentId);
+  return speakerForMessage(
+    message,
+    store.data?.agents ?? [],
+    store.data?.squads ?? [],
+    props.agentId,
+    {
+      messages: store.messages[message.sessionId] ?? [],
+      session: store.data?.sessions.find((item) => item.id === message.sessionId) ?? null,
+    },
+  );
 }
 
 function messageRunning(message: ChatMessage) {

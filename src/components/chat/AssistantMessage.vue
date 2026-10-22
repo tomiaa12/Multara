@@ -29,7 +29,12 @@ const liveText = computed(() => liveAssistantText(props.message.timeline));
 const rawContent = computed(() =>
   props.running ? liveText.value || props.message.content : props.message.content || liveText.value,
 );
-const hidesAssignment = computed(() => isLeaderAssignment(props.message, store.data?.squads ?? []));
+const hidesAssignment = computed(() =>
+  isLeaderAssignment(props.message, store.data?.squads ?? [], {
+    messages: store.messages[props.message.sessionId] ?? [],
+    session: store.data?.sessions.find((item) => item.id === props.message.sessionId) ?? store.activeSession,
+  }),
+);
 const bodyRaw = computed(() =>
   props.message.failureReason ? liveText.value : rawContent.value,
 );
