@@ -176,18 +176,26 @@ fn register(metadata: &OAuthMetadata, redirect_uri: &str) -> Result<ClientRegist
         .registration_endpoint
         .as_deref()
         .ok_or_else(|| "授权服务器需要预先注册的客户端，当前还不能自动授权".to_string())?;
-    let response = http_json_body(
+    let response = http_exchange(
+        "POST",
         endpoint,
-        json!({
-            "client_name": CLIENT_NAME,
-            "redirect_uris": [redirect_uri],
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-            "token_endpoint_auth_method": "none"
-        })
-        .to_string(),
+        Some(
+            json!({
+                "client_name": CLIENT_NAME,
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "none"
+            })
+            .to_string(),
+        ),
+        Some("application/json"),
     )?;
-    let client_id = response
+    if !(200..300).contains(&response.status) {
+        return Err(registration_denied(endpoint, response.status, &response.body));
+    }
+    let payload: Value = serde_json::from_str(&response.body).map_err(|error| format!("注册响应无法解析：{error}"))?;
+    let client_id = payload
         .get("client_id")
         .and_then(Value::as_str)
         .map(str::trim)
@@ -195,6 +203,24 @@ fn register(metadata: &OAuthMetadata, redirect_uri: &str) -> Result<ClientRegist
         .ok_or_else(|| "动态注册没有返回 client id".to_string())?
         .to_string();
     Ok(ClientRegistration { client_id })
+}
+
+/// 动态注册失败时浏览器还没打开；把常见白名单拒绝说清楚，避免前端把 403 误读成「再点一次授权」。
+fn registration_denied(endpoint: &str, status: u16, body: &str) -> String {
+    let host = url::Url::parse(endpoint)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
+        .unwrap_or_default();
+    if host.contains("figma.com") {
+        return "Figma 远程 MCP 仅允许官方目录内的客户端完成 OAuth（如 Cursor、VS Code），Multara 尚未在目录中，因此无法打开授权浏览器。可改用 Figma 桌面端本地 MCP，或向 Figma 申请将 Multara 加入 MCP 客户端目录。".to_string();
+    }
+    let detail = body.trim();
+    if detail.is_empty() {
+        format!("授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。")
+    } else {
+        let short: String = detail.chars().take(120).collect();
+        format!("授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。响应：{short}")
+    }
 }
 
 fn authorization_url(
@@ -345,11 +371,6 @@ struct HttpResponse {
 
 fn http_json(url: &str) -> Result<Value, String> {
     let response = http_exchange("GET", url, None, None)?;
-    json_body(&response)
-}
-
-fn http_json_body(url: &str, body: String) -> Result<Value, String> {
-    let response = http_exchange("POST", url, Some(body), Some("application/json"))?;
     json_body(&response)
 }
 
@@ -574,5 +595,13 @@ mod tests {
             resource_metadata_url(&headers).as_deref(),
             Some("https://project.feishu.cn/.well-known/oauth-protected-resource")
         );
+    }
+
+    #[test]
+    fn figma_registration_denial_explains_catalog() {
+        let message = registration_denied("https://api.figma.com/v1/oauth/mcp/register", 403, "Forbidden");
+        assert!(message.contains("Figma"));
+        assert!(message.contains("目录"));
+        assert!(!message.starts_with("HTTP "));
     }
 }

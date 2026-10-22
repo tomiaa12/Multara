@@ -467,7 +467,14 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
             "--disallowedTools".into(),
             "AskUserQuestion".into(),
         ],
-        "codex" => vec!["exec".into(), "--json".into(), assignment.into()],
+        // 需求 / 任务 / 收件箱 / 右下角聊天都可能没有 Git（临时工作区或纯文件夹）。
+        // Codex exec 默认要求仓库根，否则直接退出；由 Multara 管 cwd，统一跳过该检查。
+        "codex" => vec![
+            "exec".into(),
+            "--json".into(),
+            "--skip-git-repo-check".into(),
+            assignment.into(),
+        ],
         "cursor" => vec![
             "-p".into(),
             "--output-format".into(),
@@ -1063,6 +1070,15 @@ mod tests {
         assert_eq!(cursor, ["-p", "--output-format", "stream-json", "--yolo"]);
         let qwen = build_args("qwen", "never put this prompt in argv");
         assert_eq!(qwen, ["--output-format", "stream-json", "--yolo"]);
+    }
+
+    #[test]
+    fn codex_skips_git_repo_check_for_non_repo_chats() {
+        let args = build_args("codex", "hello");
+        assert_eq!(
+            args,
+            ["exec", "--json", "--skip-git-repo-check", "hello"]
+        );
     }
 
     #[test]
