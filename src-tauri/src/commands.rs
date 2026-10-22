@@ -2482,15 +2482,26 @@ pub fn delete_mcp(
 }
 
 #[tauri::command]
-pub fn authorize_mcp(
+pub async fn authorize_mcp(
     name: String,
     owner: Option<String>,
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Vec<GlobalResource>, String> {
     let _span = crate::diag::span("authorize_mcp");
-    resource_manager::authorize_mcp(&resource_owner(owner), name.trim())?;
-    let db = state.lock_db()?;
-    Ok(scan_all(&db))
+    let owner = resource_owner(owner);
+    let name = name.trim().to_string();
+    // OAuth 探测/注册/等回调会阻塞数秒到数分钟，不能跑在主线程，否则 UI 转圈卡死。
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = resource_manager::authorize_mcp(&owner, &name) {
+            crate::diag::write(&format!("authorize_mcp failed: {error}"));
+            return Err(error);
+        }
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        Ok(scan_all(&db))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
