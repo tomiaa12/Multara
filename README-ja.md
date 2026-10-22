@@ -106,7 +106,11 @@ Multara はそれらを一つのローカルワークスペースにまとめま
 | macOS（Apple Silicon） | `.dmg` |
 | macOS（Intel） | `.dmg` |
 
-macOS では `Multara.app` を「アプリケーション」にドラッグします。
+macOS では `Multara.app` を「アプリケーション」にドラッグします。「破損しているため開けません」と出た場合は、ターミナルで次を実行してください：
+
+```bash
+xattr -cr /Applications/Multara.app
+```
 
 ---
 
