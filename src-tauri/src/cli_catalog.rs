@@ -41,6 +41,24 @@ pub fn entry(id: &str) -> Option<&'static CliEntry> {
     catalog().iter().find(|item| item.id == id)
 }
 
+/// 「添加运行时」弹窗里的基础 CLI：与前端 `runtimeEntries()` 同一过滤条件。
+pub fn runtime_entries() -> Vec<&'static CliEntry> {
+    catalog()
+        .iter()
+        .filter(|item| {
+            item.runtime == Some(true)
+                && item
+                    .command
+                    .as_deref()
+                    .is_some_and(|command| !command.trim().is_empty())
+                && item
+                    .protocol
+                    .as_deref()
+                    .is_some_and(|protocol| !protocol.trim().is_empty())
+        })
+        .collect()
+}
+
 pub fn label(id: &str) -> Option<&'static str> {
     entry(id).map(|item| item.label.as_str())
 }

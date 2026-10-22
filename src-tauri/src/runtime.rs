@@ -13,71 +13,44 @@ use std::{io::Read, process::Command, time::Instant};
 use crate::models::Runtime;
 
 struct RuntimeSpec {
-    id: &'static str,
-    name: &'static str,
-    provider: &'static str,
-    commands: &'static [&'static str],
+    id: String,
+    name: String,
+    provider: String,
+    commands: Vec<String>,
     default_concurrency: u8,
 }
 
-const RUNTIME_SPECS: &[RuntimeSpec] = &[
-    RuntimeSpec {
-        id: "claude",
-        name: "Claude Code",
-        provider: "claude",
-        commands: &["claude"],
-        default_concurrency: 2,
-    },
-    RuntimeSpec {
-        id: "codex",
-        name: "Codex",
-        provider: "codex",
-        commands: &["codex"],
-        default_concurrency: 2,
-    },
-    RuntimeSpec {
-        id: "cursor",
-        name: "Cursor",
-        provider: "cursor",
-        commands: &["cursor-agent", "agent"],
-        default_concurrency: 3,
-    },
-    RuntimeSpec {
-        id: "copilot",
-        name: "GitHub Copilot",
-        provider: "copilot",
-        commands: &["github-copilot-cli", "copilot"],
-        default_concurrency: 2,
-    },
-    RuntimeSpec {
-        id: "opencode",
-        name: "OpenCode",
-        provider: "opencode",
-        commands: &["opencode"],
-        default_concurrency: 2,
-    },
-    RuntimeSpec {
-        id: "gemini",
-        name: "Gemini CLI",
-        provider: "gemini",
-        commands: &["gemini"],
-        default_concurrency: 2,
-    },
-    RuntimeSpec {
-        id: "qwen",
-        name: "Qwen Code",
-        provider: "qwen",
-        commands: &["qwen"],
-        default_concurrency: 2,
-    },
-    RuntimeSpec {
-        id: "kimi",
-        name: "Kimi CLI",
-        provider: "kimi",
-        commands: &["kimi"],
-        default_concurrency: 2,
-    },
-];
+/// 与 `shared/cli-catalog.json` 中可添加的运行时对齐，避免弹窗有、检测没有。
+fn runtime_specs() -> &'static [RuntimeSpec] {
+    static SPECS: OnceLock<Vec<RuntimeSpec>> = OnceLock::new();
+    SPECS
+        .get_or_init(|| {
+            crate::cli_catalog::runtime_entries()
+                .into_iter()
+                .map(|entry| {
+                    let id = entry.id.as_str();
+                    let primary = entry.command.as_deref().unwrap_or(id);
+                    RuntimeSpec {
+                        id: entry.id.clone(),
+                        name: entry.label.clone(),
+                        provider: entry.id.clone(),
+                        commands: detect_commands(id, primary),
+                        default_concurrency: if id == "cursor" { 3 } else { 2 },
+                    }
+                })
+                .collect()
+        })
+        .as_slice()
+}
+
+/// 个别 CLI 有历史/别名可执行名，检测时都试一遍。
+fn detect_commands(id: &str, primary: &str) -> Vec<String> {
+    match id {
+        "cursor" => vec!["cursor-agent".into(), "agent".into()],
+        "copilot" => vec!["github-copilot-cli".into(), "copilot".into()],
+        _ => vec![primary.to_string()],
+    }
+}
 
 fn command_path_cache() -> &'static Mutex<HashMap<String, PathBuf>> {
     static CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
@@ -171,7 +144,7 @@ pub fn detect() -> Vec<Runtime> {
     // Refresh it on every scan so "detect again" sees CLIs installed later.
     #[cfg(unix)]
     refresh_login_path_dirs();
-    RUNTIME_SPECS.iter().map(detect_spec).collect()
+    runtime_specs().iter().map(detect_spec).collect()
 }
 
 pub fn seed_runtime_id() -> String {
@@ -184,8 +157,7 @@ pub fn seed_runtime_id() -> String {
 
 fn detect_spec(spec: &RuntimeSpec) -> Runtime {
     let detected = spec.commands.iter().find_map(|command| {
-        resolve_runtime_command(command, spec.provider)
-            .map(|path| ((*command).to_string(), path))
+        resolve_runtime_command(command, &spec.provider).map(|path| (command.clone(), path))
     });
     let (command, path, version, status) = match detected {
         Some((command, path)) => {
@@ -197,12 +169,20 @@ fn detect_spec(spec: &RuntimeSpec) -> Runtime {
                 "online",
             )
         }
-        None => (spec.commands[0].to_string(), None, None, "not_found"),
+        None => (
+            spec.commands
+                .first()
+                .cloned()
+                .unwrap_or_else(|| spec.id.clone()),
+            None,
+            None,
+            "not_found",
+        ),
     };
     Runtime {
-        id: spec.id.to_string(),
-        name: spec.name.to_string(),
-        provider: spec.provider.to_string(),
+        id: spec.id.clone(),
+        name: spec.name.clone(),
+        provider: spec.provider.clone(),
         command,
         args: Vec::new(),
         path,
@@ -437,14 +417,14 @@ pub fn stdin_prompt(provider: &str, prompt: &str) -> Option<Vec<u8>> {
 }
 
 pub fn execution(runtime_id: &str, assignment: &str) -> Result<(PathBuf, Vec<String>, u8), String> {
-    let spec = RUNTIME_SPECS
+    let spec = runtime_specs()
         .iter()
         .find(|item| item.id == runtime_id)
         .ok_or_else(|| format!("未知运行时：{runtime_id}"))?;
     let path = spec
         .commands
         .iter()
-        .find_map(|command| resolve_runtime_command(command, spec.provider))
+        .find_map(|command| resolve_runtime_command(command, &spec.provider))
         .ok_or_else(|| format!("未找到 {} CLI", spec.name))?;
     Ok((
         path,
@@ -469,10 +449,13 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
         ],
         // 需求 / 任务 / 收件箱 / 右下角聊天都可能没有 Git（临时工作区或纯文件夹）。
         // Codex exec 默认要求仓库根，否则直接退出；由 Multara 管 cwd，统一跳过该检查。
+        // 默认 sandbox 是只读且常断网，模型会自称「只读、离线」只给复制命令；
+        // 与 Claude bypassPermissions / Cursor --yolo 对齐，无头跑通改文件与装依赖。
         "codex" => vec![
             "exec".into(),
             "--json".into(),
             "--skip-git-repo-check".into(),
+            "--dangerously-bypass-approvals-and-sandbox".into(),
             assignment.into(),
         ],
         "cursor" => vec![
@@ -1031,10 +1014,9 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::{
-        build_args, compose_args, detect, execution, extract_version_line,
-        gateway_env, resolve_runtime_command,
-        CODEX_BUNDLE_OVERRIDE, CODEX_FIXTURE, PATH_LOOKUP_DISABLED, RUNTIME_SPECS,
-        SUPPLEMENTAL_PATH_OVERRIDE,
+        build_args, compose_args, detect, execution, extract_version_line, gateway_env,
+        resolve_runtime_command, runtime_specs, CODEX_BUNDLE_OVERRIDE, CODEX_FIXTURE,
+        PATH_LOOKUP_DISABLED, SUPPLEMENTAL_PATH_OVERRIDE,
     };
 
     #[test]
@@ -1044,11 +1026,28 @@ mod tests {
 
     #[test]
     fn runtime_ids_are_unique() {
-        let ids = RUNTIME_SPECS
+        let specs = runtime_specs();
+        let ids = specs
             .iter()
-            .map(|runtime| runtime.id)
+            .map(|runtime| runtime.id.as_str())
             .collect::<HashSet<_>>();
-        assert_eq!(ids.len(), RUNTIME_SPECS.len());
+        assert_eq!(ids.len(), specs.len());
+    }
+
+    #[test]
+    fn detect_covers_every_catalog_runtime() {
+        let catalog_ids = crate::cli_catalog::runtime_entries()
+            .into_iter()
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
+        let detect_ids = runtime_specs()
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(catalog_ids, detect_ids);
+        assert!(detect_ids.contains("pi"));
+        assert!(detect_ids.contains("omp"));
+        assert!(detect_ids.contains("codebuddy"));
     }
 
     #[test]
@@ -1077,7 +1076,13 @@ mod tests {
         let args = build_args("codex", "hello");
         assert_eq!(
             args,
-            ["exec", "--json", "--skip-git-repo-check", "hello"]
+            [
+                "exec",
+                "--json",
+                "--skip-git-repo-check",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "hello"
+            ]
         );
     }
 
