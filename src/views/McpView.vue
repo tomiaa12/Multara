@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { Network, Pencil, Plus, Search, SearchX, Store, X } from "@lucide/vue";
+import { Network, Pencil, Plus, RefreshCw, Search, SearchX, Store, X } from "@lucide/vue";
 import type { CatalogItem, GlobalResource, McpInput, McpProbe, ResourceSource } from "../domain/types";
 import CliSourceIcon from "../components/CliSourceIcon.vue";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
@@ -32,6 +32,7 @@ const argsText = ref("");
 const mode = ref<"ui" | "json">("ui");
 const jsonText = ref("");
 const authorizing = ref("");
+const refreshing = ref(false);
 const brokenIcons = ref(new Set<string>());
 const toolsDialog = ref<{ item: GlobalResource; probe: McpProbe } | null>(null);
 const probeDialog = ref<GlobalResource | null>(null);
@@ -106,12 +107,19 @@ function onSourceSelect(item: SideNavItem) {
 function statusLabel(item: GlobalResource) {
   const live = mcpTools.probes[item.id];
   if (live?.status === "running") return t("mcp.status.running");
+  if (live?.status === "needs_auth" || item.configStatus === "needs_auth") return t("mcp.status.needsAuth");
   if (live?.status === "error") return t("mcp.status.error");
-  if (item.configStatus === "needs_auth") return t("mcp.status.needsAuth");
   if (item.configStatus === "needs_input") return t("mcp.status.needsInput");
   if (item.configStatus === "disabled") return t("mcp.status.disabled");
   if (item.configStatus === "incomplete") return t("mcp.status.incomplete");
   return t("mcp.status.ready");
+}
+
+/** Cursor 等来源的 HTTP MCP 常不写 oauth 字段；探测到 401/403 后也要能授权。 */
+function canAuthorize(item: GlobalResource) {
+  if (item.transport !== "http" && item.transport !== "sse") return false;
+  if (item.needsAuth || item.configStatus === "needs_auth") return true;
+  return mcpTools.probes[item.id]?.status === "needs_auth";
 }
 
 function syncJsonFromForm() {
@@ -257,6 +265,21 @@ function friendlyError(raw: string): string {
   return key ? t(key) : (raw.trim() || t("mcp.error.generic"));
 }
 
+/** 探测详情：优先 stderr/启动日志；没有时回退原始 error（友好文案之外仍要能看到原因）。 */
+function probeDetailLog(probe: McpProbe): string {
+  const log = probe.log?.trim() ?? "";
+  const raw = probe.error?.trim() ?? "";
+  if (!log) return raw;
+  if (!raw || log.includes(raw)) return log;
+  return `${log}\n${raw}`;
+}
+
+const activeProbe = computed(() => {
+  const id = probeDialog.value?.id;
+  return id ? mcpTools.probes[id] : undefined;
+});
+const activeProbeLog = computed(() => (activeProbe.value ? probeDetailLog(activeProbe.value) : ""));
+
 function alertProbeFailure(probe: McpProbe) {
   if (!probe.error) return;
   window.alert(friendlyError(probe.error));
@@ -365,6 +388,18 @@ watch(servers, (rows) => {
   mcpTools.refreshInBackground(rows);
 });
 
+async function refreshList() {
+  refreshing.value = true;
+  try {
+    await store.refreshResources();
+    mcpTools.refreshInBackground(servers.value, true);
+  } catch (cause) {
+    alertError(cause);
+  } finally {
+    refreshing.value = false;
+  }
+}
+
 async function openConfig(item: GlobalResource) {
   try {
     await backend.revealResource(item.id);
@@ -404,7 +439,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     { id: "copy", label: t("common.copyPath") },
     { type: "sep" },
     { id: "edit", label: t("common.edit") },
-    { id: "auth", label: t("mcp.authorize"), disabled: !(item.needsAuth && (item.transport === "http" || item.transport === "sse")) },
+    { id: "auth", label: t("mcp.authorize"), disabled: !canAuthorize(item) },
     { id: "signout", label: t("mcp.signOut") },
     { id: "delete", label: t("common.delete") },
   ];
@@ -482,6 +517,9 @@ async function authorizeForm() {
         </p>
       </div>
       <div class="header-actions">
+        <UiButton :disabled="refreshing" @click="refreshList">
+          <RefreshCw :size="14" /> {{ t("common.refresh") }}
+        </UiButton>
         <UiButton @click="browsing = true"><Store :size="14" /> {{ t("mcp.browse") }}</UiButton>
         <UiButton variant="primary" @click="openCreate"><Plus :size="16" /> {{ t("mcp.create") }}</UiButton>
       </div>
@@ -556,7 +594,7 @@ async function authorizeForm() {
           </span>
           <span class="ui-directory-actions">
             <UiButton
-              v-if="item.needsAuth && (item.transport === 'http' || item.transport === 'sse')"
+              v-if="canAuthorize(item)"
               variant="ghost"
               size="small"
               :disabled="authorizing === item.id"
@@ -687,19 +725,24 @@ async function authorizeForm() {
         </div>
         <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="probeDialog = null"><X :size="16" /></UiButton>
       </header>
-      <template v-if="mcpTools.probes[probeDialog.id]">
-        <p v-if="mcpTools.probes[probeDialog.id].error" class="form-error">{{ friendlyError(mcpTools.probes[probeDialog.id].error) }}</p>
+      <template v-if="activeProbe">
+        <p v-if="activeProbe.error" class="form-error">{{ friendlyError(activeProbe.error) }}</p>
         <p v-else class="mcp-probe-summary">
-          {{ mcpTools.probes[probeDialog.id].serverName }} {{ mcpTools.probes[probeDialog.id].serverVersion }} · {{ mcpTools.probes[probeDialog.id].durationMs }}ms
+          {{ activeProbe.serverName }} {{ activeProbe.serverVersion }} · {{ activeProbe.durationMs }}ms
         </p>
-        <p v-if="mcpTools.probes[probeDialog.id].missingInputs?.length">{{ t("mcp.missingInputs", { list: mcpTools.probes[probeDialog.id].missingInputs.join("、") }) }}</p>
-        <p v-if="mcpTools.probes[probeDialog.id].resources.length">{{ t("mcp.resources", { list: mcpTools.probes[probeDialog.id].resources.map((entry) => entry.name || entry.uri).join("、") }) }}</p>
-        <p v-if="mcpTools.probes[probeDialog.id].prompts.length">{{ t("mcp.prompts", { list: mcpTools.probes[probeDialog.id].prompts.map((entry) => entry.name).join("、") }) }}</p>
-        <pre v-if="mcpTools.probes[probeDialog.id].log" class="mcp-log">{{ mcpTools.probes[probeDialog.id].log }}</pre>
-        <p v-else-if="!mcpTools.probes[probeDialog.id].error" class="mcp-tools-empty">{{ t("mcp.noLogs") }}</p>
+        <p v-if="activeProbe.missingInputs?.length">{{ t("mcp.missingInputs", { list: activeProbe.missingInputs.join("、") }) }}</p>
+        <p v-if="activeProbe.resources.length">{{ t("mcp.resources", { list: activeProbe.resources.map((entry) => entry.name || entry.uri).join("、") }) }}</p>
+        <p v-if="activeProbe.prompts.length">{{ t("mcp.prompts", { list: activeProbe.prompts.map((entry) => entry.name).join("、") }) }}</p>
+        <pre v-if="activeProbeLog" class="mcp-log">{{ activeProbeLog }}</pre>
+        <p v-else class="mcp-tools-empty">{{ t("mcp.noLogs") }}</p>
       </template>
       <p v-else class="mcp-tools-empty">{{ t("mcp.notProbed") }}</p>
       <div class="modal-actions">
+        <UiButton
+          v-if="canAuthorize(probeDialog)"
+          :disabled="authorizing === probeDialog.id"
+          @click="authorize(probeDialog)"
+        >{{ authorizing === probeDialog.id ? t("mcp.authorizing") : authorizeLabel(probeDialog) }}</UiButton>
         <UiButton
           variant="primary"
           :disabled="mcpTools.isLoading(probeDialog.id) || !probeDialog.enabled"
@@ -742,6 +785,11 @@ async function authorizeForm() {
       </ul>
       <p v-else class="mcp-tools-empty">{{ t("mcp.noTools") }}</p>
       <div class="modal-actions">
+        <UiButton
+          v-if="canAuthorize(toolsDialog.item)"
+          :disabled="authorizing === toolsDialog.item.id"
+          @click="authorize(toolsDialog.item)"
+        >{{ authorizing === toolsDialog.item.id ? t("mcp.authorizing") : authorizeLabel(toolsDialog.item) }}</UiButton>
         <UiButton variant="primary" @click="toolsDialog = null">{{ t("common.close") }}</UiButton>
       </div>
     </div>

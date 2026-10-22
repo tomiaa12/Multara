@@ -10,6 +10,7 @@ export function mcpToolsCaption(input: {
   if (input.loading) return "加载中…";
   const probe = input.probe;
   if (!probe) return "查看工具";
+  if (probe.status === "needs_auth") return "需要授权";
   if (probe.error && !probe.tools.length) return "检测失败";
   return `${probe.tools.length} 个工具`;
 }

@@ -100,6 +100,9 @@ fn reveal_main_window(app: &tauri::App) -> tauri::Result<()> {
         let _ = window.set_shadow(true);
     }
 
+    // 只在这里恢复一次。插件 on_window_ready 若再 restore，会在 macOS
+    // maximize()/zoom 动画中途再次 set_size + maximize，表现为白窗从左上角
+    // 放大到一半又重来几次（新系统上更明显）。
     let _ = window.restore_state(RESTORED_WINDOW_FLAGS);
     window.show()?;
     let _ = window.set_focus();
@@ -117,6 +120,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(RESTORED_WINDOW_FLAGS)
+                // 由 reveal_main_window 在 show 前统一恢复，避免与插件初始 restore 叠两次 zoom。
+                .skip_initial_state("main")
                 .build(),
         );
 
