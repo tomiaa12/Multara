@@ -32,6 +32,7 @@ const argsText = ref("");
 const mode = ref<"ui" | "json">("ui");
 const jsonText = ref("");
 const authorizing = ref("");
+const authorizeError = ref("");
 const refreshing = ref(false);
 const brokenIcons = ref(new Set<string>());
 const toolsDialog = ref<{ item: GlobalResource; probe: McpProbe } | null>(null);
@@ -287,12 +288,13 @@ function alertProbeFailure(probe: McpProbe) {
 
 async function authorize(item: GlobalResource) {
   authorizing.value = item.id;
+  authorizeError.value = "";
   try {
     await store.authorizeMcp(item.name, item.owner);
   } catch (cause) {
     // 授权失败文案以后端为准（如 Figma 拒绝动态注册），不要把 403 收成「需要授权」循环提示
     const raw = cause instanceof Error ? cause.message : String(cause);
-    window.alert(raw.trim() || t("mcp.error.generic"));
+    authorizeError.value = raw.trim() || t("mcp.error.generic");
   } finally {
     authorizing.value = "";
   }
@@ -534,6 +536,14 @@ async function authorizeForm() {
       </label>
       <span class="collection-summary">{{ t("mcp.enabledCount", { enabled: servers.filter((item) => item.enabled).length, total: servers.length }) }}</span>
     </div>
+
+    <UiNotice
+      v-if="authorizeError"
+      tone="error"
+      sticky
+      :message="authorizeError"
+      @close="authorizeError = ''"
+    />
 
     <UiDirectoryTable class="mcp-directory" :columns="directoryColumns">
       <div v-if="!servers.length" class="ds-empty">
