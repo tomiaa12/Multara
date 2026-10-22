@@ -259,8 +259,13 @@ impl StdioConnection {
         if program.is_empty() {
             return Err(ProbeError::Other("没有填写启动命令".into()));
         }
-        let resolved = which::which(program).map(|path| path.into_os_string()).unwrap_or_else(|_| program.into());
+        let resolved = crate::runtime::resolve_runtime_command(program, "").ok_or_else(|| {
+            format!(
+                "找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。"
+            )
+        })?;
         let mut command = crate::process::command(&resolved);
+        command.env("PATH", crate::runtime::augmented_path_env());
         for arg in entry.get("args").and_then(Value::as_array).into_iter().flatten() {
             if let Some(arg) = arg.as_str() {
                 command.arg(arg);
@@ -276,7 +281,15 @@ impl StdioConnection {
         }
         command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         append_log(&log, &format!("启动：{program}"));
-        let mut child = command.spawn().map_err(|error| format!("无法启动 {program}：{error}"))?;
+        let mut child = command.spawn().map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                format!(
+                    "找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。"
+                )
+            } else {
+                format!("无法启动 MCP 服务器：{error}")
+            }
+        })?;
         let stdin = child.stdin.take().ok_or_else(|| "无法写入子进程".to_string())?;
         let stdout = child.stdout.take().ok_or_else(|| "无法读取子进程输出".to_string())?;
         if let Some(stderr) = child.stderr.take() {

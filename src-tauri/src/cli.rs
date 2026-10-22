@@ -549,10 +549,15 @@ pub fn sidecar_path() -> Option<PathBuf> {
 
 pub fn path_env(bin_dir: &std::path::Path) -> String {
     let prefix = bin_dir.to_string_lossy();
-    match env::var("PATH") {
-        Ok(rest) if cfg!(windows) => format!("{prefix};{rest}"),
-        Ok(rest) => format!("{prefix}:{rest}"),
-        Err(_) => prefix.into_owned(),
+    let rest = runtime::augmented_path_env();
+    let rest = rest.to_string_lossy();
+    if rest.is_empty() {
+        return prefix.into_owned();
+    }
+    if cfg!(windows) {
+        format!("{prefix};{rest}")
+    } else {
+        format!("{prefix}:{rest}")
     }
 }
 

@@ -11,6 +11,7 @@ import { cliMcpDisplay } from "../domain/cli-catalog";
 import { t } from "../i18n";
 import { mcpBrandFallbackColor, mcpBrandIconUrl, mcpBrandInitial } from "./mcp-brand-icon";
 import { argsToText, detectedNeedsAuth, emptyMcpInput, jsonToMcpInputs, mcpInputToJson, parseArgsText } from "./mcp-json";
+import { mcpProbeErrorKey } from "./mcp-probe-error";
 import { mcpToolsCaption } from "./mcp-tools-caption";
 import { highlightParts } from "./resource-text";
 import { useAppStore } from "../stores/app";
@@ -167,7 +168,7 @@ async function openEdit(item: GlobalResource) {
     snapshot.value = JSON.stringify({ form: { ...form }, argsText: argsText.value });
     editor.value = true;
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -216,7 +217,7 @@ async function remove(item: GlobalResource) {
   try {
     await store.deleteMcp(item.name, item.owner);
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -237,7 +238,7 @@ async function transferMcp(item: GlobalResource, targetOwner: unknown, copy: boo
   try {
     await store.transferResource(item.id, String(targetOwner), copy);
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -247,12 +248,26 @@ function authorizeLabel(item: GlobalResource) {
   return t("mcp.authorize");
 }
 
+function alertError(cause: unknown) {
+  window.alert(friendlyError(cause instanceof Error ? cause.message : String(cause)));
+}
+
+function friendlyError(raw: string): string {
+  const key = mcpProbeErrorKey(raw);
+  return key ? t(key) : (raw.trim() || t("mcp.error.generic"));
+}
+
+function alertProbeFailure(probe: McpProbe) {
+  if (!probe.error) return;
+  window.alert(friendlyError(probe.error));
+}
+
 async function authorize(item: GlobalResource) {
   authorizing.value = item.id;
   try {
     await store.authorizeMcp(item.name, item.owner);
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   } finally {
     authorizing.value = "";
   }
@@ -263,7 +278,7 @@ async function toggle(item: GlobalResource, event: Event) {
   try {
     await store.setMcpEnabled(item.name, enabled, item.owner);
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -278,11 +293,15 @@ async function probe(item: GlobalResource) {
   }
   try {
     const result = await mcpTools.probeOne(item);
-    if (result && toolsDialog.value?.item.id === item.id) {
+    if (!result) return;
+    if (result.error && !result.tools.length) {
+      alertProbeFailure(result);
+    }
+    if (toolsDialog.value?.item.id === item.id) {
       toolsDialog.value = { item, probe: result };
     }
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -314,15 +333,23 @@ async function openTools(item: GlobalResource) {
   }
   const cached = mcpTools.probes[item.id];
   if (cached && (cached.ok || cached.tools.length || cached.error)) {
+    if (cached.error && !cached.tools.length) {
+      alertProbeFailure(cached);
+      return;
+    }
     toolsDialog.value = { item, probe: cached };
     return;
   }
   try {
     const probeResult = await mcpTools.probeOne(item);
     if (!probeResult) return;
+    if (probeResult.error && !probeResult.tools.length) {
+      alertProbeFailure(probeResult);
+      return;
+    }
     toolsDialog.value = { item, probe: probeResult };
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -342,7 +369,7 @@ async function openConfig(item: GlobalResource) {
   try {
     await backend.revealResource(item.id);
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -359,7 +386,7 @@ async function installCatalog(item: CatalogItem, owner = "multara") {
   try {
     await store.installMcp(item.name, item.install, owner);
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    alertError(cause);
   }
 }
 
@@ -396,7 +423,7 @@ async function onMenu(id: string) {
     try {
       await store.signOutMcp(item.name);
     } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : String(cause));
+      alertError(cause);
     }
   }
   if (id === "delete") await remove(item);
@@ -656,12 +683,12 @@ async function authorizeForm() {
             :style="{ background: mcpBrandFallbackColor(probeDialog.name) }"
             aria-hidden="true"
           >{{ mcpBrandInitial(probeDialog.name) }}</span>
-          <h2>{{ t("mcp.probeTitle", { name: probeDialog.name }) }}</h2>
+          <h2>{{ t("mcp.probeTitle") }}</h2>
         </div>
         <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="probeDialog = null"><X :size="16" /></UiButton>
       </header>
       <template v-if="mcpTools.probes[probeDialog.id]">
-        <p v-if="mcpTools.probes[probeDialog.id].error" class="form-error">{{ mcpTools.probes[probeDialog.id].error }}</p>
+        <p v-if="mcpTools.probes[probeDialog.id].error" class="form-error">{{ friendlyError(mcpTools.probes[probeDialog.id].error) }}</p>
         <p v-else class="mcp-probe-summary">
           {{ mcpTools.probes[probeDialog.id].serverName }} {{ mcpTools.probes[probeDialog.id].serverVersion }} · {{ mcpTools.probes[probeDialog.id].durationMs }}ms
         </p>
@@ -701,11 +728,11 @@ async function authorizeForm() {
             :style="{ background: mcpBrandFallbackColor(toolsDialog.item.name) }"
             aria-hidden="true"
           >{{ mcpBrandInitial(toolsDialog.item.name) }}</span>
-          <h2>{{ t("mcp.toolsTitle", { name: toolsDialog.item.name }) }}</h2>
+          <h2>{{ toolsDialog.probe.error ? t("mcp.toolsFailedTitle") : t("mcp.toolsTitle") }}</h2>
         </div>
         <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="toolsDialog = null"><X :size="16" /></UiButton>
       </header>
-      <p v-if="toolsDialog.probe.error" class="form-error">{{ toolsDialog.probe.error }}</p>
+      <p v-if="toolsDialog.probe.error" class="form-error">{{ friendlyError(toolsDialog.probe.error) }}</p>
       <ul v-else-if="toolsDialog.probe.tools.length" class="mcp-tools-list">
         <li v-for="tool in toolsDialog.probe.tools" :key="tool.name">
           <strong>{{ tool.title || tool.name }}</strong>

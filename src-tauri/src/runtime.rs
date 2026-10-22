@@ -750,6 +750,23 @@ fn resolve_from_login_path(command: &str) -> Option<PathBuf> {
     which_in_dirs(command, &supplemental_path_dirs())
 }
 
+/// PATH for child processes launched from a GUI app: login-shell / registry dirs
+/// plus the process PATH, so tools like `npx` resolve the same as in a terminal.
+pub fn augmented_path_env() -> std::ffi::OsString {
+    let mut dirs = supplemental_path_dirs();
+    if let Some(path) = std::env::var_os("PATH") {
+        for part in std::env::split_paths(&path) {
+            if part.as_os_str().is_empty() {
+                continue;
+            }
+            if !dirs.iter().any(|dir| dir == &part) {
+                dirs.push(part);
+            }
+        }
+    }
+    std::env::join_paths(&dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
 fn which_in_dirs(command: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     if dirs.is_empty() {
         return None;
@@ -1094,6 +1111,17 @@ mod tests {
             "C:\\tools\\bin;%MISSING%"
         );
         std::env::remove_var("MULTARA_PATH_PROBE");
+    }
+
+    #[test]
+    fn augmented_path_env_includes_supplemental_dirs() {
+        let dir = std::env::temp_dir().join(format!("multara-aug-path-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        *SUPPLEMENTAL_PATH_OVERRIDE.lock().unwrap() = Some(vec![dir.clone()]);
+        let path = super::augmented_path_env();
+        *SUPPLEMENTAL_PATH_OVERRIDE.lock().unwrap() = None;
+        let dirs: Vec<_> = std::env::split_paths(&path).collect();
+        assert!(dirs.iter().any(|entry| entry == &dir));
     }
 
     #[test]
