@@ -270,7 +270,7 @@ const catalog: MessageCatalog = {
   "settings.fileIconTheme": "文件图标主题",
   "settings.fileIconThemeHint": "文件树、标签页和变更列表里的文件图标。",
   "settings.runTimeout": "任务超时",
-  "settings.runTimeoutHint": "单次运行最长等待时间，单位是分钟。",
+  "settings.runTimeoutHint": "单次运行最长等待时间（分钟）。填 0 表示不限制，适合长任务。",
   "settings.permission": "权限确认",
   "settings.permissionHint": "默认自动批准工具。选择「每次确认」时，智能体会在改文件或执行命令前停下来等你点同意。",
   "settings.permission.bypass": "自动批准",

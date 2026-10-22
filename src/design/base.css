@@ -168,8 +168,8 @@ pre {
 }
 
 .vs-scroll[data-overlay-scroll] {
-  /* transform 把内部 fixed 滑轨关进宿主 stacking，避免 z-index 逃出盖住提问卡等 */
   position: relative;
+  /* 隔离 stacking，避免滑块 z-index 逃出盖住提问卡等 */
   transform: translateZ(0);
   scrollbar-width: none;
 }
@@ -179,14 +179,20 @@ pre {
   display: none;
 }
 
-/* fixed + 宿主 transform：相对宿主贴边，不跟 scrollLeft 走，也不撑开 scrollWidth */
+/*
+ * absolute（勿用 fixed）：WebKit 在 overflow:auto + transform 宿主上会把 fixed 子节点
+ * 跟着内容滚走。轨道锚在内容角上，JS 用 translate3d(scrollLeft, scrollTop) 贴齐可视区，
+ * 避免改 top/left 撑开 scrollWidth。
+ */
 .vs-overlay-scrollbar {
-  position: fixed;
+  position: absolute;
   z-index: var(--z-overlay-scroll);
   flex: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity 800ms linear;
+  contain: strict;
+  will-change: transform;
 }
 .vs-overlay-scrollbar.is-visible.is-needed {
   opacity: 1;

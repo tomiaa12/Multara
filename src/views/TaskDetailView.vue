@@ -112,17 +112,30 @@ watch(
 const checklistDraft = ref("");
 const prDraft = ref("");
 
+/** WebView 对 field-sizing 支持不稳，按内容撑开，避免多行描述被 overflow:hidden 裁掉。 */
+function fitDescription() {
+  const el = descriptionEl.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 watch(task, (value) => {
   if (!value) return;
   if (document.activeElement !== titleEl.value) titleDraft.value = value.title;
   if (document.activeElement !== descriptionEl.value) descriptionDraft.value = value.description;
   prDraft.value = value.prUrl ?? "";
+  void nextTick(fitDescription);
   void backend.listTaskRuns(value.id).then((items) => {
     runs.value = items;
   }).catch(() => {
     runs.value = [];
   });
 }, { immediate: true });
+
+watch(descriptionDraft, () => {
+  void nextTick(fitDescription);
+});
 
 function formatDate(iso: string) {
   const date = new Date(iso);
@@ -319,6 +332,8 @@ function openLatestRunLog() {
               v-model="descriptionDraft"
               class="task-issue-description"
               placeholder="添加描述..."
+              rows="1"
+              @input="fitDescription"
               @blur="saveDescription"
             />
             <section class="task-feed">

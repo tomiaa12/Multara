@@ -1,8 +1,9 @@
 /**
  * VS Code 风格悬浮滚动条：原生 overflow 继续负责滚动，
- * 系统滚动条藏掉，滑块 fixed 叠在宿主上（宿主 transform 关进本地 stacking），
- * 不占布局、不撑开 scrollWidth；层级用 --z-overlay-scroll。
+ * 系统滚动条藏掉，滑块 absolute 叠在宿主上（宿主 transform 关进本地 stacking），
+ * 每帧用 scrollTop/Left 贴齐可视区；层级用 --z-overlay-scroll。
  *
+ * 不用 position:fixed：WebKit 在 overflow:auto + transform 上会把 fixed 子节点跟着内容滚走。
  * 不包裹节点（Vue 会丢 vnode），滑块作为宿主最后一个子节点插入。
  * contenteditable / 表单控件跳过，避免滑块进文档内容。
  */
@@ -27,6 +28,10 @@ export interface OverlaySliderMetrics {
   size: number;
   position: number;
   ratio: number;
+}
+
+function isScrollableOverflow(value: string): boolean {
+  return value === "auto" || value === "scroll" || value === "overlay";
 }
 
 /**
@@ -217,53 +222,74 @@ class OverlayScroll {
     const top = this.el.scrollTop;
     const left = this.el.scrollLeft;
 
+    // 仅 auto/scroll 才真能滚；visible 时 scrollWidth 被宽内容撑大也会误画横条
+    const style = getComputedStyle(this.el);
+    const allowVertical = isScrollableOverflow(style.overflowY);
+    const allowHorizontal = isScrollableOverflow(style.overflowX);
     // 行程必须按 client 尺寸算；轨道可因另一轴预留角落而更短，不能拿轨道长当 visible
-    this.vertical.metrics = overlaySliderMetrics(visH, totalH, top);
+    this.vertical.metrics = allowVertical
+      ? overlaySliderMetrics(visH, totalH, top)
+      : { needed: false, size: 0, position: 0, ratio: 0 };
     const hTrack = this.vertical.metrics.needed ? Math.max(0, visW - this.barSize) : visW;
-    // overflow-x: clip/hidden 时 scrollWidth 仍可能偏大，但不应出现横向滑块
-    const overflowX = getComputedStyle(this.el).overflowX;
-    const allowHorizontal = overflowX !== "hidden" && overflowX !== "clip";
     this.horizontal.metrics = allowHorizontal
       ? overlaySliderMetrics(visW, totalW, left, hTrack)
       : { needed: false, size: 0, position: 0, ratio: 0 };
 
-    // 宿主有 transform 时 fixed 相对宿主贴边（勿再用 scrollLeft/Top，会撑开可滚范围）
+    // 轨道锚在内容原点角上，用 transform 跟 scroll 平移（不影响 scrollWidth，避免横条）
     this.layoutBar("vertical", this.vertical, {
-      top: 0,
-      left: Math.max(0, visW - this.barSize),
+      anchor: "top-right",
       width: this.barSize,
       height: visH,
+      translateX: left,
+      translateY: top,
     });
     this.layoutBar("horizontal", this.horizontal, {
-      top: Math.max(0, visH - this.barSize),
-      left: 0,
+      anchor: "bottom-left",
       width: hTrack,
       height: this.barSize,
+      translateX: left,
+      translateY: top,
     });
   }
 
   private layoutBar(
     axis: OverlayAxis,
     state: AxisState,
-    box: { top: number; left: number; width: number; height: number },
+    box: {
+      anchor: "top-right" | "bottom-left";
+      width: number;
+      height: number;
+      translateX: number;
+      translateY: number;
+    },
   ): void {
     state.bar.classList.toggle("is-needed", state.metrics.needed);
     if (!state.metrics.needed) return;
-    state.bar.style.top = `${box.top}px`;
-    state.bar.style.left = `${box.left}px`;
     state.bar.style.width = `${box.width}px`;
     state.bar.style.height = `${box.height}px`;
+    state.bar.style.transform = `translate3d(${box.translateX}px, ${box.translateY}px, 0)`;
+    if (box.anchor === "top-right") {
+      state.bar.style.top = "0";
+      state.bar.style.right = "0";
+      state.bar.style.left = "auto";
+      state.bar.style.bottom = "auto";
+    } else {
+      state.bar.style.left = "0";
+      state.bar.style.bottom = "0";
+      state.bar.style.top = "auto";
+      state.bar.style.right = "auto";
+    }
     if (axis === "vertical") {
       state.slider.style.height = `${state.metrics.size}px`;
       state.slider.style.top = `${state.metrics.position}px`;
       state.slider.style.left = "";
       state.slider.style.width = "";
-    } else {
-      state.slider.style.width = `${state.metrics.size}px`;
-      state.slider.style.left = `${state.metrics.position}px`;
-      state.slider.style.top = "";
-      state.slider.style.height = "";
+      return;
     }
+    state.slider.style.width = `${state.metrics.size}px`;
+    state.slider.style.left = `${state.metrics.position}px`;
+    state.slider.style.top = "";
+    state.slider.style.height = "";
   }
 
   private onTrackPointerDown(axis: OverlayAxis, event: PointerEvent): void {

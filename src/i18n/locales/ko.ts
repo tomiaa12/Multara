@@ -270,7 +270,7 @@ const catalog: MessageCatalog = {
   "settings.fileIconTheme": "File icon theme",
   "settings.fileIconThemeHint": "Icons in the file tree, tabs, and change lists.",
   "settings.runTimeout": "Run timeout",
-  "settings.runTimeoutHint": "Maximum wait for a single run, in minutes.",
+  "settings.runTimeoutHint": "Max minutes for one run. Use 0 for no limit (long tasks).",
   "settings.permission": "Permission prompts",
   "settings.permissionHint": "Tools are auto-approved by default. With “Ask every time”, the agent pauses before editing files or running commands.",
   "settings.permission.bypass": "Auto-approve",

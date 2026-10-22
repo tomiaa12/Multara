@@ -362,6 +362,15 @@ button.nav-item,
 .main-content:has(.settings-shell) {
   overflow: hidden;
 }
+/* 自管滚动的页面：把高度链接到根节点，避免内容撑高 main 却滚不动，外层滑块卡住 */
+.main-content:has(.task-issue) > .task-issue,
+.main-content:has(.tasks-page) > .tasks-page,
+.main-content:has(.inbox-page) > .inbox-page,
+.main-content:has(.workbench) > .workbench {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
 
 /* Statusbar */
 .statusbar {

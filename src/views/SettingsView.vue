@@ -64,7 +64,7 @@ const form = reactive({
   updateProxy: "",
   formatOnSave: false,
   stickyScroll: true,
-  runTimeoutMinutes: 30,
+  runTimeoutMinutes: 0,
   permissionMode: "bypass",
   webhookPort: 43127,
   branchGenMode: GEN_MODE_AGENT,
@@ -160,7 +160,7 @@ watch(
     setUpdateProxy(form.updateProxy);
     form.formatOnSave = settings.formatOnSave === "true";
     form.stickyScroll = settings.stickyScroll !== "false";
-    form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 30);
+    form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 0);
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
     form.webhookPort = Number(settings.webhookPort ?? 43127);
     form.branchGenMode = normalizeGenMode(settings.branchGenMode);
@@ -408,7 +408,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.runTimeout") }}</strong><p>{{ t("settings.runTimeoutHint") }}</p></div>
-            <UiInput v-model.number="form.runTimeoutMinutes" type="number" min="1" max="1440" />
+            <UiInput v-model.number="form.runTimeoutMinutes" type="number" min="0" max="1440" />
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.permission") }}</strong><p>{{ t("settings.permissionHint") }}</p></div>

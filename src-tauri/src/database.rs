@@ -437,22 +437,78 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
 /// Runs only when the desktop app starts. CLI connections must not call this:
 /// it would mark a live run as failed while the agent process is still going.
 pub(crate) fn recover_interrupted_runs(db: &Connection) -> rusqlite::Result<()> {
-    db.execute(
-        "UPDATE agent_runs SET status = 'failed' WHERE status = 'running'",
-        [],
-    )?;
+    let now = Utc::now().to_rfc3339();
+    let interrupted: Vec<(String, String, String)> = {
+        let mut statement = db.prepare(
+            "SELECT id, session_id, COALESCE(agent_id, '') FROM agent_runs WHERE status = 'running'",
+        )?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+    let reason = "Multara 退出时这次运行还没写完，已中断。";
+    for (run_id, session_id, agent_id) in interrupted {
+        // 先把已流式落库的 run_events 收成 messages，否则重启后任务详情只剩标题/描述。
+        let text = salvage_run_text(db, &run_id).unwrap_or_default();
+        let content = if text.trim().is_empty() {
+            reason.to_string()
+        } else {
+            text
+        };
+        let _ = db.execute(
+            "INSERT INTO messages
+             (id, session_id, role, content, run_id, agent_id, audience_type,
+              failure_reason, message_kind, quick_actions_json, created_at)
+             VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, 'user', ?6, 'message', '[]', ?7)
+             ON CONFLICT(id) DO UPDATE SET
+               content=excluded.content,
+               failure_reason=excluded.failure_reason",
+            params![
+                format!("run:{run_id}"),
+                session_id,
+                content,
+                run_id,
+                agent_id,
+                reason,
+                now
+            ],
+        );
+        db.execute(
+            "UPDATE agent_runs SET status='failed', completed_at=?1
+             WHERE id=?2 AND status='running'",
+            params![now, run_id],
+        )?;
+        let _ = crate::ops::task::sync_from_run(db, &session_id, "failed", &now);
+    }
     db.execute(
         "UPDATE agent_runs SET status='failed', completed_at=?1
          WHERE status='queued' AND session_id LIKE 'automation-run:%'",
-        [Utc::now().to_rfc3339()],
+        [&now],
     )?;
     db.execute(
         "UPDATE automation_runs SET status='failed', completed_at=?1,
          reason_code='app_restarted', failure_reason='Multara 在任务完成前退出'
          WHERE status IN ('pending', 'running')",
-        [Utc::now().to_rfc3339()],
+        [&now],
     )?;
     Ok(())
+}
+
+fn salvage_run_text(db: &Connection, run_id: &str) -> rusqlite::Result<String> {
+    let mut statement = db.prepare(
+        "SELECT content FROM run_events
+         WHERE run_id=?1 AND event_type='text' AND content IS NOT NULL AND trim(content) != ''
+         ORDER BY seq",
+    )?;
+    let parts = statement
+        .query_map([run_id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    // 流式 text 多为替换而非追加；拼起来会碎句重复，取最长一条更接近最终可见正文。
+    Ok(parts
+        .into_iter()
+        .max_by_key(|text| text.chars().count())
+        .unwrap_or_default())
 }
 
 /// 旧数据只有按消息存的快照。每个仍待审阅的文件取最早一份，作为跟文件走的 baseline。
@@ -682,7 +738,7 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
         ("isolationRoot", "~/.multara"),
         ("autoUpdate", "true"),
         ("shareDiagnostics", "false"),
-        ("runTimeoutMinutes", "30"),
+        ("runTimeoutMinutes", "0"),
         ("webhookPort", "43127"),
         ("formatOnSave", "false"),
         ("stickyScroll", "true"),
@@ -690,6 +746,17 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
         db.execute(
             "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?1, ?2)",
             params![key, value],
+        )?;
+    }
+    // 旧默认 30 会掐长任务；一次性迁到 0（不限）。用户之后若再设 30 会保留。
+    let migrated = db.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('migratedRunTimeoutUnlimited', '1')",
+        [],
+    )?;
+    if migrated > 0 {
+        db.execute(
+            "UPDATE app_settings SET value = '0' WHERE key = 'runTimeoutMinutes' AND value = '30'",
+            [],
         )?;
     }
     let runtime_id = crate::runtime::seed_runtime_id();
