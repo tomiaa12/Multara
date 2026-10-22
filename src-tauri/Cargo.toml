@@ -1,6 +1,6 @@
 [package]
 name = "multara"
-version = "1.0.3"
+version = "1.0.4"
 description = "Local-first multi-agent development workspace"
 authors = ["Multara"]
 edition = "2021"
@@ -34,7 +34,8 @@ sha2 = "0.11.0"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+# system-proxy：自动读 Windows/macOS 系统代理（Clash 等开「系统代理」即可，勿写死端口）
+tauri-plugin-updater = { version = "2", default-features = true, features = ["system-proxy"] }
 tauri-plugin-window-state = "2"
 tempfile = "3.27.0"
 tiny_http = "0.12.0"

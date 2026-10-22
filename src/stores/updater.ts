@@ -4,8 +4,10 @@ import {
   checkForUpdate,
   installPendingUpdate,
   prepareUpdateOnLaunch,
+  setUpdateProgressListener,
   setUpdateReadyListener,
   type AppUpdate,
+  type UpdateProgress,
 } from "../services/update";
 
 const STARTUP_CHECK_DELAY_MS = 5_000;
@@ -16,6 +18,7 @@ export const useUpdaterStore = defineStore("updater", () => {
   const installing = ref(false);
   const dismissed = ref(false);
   const lastChecked = ref<AppUpdate | null>(null);
+  const downloadProgress = ref<UpdateProgress | null>(null);
 
   let automaticUpdates = true;
   let startupTimer = 0;
@@ -33,7 +36,12 @@ export const useUpdaterStore = defineStore("updater", () => {
   }
 
   setUpdateReadyListener((version) => {
+    downloadProgress.value = null;
     showReady(version);
+  });
+
+  setUpdateProgressListener((progress) => {
+    downloadProgress.value = progress;
   });
 
   function cancelBackgroundChecks() {
@@ -132,6 +140,7 @@ export const useUpdaterStore = defineStore("updater", () => {
     installing,
     dismissed,
     lastChecked,
+    downloadProgress,
     boot,
     setAutomaticUpdates,
     checkNow,
