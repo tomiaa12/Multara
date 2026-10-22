@@ -2371,6 +2371,7 @@ pub fn save_settings(
             "gitExecutable",
             "isolationRoot",
             "autoUpdate",
+            "updateProxy",
             "shareDiagnostics",
             "runTimeoutMinutes",
             "webhookPort",
@@ -4916,6 +4917,20 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
     if let Some(key) = settings.get("genApiKey") {
         if key.chars().count() > 500 {
             return Err("API Key 不能超过 500 个字符".to_string());
+        }
+    }
+    if let Some(proxy) = settings.get("updateProxy") {
+        let proxy = proxy.trim();
+        if !proxy.is_empty() {
+            if proxy.chars().count() > 300 {
+                return Err("更新代理地址不能超过 300 个字符".to_string());
+            }
+            let Ok(url) = url::Url::parse(proxy) else {
+                return Err("更新代理必须是合法 URL，例如 http://127.0.0.1:7890".to_string());
+            };
+            if !matches!(url.scheme(), "http" | "https" | "socks5" | "socks5h") {
+                return Err("更新代理只支持 http、https 或 socks5".to_string());
+            }
         }
     }
     Ok(())

@@ -1,8 +1,24 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type Update } from "@tauri-apps/plugin-updater";
+import { check, type CheckOptions, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 
 const PENDING_KEY = "multara.pendingUpdateVersion";
+
+/** 仅用于 updater 的 check/download；空字符串表示走系统代理（reqwest system-proxy）。 */
+let updateProxyUrl = "";
+
+export function setUpdateProxy(proxy: string): void {
+  updateProxyUrl = proxy.trim();
+}
+
+export function getUpdateProxy(): string {
+  return updateProxyUrl;
+}
+
+function checkOptions(): CheckOptions | undefined {
+  if (!updateProxyUrl) return undefined;
+  return { proxy: updateProxyUrl };
+}
 
 export type AppUpdate = {
   version: string;
@@ -25,6 +41,7 @@ let pendingDownloaded = false;
 let backgroundDownload: Promise<void> | null = null;
 let inFlightCheck: Promise<Update | null> | null = null;
 let readyListener: ((version: string) => void) | null = null;
+let progressListener: ((progress: UpdateProgress | null) => void) | null = null;
 
 function inTauri() {
   return "__TAURI_INTERNALS__" in window;
@@ -68,21 +85,64 @@ export function setUpdateReadyListener(listener: ((version: string) => void) | n
   readyListener = listener;
 }
 
+export function setUpdateProgressListener(
+  listener: ((progress: UpdateProgress | null) => void) | null,
+): void {
+  progressListener = listener;
+}
+
+function emitProgress(progress: UpdateProgress | null): void {
+  progressListener?.(progress);
+}
+
+/** 累计 DownloadEvent，同时推给全局 listener 与可选回调。 */
+function createProgressTracker(onProgress?: (progress: UpdateProgress) => void) {
+  let downloaded = 0;
+  let total = 0;
+  return (event: DownloadEvent) => {
+    if (event.event === "Started") {
+      total = event.data.contentLength ?? 0;
+      downloaded = 0;
+      const progress = { downloaded, total, percent: 0 };
+      emitProgress(progress);
+      onProgress?.(progress);
+      return;
+    }
+    if (event.event === "Progress") {
+      downloaded += event.data.chunkLength;
+      const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+      const progress = { downloaded, total, percent };
+      emitProgress(progress);
+      onProgress?.(progress);
+      return;
+    }
+    if (event.event === "Finished") {
+      const progress = { downloaded: total || downloaded, total, percent: total > 0 ? 100 : 0 };
+      emitProgress(progress);
+      onProgress?.(progress);
+    }
+  };
+}
+
 function startBackgroundDownload(update: Update): void {
   if (pendingDownloaded || readPendingVersion() === update.version) {
     pendingDownloaded = true;
+    emitProgress(null);
     readyListener?.(update.version);
     return;
   }
   if (backgroundDownload) return;
+  const onChunk = createProgressTracker();
   backgroundDownload = update
-    .download()
+    .download((event) => onChunk(event))
     .then(() => {
       pendingDownloaded = true;
       writePendingVersion(update.version);
+      emitProgress(null);
       readyListener?.(update.version);
     })
     .catch((error) => {
+      emitProgress(null);
       console.error(error);
     })
     .finally(() => {
@@ -92,7 +152,7 @@ function startBackgroundDownload(update: Update): void {
 
 async function checkOnce(): Promise<Update | null> {
   if (inFlightCheck) return inFlightCheck;
-  const task = check()
+  const task = check(checkOptions())
     .catch((error) => {
       console.error(error);
       throw error;
@@ -159,35 +219,14 @@ export async function installPendingUpdate(
   const target = pending ?? (await checkOnce());
   if (!target) throw new Error("没有可用更新");
   pending = target;
-  let downloaded = 0;
-  let total = 0;
-  const report = (event: {
-    event: string;
-    data?: { contentLength?: number; chunkLength?: number };
-  }) => {
-    if (event.event === "Started") {
-      total = event.data?.contentLength ?? 0;
-      downloaded = 0;
-      onProgress?.({ downloaded, total, percent: 0 });
-      return;
-    }
-    if (event.event === "Progress") {
-      downloaded += event.data?.chunkLength ?? 0;
-      const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
-      onProgress?.({ downloaded, total, percent });
-      return;
-    }
-    if (event.event === "Finished") {
-      onProgress?.({ downloaded: total || downloaded, total, percent: total > 0 ? 100 : 0 });
-    }
-  };
   if (pendingDownloaded) {
     await target.install();
   } else {
-    await target.downloadAndInstall((event) => report(event));
+    await target.downloadAndInstall(createProgressTracker(onProgress));
   }
   pendingDownloaded = false;
   clearPendingVersion();
+  emitProgress(null);
   await relaunch();
 }
 
