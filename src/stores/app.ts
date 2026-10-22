@@ -121,7 +121,9 @@ export const useAppStore = defineStore("app", () => {
         mcpTools.refreshInBackground(data.value?.resources.filter((item) => item.kind === "mcp") ?? []);
       });
       // 自动更新：静默检查/下载，下次启动安装（与 multica 同思路）
-      void import("./updater").then(({ useUpdaterStore }) => {
+      void import("./updater").then(async ({ useUpdaterStore }) => {
+        const { setUpdateProxy } = await import("../services/update");
+        setUpdateProxy(data.value?.settings.updateProxy ?? "");
         const autoUpdate = data.value?.settings.autoUpdate !== "false";
         void useUpdaterStore().boot(autoUpdate);
       });

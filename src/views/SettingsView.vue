@@ -11,6 +11,7 @@ import {
   type ExplorerSettings,
 } from "../components/workbench/explorer/explorer-settings";
 import { appVersion } from "../services/backend";
+import { setUpdateProxy } from "../services/update";
 import { useAppStore } from "../stores/app";
 import { useUpdaterStore } from "../stores/updater";
 import {
@@ -60,6 +61,7 @@ const form = reactive({
   gitExecutable: "git",
   isolationRoot: "~/.multara",
   autoUpdate: true,
+  updateProxy: "",
   formatOnSave: false,
   stickyScroll: true,
   runTimeoutMinutes: 30,
@@ -154,6 +156,8 @@ watch(
     form.gitExecutable = settings.gitExecutable ?? "git";
     form.isolationRoot = settings.isolationRoot ?? "~/.multara";
     form.autoUpdate = settings.autoUpdate !== "false";
+    form.updateProxy = settings.updateProxy ?? "";
+    setUpdateProxy(form.updateProxy);
     form.formatOnSave = settings.formatOnSave === "true";
     form.stickyScroll = settings.stickyScroll !== "false";
     form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 30);
@@ -196,6 +200,7 @@ watch(
     form.gitExecutable,
     form.isolationRoot,
     form.autoUpdate,
+    form.updateProxy,
     form.formatOnSave,
     form.stickyScroll,
     form.runTimeoutMinutes,
@@ -235,6 +240,7 @@ function settingsPayload() {
     gitExecutable: form.gitExecutable,
     isolationRoot: form.isolationRoot,
     autoUpdate: String(form.autoUpdate),
+    updateProxy: form.updateProxy.trim(),
     formatOnSave: String(form.formatOnSave),
     stickyScroll: String(form.stickyScroll),
     runTimeoutMinutes: String(form.runTimeoutMinutes),
@@ -290,6 +296,41 @@ watch(
   (enabled) => {
     if (hydrating) return;
     updater.setAutomaticUpdates(enabled);
+  },
+);
+
+watch(
+  () => form.updateProxy,
+  (proxy) => {
+    setUpdateProxy(proxy);
+  },
+);
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+watch(
+  () => updater.downloadProgress,
+  (progress) => {
+    const version = updater.lastChecked?.version;
+    if (!progress || !version) return;
+    message.value = t("settings.updates.downloadProgress", {
+      version,
+      percent: String(progress.percent),
+      downloaded: formatBytes(progress.downloaded),
+      total: progress.total > 0 ? formatBytes(progress.total) : "…",
+    });
+  },
+);
+
+watch(
+  () => updater.readyVersion,
+  (next) => {
+    if (!next) return;
+    message.value = t("settings.updates.ready", { version: next });
   },
 );
 
@@ -521,6 +562,17 @@ onBeforeUnmount(() => {
             <div><strong>{{ t("settings.updates.auto") }}</strong><p>{{ t("settings.updates.autoHint") }}</p></div>
             <UiInput v-model="form.autoUpdate" class="ds-switch" type="checkbox" />
           </label>
+          <div class="settings-row settings-row-stack">
+            <div>
+              <strong>{{ t("settings.updates.proxy") }}</strong>
+              <p>{{ t("settings.updates.proxyHint") }}</p>
+            </div>
+            <UiInput
+              v-model="form.updateProxy"
+              :placeholder="t('settings.updates.proxyPlaceholder')"
+              spellcheck="false"
+            />
+          </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.updates.checkNow") }}</strong><p>{{ t("settings.updates.checkNowHint") }}</p></div>
             <div class="settings-update-actions">
