@@ -120,7 +120,7 @@ export const useAppStore = defineStore("app", () => {
         await mcpTools.hydrate();
         mcpTools.refreshInBackground(data.value?.resources.filter((item) => item.kind === "mcp") ?? []);
       });
-      // 自动更新：静默检查/下载，下次启动安装（与 multica 同思路）
+      // 自动更新：静默检查/下载，下次启动安装
       void import("./updater").then(async ({ useUpdaterStore }) => {
         const { setUpdateProxy } = await import("../services/update");
         setUpdateProxy(data.value?.settings.updateProxy ?? "");
@@ -234,12 +234,14 @@ export const useAppStore = defineStore("app", () => {
           });
         }
       } else if (payload.status === "failed" || payload.status === "stopped") {
-        const content = payload.status === "stopped"
-          ? "任务已停止。"
-          : `任务执行失败：${payload.error ?? "未知错误"}`;
         if (existing) {
-          existing.content = content;
-          existing.failureReason = payload.error;
+          // 停止/失败时保留已流式出来的正文，等下方从数据库刷新；不要先盖成「已停止」。
+          if (payload.status === "failed") {
+            existing.failureReason = payload.error;
+            if (!existing.content.trim()) {
+              existing.content = `任务执行失败：${payload.error ?? "未知错误"}`;
+            }
+          }
         }
       }
       if (existing && payload.elapsedMs != null) {

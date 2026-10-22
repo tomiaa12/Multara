@@ -96,20 +96,20 @@ function submit() {
     />
   </label>
   <label>{{ t("runtime.field.name") }}<UiInput v-model="name" required /></label>
-  <label>{{ t("runtime.field.commandLine") }}
-    <UiInput v-model="commandLine" required :placeholder="spec.command" spellcheck="false" />
-  </label>
-  <p v-if="parsed.ok" class="runtime-command-preview">
-    {{ t("runtime.commandPreview.executable") }} <code>{{ parsed.commandName }}</code>
-    <template v-if="parsed.fixedArgs.length">
-      · {{ t("runtime.commandPreview.args") }} <code>{{ parsed.fixedArgs.join(" ") }}</code>
-    </template>
-  </p>
-  <p v-else-if="commandLine.trim()" class="form-error">{{ t(`runtime.commandError.${parsed.error}`) }}</p>
-  <p v-if="missing" class="ds-alert">{{ t("runtime.commandMissing", { command: missing }) }}</p>
-  <label>{{ t("runtime.field.description") }}<UiTextarea v-model="description" rows="2" /></label>
   <details class="runtime-advanced" :open="advanced" @toggle="advanced = ($event.target as HTMLDetailsElement).open">
     <summary>{{ t("runtime.advanced") }}</summary>
+    <label>{{ t("runtime.field.commandLine") }}
+      <UiInput v-model="commandLine" required :placeholder="spec.command" spellcheck="false" />
+    </label>
+    <p v-if="parsed.ok" class="runtime-command-preview">
+      {{ t("runtime.commandPreview.executable") }} <code>{{ parsed.commandName }}</code>
+      <template v-if="parsed.fixedArgs.length">
+        · {{ t("runtime.commandPreview.args") }} <code>{{ parsed.fixedArgs.join(" ") }}</code>
+      </template>
+    </p>
+    <p v-else-if="commandLine.trim()" class="form-error">{{ t(`runtime.commandError.${parsed.error}`) }}</p>
+    <p v-if="missing" class="ds-alert">{{ t("runtime.commandMissing", { command: missing }) }}</p>
+    <label>{{ t("runtime.field.description") }}<UiTextarea v-model="description" rows="2" /></label>
     <label>{{ t("runtime.field.concurrent") }}
       <UiSelect v-model="maxConcurrent" :options="Array.from({ length: 6 }, (_, index) => ({ value: index + 1, label: String(index + 1) }))" />
     </label>

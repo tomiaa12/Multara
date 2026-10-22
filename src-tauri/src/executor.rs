@@ -589,6 +589,19 @@ pub fn compact_session(app: &AppHandle, session_id: &str) -> Result<String, Stri
 
 pub fn stop(app: &AppHandle, run_id: &str) -> Result<(), String> {
     let (status, run) = load_run(app, run_id)?;
+    if status != "queued" && status != "running" {
+        return Err("任务已经结束".to_string());
+    }
+    // 先标 stopped，让 spawn 收尾时带着已流式输出的正文 finish；不要在这里用空内容覆盖气泡。
+    {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        let _ = db.execute(
+            "UPDATE agent_runs SET status = 'stopped'
+             WHERE id = ?1 AND status IN ('queued', 'running')",
+            [&run.id],
+        );
+    }
     let child = {
         let state = app.state::<AppState>();
         state
@@ -606,18 +619,14 @@ pub fn stop(app: &AppHandle, run_id: &str) -> Result<(), String> {
                 );
                 let _ = stdin.flush();
             }
+            *stdin = None;
         }
         kill_child(&active.child);
     }
-    if status == "queued" || status == "running" {
+    if status == "queued" || child.is_none() {
         finish(app, &run, "stopped", "", None);
-        return Ok(());
     }
-    if child.is_some() {
-        emit(app, &run, "stopped", None, None, None);
-        return Ok(());
-    }
-    Err("任务已经结束".to_string())
+    Ok(())
 }
 
 fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String> {
@@ -1044,10 +1053,6 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 },
             );
         }
-        if abort_stopped(&app, &run, Some(&child)) {
-            finish(&app, &run, "failed", "", Some("运行时已结束".to_string()));
-            return;
-        }
         let output = Arc::new(Mutex::new(String::new()));
         let stderr_output = Arc::new(Mutex::new(String::new()));
         let event_seq = Arc::new(AtomicU32::new(0));
@@ -1093,23 +1098,29 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 Ok(Err(error)) => {
                     kill_child(&child);
                     forget_child(&app, &run.id);
-                    let detail = if is_stopped(&app, &run.id) {
-                        "运行时已结束".to_string()
+                    let text = output.lock().map(|value| value.clone()).unwrap_or_default();
+                    if is_stopped(&app, &run.id) {
+                        finish(&app, &run, "stopped", &text, None);
                     } else {
-                        error
-                    };
-                    finish(&app, &run, "failed", "", Some(detail));
+                        finish(&app, &run, "failed", &text, Some(error));
+                    }
                     return;
                 }
                 Err(_) => {
                     kill_child(&child);
                     forget_child(&app, &run.id);
-                    let detail = if is_stopped(&app, &run.id) {
-                        "运行时已结束".to_string()
+                    let text = output.lock().map(|value| value.clone()).unwrap_or_default();
+                    if is_stopped(&app, &run.id) {
+                        finish(&app, &run, "stopped", &text, None);
                     } else {
-                        "发送任务到运行时的线程异常退出".to_string()
-                    };
-                    finish(&app, &run, "failed", "", Some(detail));
+                        finish(
+                            &app,
+                            &run,
+                            "failed",
+                            &text,
+                            Some("发送任务到运行时的线程异常退出".to_string()),
+                        );
+                    }
                     return;
                 }
             },
@@ -1120,26 +1131,17 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 *slot = Some(stdin);
             }
         }
-        if abort_stopped(&app, &run, Some(&child)) {
-            if let Ok(mut slot) = stdin_slot.lock() {
-                *slot = None;
-            }
-            finish(&app, &run, "failed", "", Some("运行时已结束".to_string()));
-            return;
-        }
 
         let timeout = run_timeout(&app);
         let started = Instant::now();
         let mut timed_out = false;
         let status = loop {
-            if abort_stopped(&app, &run, Some(&child)) {
+            // 用户点停止或 Claude result 关 stdin 后：杀进程，等 try_wait，带着已有正文 finish。
+            if is_stopped(&app, &run.id) {
                 if let Ok(mut slot) = stdin_slot.lock() {
                     *slot = None;
                 }
-                let _ = stdout_reader.map(|reader| reader.join());
-                let _ = stderr_reader.map(|reader| reader.join());
-                finish(&app, &run, "failed", "", Some("运行时已结束".to_string()));
-                return;
+                kill_child(&child);
             }
             let result = child
                 .lock()
@@ -1209,6 +1211,32 @@ fn runtime_stdin_payload(runtime_id: &str, prompt: &str) -> Vec<u8> {
     runtime::stdin_prompt(runtime_id, prompt).unwrap_or_else(|| prompt.as_bytes().to_vec())
 }
 
+/// Claude / CodeBuddy 一轮结束时的 `{"type":"result",...}`。关掉 stdin 后进程才会退出。
+fn is_stream_turn_result(parser_id: &str, line: &str) -> bool {
+    if !matches!(parser_id, "claude" | "codebuddy") {
+        return false;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+        return false;
+    };
+    value.get("type").and_then(Value::as_str) == Some("result")
+}
+
+fn close_active_stdin(app: &AppHandle, run_id: &str) {
+    let state = app.state::<AppState>();
+    let Ok(active) = state.active_runs.lock() else {
+        return;
+    };
+    let Some(stdin_slot) = active.get(run_id).map(|run| run.stdin.clone()) else {
+        return;
+    };
+    drop(active);
+    let Ok(mut stdin) = stdin_slot.lock() else {
+        return;
+    };
+    *stdin = None;
+}
+
 fn truncate_error(value: &str, max_chars: usize) -> String {
     let chars = value.chars().collect::<Vec<_>>();
     if chars.len() <= max_chars {
@@ -1270,6 +1298,10 @@ fn read_stream<R: Read + Send + 'static>(
                             persist_run_usage(&app, &run_id, &acc.finalize());
                         }
                     }
+                }
+                // Claude/CodeBuddy 在 stream-json 下会等 stdin；收到 result 后关掉，否则一直「输入中」。
+                if is_stream_turn_result(&parser_id, &line) {
+                    close_active_stdin(&app, &run_id);
                 }
             }
             for event in normalize_runtime_line(&parser_id, &line, is_error) {
@@ -1560,15 +1592,31 @@ fn save_terminal_message(
     created_at: &str,
 ) {
     let final_text = output.trim();
+    let message_id = format!("run:{}", run.id);
+    let prior = if status == "stopped" && final_text.is_empty() {
+        db.query_row(
+            "SELECT content FROM messages WHERE id = ?1",
+            [&message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty() && text != "运行已停止。")
+    } else {
+        None
+    };
     let message_kind = if status == "completed" && final_text.is_empty() {
         "no_response"
     } else {
         "message"
     };
+    // 停止时保留已经流式出来的正文，不要用「运行已停止。」盖掉。
     let content = match status {
         "completed" if final_text.is_empty() => "运行已完成，但运行时没有返回文本。",
         "completed" => final_text,
-        "stopped" => "运行已停止。",
+        "stopped" if !final_text.is_empty() => final_text,
+        "stopped" => prior.as_deref().unwrap_or("运行已停止。"),
+        _ if !final_text.is_empty() => final_text,
         _ => "这次运行没有成功完成。",
     };
     let quick_actions_json = "[]".to_string();

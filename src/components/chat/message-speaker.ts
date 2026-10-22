@@ -19,6 +19,9 @@ export interface SentTargetInfo {
   avatar: string;
 }
 
+/** 这一轮对话发给谁：同一会话里可先对智能体、再对小队。 */
+export type TurnTarget = { type: "agent" | "squad"; id: string };
+
 function agentById(agents: Agent[], id: string | null | undefined) {
   if (!id) return undefined;
   return agents.find((item) => item.id === id);
@@ -29,12 +32,17 @@ function squadById(squads: Squad[], id: string | null | undefined) {
   return squads.find((item) => item.id === id);
 }
 
-function roleInSquad(agentId: string, squads: Squad[]): SpeakerRole {
-  const squad = squads.find((item) =>
-    item.leaderAgentId === agentId || item.memberAgentIds.includes(agentId),
-  );
+/**
+ * 只在「这一轮目标是该小队」时标队长/队员；单独聊智能体一律「智能体」。
+ * 不再看全局有没有进过别的小队。
+ */
+function roleInSquad(agentId: string, squads: Squad[], squadId: string | null | undefined): SpeakerRole {
+  if (!squadId) return "solo";
+  const squad = squads.find((item) => item.id === squadId);
   if (!squad) return "solo";
-  return squad.leaderAgentId === agentId ? "lead" : "member";
+  if (squad.leaderAgentId === agentId) return "lead";
+  if (squad.memberAgentIds.includes(agentId)) return "member";
+  return "solo";
 }
 
 export interface MentionInfo {
@@ -49,12 +57,56 @@ function roleLabel(kind: SpeakerRole): MentionInfo["roleLabel"] {
   return "智能体";
 }
 
-export function isLeaderAssignment(message: ChatMessage, squads: Squad[]): boolean {
+/**
+ * 解析这条消息所属轮次的发送目标。
+ * 优先消息自身 → 同 turn 用户消息 → 时间线上最近一条带目标的用户消息 → 当前会话目标（直播气泡兜底）。
+ */
+export function resolveTurnTarget(
+  message: ChatMessage,
+  messages: ChatMessage[],
+  session?: ChatSession | null,
+): TurnTarget | null {
+  if (message.targetType && message.targetId) {
+    return { type: message.targetType, id: message.targetId };
+  }
+  if (message.turnId) {
+    const sameTurn = messages.find(
+      (item) =>
+        item.turnId === message.turnId
+        && item.role === "user"
+        && item.targetType
+        && item.targetId,
+    );
+    if (sameTurn?.targetType && sameTurn.targetId) {
+      return { type: sameTurn.targetType, id: sameTurn.targetId };
+    }
+  }
+  const index = messages.findIndex((item) => item.id === message.id);
+  const before = index >= 0 ? messages.slice(0, index) : messages;
+  for (let cursor = before.length - 1; cursor >= 0; cursor -= 1) {
+    const item = before[cursor];
+    if (item?.role === "user" && item.targetType && item.targetId) {
+      return { type: item.targetType, id: item.targetId };
+    }
+  }
+  if (session?.targetType && session.targetId) {
+    return { type: session.targetType, id: session.targetId };
+  }
+  return null;
+}
+
+export function isLeaderAssignment(
+  message: ChatMessage,
+  squads: Squad[],
+  options?: { messages?: ChatMessage[]; session?: ChatSession | null },
+): boolean {
   if (message.role !== "assistant" || !message.agentId || !message.audienceId) return false;
   if (message.audienceType !== "agent") return false;
   if (message.messageKind === "assignment") return true;
-  if (roleInSquad(message.agentId, squads) !== "lead") return false;
-  if (roleInSquad(message.audienceId, squads) !== "member") return false;
+  const target = resolveTurnTarget(message, options?.messages ?? [], options?.session);
+  if (target?.type !== "squad") return false;
+  if (roleInSquad(message.agentId, squads, target.id) !== "lead") return false;
+  if (roleInSquad(message.audienceId, squads, target.id) !== "member") return false;
   const text = message.content.trim();
   return !text
     || text.startsWith("请按刚才的拆分")
@@ -74,11 +126,14 @@ export function speakerForMessage(
   agents: Agent[],
   squads: Squad[],
   fallbackAgentId?: string | null,
+  options?: { messages?: ChatMessage[]; session?: ChatSession | null },
 ): SpeakerInfo | null {
   if (message.role !== "assistant") return null;
   const agentId = message.agentId || fallbackAgentId || "";
   const agent = agentById(agents, agentId);
-  const kind = roleInSquad(agentId, squads);
+  const target = resolveTurnTarget(message, options?.messages ?? [], options?.session);
+  const squadId = target?.type === "squad" ? target.id : null;
+  const kind = roleInSquad(agentId, squads, squadId);
   const audience = agentById(agents, message.audienceId);
   const internal = message.audienceType === "agent" && Boolean(message.audienceId);
   return {
@@ -89,7 +144,7 @@ export function speakerForMessage(
     roleKind: kind,
     internal,
     audienceName: audience?.name ?? null,
-    audienceRole: audience ? roleLabel(roleInSquad(audience.id, squads)) : null,
+    audienceRole: audience ? roleLabel(roleInSquad(audience.id, squads, squadId)) : null,
   };
 }
 

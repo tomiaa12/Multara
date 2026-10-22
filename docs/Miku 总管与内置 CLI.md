@@ -1,6 +1,6 @@
 # 对齐 Miku 总管、内置 CLI 与 Builtin Skills
 
-对照 Multica 的 Mika 模型，把 Multara 从「预置两个专家 + 一个小队」改成「一个产品总管 + 按需 specialist」。智能体跑任务时，平台操作走全局内置 CLI，方法手册走内置 skill。
+把 Multara 从「预置两个专家 + 一个小队」改成「一个产品总管 + 按需 specialist」。智能体跑任务时，平台操作走全局内置 CLI，方法手册走内置 skill。
 
 本文只写要改什么、改哪里、为什么。不在这一步改代码。
 
@@ -20,7 +20,7 @@
 
 ### 明确不抄的部分
 
-Multara 是本地单用户桌面应用，不是 Multica 那种多成员云工作区。下面这些 **不要做**：
+Multara 是本地单用户桌面应用，不是多成员云工作区。下面这些 **不要做**：
 
 - `permission_mode` / invocation target / 工作区成员 @mention
 - HTTP API + 登录 token
@@ -44,15 +44,15 @@ Multara 是本地单用户桌面应用，不是 Multica 那种多成员云工作
 
 概念映射：
 
-| Multica | Multara |
+| 云端协作产品 | Multara |
 |---|---|
 | Issue | Task（要升成一等业务对象，见 §6） |
 | Workspace | 本机这一份 app data / 当前项目 |
 | Agent | Agent，默认只留 Miku |
 | Squad | Squad，功能保留，不预置 |
 | Autopilot | Automation |
-| `multica` CLI | 新的 `multara` CLI |
-| Builtin `multica-*` skills | Builtin `multara-*` skills |
+| 平台 CLI | `multara` CLI |
+| 内置平台 skills | Builtin `multara-*` skills |
 | Mika | **Miku** |
 
 ---
@@ -184,7 +184,7 @@ MULTARA_DB = {app_data_dir}/multara.sqlite3
 CI=1                         # 已有
 ```
 
-SQLite 开 WAL + `busy_timeout`，CLI 和 UI 并发可接受。agent 跑的时候 UI 一定在，不需要再做一个 Multica 式的独立 daemon。
+SQLite 开 WAL + `busy_timeout`，CLI 和 UI 并发可接受。agent 跑的时候 UI 一定在，不需要再做一个独立 daemon。
 
 ### 5.2 命令面（第一期）
 
@@ -329,7 +329,7 @@ brief 的 `## Skills` **只列名字**，并给出上面的绝对路径。Cursor
 
 用户绑定的 skill 两期可以并存：第一期继续全文注入；第二期也改成落盘 + 列名。
 
-各 skill 职责（对照 Multica，按 Multara 对象改）：
+各 skill 职责（按 Multara 对象）：
 
 | Skill | 教什么 |
 |---|---|

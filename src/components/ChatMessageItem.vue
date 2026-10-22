@@ -45,15 +45,25 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
+const sessionMessages = computed(() => store.messages[props.message.sessionId] ?? []);
+const messageSession = computed(() =>
+  store.data?.sessions.find((item) => item.id === props.message.sessionId) ?? store.activeSession,
+);
 const speaker = computed(() =>
-  speakerForMessage(props.message, store.data?.agents ?? [], store.data?.squads ?? []),
+  speakerForMessage(
+    props.message,
+    store.data?.agents ?? [],
+    store.data?.squads ?? [],
+    undefined,
+    { messages: sessionMessages.value, session: messageSession.value },
+  ),
 );
 const sentTarget = computed(() =>
   sentTargetForMessage(
     props.message,
     store.data?.agents ?? [],
     store.data?.squads ?? [],
-    store.activeSession,
+    messageSession.value,
   ),
 );
 

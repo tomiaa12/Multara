@@ -290,7 +290,7 @@ struct Rates {
     cache_write: f64,
 }
 
-/// 单价：美元 / 百万 token。对齐 Multica 公开价目，未知模型估 0。
+/// 单价：美元 / 百万 token。未知模型估 0。
 fn estimate_cost(usage: &TokenUsage, runtime_id: &str) -> f64 {
     let Some(rates) = resolve_pricing(&usage.model, runtime_id) else {
         return 0.0;
