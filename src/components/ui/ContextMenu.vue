@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { nextPopupZIndex } from "./popup-z-index";
 
 export type ContextMenuItem = {
   id?: string;
@@ -25,7 +26,12 @@ const emit = defineEmits<{
 const menuEl = ref<HTMLElement | null>(null);
 const left = ref(props.x);
 const top = ref(props.y);
-const style = computed(() => ({ left: `${left.value}px`, top: `${top.value}px` }));
+const zIndex = ref(nextPopupZIndex());
+const style = computed(() => ({
+  left: `${left.value}px`,
+  top: `${top.value}px`,
+  zIndex: String(zIndex.value),
+}));
 
 function place() {
   const el = menuEl.value;
@@ -57,23 +63,26 @@ watch(() => [props.x, props.y], () => nextTick(place));
 </script>
 
 <template>
-  <div ref="menuEl" class="context-menu" :style="style" role="menu">
-    <template v-for="(item, index) in items" :key="index">
-      <hr v-if="item.type === 'sep'" />
-      <button
-        v-else
-        type="button"
-        role="menuitem"
-        :disabled="item.disabled"
-        @click="item.id && emit('select', item.id)"
-      >
-        <span v-if="item.checked != null" class="context-menu-check" aria-hidden="true">{{ item.checked ? "✓" : "" }}</span>
-        <Codicon v-if="item.icon" :name="item.icon" :size="16" />
-        <span class="context-menu-label">{{ item.label }}</span>
-        <kbd v-if="item.key">{{ item.key }}</kbd>
-      </button>
-    </template>
-  </div>
+  <!-- Teleport 到 body，避免被 UiPane overflow / 容器裁剪（如 SCM 分支 … 菜单） -->
+  <Teleport to="body">
+    <div ref="menuEl" class="context-menu" :style="style" role="menu">
+      <template v-for="(item, index) in items" :key="index">
+        <hr v-if="item.type === 'sep'" />
+        <button
+          v-else
+          type="button"
+          role="menuitem"
+          :disabled="item.disabled"
+          @click="item.id && emit('select', item.id)"
+        >
+          <span v-if="item.checked != null" class="context-menu-check" aria-hidden="true">{{ item.checked ? "✓" : "" }}</span>
+          <Codicon v-if="item.icon" :name="item.icon" :size="16" />
+          <span class="context-menu-label">{{ item.label }}</span>
+          <kbd v-if="item.key">{{ item.key }}</kbd>
+        </button>
+      </template>
+    </div>
+  </Teleport>
 </template>
 
 <style>
