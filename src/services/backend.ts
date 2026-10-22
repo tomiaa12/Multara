@@ -113,7 +113,7 @@ const previewData: BootstrapData = {
     gitExecutable: "git",
     isolationRoot: "~/.multara",
     autoUpdate: "true",
-    runTimeoutMinutes: "30",
+    runTimeoutMinutes: "0",
     webhookPort: "43127",
     formatOnSave: "false",
     stickyScroll: "true",
