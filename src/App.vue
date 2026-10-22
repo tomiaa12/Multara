@@ -419,14 +419,15 @@ onBeforeUnmount(() => {
       <div v-if="store.loading" class="empty">{{ t("app.loading") }}</div>
       <div v-else-if="store.error" class="error-card">{{ store.error }}</div>
       <RouterView v-else v-slot="{ Component }">
-        <keep-alive include="ProjectWorkspaceView,DashboardView">
+        <!-- 按 path 缓存页面，切侧栏菜单不丢滚动/表单；上限防止无限涨内存 -->
+        <keep-alive :max="24">
           <component :is="Component" :key="route.path" />
         </keep-alive>
       </RouterView>
     </main>
 
-    <!-- 需求列表与需求工作台自带聊天，不叠浮动聊天；样式预览页内嵌了完整聊天面板，同样不叠 -->
-    <FloatingChat v-if="!route.path.startsWith('/projects') && route.path !== '/preview'" />
+    <!-- 需求工作台/预览自带聊天：只隐藏不销毁，避免切菜单后再开气泡回到最早提问 -->
+    <FloatingChat :hidden="route.path.startsWith('/projects') || route.path === '/preview'" />
     <UpdateNotification />
     <UnsavedChangesDialog
       v-if="unsavedPrompt"

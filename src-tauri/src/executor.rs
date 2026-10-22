@@ -2309,6 +2309,11 @@ fn normalize_runtime_line(runtime_id: &str, line: &str, is_error: bool) -> Vec<N
             .into_iter()
             .collect();
     }
+    // Codex 在非 TTY 下（Multara 把 stdin 接到 /dev/null）会往 stdout 打这行进度，
+    // 不是模型回复；当成 text 会冒充成「报错后再出一堆身份说明」。
+    if runtime_id == "codex" && is_codex_cli_noise(line) {
+        return Vec::new();
+    }
     let Ok(mut value) = serde_json::from_str::<Value>(line) else {
         return (!line.trim().is_empty())
             .then(|| normalized("text", Some(truncate_and_redact(line, 64_000))))
@@ -2591,6 +2596,12 @@ fn json_preview(value: &Value) -> String {
         Value::String(text) => text.clone(),
         other => other.to_string(),
     }
+}
+
+fn is_codex_cli_noise(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.eq_ignore_ascii_case("Reading additional input from stdin...")
+        || trimmed.starts_with("Reading additional input from stdin")
 }
 
 fn normalize_codex(value: &Value) -> Vec<NormalizedEvent> {
@@ -3281,6 +3292,12 @@ mod tests {
         );
         assert_eq!(codex[0].content.as_deref(), Some("ok"));
         assert!(codex[0].replaces_final_text);
+        assert!(normalize_runtime_line(
+            "codex",
+            "Reading additional input from stdin...",
+            false,
+        )
+        .is_empty());
         let qwen = normalize_runtime_line(
             "qwen",
             r#"{"type":"tool_result","call_id":"q1","output":"saved"}"#,
