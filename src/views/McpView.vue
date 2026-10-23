@@ -653,7 +653,7 @@ async function authorizeForm() {
     </div>
   </div>
 
-  <div v-if="editor" class="modal-backdrop" @click.self="editor = false">
+  <UiModal v-if="editor" @click.self="editor = false">
     <form class="modal domain-modal" @submit.prevent="save">
       <header class="modal-heading">
         <h2>{{ form.previousName ? t("mcp.edit") : t("mcp.new") }}</h2>
@@ -715,8 +715,8 @@ async function authorizeForm() {
         <UiButton variant="primary" type="submit" :class="{ 'is-loading': busy }" :disabled="busy">{{ busy ? t("common.saving") : t("common.save") }}</UiButton>
       </div>
     </form>
-  </div>
-  <div v-if="probeDialog" class="modal-backdrop" @click.self="probeDialog = null">
+  </UiModal>
+  <UiModal v-if="probeDialog" @click.self="probeDialog = null">
     <div class="modal domain-modal mcp-probe-modal" role="dialog" aria-modal="true">
       <header class="modal-heading">
         <div class="mcp-tools-modal-title">
@@ -765,8 +765,8 @@ async function authorizeForm() {
         <UiButton @click="probeDialog = null">{{ t("common.close") }}</UiButton>
       </div>
     </div>
-  </div>
-  <div v-if="toolsDialog" class="modal-backdrop" @click.self="toolsDialog = null">
+  </UiModal>
+  <UiModal v-if="toolsDialog" @click.self="toolsDialog = null">
     <div class="modal domain-modal mcp-tools-modal" role="dialog" aria-modal="true">
       <header class="modal-heading">
         <div class="mcp-tools-modal-title">
@@ -807,7 +807,7 @@ async function authorizeForm() {
         <UiButton variant="primary" @click="toolsDialog = null">{{ t("common.close") }}</UiButton>
       </div>
     </div>
-  </div>
+  </UiModal>
   <CatalogBrowse v-if="browsing" kind="mcp" @close="browsing = false" @install="installCatalog" />
   <ContextMenu
     v-if="menu"

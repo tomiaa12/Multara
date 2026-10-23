@@ -172,7 +172,7 @@ const canSubmit = computed(() => {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="!busy && emit('close')">
+  <UiModal @click.self="!busy && emit('close')">
     <form
       class="modal domain-modal skill-create-dialog"
       @submit.prevent="submit"
@@ -265,6 +265,6 @@ const canSubmit = computed(() => {
         </UiButton>
       </div>
     </form>
-  </div>
+  </UiModal>
   <CatalogBrowse v-if="browsing" kind="skill" @close="browsing = false" @install="installCatalog" />
 </template>

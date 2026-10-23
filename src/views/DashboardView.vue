@@ -604,9 +604,8 @@ async function removeProject(projectId: string, projectName: string) {
       @close="workspaceMenu = null"
     />
 
-    <div
+    <UiModal
       v-if="showCreate"
-      class="modal-backdrop"
       @click.self="closeEditor"
     >
       <form class="modal" @submit.prevent="saveProject">
@@ -651,7 +650,7 @@ async function removeProject(projectId: string, projectName: string) {
           >{{ saveLabel }}</UiButton>
         </div>
       </form>
-    </div>
+    </UiModal>
 
     <TagManageDialog
       v-if="showManage"

@@ -5822,9 +5822,8 @@ defineExpose({
       />
     </aside>
 
-    <div
+    <UiModal
       v-if="filePick"
-      class="modal-backdrop"
       @click.self="filePick = null"
     >
       <div
@@ -5849,7 +5848,7 @@ defineExpose({
           </button>
         </div>
       </div>
-    </div>
+    </UiModal>
     <AddWorkspaceModal
       v-if="showAddWorkspaceModal && projectId"
       :project-id="projectId"

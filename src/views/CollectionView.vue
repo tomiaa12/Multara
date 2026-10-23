@@ -308,7 +308,7 @@ function runtimeSubtitle(runtime: Runtime) {
           <span>{{ t("runtime.col.status") }}</span>
           <span>{{ t("runtime.col.path") }}</span>
           <span>{{ t("runtime.col.concurrent") }}</span>
-          <span />
+          <span>{{ t("common.actions") }}</span>
         </div>
         <div v-for="runtime in visibleRuntimes" :key="runtime.id" class="agent-directory-row">
           <span class="agent-directory-identity">
@@ -318,7 +318,7 @@ function runtimeSubtitle(runtime: Runtime) {
               <small>{{ runtimeSubtitle(runtime) }}</small>
             </span>
           </span>
-          <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'idle' : 'offline'">
+          <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'online' : 'offline'">
             {{ runtime.status === "online" ? t("runtime.online") : t("runtime.offline") }}
           </span>
           <code class="runtime-directory-path" :title="runtime.path ?? runtime.command">
@@ -478,7 +478,7 @@ function runtimeSubtitle(runtime: Runtime) {
       <p>{{ t("collection.skeletonHint") }}</p>
     </section>
 
-    <div v-if="editor" class="modal-backdrop" @click.self="editor = ''">
+    <UiModal v-if="editor" @click.self="editor = ''">
       <form class="modal domain-modal" @submit.prevent="saveEditor">
         <header class="modal-heading">
           <h2 v-if="editor === 'agent'">{{ agentForm.id ? t("collection.editAgent") : t("collection.newAgent") }}</h2>
@@ -553,7 +553,7 @@ function runtimeSubtitle(runtime: Runtime) {
           <UiButton variant="primary" type="submit" :class="{ 'is-loading': busy }" :disabled="busy">{{ busy ? t("common.saving") : t("common.save") }}</UiButton>
         </div>
       </form>
-    </div>
+    </UiModal>
     <CreateRuntimeDialog
       v-if="runtimeModal !== null"
       :runtime="runtimeModal === 'new' ? null : runtimeModal"

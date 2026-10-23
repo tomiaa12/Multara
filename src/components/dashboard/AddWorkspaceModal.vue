@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="modal-backdrop" :class="{ 'is-over': dropOver }">
+  <UiModal :class="{ 'is-over': dropOver }">
     <form class="modal workspace-picker-modal" @submit.prevent="submit">
       <div class="workspace-picker-head">
         <h2>{{ t("workspace.addTitle") }}</h2>
@@ -391,5 +391,5 @@ onBeforeUnmount(() => {
         </UiButton>
       </div>
     </form>
-  </div>
+  </UiModal>
 </template>
