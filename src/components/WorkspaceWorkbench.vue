@@ -94,6 +94,7 @@ import { loadScmDiff, scmDiffId } from "./workbench/scm-diff";
 import { localHistoryEntry, recordLocalHistory, renameLocalHistoryPath } from "./workbench/local-history";
 import { scmGroups, type ScmOpenTarget } from "./workbench/scm-groups";
 import { bindEditorZoom } from "./workbench/monaco-zoom";
+import { createRefreshScheduler } from "./workbench/refresh-scheduler";
 import EditorWithDiff from "./workbench/EditorWithDiff.vue";
 import MediaPreview from "./workbench/MediaPreview.vue";
 import MarkdownPreview from "./workbench/MarkdownPreview.vue";
@@ -317,6 +318,7 @@ const gitChangeCount = computed(() =>
 const sourceControlPanel = ref<InstanceType<typeof SourceControlPanel> | null>(
   null,
 );
+const gitChangeRefreshScheduler = createRefreshScheduler(refreshGitViews);
 const leftPanelWidth = ref(
   Number(localStorage.getItem("multara.workspace.leftWidth")) || 268,
 );
@@ -1105,7 +1107,7 @@ const explorer = useExplorer({
   loadedPaths: loadedTreePaths,
   isGitWorkspace: (workspaceId) => workspaceById(workspaceId)?.kind === "git",
   afterMutation: () => refreshGitViews(),
-  gitChanged: () => refreshGitViews(),
+  gitChanged: () => gitChangeRefreshScheduler.request(),
   renameEditors: (workspaceId, from, to) => {
     renameEditorsUnder(workspaceId, from, to);
     renameLocalHistoryPath(workspaceId, from, to);
@@ -1277,9 +1279,12 @@ function refreshExplorer() {
   void refreshGitViews();
 }
 
-function refreshGitViews() {
-  void refreshGitStatuses();
-  void sourceControlPanel.value?.refresh();
+async function refreshGitViews() {
+  if (sourceControlPanel.value) {
+    await sourceControlPanel.value.refresh();
+    return;
+  }
+  await refreshGitStatuses();
 }
 
 function noteDiskChange(workspaceId: string, path: string, message: string) {
@@ -4635,6 +4640,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  gitChangeRefreshScheduler.dispose();
   window.removeEventListener("pointerdown", onTerminalPickOutside, true);
   registerUnsavedLeaveHandler(null);
   registerUnsavedDirtyChecker(null);

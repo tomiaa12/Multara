@@ -30,6 +30,7 @@ export interface ExplorerSettings {
   fileNestingExpand: boolean;
   fileNestingPatterns: Record<string, string>;
   filesExclude: Record<string, ExplorerExcludeValue>;
+  watcherExclude: Record<string, ExplorerExcludeValue>;
 }
 
 export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
@@ -70,6 +71,14 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
     "**/CVS": true,
     "**/.DS_Store": true,
     "**/Thumbs.db": true,
+  },
+  watcherExclude: {
+    ".git/objects/**": true,
+    ".git/subtree-cache/**": true,
+    ".hg/store/**": true,
+    "*/.git/objects/**": true,
+    "*/.git/subtree-cache/**": true,
+    "*/.hg/store/**": true,
   },
 };
 
@@ -116,7 +125,7 @@ export function parseExplorerSettings(raw: string | undefined | null): ExplorerS
       continue;
     }
     const fallback = DEFAULT_EXPLORER_SETTINGS[key];
-    if (key === "filesExclude" || key === "autoRevealExclude") {
+    if (key === "filesExclude" || key === "autoRevealExclude" || key === "watcherExclude") {
       result[key] = excludeMap(value, result[key]);
     } else if (key === "fileNestingPatterns") {
       if (isRecord(value)) {

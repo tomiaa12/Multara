@@ -1090,10 +1090,25 @@ export function useExplorer(host: ExplorerHost) {
   // ---- 文件监听 ----
   const owner = `explorer-${Math.random().toString(36).slice(2)}`;
   const pendingChanges = new Map<string, { dirs: Set<string>; overflow: boolean; git: boolean; gitignore: boolean }>();
+  const watcherExcludes = computed(() =>
+    Object.entries(settings.value.watcherExclude)
+      .filter(([, enabled]) => enabled === true)
+      .map(([pattern]) => pattern)
+      .sort(),
+  );
   let changeTimer = 0;
   let gitTimer = 0;
+  let flushingChanges = false;
   let unlisten: (() => void) | null = null;
   let disposed = false;
+
+  function scheduleChangeFlush() {
+    window.clearTimeout(changeTimer);
+    changeTimer = window.setTimeout(() => {
+      changeTimer = 0;
+      void flushChanges();
+    }, 500);
+  }
 
   void explorerBackend
     .onFsChanged((change) => {
@@ -1105,8 +1120,7 @@ export function useExplorer(host: ExplorerHost) {
         if (baseName(path) === ".gitignore") entry.gitignore = true;
       }
       pendingChanges.set(change.workspaceId, entry);
-      window.clearTimeout(changeTimer);
-      changeTimer = window.setTimeout(flushChanges, 150);
+      scheduleChangeFlush();
     })
     .then((stop) => {
       if (disposed) stop();
@@ -1114,31 +1128,45 @@ export function useExplorer(host: ExplorerHost) {
     });
 
   async function flushChanges() {
+    if (flushingChanges) return;
+    flushingChanges = true;
     const batches = [...pendingChanges.entries()];
     pendingChanges.clear();
     let gitDirty = false;
-    for (const [workspaceId, change] of batches) {
-      if (!host.workspaces().some((workspace) => workspace.id === workspaceId)) continue;
-      if (change.overflow) {
-        await host.reloadWorkspace(workspaceId).catch(() => undefined);
-      } else {
-        for (const dir of change.dirs) {
-          if (host.levelEntries(workspaceId, dir)) await host.reloadLevel(workspaceId, dir).catch(() => undefined);
+    try {
+      for (const [workspaceId, change] of batches) {
+        if (!host.workspaces().some((workspace) => workspace.id === workspaceId)) continue;
+        if (change.overflow) {
+          await host.reloadWorkspace(workspaceId).catch(() => undefined);
+        } else {
+          for (const dir of change.dirs) {
+            if (host.levelEntries(workspaceId, dir)) await host.reloadLevel(workspaceId, dir).catch(() => undefined);
+          }
         }
+        if (change.gitignore || change.git || change.overflow) resetIgnored(workspaceId);
+        gitDirty ||= change.git || change.dirs.size > 0 || change.overflow;
       }
-      if (change.gitignore || change.git || change.overflow) resetIgnored(workspaceId);
-      gitDirty ||= change.git || change.dirs.size > 0 || change.overflow;
-    }
-    if (gitDirty) {
-      window.clearTimeout(gitTimer);
-      gitTimer = window.setTimeout(() => host.gitChanged(), 600);
+      if (gitDirty) {
+        window.clearTimeout(gitTimer);
+        gitTimer = window.setTimeout(() => host.gitChanged(), 1_000);
+      }
+    } finally {
+      flushingChanges = false;
+      if (pendingChanges.size) scheduleChangeFlush();
     }
   }
 
   watch(
-    () => (host.preview() ? "" : host.workspaces().map((workspace) => workspace.id).join("\0")),
-    (ids) => {
-      void explorerBackend.watchWorkspaces(owner, ids ? ids.split("\0") : []).catch(() => undefined);
+    [
+      () => (host.preview() ? "" : host.workspaces().map((workspace) => workspace.id).join("\0")),
+      () => watcherExcludes.value.join("\0"),
+    ],
+    ([ids, excludes]) => {
+      void explorerBackend.watchWorkspaces(
+        owner,
+        ids ? ids.split("\0") : [],
+        excludes ? excludes.split("\0") : [],
+      ).catch(() => undefined);
     },
     { immediate: true },
   );
@@ -1153,7 +1181,7 @@ export function useExplorer(host: ExplorerHost) {
     window.clearTimeout(ignoreTimer);
     window.clearTimeout(expandTimer);
     window.clearTimeout(typeTimer);
-    void explorerBackend.watchWorkspaces(owner, []).catch(() => undefined);
+    void explorerBackend.watchWorkspaces(owner, [], watcherExcludes.value).catch(() => undefined);
     dialog.value?.resolve({ confirmed: false, checked: false });
   });
 

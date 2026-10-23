@@ -98,8 +98,10 @@ function setViewMode(next: "list" | "tree") {
 }
 
 let refreshTicket = 0;
+let refreshQueued = false;
+let refreshPromise: Promise<void> | null = null;
 
-async function refresh() {
+async function performRefresh() {
   const ticket = ++refreshTicket;
   const showLoading = repositories.value.length === 0;
   if (showLoading) loading.value = true;
@@ -125,6 +127,22 @@ async function refresh() {
   } finally {
     if (showLoading) loading.value = false;
   }
+}
+
+function refresh(): Promise<void> {
+  refreshQueued = true;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      while (refreshQueued) {
+        refreshQueued = false;
+        await performRefresh();
+      }
+    })().finally(() => {
+      refreshPromise = null;
+      if (refreshQueued) void refresh();
+    });
+  }
+  return refreshPromise;
 }
 
 async function run(
