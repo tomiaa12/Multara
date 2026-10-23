@@ -32,7 +32,7 @@ const emit = defineEmits<{
         title="移除图片"
         @click.stop="emit('remove', image.key)"
       >
-        <X :size="12" />
+        <X :size="10" />
       </UiButton>
     </component>
   </div>

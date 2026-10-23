@@ -25,6 +25,7 @@ import {
 import { DEFAULT_FILE_ICON_THEME, FILE_ICON_THEMES, normalizeFileIconTheme, setFileIconTheme } from "../file-icons";
 import { applyLanguageSetting, locale, t } from "../i18n";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
+import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
 import SettingsAiGenBlock from "./SettingsAiGenBlock.vue";
 
 const SAVE_DEBOUNCE_MS = 300;
@@ -381,7 +382,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="settings-shell">
-    <SideNav class="settings-nav" :aria-label="t('settings.navAria')" :groups="sideGroups" @select="onSideSelect" />
+    <SideNav
+      class="settings-nav"
+      :aria-label="t('settings.navAria')"
+      :groups="sideGroups"
+      :width-key="SETTINGS_NAV_WIDTH_KEY"
+      @select="onSideSelect"
+    />
 
     <div class="settings-body">
       <div class="settings-panel">
