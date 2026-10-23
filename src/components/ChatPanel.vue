@@ -49,6 +49,8 @@ const props = withDefaults(defineProps<{
   previewComposerText?: string;
   previewSessionTitle?: string | null;
   previewBusy?: boolean;
+  /** 是否展示 /compact、/fork（需求工作台 / 右下角气泡）。 */
+  sessionCommands?: boolean;
 }>(), {
   projectId: null,
   sessionId: null,
@@ -65,6 +67,7 @@ const props = withDefaults(defineProps<{
   previewComposerText: "",
   previewSessionTitle: null,
   previewBusy: false,
+  sessionCommands: false,
 });
 const reaskTarget = ref<{
   messageId: string;
@@ -686,11 +689,11 @@ function submit() {
   store.clearComposerNotice();
   followBottom.value = true;
   const command = content.trim();
-  if (command === "/compact") {
+  if (props.sessionCommands && command === "/compact") {
     void store.compactSession(session.value.id);
     return;
   }
-  if (command === "/fork") {
+  if (props.sessionCommands && command === "/fork") {
     void store.forkSession(session.value.id);
     return;
   }
@@ -1509,6 +1512,7 @@ defineExpose({
         :allow-target-change="allowTargetChange"
         :can-send="canSend"
         :disabled="composerLocked"
+        :session-commands="sessionCommands"
         @change="onComposerChange"
         @submit="submit"
         @paste-image="pasteImages"

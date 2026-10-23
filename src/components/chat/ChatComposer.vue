@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { ArrowUp, Sparkles } from "@lucide/vue";
+import { ArrowUp } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import ChatComposerField from "./ChatComposerField.vue";
+import ComposerSuggestMenu, { type ComposerSuggestItem } from "./ComposerSuggestMenu.vue";
 import ContextUsageButton from "./ContextUsageButton.vue";
 import type { EditorSelectionContext } from "../../domain/types";
 import type { ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
+import { getCaretClientRect } from "./composer-caret";
 import { activeSlashQuery, filterSkillSlash, replaceSlashToken, type SkillSlashHit } from "./skill-slash";
 import {
   activeMentionQuery,
@@ -41,6 +43,8 @@ const props = withDefaults(defineProps<{
   showContextUsage?: boolean;
   /** 嵌在别的表单里时用 div，避免再套一层 form。 */
   embedded?: boolean;
+  /** 是否展示 /compact、/fork 等会话命令（需求工作台 / 右下角气泡）。 */
+  sessionCommands?: boolean;
 }>(), {
   targetValue: "",
   targetOptions: () => [],
@@ -51,6 +55,7 @@ const props = withDefaults(defineProps<{
   usagePlacement: "up",
   showContextUsage: true,
   embedded: false,
+  sessionCommands: false,
 });
 
 const emit = defineEmits<{
@@ -63,17 +68,91 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
+const rootEl = ref<HTMLElement | null>(null);
 const dropOver = ref(false);
 const slashHits = ref<SkillSlashHit[]>([]);
 const slashIndex = ref(0);
 const mentionHits = ref<MentionHit[]>([]);
 const mentionIndex = ref(0);
+const suggestAnchor = ref<{ left: number; top: number; bottom: number; width?: number } | null>(null);
 const stopDragWatch = onWorkspaceFileDragChange((state) => {
   dropOver.value = state.over === "composer";
 });
 onBeforeUnmount(() => {
   stopDragWatch();
 });
+
+const suggestKind = computed<"mention" | "slash" | null>(() => {
+  if (mentionHits.value.length) return "mention";
+  if (slashHits.value.length) return "slash";
+  return null;
+});
+const suggestIndex = computed(() =>
+  suggestKind.value === "mention" ? mentionIndex.value : slashIndex.value,
+);
+const suggestItems = computed<ComposerSuggestItem[]>(() => {
+  if (suggestKind.value === "mention") {
+    return mentionHits.value.map((hit) => ({
+      id: hit.id,
+      label: hit.insert.trim() || hit.label,
+      description: hit.detail || undefined,
+      avatar: hit.avatar,
+      leading: hit.kind === "task" ? "hash" : undefined,
+    }));
+  }
+  if (suggestKind.value === "slash") {
+    return slashHits.value.map((hit) => ({
+      id: hit.id,
+      label: `/${hit.name}`,
+      description: hit.description || undefined,
+      leading: "sparkles",
+    }));
+  }
+  return [];
+});
+
+async function refreshSuggestAnchor() {
+  await nextTick();
+  if (!suggestKind.value) {
+    suggestAnchor.value = null;
+    return;
+  }
+  const caret = getCaretClientRect();
+  if (caret) {
+    suggestAnchor.value = {
+      left: caret.left,
+      top: caret.top,
+      bottom: caret.bottom,
+      width: Math.max(caret.width, 160),
+    };
+    return;
+  }
+  // 光标矩形拿不到时，贴着输入区底部展开，避免浮层落到 (0,0)
+  const host = rootEl.value;
+  const root = host instanceof HTMLElement
+    ? host
+    : (host as { $el?: HTMLElement } | null)?.$el ?? null;
+  const fieldEl = root?.querySelector<HTMLElement>(".composer-field");
+  const rect = fieldEl?.getBoundingClientRect();
+  suggestAnchor.value = rect
+    ? { left: rect.left, top: rect.top, bottom: rect.bottom, width: Math.min(rect.width, 280) }
+    : null;
+}
+
+function onSuggestHighlight(index: number) {
+  if (suggestKind.value === "mention") mentionIndex.value = index;
+  else if (suggestKind.value === "slash") slashIndex.value = index;
+}
+
+function onSuggestSelect(index: number) {
+  if (suggestKind.value === "mention") {
+    const hit = mentionHits.value[index];
+    if (hit) void pickMention(hit);
+    return;
+  }
+  const hit = slashHits.value[index];
+  if (hit) void pickSkill(hit);
+}
 
 function onDragOver(event: DragEvent) {
   if (props.disabled) return;
@@ -128,7 +207,7 @@ function onComposerChange(nodes: ComposerNode[]) {
   const line = trailingText(nodes);
   const query = activeSlashQuery(line);
   const skills = query === null ? [] : filterSkillSlash(store.data?.resources ?? [], query);
-  const commands = query === null ? [] : filterCommands(query);
+  const commands = query === null || !props.sessionCommands ? [] : filterCommands(query);
   slashHits.value = [
     ...commands.map((item) => ({ id: item.id, name: item.label, description: item.detail })),
     ...skills,
@@ -139,6 +218,7 @@ function onComposerChange(nodes: ComposerNode[]) {
     ? filterMentions(mention.kind, mention.query, store.data?.agents ?? [], store.data?.tasks ?? [])
     : [];
   if (mentionIndex.value >= mentionHits.value.length) mentionIndex.value = 0;
+  void refreshSuggestAnchor();
 }
 
 async function pickSkill(hit: SkillSlashHit) {
@@ -162,36 +242,27 @@ async function pickMention(hit: MentionHit) {
 }
 
 function onComposerKeydown(event: KeyboardEvent) {
-  const menu = mentionHits.value.length ? mentionHits : slashHits.value.length ? slashHits : null;
-  if (!menu) return;
-  const isMention = menu === mentionHits;
+  if (!suggestKind.value || !suggestItems.value.length) return;
+  const isMention = suggestKind.value === "mention";
+  const count = suggestItems.value.length;
   if (event.key === "ArrowDown") {
     event.preventDefault();
     event.stopPropagation();
-    if (isMention) mentionIndex.value = (mentionIndex.value + 1) % mentionHits.value.length;
-    else slashIndex.value = (slashIndex.value + 1) % slashHits.value.length;
+    if (isMention) mentionIndex.value = (mentionIndex.value + 1) % count;
+    else slashIndex.value = (slashIndex.value + 1) % count;
     return;
   }
   if (event.key === "ArrowUp") {
     event.preventDefault();
     event.stopPropagation();
-    if (isMention) {
-      mentionIndex.value = (mentionIndex.value - 1 + mentionHits.value.length) % mentionHits.value.length;
-    } else {
-      slashIndex.value = (slashIndex.value - 1 + slashHits.value.length) % slashHits.value.length;
-    }
+    if (isMention) mentionIndex.value = (mentionIndex.value - 1 + count) % count;
+    else slashIndex.value = (slashIndex.value - 1 + count) % count;
     return;
   }
   if (event.key === "Enter" || event.key === "Tab") {
     event.preventDefault();
     event.stopPropagation();
-    if (isMention) {
-      const hit = mentionHits.value[mentionIndex.value];
-      if (hit) void pickMention(hit);
-    } else {
-      const hit = slashHits.value[slashIndex.value];
-      if (hit) void pickSkill(hit);
-    }
+    onSuggestSelect(suggestIndex.value);
     return;
   }
   if (event.key === "Escape") {
@@ -199,6 +270,7 @@ function onComposerKeydown(event: KeyboardEvent) {
     event.stopPropagation();
     slashHits.value = [];
     mentionHits.value = [];
+    suggestAnchor.value = null;
   }
 }
 
@@ -248,6 +320,7 @@ defineExpose({
 <template>
   <component
     :is="embedded ? 'div' : 'form'"
+    ref="rootEl"
     class="chat-composer"
     data-workspace-drop="composer"
     :class="{ 'footer-on-focus': footerMode === 'focus', 'is-drop-over': dropOver, 'is-disabled': disabled }"
@@ -261,39 +334,15 @@ defineExpose({
     <div v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
       <span>{{ t("chat.dropToAttach") }}</span>
     </div>
-    <ul v-if="mentionHits.length" class="skill-slash-menu" role="listbox" aria-label="Mentions">
-      <li v-for="(hit, index) in mentionHits" :key="hit.id">
-        <button
-          type="button"
-          role="option"
-          :aria-selected="index === mentionIndex"
-          :class="{ active: index === mentionIndex }"
-          @mousedown.prevent="pickMention(hit)"
-        >
-          <span>
-            <strong>{{ hit.insert.trim() }}</strong>
-            <small>{{ hit.detail || hit.kind }}</small>
-          </span>
-        </button>
-      </li>
-    </ul>
-    <ul v-else-if="slashHits.length" class="skill-slash-menu" role="listbox" aria-label="Skills">
-      <li v-for="(hit, index) in slashHits" :key="hit.id">
-        <button
-          type="button"
-          role="option"
-          :aria-selected="index === slashIndex"
-          :class="{ active: index === slashIndex }"
-          @mousedown.prevent="pickSkill(hit)"
-        >
-          <Sparkles :size="14" />
-          <span>
-            <strong>/{{ hit.name }}</strong>
-            <small>{{ hit.description || "Skill" }}</small>
-          </span>
-        </button>
-      </li>
-    </ul>
+    <ComposerSuggestMenu
+      v-if="suggestItems.length"
+      :items="suggestItems"
+      :active-index="suggestIndex"
+      :anchor="suggestAnchor"
+      :aria-label="suggestKind === 'mention' ? 'Mentions' : 'Skills'"
+      @highlight="onSuggestHighlight"
+      @select="onSuggestSelect"
+    />
     <ChatComposerField
       ref="field"
       :placeholder="placeholder"

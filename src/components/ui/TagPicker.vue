@@ -23,11 +23,14 @@ const emit = defineEmits<{
 
 const POPOVER_GAP = 4;
 const VIEWPORT_MARGIN = 12;
+/** 与 UiSelect 一致：下方空间不足时改向上展开 */
+const FLIP_THRESHOLD = 320;
 
 const open = ref(false);
 const query = ref("");
 const root = ref<HTMLElement | null>(null);
 const popover = ref<HTMLElement | null>(null);
+const placement = ref<"bottom" | "top">("bottom");
 const popoverStyle = ref<Record<string, string>>({});
 
 const selected = computed(() =>
@@ -70,12 +73,16 @@ function updatePosition() {
   const trigger = root.value;
   if (!trigger) return;
   const rect = trigger.getBoundingClientRect();
-  const width = popover.value?.offsetWidth ?? rect.width;
+  const below = window.innerHeight - rect.bottom;
+  placement.value = below < FLIP_THRESHOLD && rect.top > below ? "top" : "bottom";
+  const width = popover.value?.offsetWidth ?? Math.max(rect.width, 200);
   const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN));
   popoverStyle.value = {
-    top: `${rect.bottom + POPOVER_GAP}px`,
     left: `${left}px`,
-    minWidth: `${rect.width}px`,
+    minWidth: `${Math.max(rect.width, 200)}px`,
+    ...(placement.value === "top"
+      ? { bottom: `${window.innerHeight - rect.top + POPOVER_GAP}px`, top: "auto" }
+      : { top: `${rect.bottom + POPOVER_GAP}px`, bottom: "auto" }),
   };
 }
 
@@ -129,7 +136,7 @@ onBeforeUnmount(unbindPopover);
       </template>
     </div>
     <Teleport to="body">
-    <div v-if="open" ref="popover" class="tag-pop is-floating" :style="popoverStyle">
+    <div v-if="open" ref="popover" class="tag-pop is-floating" :data-placement="placement" :style="popoverStyle">
       <label class="ds-search">
         <input
           v-model="query"

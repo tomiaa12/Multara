@@ -8255,48 +8255,43 @@ body.is-dragging-workspace-file * {
   color: var(--color-text-tertiary);
   font-size: var(--font-size-sm);
 }
-.skill-slash-menu {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: calc(100% + 6px);
-  z-index: 6;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  overflow: auto;
-  max-height: 240px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
-}
-.skill-slash-menu button {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: inherit;
+/* 输入框 @ / #：复用 UiSelect 浮层；覆盖 min-width:100%（fixed 下会变成整屏宽） */
+.composer-suggest-menu.ds-select-popover.is-floating {
+  min-width: 0;
+  width: 220px;
+  max-width: min(220px, calc(100vw - 24px));
+  max-height: 200px;
+  overflow: hidden;
   text-align: left;
 }
-.skill-slash-menu button.active,
-.skill-slash-menu button:hover {
-  background: var(--color-surface-hover);
+.composer-suggest-menu .ds-select-list {
+  max-height: 192px;
+  justify-items: stretch;
+  text-align: left;
 }
-.skill-slash-menu span {
+.composer-suggest-menu .ds-select-option {
+  justify-content: flex-start;
+  text-align: left;
+}
+.composer-suggest-menu .ds-select-option-body {
+  justify-items: start;
+  text-align: left;
+}
+.composer-suggest-menu .ds-select-option-label,
+.composer-suggest-menu .ds-select-option-desc {
+  text-align: left;
+}
+.composer-suggest-leading {
   display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.skill-slash-menu small {
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
   color: var(--color-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.composer-suggest-menu .ds-select-option.has-description .composer-suggest-leading {
+  width: 28px;
+  height: 28px;
 }
 .skill-source-mark {
   display: grid;
