@@ -200,7 +200,10 @@ function removePaste(path: string) {
 }
 
 function submit() {
-  const text = formatAgentPrompt(composer.value?.serialize().nodes ?? []).trim();
+  const text = formatAgentPrompt(
+    composer.value?.serialize().nodes ?? [],
+    { directMentions: true },
+  ).trim();
   if (!text && !pastes.value.length) return;
   const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));
   // 有未回答提问时用 priority，否则会被 awaitingAnswer 挡住、不进 run、也不出工作态。
