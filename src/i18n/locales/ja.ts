@@ -386,6 +386,8 @@ const catalog: MessageCatalog = {
   "settings.explorer.naming.disabled": "Ask to replace",
   "settings.explorer.exclude": "Exclude files",
   "settings.explorer.excludeHint": "One glob per line. Matching files stay out of Explorer. Lines starting with # are ignored.",
+  "settings.explorer.watcherExclude": "ファイル監視から除外",
+  "settings.explorer.watcherExcludeHint": "1 行に 1 つの glob を指定します。一致するパスの変更では更新されません。頻繁に変わるビルド出力やキャッシュの除外に使用します。",
   "settings.git.executable": "Git executable",
   "settings.git.executableHint": "Command name or full path.",
   "settings.git.executablePlaceholder": "git or full path",

@@ -153,9 +153,9 @@ export async function readClipboardFiles(): Promise<ExplorerClipboardFile[]> {
   return invoke<ExplorerClipboardFile[]>("explorer_clipboard_read_files");
 }
 
-export async function watchWorkspaces(owner: string, workspaceIds: string[]): Promise<void> {
+export async function watchWorkspaces(owner: string, workspaceIds: string[], excludes: string[]): Promise<void> {
   if (!inTauri()) return;
-  await invoke("explorer_watch_workspaces", { owner, workspaceIds });
+  await invoke("explorer_watch_workspaces", { owner, workspaceIds, excludes });
 }
 
 export async function onFsChanged(handler: (change: ExplorerFsChange) => void): Promise<UnlistenFn> {
