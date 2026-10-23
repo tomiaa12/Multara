@@ -84,7 +84,7 @@ function startReask() {
   if (props.viewOnly || !props.enableReplay) return;
   const serialized = composer.value?.serialize();
   const content = serialized && !serialized.empty
-    ? formatAgentPrompt(serialized.nodes)
+    ? formatAgentPrompt(serialized.nodes, { directMentions: true })
     : props.message.content;
   emit("start-reask", props.message.id, content, replayAttachments.value);
 }

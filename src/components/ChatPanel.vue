@@ -659,7 +659,7 @@ function onChatPointerDown(event: PointerEvent) {
 function submit() {
   if (props.preview) {
     const serialized = composerInput.value?.serialize() ?? { text: "", nodes: [] as ComposerNode[] };
-    namePreviewTab(formatAgentPrompt(serialized.nodes) || serialized.text);
+    namePreviewTab(formatAgentPrompt(serialized.nodes, { directMentions: true }) || serialized.text);
     if (!props.previewInteractive) return;
     return;
   }
@@ -668,7 +668,7 @@ function submit() {
     return;
   }
   const serialized = composerInput.value?.serialize() ?? { text: "", nodes: [] as ComposerNode[], empty: true };
-  const content = formatAgentPrompt(serialized.nodes);
+  const content = formatAgentPrompt(serialized.nodes, { directMentions: true });
   const selectedAttachments = [
     ...attachments.value,
     ...pastedImages.value.map(({ previewUrl: _previewUrl, ...attachment }) => attachment),

@@ -96,7 +96,7 @@ function decodeReferencePart(value: string) {
   }
 }
 
-export function formatAgentPrompt(nodes: ComposerNode[]) {
+export function formatAgentPrompt(nodes: ComposerNode[], options: { directMentions?: boolean } = {}) {
   const assignees = nodes.flatMap((node) =>
     isReferenceChip(node) && (node.referenceKind === "agent" || node.referenceKind === "squad")
       ? [`${node.referenceKind}:${node.referenceId}:${node.label}`]
@@ -132,7 +132,7 @@ export function formatAgentPrompt(nodes: ComposerNode[]) {
     .join("")
     .replace(/\u00a0/g, " ")
     .trim();
-  const assignment = assignees.length
+  const assignment = !options.directMentions && assignees.length
     ? `[指派要求] 以下是用户明确选择的指派对象，请由当前 Miku 或小队队长按现有任务流程创建并指派可追踪的子任务，不要只在正文中口头声称已分配：\n${assignees.map((item) => `- ${item}`).join("\n")}`
     : "";
   return [...citations, assignment, visible].filter((part) => part.trim()).join("\n\n");

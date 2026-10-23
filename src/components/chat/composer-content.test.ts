@@ -57,8 +57,10 @@ describe("parseUserPromptNodes", () => {
       },
       { type: "text", value: " 处理" },
     ];
-    const content = formatAgentPrompt(nodes);
+    const content = formatAgentPrompt(nodes, { directMentions: true });
     expect(content).toContain("[实体引用] agent agent-42 Miku%20%E5%8A%A9%E6%89%8B");
+    expect(content).not.toContain("[指派要求]");
     expect(parseUserPromptNodes(content)).toEqual(nodes);
+    expect(formatAgentPrompt(nodes)).toContain("[指派要求]");
   });
 });
