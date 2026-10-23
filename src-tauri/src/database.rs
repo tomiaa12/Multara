@@ -277,6 +277,15 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           source_workspace_id TEXT NOT NULL,
           PRIMARY KEY(session_id, workspace_id)
         );
+        CREATE TABLE IF NOT EXISTS session_projects (
+          session_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          sort_order INTEGER NOT NULL,
+          PRIMARY KEY(session_id, project_id),
+          UNIQUE(session_id, sort_order)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_projects_project
+          ON session_projects(project_id, session_id);
         CREATE INDEX IF NOT EXISTS idx_turns_session ON agent_turns(session_id, seq);
         CREATE TABLE IF NOT EXISTS turn_file_snapshots (
           id TEXT NOT NULL PRIMARY KEY,
@@ -426,6 +435,11 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     ensure_column(db, "tasks", "pr_url", "TEXT NOT NULL DEFAULT ''")?;
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;
+    db.execute(
+        "INSERT OR IGNORE INTO session_projects (session_id, project_id, sort_order)
+         SELECT id, project_id, 0 FROM chat_sessions WHERE project_id IS NOT NULL",
+        [],
+    )?;
     drop_legacy_review_tables(db)?;
     backfill_file_review_baselines(db)?;
     crate::snapshot_db::cleanup_old_snapshots(db).ok();
@@ -914,7 +928,7 @@ mod tests {
         )
         .unwrap();
 
-        for table in ["agent_turns", "session_workspaces"] {
+        for table in ["agent_turns", "session_workspaces", "session_projects"] {
             let exists: bool = db
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
@@ -932,6 +946,43 @@ mod tests {
             )
             .unwrap();
         assert!(exists, "迁移后会话丢失");
+    }
+
+    #[test]
+    fn backfills_session_projects_without_foreign_keys() {
+        let db = Connection::open_in_memory().unwrap();
+        migrate(&db).unwrap();
+        db.execute(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES ('p1', '需求', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO chat_sessions
+             (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('s1', 'p1', '会话', 'agent', 'a1', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+
+        migrate(&db).unwrap();
+
+        let linked: (String, i64) = db
+            .query_row(
+                "SELECT project_id, sort_order FROM session_projects WHERE session_id='s1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(linked, ("p1".to_string(), 0));
+        let foreign_keys: Vec<String> = db
+            .prepare("PRAGMA foreign_key_list(session_projects)")
+            .unwrap()
+            .query_map([], |row| row.get(2))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(foreign_keys.is_empty());
     }
 
     #[test]

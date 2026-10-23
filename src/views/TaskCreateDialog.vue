@@ -7,7 +7,11 @@ import { useAppStore } from "../stores/app";
 import * as backend from "../services/backend";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
-import { formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { buildChatTargetOptions } from "../components/chat/chat-target-options";
+import {
+  formatAgentPrompt,
+  type ComposerNode,
+} from "../components/chat/composer-content";
 import {
   resolvePathInWorkspaces,
   type OsDroppedEntry,
@@ -27,6 +31,7 @@ import {
 } from "./dashboard/requirement-categories";
 import { TASK_COLUMNS } from "./task-board";
 import { writeTaskMeta } from "./task-meta";
+import { requirementIds, syncRequirementChips } from "./task-project-links";
 import { t } from "../i18n";
 
 const props = defineProps<{
@@ -50,8 +55,11 @@ const composer = ref<{
   clear: () => void;
   insertChip: (item: EditorSelectionContext) => void;
   focus: () => void;
+  restore: (nodes: ComposerNode[]) => void;
+  snapshot: () => ComposerNode[];
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
 } | null>(null);
+let syncingProjectChips = false;
 
 const PASTE_LIMIT = 8;
 const PASTE_MAX_BYTES = 25 * 1024 * 1024;
@@ -60,17 +68,18 @@ const form = reactive({
   title: "",
   status: props.initialStatus,
   agentId: "",
-  projectId: "",
+  projectIds: [] as string[],
   labels: [] as string[],
 });
 
 const agents = computed(() => store.data?.agents ?? []);
 const squads = computed(() => store.data?.squads ?? []);
 const projects = computed(() => store.data?.projects ?? []);
-const project = computed(() => projects.value.find((item) => item.id === form.projectId));
+const project = computed(() => projects.value.find((item) => item.id === form.projectIds[0]));
 const workspaces = computed(() => {
   const all = store.data?.workspaces ?? [];
-  return form.projectId ? all.filter((item) => item.projectId === form.projectId) : all;
+  if (!form.projectIds.length) return all;
+  return all.filter((item) => form.projectIds.includes(item.projectId));
 });
 const assigneeId = computed(() => {
   if (form.agentId.startsWith("squad:")) {
@@ -79,14 +88,13 @@ const assigneeId = computed(() => {
   }
   return form.agentId.replace(/^agent:/, "");
 });
-const targetOptions = computed(() => [
-  ...agents.value.map((agent) => ({ value: `agent:${agent.id}`, label: agent.name, avatar: agent.avatar })),
-  ...squads.value.map((squad) => ({
-    value: `squad:${squad.id}`,
-    label: t("chat.squadLabel", { name: squad.name }),
-    avatar: agents.value.find((agent) => agent.id === squad.leaderAgentId)?.avatar ?? "◉",
-  })),
-]);
+const targetOptions = computed(() =>
+  buildChatTargetOptions(
+    agents.value,
+    squads.value,
+    (name) => t("chat.squadLabel", { name }),
+  ),
+);
 /** 创建入口只给待规划 / 待办；开跑后系统会同步到进行中等后续状态。 */
 const CREATE_STATUS_IDS = new Set(["backlog", "todo"]);
 const statusOptions = computed(() =>
@@ -94,14 +102,7 @@ const statusOptions = computed(() =>
     .filter((column) => CREATE_STATUS_IDS.has(column.id))
     .map((column) => ({ value: column.id, label: column.label })),
 );
-const projectOptions = computed(() => [
-  {
-    value: "__associate_hint",
-    label: t("tasks.linkProjectHint"),
-    disabled: true,
-  },
-  ...projects.value.map((item) => ({ value: item.id, label: item.name })),
-]);
+const projectOptions = computed(() => projects.value.map((item) => ({ value: item.id, label: item.name })));
 const canCreate = computed(() => Boolean(form.title.trim() && assigneeId.value && !busy.value));
 
 watch(agents, (list) => {
@@ -127,6 +128,27 @@ function onTagCreate(name: string) {
   const id = createCategory(name);
   if (id) form.labels = [...form.labels, id];
 }
+
+function sameIds(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function onComposerChange(nodes: ComposerNode[]) {
+  if (syncingProjectChips) return;
+  const ids = requirementIds(nodes);
+  if (!sameIds(ids, form.projectIds)) form.projectIds = ids;
+}
+
+watch(
+  () => [...form.projectIds],
+  (ids) => {
+    const current = composer.value?.snapshot() ?? [];
+    if (sameIds(requirementIds(current), ids)) return;
+    syncingProjectChips = true;
+    composer.value?.restore(syncRequirementChips(current, ids, projects.value));
+    syncingProjectChips = false;
+  },
+);
 
 function onKey(event: KeyboardEvent) {
   if (event.key === "Escape") emit("close");
@@ -286,7 +308,8 @@ async function create() {
       title: form.title.trim(),
       description,
       agentId: assigneeId.value,
-      projectId: form.projectId || null,
+      projectId: form.projectIds[0] ?? null,
+      projectIds: [...form.projectIds],
       status: createStatus,
     });
     if (task) {
@@ -298,6 +321,7 @@ async function create() {
     }
     form.title = "";
     form.labels = [];
+    form.projectIds = [];
     contexts.value = [];
     clearPastes();
     composer.value?.clear();
@@ -338,10 +362,13 @@ async function create() {
         target-label="Miku"
         target-avatar="M"
         :show-context-usage="false"
+        allow-file-picker
+        @change="onComposerChange"
         @target-change="form.agentId = $event"
         @drop-workspace-file="onDropWorkspace"
         @drop-os-files="onDropOs"
         @paste-image="pasteImages"
+        @pick-files-or-folders="pickFilesOrFolders"
       >
         <ComposerPasteImages
           :images="pastes.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
@@ -359,7 +386,10 @@ async function create() {
               @manage="showTagManage = true"
             />
             <UiSelect
-              v-model="form.projectId"
+              v-model="form.projectIds"
+              multiple
+              searchable
+              :page-size="5"
               clearable
               size="sm"
               :aria-label="t('tasks.linkProject')"

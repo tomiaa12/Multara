@@ -5,6 +5,7 @@ import AssistantMessage from "./chat/AssistantMessage.vue";
 import { sentTargetForMessage, speakerForMessage } from "./chat/message-speaker";
 import UserPrompt from "./chat/UserPrompt.vue";
 import { useAppStore } from "../stores/app";
+import type { SelectOption } from "./ui/select-types";
 
 const props = withDefaults(defineProps<{
   message: ChatMessage;
@@ -13,7 +14,7 @@ const props = withDefaults(defineProps<{
   targetLabel?: string;
   targetAvatar?: string;
   targetValue?: string;
-  targetOptions?: Array<{ value: string; label: string; avatar: string }>;
+  targetOptions?: SelectOption<string>[];
   allowTargetChange?: boolean;
   enableReplay?: boolean;
   viewOnly?: boolean;

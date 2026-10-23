@@ -1988,14 +1988,8 @@ fn workspace_context(
 ) -> Result<(String, (String, Vec<String>, bool)), String> {
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
-    let project_id: Option<String> = db
-        .query_row(
-            "SELECT project_id FROM chat_sessions WHERE id = ?1",
-            [session_id],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    let Some(_project_id) = project_id else {
+    let project_ids = session::linked_project_ids(&db, session_id)?;
+    if project_ids.is_empty() {
         drop(db);
         let cwd = scratch_workdir(app, session_id)?;
         return Ok((
@@ -2008,7 +2002,7 @@ fn workspace_context(
                 false,
             ),
         ));
-    };
+    }
     let paths = session::session_workspaces(&db, session_id)?
         .into_iter()
         .map(|workspace| workspace.work_path)
