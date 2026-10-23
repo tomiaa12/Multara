@@ -81,7 +81,15 @@ describe("gatewayDraftFor", () => {
     expect(next.apiUrl).toBe("");
     expect(next.apiKey).toBe("");
     expect(next.modelsText).toBe("");
+    expect(next.apiFormat).toBe("responses");
     expect(next.maxConcurrent).toBe(4);
+  });
+
+  it("uses each CLI native API format for new gateways", () => {
+    expect(gatewayDraftFor("claude").apiFormat).toBe("anthropic");
+    expect(gatewayDraftFor("gemini").apiFormat).toBe("gemini");
+    expect(gatewayDraftFor("qwen").apiFormat).toBe("chat");
+    expect(gatewayDraftFor("opencode").apiFormat).toBe("chat");
   });
 });
 

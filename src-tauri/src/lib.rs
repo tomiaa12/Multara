@@ -15,16 +15,17 @@ pub mod diff_state_db;
 pub mod executor;
 pub mod explorer_fs;
 pub mod files;
+pub mod gateway_proxy;
 pub mod git;
 pub mod git_merge;
+pub mod hook_runtime;
 pub mod http_client;
+pub mod lsp;
 pub mod mcp_oauth;
 pub mod mcp_probe;
 pub mod mcp_tools_cache;
 pub mod mcp_vars;
 pub mod merge_flow;
-pub mod hook_runtime;
-pub mod lsp;
 pub mod models;
 pub mod native_pick;
 pub mod ops;
@@ -36,10 +37,10 @@ pub mod runtime_brief;
 pub mod runtime_models;
 pub mod session;
 pub mod snapshot;
+pub mod snapshot_db;
 pub mod terminal;
 pub mod text_search;
 pub mod usage;
-pub mod snapshot_db;
 pub mod webhook;
 pub mod workspace;
 
@@ -50,37 +51,41 @@ mod macos_menu;
 pub mod win_shutdown;
 
 use commands::{
-    add_workspace, authorize_mcp, bootstrap, check_git_executable, configure_runtime, create_chat_session,
-    list_agents_and_squads,
-    create_project, create_skill, create_task, create_workspace_directory, create_workspace_file, delete_agent, update_project,
-    delete_automation, delete_custom_runtime, delete_file_baseline, delete_mcp, delete_project, delete_skill, delete_snapshots_from, delete_squad,
-    set_project_archived,
-    detach_workspace,
-    delete_task, delete_workspace_entry, detect_runtimes, generate_chat_session_title,
-    generate_branch_name, generate_git_commit_message, get_mcp, get_run_statistics, get_snapshot_content, get_turn_snapshots,
-    git_abort_workspace_merge, git_commit_files, git_commit_multiple, git_commit_workspace,
-    git_blame_line, git_discard_files, git_fetch_workspace, git_head_file, git_index_file,
-    git_log_workspace,
-    git_merge_workspace_branch, git_pull_workspace, git_push_workspace, git_rename_workspace_branch, git_set_branch_upstream, git_repair_worktree_runtime,
-    git_graph_commit_action, git_revision_file, git_stage_files, git_stage_repository,
-    git_switch_workspace_branch,
-    git_sync_workspace, agent_system_context, get_custom_runtime, list_agent_runs, list_runtime_models, list_automation_runs, list_chat_messages, list_task_runs, mark_inbox_read,
-    mark_inbox_unread, mark_inbox_all_read, archive_inbox_item, delete_inbox_item, fork_chat_session,
-    set_message_feedback, compact_chat_session, resolve_permission, update_task_meta,
-    convert_prompt_to_skill, generate_skill, import_skill_from_folder, import_skill_from_url,
-    install_mcp, list_mcp_tool_cache, list_prompt_files, list_resource_sources, probe_mcp, reveal_resource,
-    schedule_mcp_tools_refresh,
-    search_catalog, set_skill_enabled, sign_out_mcp, save_mcp_inputs, get_mcp_inputs, get_mcp_json,
-    list_external_directory, list_project_git_status, list_skill_directory, list_webhook_deliveries, list_workspace_directory,
-    collect_source_files, collect_workspace_typings, list_quick_open_files, list_workspace_tree, load_active_diff_data, load_attachment_preview, load_session_diff_data,
-    search_workspace, terminal_close, terminal_command_names, terminal_clipboard_text, terminal_free_port, terminal_open, terminal_profiles, terminal_resolve_paths, terminal_publish, terminal_resize, terminal_services, terminal_write,
-    open_external_url, open_message_attachment, read_external_file, read_skill_file, read_workspace_file, receive_automation_webhook,
-    rename_workspace_entry, reveal_workspace_path, run_automation, save_agent, save_automation,
-    save_custom_runtime, probe_runtime_command, test_runtime_connection, save_file_baseline, save_mcp, save_pasted_attachment, save_settings, save_squad, scan_resources,
-    set_mcp_enabled, skill_file_count,
-    scan_workspace_candidates, send_message, stop_run, transfer_resource, trigger_automation_event,
-    truncate_session_from_message, update_chat_session_target, update_chat_session_title, upsert_inbox_item,
-    update_chunk_state, update_task, update_task_status, write_skill_file, write_workspace_file,
+    add_workspace, agent_system_context, archive_inbox_item, authorize_mcp, bootstrap,
+    check_git_executable, collect_source_files, collect_workspace_typings, compact_chat_session,
+    configure_runtime, convert_prompt_to_skill, create_chat_session, create_project, create_skill,
+    create_task, create_workspace_directory, create_workspace_file, delete_agent,
+    delete_automation, delete_custom_runtime, delete_file_baseline, delete_inbox_item, delete_mcp,
+    delete_project, delete_skill, delete_snapshots_from, delete_squad, delete_task,
+    delete_workspace_entry, detach_workspace, detect_runtimes, fork_chat_session,
+    generate_branch_name, generate_chat_session_title, generate_git_commit_message, generate_skill,
+    get_custom_runtime, get_mcp, get_mcp_inputs, get_mcp_json, get_run_statistics,
+    get_snapshot_content, get_turn_snapshots, git_abort_workspace_merge, git_blame_line,
+    git_commit_files, git_commit_multiple, git_commit_workspace, git_discard_files,
+    git_fetch_workspace, git_graph_commit_action, git_head_file, git_index_file, git_log_workspace,
+    git_merge_workspace_branch, git_pull_workspace, git_push_workspace,
+    git_rename_workspace_branch, git_repair_worktree_runtime, git_revision_file,
+    git_set_branch_upstream, git_stage_files, git_stage_repository, git_switch_workspace_branch,
+    git_sync_workspace, import_skill_from_folder, import_skill_from_url, install_mcp,
+    list_agent_runs, list_agents_and_squads, list_automation_runs, list_chat_messages,
+    list_external_directory, list_mcp_tool_cache, list_project_git_status, list_prompt_files,
+    list_quick_open_files, list_resource_sources, list_runtime_models, list_skill_directory,
+    list_task_runs, list_webhook_deliveries, list_workspace_directory, list_workspace_tree,
+    load_active_diff_data, load_attachment_preview, load_session_diff_data, mark_inbox_all_read,
+    mark_inbox_read, mark_inbox_unread, open_external_url, open_message_attachment, probe_mcp,
+    probe_runtime_command, read_external_file, read_skill_file, read_workspace_file,
+    receive_automation_webhook, rename_workspace_entry, resolve_permission, reveal_resource,
+    reveal_workspace_path, run_automation, save_agent, save_automation, save_custom_runtime,
+    save_file_baseline, save_mcp, save_mcp_inputs, save_pasted_attachment, save_settings,
+    save_squad, scan_resources, scan_workspace_candidates, schedule_mcp_tools_refresh,
+    search_catalog, search_workspace, send_message, set_mcp_enabled, set_message_feedback,
+    set_project_archived, set_skill_enabled, sign_out_mcp, skill_file_count, stop_run,
+    terminal_clipboard_text, terminal_close, terminal_command_names, terminal_free_port,
+    terminal_open, terminal_profiles, terminal_publish, terminal_resize, terminal_resolve_paths,
+    terminal_services, terminal_write, test_runtime_connection, transfer_resource,
+    trigger_automation_event, truncate_session_from_message, update_chat_session_target,
+    update_chat_session_title, update_chunk_state, update_project, update_task, update_task_meta,
+    update_task_status, upsert_inbox_item, write_skill_file, write_workspace_file,
 };
 use tauri::Manager;
 use tauri_plugin_window_state::{StateFlags, WindowExt};

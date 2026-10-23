@@ -325,10 +325,30 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     )?;
     ensure_column(db, "agent_runs", "started_at", "TEXT")?;
     ensure_column(db, "agent_runs", "completed_at", "TEXT")?;
-    ensure_column(db, "agent_runs", "input_tokens", "INTEGER NOT NULL DEFAULT 0")?;
-    ensure_column(db, "agent_runs", "output_tokens", "INTEGER NOT NULL DEFAULT 0")?;
-    ensure_column(db, "agent_runs", "cache_read_tokens", "INTEGER NOT NULL DEFAULT 0")?;
-    ensure_column(db, "agent_runs", "cache_write_tokens", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(
+        db,
+        "agent_runs",
+        "input_tokens",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        db,
+        "agent_runs",
+        "output_tokens",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        db,
+        "agent_runs",
+        "cache_read_tokens",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        db,
+        "agent_runs",
+        "cache_write_tokens",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     ensure_column(db, "agent_runs", "cost_usd", "REAL NOT NULL DEFAULT 0")?;
     ensure_column(db, "agent_runs", "usage_model", "TEXT")?;
     ensure_column(db, "messages", "run_id", "TEXT")?;
@@ -369,16 +389,73 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     )?;
     ensure_column(db, "agents", "system_key", "TEXT")?;
     ensure_column(db, "squads", "instructions", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(db, "custom_runtimes", "provider", "TEXT NOT NULL DEFAULT 'custom'")?;
-    ensure_column(db, "custom_runtimes", "protocol", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "provider",
+        "TEXT NOT NULL DEFAULT 'custom'",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "protocol",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
     ensure_column(db, "custom_runtimes", "api_url", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(db, "custom_runtimes", "api_key", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(db, "custom_runtimes", "models_json", "TEXT NOT NULL DEFAULT '[]'")?;
-    ensure_column(db, "custom_runtimes", "env_json", "TEXT NOT NULL DEFAULT '{}'")?;
-    ensure_column(db, "custom_runtimes", "kind", "TEXT NOT NULL DEFAULT 'profile'")?;
-    ensure_column(db, "custom_runtimes", "description", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(db, "custom_runtimes", "wire_api", "TEXT NOT NULL DEFAULT 'responses'")?;
-    ensure_column(db, "custom_runtimes", "key_style", "TEXT NOT NULL DEFAULT 'bearer'")?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "models_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "env_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "kind",
+        "TEXT NOT NULL DEFAULT 'profile'",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "description",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "wire_api",
+        "TEXT NOT NULL DEFAULT 'responses'",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "api_format",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "key_style",
+        "TEXT NOT NULL DEFAULT 'bearer'",
+    )?;
+    db.execute(
+        "UPDATE custom_runtimes
+         SET api_format = CASE provider
+           WHEN 'claude' THEN 'anthropic'
+           WHEN 'codex' THEN CASE WHEN wire_api = 'chat' THEN 'chat' ELSE 'responses' END
+           WHEN 'gemini' THEN 'gemini'
+           ELSE 'chat'
+         END
+         WHERE TRIM(api_format) = ''",
+        [],
+    )?;
     db.execute(
         "UPDATE custom_runtimes
          SET kind = 'gateway'
@@ -527,11 +604,9 @@ fn salvage_run_text(db: &Connection, run_id: &str) -> rusqlite::Result<String> {
 
 /// 旧数据只有按消息存的快照。每个仍待审阅的文件取最早一份，作为跟文件走的 baseline。
 fn backfill_file_review_baselines(db: &Connection) -> rusqlite::Result<()> {
-    let count: i64 = db.query_row(
-        "SELECT COUNT(*) FROM file_review_baselines",
-        [],
-        |row| row.get(0),
-    )?;
+    let count: i64 = db.query_row("SELECT COUNT(*) FROM file_review_baselines", [], |row| {
+        row.get(0)
+    })?;
     if count > 0 {
         return Ok(());
     }
@@ -1046,12 +1121,28 @@ mod tests {
         .unwrap();
         migrate(&db).unwrap();
         let gateway: String = db
-            .query_row("SELECT kind FROM custom_runtimes WHERE id='custom:gw'", [], |row| row.get(0))
+            .query_row(
+                "SELECT kind FROM custom_runtimes WHERE id='custom:gw'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         let plain: String = db
-            .query_row("SELECT kind FROM custom_runtimes WHERE id='custom:plain'", [], |row| row.get(0))
+            .query_row(
+                "SELECT kind FROM custom_runtimes WHERE id='custom:plain'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let api_format: String = db
+            .query_row(
+                "SELECT api_format FROM custom_runtimes WHERE id='custom:gw'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(gateway, "gateway");
         assert_eq!(plain, "profile");
+        assert_eq!(api_format, "chat");
     }
 }

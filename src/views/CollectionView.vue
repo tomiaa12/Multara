@@ -9,12 +9,20 @@ import AvatarPicker from "../components/AvatarPicker.vue";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import RuntimeModelSelect from "../components/RuntimeModelSelect.vue";
 import RuntimeSelect from "../components/RuntimeSelect.vue";
+import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import { t } from "../i18n";
 import { gatewayHost } from "./runtime-catalog";
+import {
+  filterRuntimes,
+  isCustomRuntime,
+  visibleRuntimes as baseVisibleRuntimes,
+  type RuntimeKindFilter,
+} from "./runtime-list";
 import { useAppStore } from "../stores/app";
 import CreateRuntimeDialog from "./CreateRuntimeDialog.vue";
 
 const RUNTIME_VIEW_KEY = "multara.runtimes.view";
+const RUNTIME_FILTER_KEY = "multara.runtimes.filter";
 
 function agentListDescription(agent: Agent) {
   if (isMiku(agent)) return t("miku.description");
@@ -27,10 +35,21 @@ const kind = computed(() => String(route.meta.kind ?? ""));
 const runtimeView = ref<"list" | "card">(
   localStorage.getItem(RUNTIME_VIEW_KEY) === "card" ? "card" : "list",
 );
+const savedRuntimeFilter = localStorage.getItem(RUNTIME_FILTER_KEY);
+const runtimeKindFilter = ref<RuntimeKindFilter>(
+  savedRuntimeFilter === "builtin" || savedRuntimeFilter === "custom"
+    ? savedRuntimeFilter
+    : "all",
+);
 
 function setRuntimeView(mode: "list" | "card") {
   runtimeView.value = mode;
   localStorage.setItem(RUNTIME_VIEW_KEY, mode);
+}
+
+function setRuntimeFilter(filter: string) {
+  runtimeKindFilter.value = filter === "builtin" || filter === "custom" ? filter : "all";
+  localStorage.setItem(RUNTIME_FILTER_KEY, runtimeKindFilter.value);
 }
 
 function syncAgentsAndSquads() {
@@ -54,9 +73,23 @@ const busy = ref(false);
 const error = ref("");
 const editor = ref<"" | "agent" | "squad">("");
 const runtimeModal = ref<null | Runtime | "new">(null);
-const visibleRuntimes = computed(
-  () => store.data?.runtimes.filter((runtime) => runtime.status === "online" || runtime.id.startsWith("custom:")) ?? [],
+const allVisibleRuntimes = computed(() => baseVisibleRuntimes(store.data?.runtimes ?? []));
+const visibleRuntimes = computed(() =>
+  filterRuntimes(store.data?.runtimes ?? [], runtimeKindFilter.value),
 );
+const runtimeFilterItems = computed(() => [
+  { id: "all", label: t("runtime.filter.all"), count: allVisibleRuntimes.value.length },
+  {
+    id: "builtin",
+    label: t("runtime.filter.builtin"),
+    count: allVisibleRuntimes.value.filter((runtime) => !isCustomRuntime(runtime)).length,
+  },
+  {
+    id: "custom",
+    label: t("runtime.filter.custom"),
+    count: allVisibleRuntimes.value.filter(isCustomRuntime).length,
+  },
+]);
 const agentQuery = ref("");
 const visibleAgents = computed(() => {
   const query = agentQuery.value.trim().toLowerCase();
@@ -295,12 +328,26 @@ function runtimeSubtitle(runtime: Runtime) {
       </span>
     </div>
 
+    <div v-if="kind === 'runtimes' && allVisibleRuntimes.length" class="page-toolbar">
+      <SegmentedTabs
+        :model-value="runtimeKindFilter"
+        :items="runtimeFilterItems"
+        :label="t('runtime.filter.label')"
+        @update:model-value="setRuntimeFilter"
+      />
+    </div>
+
     <section v-if="kind === 'runtimes'" class="page-section">
-      <div v-if="!visibleRuntimes.length" class="ds-card ds-empty">
+      <div v-if="!allVisibleRuntimes.length" class="ds-card ds-empty">
         <span class="ds-empty-icon"><Boxes :size="18" /></span>
         <h3>{{ t("runtime.empty") }}</h3>
         <p>{{ t("runtime.emptyHint") }}</p>
         <UiButton @click="store.refreshRuntimes"><RefreshCw :size="15" /> {{ t("runtime.redetect") }}</UiButton>
+      </div>
+      <div v-else-if="!visibleRuntimes.length" class="ds-card ds-empty">
+        <span class="ds-empty-icon"><Boxes :size="18" /></span>
+        <h3>{{ t("runtime.emptyFilter") }}</h3>
+        <p>{{ t("runtime.emptyFilterHint") }}</p>
       </div>
       <div v-else-if="runtimeView === 'list'" class="agent-directory runtime-directory">
         <div class="agent-directory-head">
@@ -315,7 +362,10 @@ function runtimeSubtitle(runtime: Runtime) {
             <span class="runtime-logo"><ProviderLogo :provider="runtime.provider" :size="20" /></span>
             <span>
               <strong>{{ runtime.name }}</strong>
-              <small>{{ runtimeSubtitle(runtime) }}</small>
+              <small>
+                {{ runtimeSubtitle(runtime) }}
+                <span v-if="runtime.kind === 'gateway'" class="tag">{{ t("runtime.gatewayBadge") }}</span>
+              </small>
             </span>
           </span>
           <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'online' : 'offline'">
@@ -347,7 +397,10 @@ function runtimeSubtitle(runtime: Runtime) {
             <span class="runtime-logo"><ProviderLogo :provider="runtime.provider" :size="20" /></span>
             <div class="runtime-card-title">
               <strong>{{ runtime.name }}</strong>
-              <small>{{ runtimeSubtitle(runtime) }}</small>
+              <small>
+                {{ runtimeSubtitle(runtime) }}
+                <span v-if="runtime.kind === 'gateway'" class="tag">{{ t("runtime.gatewayBadge") }}</span>
+              </small>
               <small v-if="runtime.description">{{ runtime.description }}</small>
             </div>
             <span class="ds-badge" :data-tone="runtime.status === 'online' ? 'success' : undefined">

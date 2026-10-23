@@ -16,13 +16,14 @@ use crate::{
     database::AppState,
     diff_state_db, executor, files, git as git_manager, hook_runtime,
     models::{
-        Agent, AgentActivityRecord, AgentInput, Automation, AutomationInput, AutomationRun, BootstrapData, ChatMessage,
-        ChatSession, ChatSessionInput, CustomRuntimeForm, CustomRuntimeInput, DashboardStats, FileContent, FileEntry,
-        GitCommitFile, GitCommitInput, GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus,
-        GlobalResource, InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment, TaskChecklistItem,
-        MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunStatistics, Squad, SquadInput,
-        StatisticGroup, Task, TaskInput, TimelineItem, UsageDay, WebhookDelivery, WebhookInput, Workspace,
-        WorkspaceCandidate,
+        Agent, AgentActivityRecord, AgentInput, Automation, AutomationInput, AutomationRun,
+        BootstrapData, ChatMessage, ChatSession, ChatSessionInput, CustomRuntimeForm,
+        CustomRuntimeInput, DashboardStats, FileContent, FileEntry, GitCommitFile, GitCommitInput,
+        GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus, GlobalResource,
+        InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
+        MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunStatistics,
+        Squad, SquadInput, StatisticGroup, Task, TaskChecklistItem, TaskInput, TimelineItem,
+        UsageDay, WebhookDelivery, WebhookInput, Workspace, WorkspaceCandidate,
     },
     ops, resources as resource_manager, runtime, session, snapshot_db, workspace,
 };
@@ -197,7 +198,10 @@ pub fn terminal_publish(
     text: String,
     active: bool,
 ) -> Result<(), String> {
-    let dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     crate::terminal::publish_snapshot(&dir, &id, &title, &cwd, line_offset, &text, active)
 }
 
@@ -402,7 +406,10 @@ fn git_workspace_and_command(
     Ok((workspace, git_command))
 }
 
-fn workspace_status(workspace: &Workspace, git_command: &str) -> Result<GitRepositoryStatus, String> {
+fn workspace_status(
+    workspace: &Workspace,
+    git_command: &str,
+) -> Result<GitRepositoryStatus, String> {
     git_manager::status(
         &workspace.id,
         &workspace.name,
@@ -749,13 +756,7 @@ pub async fn git_graph_commit_action(
     let _span = crate::diag::span("git_graph_commit_action");
     off_main(app, move |state| {
         let (workspace, git_command) = git_workspace_and_command(state, &workspace_id)?;
-        git_manager::graph_commit_action(
-            &workspace.work_path,
-            &git_command,
-            &action,
-            &hash,
-            &name,
-        )
+        git_manager::graph_commit_action(&workspace.work_path, &git_command, &action, &hash, &name)
     })
     .await
 }
@@ -1294,13 +1295,19 @@ pub async fn list_runtime_models(
             let db = state.lock_db()?;
             return custom_runtime_models(&db, &runtime_id);
         }
-        Ok(crate::runtime_models::list(&runtime_id, refresh.unwrap_or(false)))
+        Ok(crate::runtime_models::list(
+            &runtime_id,
+            refresh.unwrap_or(false),
+        ))
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
-fn custom_runtime_models(db: &Connection, runtime_id: &str) -> Result<crate::runtime_models::RuntimeModels, String> {
+fn custom_runtime_models(
+    db: &Connection,
+    runtime_id: &str,
+) -> Result<crate::runtime_models::RuntimeModels, String> {
     let json: String = db
         .query_row(
             "SELECT models_json FROM custom_runtimes WHERE id = ?1",
@@ -1404,6 +1411,9 @@ fn prepare_custom_runtime(
     } else {
         Vec::new()
     };
+    if kind == "gateway" && models.is_empty() {
+        return Err("默认模型不能为空".to_string());
+    }
     let mut env = if kind == "gateway" {
         input.env.clone()
     } else {
@@ -1416,6 +1426,14 @@ fn prepare_custom_runtime(
         "chat"
     } else {
         "responses"
+    };
+    let api_format = if kind == "gateway" {
+        match input.api_format.trim() {
+            "anthropic" | "responses" | "chat" | "gemini" => input.api_format.trim(),
+            _ => runtime::native_api_format(provider),
+        }
+    } else {
+        ""
     };
     let key_style = if provider == "claude" && input.key_style.trim() == "x-api-key" {
         "x-api-key"
@@ -1438,6 +1456,7 @@ fn prepare_custom_runtime(
         kind: kind.to_string(),
         description: input.description.trim().to_string(),
         wire_api: wire_api.to_string(),
+        api_format: api_format.to_string(),
         key_style: key_style.to_string(),
     })
 }
@@ -1455,6 +1474,7 @@ struct PreparedCustomRuntime {
     kind: String,
     description: String,
     wire_api: String,
+    api_format: String,
     key_style: String,
 }
 
@@ -1493,14 +1513,14 @@ pub fn save_custom_runtime(
     db.execute(
         "INSERT INTO custom_runtimes (
             id, name, command, args_json, provider, protocol, api_url, api_key, models_json, env_json,
-            kind, description, wire_api, key_style
+            kind, description, wire_api, api_format, key_style
          )
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(id) DO UPDATE SET name=excluded.name, command=excluded.command,
            args_json=excluded.args_json, provider=excluded.provider, protocol=excluded.protocol,
            api_url=excluded.api_url, api_key=excluded.api_key, models_json=excluded.models_json,
            env_json=excluded.env_json, kind=excluded.kind, description=excluded.description,
-           wire_api=excluded.wire_api, key_style=excluded.key_style",
+           wire_api=excluded.wire_api, api_format=excluded.api_format, key_style=excluded.key_style",
         params![
             id,
             prepared.name,
@@ -1515,6 +1535,7 @@ pub fn save_custom_runtime(
             prepared.kind,
             prepared.description,
             prepared.wire_api,
+            prepared.api_format,
             prepared.key_style,
         ],
     )
@@ -1542,14 +1563,15 @@ pub fn get_custom_runtime(
         "SELECT c.id, c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 1),
                 c.provider, c.protocol, c.api_url, c.models_json, c.env_json,
                 COALESCE(c.kind, 'profile'), COALESCE(c.description, ''),
-                COALESCE(c.wire_api, 'responses'), COALESCE(c.key_style, 'bearer'),
+                COALESCE(c.wire_api, 'responses'), COALESCE(c.api_format, ''),
+                COALESCE(c.key_style, 'bearer'),
                 c.api_key
          FROM custom_runtimes c
          LEFT JOIN runtime_settings s ON s.runtime_id = c.id
          WHERE c.id = ?1",
         [&runtime_id],
         |row| {
-            let api_key: String = row.get(14)?;
+            let api_key: String = row.get(15)?;
             Ok(CustomRuntimeForm {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -1566,7 +1588,8 @@ pub fn get_custom_runtime(
                 kind: row.get(10)?,
                 description: row.get(11)?,
                 wire_api: row.get(12)?,
-                key_style: row.get(13)?,
+                api_format: row.get(13)?,
+                key_style: row.get(14)?,
             })
         },
     )
@@ -1620,6 +1643,7 @@ pub struct RuntimeConnectionInput {
     pub api_key: String,
     pub model: String,
     pub wire_api: String,
+    pub api_format: String,
     pub key_style: String,
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -1668,31 +1692,82 @@ fn run_runtime_connection_test(
     let path = runtime::resolve_runtime_command(input.command.trim(), &provider)
         .ok_or_else(|| format!("未找到命令：{}", input.command.trim()))?;
     let model = input.model.trim();
+    if model.is_empty() {
+        return Err("默认模型不能为空".into());
+    }
+    let client_format = crate::gateway_proxy::ApiFormat::parse(
+        runtime::native_api_format(&provider),
+        crate::gateway_proxy::ApiFormat::Chat,
+    );
+    let proxy =
+        crate::gateway_proxy::GatewayProxy::start(crate::gateway_proxy::GatewayProxyConfig {
+            client_format,
+            upstream_format: crate::gateway_proxy::ApiFormat::parse(
+                &input.api_format,
+                client_format,
+            ),
+            api_url: api_url.clone(),
+            api_key,
+            key_style: input.key_style.clone(),
+            model: model.to_string(),
+            client_model: runtime::gateway_client_model(&provider).to_string(),
+        })?;
+    let local_url = runtime::gateway_local_base_url(&provider, proxy.origin());
+    let env_model = if provider == "opencode" {
+        "default"
+    } else {
+        runtime::gateway_client_model(&provider)
+    };
+    let cli_model = if provider == "opencode" {
+        format!("multara/{env_model}")
+    } else {
+        env_model.to_string()
+    };
     let prompt = "Reply with the single word ok.";
-    let args = runtime::compose_args(
+    let mut args = runtime::compose_args(
         &provider,
         &input.args,
         prompt,
         true,
-        &api_url,
-        model,
-        &input.wire_api,
+        &local_url,
+        "",
+        runtime::native_api_format(&provider),
     );
+    args.extend(runtime::gateway_settings_args(
+        &provider,
+        &local_url,
+        proxy.token(),
+    ));
+    args.push("--model".into());
+    args.push(cli_model);
     let mut env = input.env;
     for key in runtime::managed_env_keys() {
         env.remove(*key);
     }
-    for (key, value) in runtime::gateway_env(&provider, &api_url, api_key.trim(), model, &input.key_style)
+    for (key, value) in
+        runtime::gateway_env(&provider, &local_url, proxy.token(), env_model, "bearer")
     {
         env.insert(key, value);
     }
     let via_stdin = runtime::prompt_via_stdin(&provider);
-    emit_connection_log(app, &format!("$ {} {}", path.display(), args.join(" ")));
+    let display_args = args
+        .iter()
+        .map(|arg| arg.replace(proxy.token(), "***"))
+        .collect::<Vec<_>>();
+    emit_connection_log(
+        app,
+        &format!("$ {} {}", path.display(), display_args.join(" ")),
+    );
     let mut env_keys = env.keys().cloned().collect::<Vec<_>>();
     env_keys.sort();
     for key in env_keys {
         if let Some(value) = env.get(&key) {
-            emit_connection_log(app, &format!("{key}={value}"));
+            let display = if key.contains("KEY") || key.contains("TOKEN") {
+                "***"
+            } else {
+                value
+            };
+            emit_connection_log(app, &format!("{key}={display}"));
         }
     }
     if let Some(payload) = runtime::stdin_prompt(&provider, prompt) {
@@ -1834,7 +1909,10 @@ pub fn scan_resources(state: State<'_, AppState>) -> Result<Vec<GlobalResource>,
 }
 
 #[tauri::command]
-pub fn list_resource_sources(kind: String, state: State<'_, AppState>) -> Result<Vec<ResourceSource>, String> {
+pub fn list_resource_sources(
+    kind: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ResourceSource>, String> {
     let db = state.lock_db()?;
     sync_resource_workspaces(&db);
     Ok(resource_manager::sources()
@@ -1850,7 +1928,10 @@ pub fn reveal_resource(resource_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn search_catalog(kind: String, query: String) -> Result<Vec<catalog::CatalogItem>, String> {
+pub async fn search_catalog(
+    kind: String,
+    query: String,
+) -> Result<Vec<catalog::CatalogItem>, String> {
     let _span = crate::diag::span("search_catalog");
     // 网络请求放到阻塞线程，避免同步命令卡住前端弹窗首帧
     tauri::async_runtime::spawn_blocking(move || catalog::search(&kind, &query))
@@ -1878,14 +1959,21 @@ pub async fn generate_skill(
     let _span = crate::diag::span("generate_skill");
     tauri::async_runtime::spawn_blocking(move || {
         let markdown = executor::generate_skill_markdown(&app, &requirement)?;
-        resource_manager::create_skill_from_markdown(&resource_owner(owner), &requirement, &markdown)
+        resource_manager::create_skill_from_markdown(
+            &resource_owner(owner),
+            &requirement,
+            &markdown,
+        )
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn import_skill_from_folder(path: String, owner: Option<String>) -> Result<GlobalResource, String> {
+pub fn import_skill_from_folder(
+    path: String,
+    owner: Option<String>,
+) -> Result<GlobalResource, String> {
     let _span = crate::diag::span("import_skill_from_folder");
     resource_manager::import_skill_from_folder(&path, &resource_owner(owner))
 }
@@ -1910,12 +1998,18 @@ pub async fn import_skill_from_url(
 }
 
 #[tauri::command]
-pub fn delete_skill(resource_id: String, state: State<'_, AppState>) -> Result<Vec<GlobalResource>, String> {
+pub fn delete_skill(
+    resource_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<GlobalResource>, String> {
     let _span = crate::diag::span("delete_skill");
     resource_manager::delete_skill(&resource_id)?;
     let db = state.lock_db()?;
-    db.execute("DELETE FROM agent_resources WHERE resource_id = ?1", params![resource_id])
-        .map_err(|error| error.to_string())?;
+    db.execute(
+        "DELETE FROM agent_resources WHERE resource_id = ?1",
+        params![resource_id],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(scan_all(&db))
 }
 
@@ -2391,11 +2485,19 @@ pub fn get_run_statistics(
     };
     let project_id = project_id.and_then(|value| {
         let trimmed = value.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     });
     let agent_id = agent_id.and_then(|value| {
         let trimmed = value.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     });
     run_statistics(&db, days, project_id.as_deref(), agent_id.as_deref())
 }
@@ -2473,17 +2575,26 @@ pub fn check_git_executable(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn save_mcp(input: McpInput, state: State<'_, AppState>) -> Result<Vec<GlobalResource>, String> {
+pub fn save_mcp(
+    input: McpInput,
+    state: State<'_, AppState>,
+) -> Result<Vec<GlobalResource>, String> {
     let _span = crate::diag::span("save_mcp");
     let previous = input.previous_name.clone();
     let owner = resource_owner(input.owner.clone());
     let name = input.name.trim().to_string();
     resource_manager::save_mcp(input)?;
-    if let Some(previous) = previous.map(|value| value.trim().to_string()).filter(|value| !value.is_empty() && value != &name) {
+    if let Some(previous) = previous
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty() && value != &name)
+    {
         let db = state.lock_db()?;
         db.execute(
             "UPDATE agent_resources SET resource_id = ?1 WHERE resource_id = ?2",
-            params![format!("mcp:{owner}:{name}"), format!("mcp:{owner}:{previous}")],
+            params![
+                format!("mcp:{owner}:{name}"),
+                format!("mcp:{owner}:{previous}")
+            ],
         )
         .map_err(|error| error.to_string())?;
     }
@@ -2499,7 +2610,8 @@ pub fn install_mcp(
     state: State<'_, AppState>,
 ) -> Result<Vec<GlobalResource>, String> {
     let _span = crate::diag::span("install_mcp");
-    let parsed: serde_json::Value = serde_json::from_str(&entry_json).map_err(|error| error.to_string())?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&entry_json).map_err(|error| error.to_string())?;
     let entry = if let Some(wrapped) = parsed.get(&name) {
         wrapped.clone()
     } else if parsed.get("mcpServers").is_some() || parsed.get("servers").is_some() {
@@ -2602,7 +2714,10 @@ pub fn get_mcp_inputs(name: String, owner: Option<String>) -> Result<McpInputs, 
 }
 
 #[tauri::command]
-pub fn save_mcp_inputs(name: String, values: serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
+pub fn save_mcp_inputs(
+    name: String,
+    values: serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
     crate::mcp_vars::save_inputs(name.trim(), values)
 }
 
@@ -2610,7 +2725,8 @@ pub fn save_mcp_inputs(name: String, values: serde_json::Map<String, serde_json:
 pub fn list_mcp_tool_cache(
     app: AppHandle,
 ) -> Result<Vec<crate::mcp_tools_cache::McpToolsCacheEntry>, String> {
-    let Some(cache) = app.try_state::<std::sync::Arc<crate::mcp_tools_cache::McpToolsCache>>() else {
+    let Some(cache) = app.try_state::<std::sync::Arc<crate::mcp_tools_cache::McpToolsCache>>()
+    else {
         return Ok(Vec::new());
     };
     Ok(cache.list())
@@ -2638,10 +2754,16 @@ pub async fn probe_mcp(
     let owner_for_store = owner.clone();
     let name_for_store = name.clone();
     // 探测会起进程/打 HTTP，必须离开主线程，否则窗口卡死
-    let probe = tauri::async_runtime::spawn_blocking(move || resource_manager::probe_mcp(&owner, &name))
-        .await
-        .map_err(|error| error.to_string())??;
-    crate::mcp_tools_cache::McpToolsCache::store_probe(&app, &owner_for_store, &name_for_store, probe.clone());
+    let probe =
+        tauri::async_runtime::spawn_blocking(move || resource_manager::probe_mcp(&owner, &name))
+            .await
+            .map_err(|error| error.to_string())??;
+    crate::mcp_tools_cache::McpToolsCache::store_probe(
+        &app,
+        &owner_for_store,
+        &name_for_store,
+        probe.clone(),
+    );
     Ok(probe)
 }
 
@@ -2801,7 +2923,9 @@ pub fn update_task_status(
     let (tasks, queued) = {
         let db = state.lock_db()?;
         let previous: Option<String> = db
-            .query_row("SELECT status FROM tasks WHERE id=?1", [&task_id], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id=?1", [&task_id], |row| {
+                row.get(0)
+            })
             .ok();
         let mut tasks = ops::task::update_status(&db, &task_id, &status)?;
         // 从别的列挪进「进行中」= 让它开跑；本来就在进行中的只是排序，不重复排队
@@ -2898,7 +3022,13 @@ pub fn agent_system_context(
         db.query_row(
             "SELECT name, instructions, system_key FROM agents WHERE id = ?1",
             [&agent_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
         )
         .map_err(|error| error.to_string())?
     };
@@ -3008,7 +3138,10 @@ pub fn delete_task(
         )
         .map_err(|error| error.to_string())?;
     transaction
-        .execute("DELETE FROM session_projects WHERE session_id=?1", [&session_id])
+        .execute(
+            "DELETE FROM session_projects WHERE session_id=?1",
+            [&session_id],
+        )
         .map_err(|error| error.to_string())?;
     transaction
         .execute("DELETE FROM run_events WHERE session_id=?1", [&session_id])
@@ -4166,7 +4299,10 @@ fn create_run(db: &Connection, run: NewRun<'_>) -> Result<String, String> {
     )
 }
 
-pub(crate) fn workspace_root(state: &State<'_, AppState>, workspace_id: &str) -> Result<String, String> {
+pub(crate) fn workspace_root(
+    state: &State<'_, AppState>,
+    workspace_id: &str,
+) -> Result<String, String> {
     let db = state.lock_db()?;
     db.query_row(
         "SELECT work_path FROM workspaces WHERE id = ?1",
@@ -4418,10 +4554,7 @@ pub fn update_task_meta(
         input.labels.as_deref(),
         input.checklist.as_deref(),
         input.pr_url.as_deref(),
-        input
-            .parent_task_id
-            .as_ref()
-            .map(|value| value.as_deref()),
+        input.parent_task_id.as_ref().map(|value| value.as_deref()),
     )?;
     ops::task::get(&db, &task_id)
 }
@@ -4939,8 +5072,10 @@ fn run_statistics(
 ) -> Result<RunStatistics, String> {
     let filter = usage_where(project_id, agent_id);
     let params = usage_params(days, project_id, agent_id);
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|value| value as &dyn rusqlite::types::ToSql).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+        .iter()
+        .map(|value| value as &dyn rusqlite::types::ToSql)
+        .collect();
     let summary = db
         .query_row(
             &format!(
@@ -5036,8 +5171,10 @@ fn run_statistics(
 }
 
 fn usage_days(db: &Connection, filter: &str, params: &[String]) -> Result<Vec<UsageDay>, String> {
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|value| value as &dyn rusqlite::types::ToSql).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+        .iter()
+        .map(|value| value as &dyn rusqlite::types::ToSql)
+        .collect();
     let mut statement = db
         .prepare(&format!(
             "SELECT date(r.created_at, 'localtime'), COUNT(*),
@@ -5068,9 +5205,15 @@ fn usage_days(db: &Connection, filter: &str, params: &[String]) -> Result<Vec<Us
     Ok(days)
 }
 
-fn usage_groups(db: &Connection, sql: &str, params: &[String]) -> Result<Vec<StatisticGroup>, String> {
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|value| value as &dyn rusqlite::types::ToSql).collect();
+fn usage_groups(
+    db: &Connection,
+    sql: &str,
+    params: &[String],
+) -> Result<Vec<StatisticGroup>, String> {
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+        .iter()
+        .map(|value| value as &dyn rusqlite::types::ToSql)
+        .collect();
     let mut statement = db.prepare(sql).map_err(|error| error.to_string())?;
     let groups = statement
         .query_map(param_refs.as_slice(), |row| {
@@ -5130,7 +5273,8 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
     }
     if let Some(value) = settings.get("explorerSettings") {
         let valid = value.len() <= 64 * 1024
-            && serde_json::from_str::<serde_json::Value>(value).is_ok_and(|parsed| parsed.is_object());
+            && serde_json::from_str::<serde_json::Value>(value)
+                .is_ok_and(|parsed| parsed.is_object());
         if !valid {
             return Err("无效的资源管理器设置".to_string());
         }
@@ -5229,7 +5373,11 @@ fn sanitize_branch_prefix(prefix: &str) -> Result<String, String> {
 
 fn local_branch_name(requirement: &str, prefix: &str) -> String {
     let slug = slug_branch_piece(requirement);
-    let slug = if slug.is_empty() { "feature".to_string() } else { slug };
+    let slug = if slug.is_empty() {
+        "feature".to_string()
+    } else {
+        slug
+    };
     format!("{prefix}/{slug}")
 }
 
@@ -5275,7 +5423,11 @@ fn slug_branch_piece(value: &str) -> String {
     let mut slug = String::new();
     let mut pending_dash = false;
     for ch in value.trim().to_lowercase().chars() {
-        let keep = ch.is_ascii_alphanumeric() || ch == '.' || ch == '+' || ch == '_' || ('\u{4e00}'..='\u{9fff}').contains(&ch);
+        let keep = ch.is_ascii_alphanumeric()
+            || ch == '.'
+            || ch == '+'
+            || ch == '_'
+            || ('\u{4e00}'..='\u{9fff}').contains(&ch);
         if keep {
             if pending_dash && !slug.is_empty() {
                 slug.push('-');
@@ -5288,7 +5440,9 @@ fn slug_branch_piece(value: &str) -> String {
             pending_dash = true;
         }
     }
-    slug.trim_matches(|ch| ch == '-' || ch == '.').trim_end_matches(".lock").to_string()
+    slug.trim_matches(|ch| ch == '-' || ch == '.')
+        .trim_end_matches(".lock")
+        .to_string()
 }
 
 pub(crate) fn expand_user_path(value: &str) -> Option<PathBuf> {
@@ -5509,7 +5663,10 @@ mod tests {
     #[test]
     fn branch_prefix_and_generated_name_stay_valid() {
         assert_eq!(local_branch_name("登录页改版", "fix"), "fix/登录页改版");
-        assert_eq!(coerce_branch_name("`fix/login-page`\n说明", "feat"), "fix/login-page");
+        assert_eq!(
+            coerce_branch_name("`fix/login-page`\n说明", "feat"),
+            "fix/login-page"
+        );
         assert_eq!(coerce_branch_name("???", "fix"), "fix/feature");
         assert!(sanitize_branch_prefix("feat/bad").is_err());
         let settings = HashMap::from([("branchPrompt".to_string(), "x".repeat(2001))]);

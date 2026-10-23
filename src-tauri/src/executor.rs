@@ -158,7 +158,13 @@ pub fn generate_commit_message(
         "{rules_text}\n\n{}{diff}",
         crate::app_locale::commit_diff_wrapper(locale),
     );
-    let message = generate_plain_line(app, &prompt, "提交信息", Duration::from_secs(60), Some(source))?;
+    let message = generate_plain_line(
+        app,
+        &prompt,
+        "提交信息",
+        Duration::from_secs(60),
+        Some(source),
+    )?;
     let conventional = [
         "feat", "fix", "refactor", "docs", "test", "chore", "perf", "build", "ci", "style",
         "revert",
@@ -189,7 +195,13 @@ pub fn generate_branch_name(
         "{prompt}{}",
         crate::app_locale::branch_name_wrapper(locale, prefix, requirement)
     );
-    generate_plain_line(app, &instruction, "分支名", Duration::from_secs(45), Some(source))
+    generate_plain_line(
+        app,
+        &instruction,
+        "分支名",
+        Duration::from_secs(45),
+        Some(source),
+    )
 }
 
 fn generate_plain_line(
@@ -200,7 +212,9 @@ fn generate_plain_line(
     source: Option<&HelperSource>,
 ) -> Result<String, String> {
     let text = match source {
-        Some(src) if src.mode.trim() == "api" => generate_text_via_api(prompt, label, timeout, src)?,
+        Some(src) if src.mode.trim() == "api" => {
+            generate_text_via_api(prompt, label, timeout, src)?
+        }
         Some(src) => {
             let agent_id = src.agent_id.trim();
             generate_text(
@@ -302,8 +316,8 @@ fn generate_text_via_api(
             truncate_error(response.body.trim(), 1_000)
         ));
     }
-    let parsed: Value =
-        serde_json::from_str(&response.body).map_err(|error| format!("接口返回无法解析：{error}"))?;
+    let parsed: Value = serde_json::from_str(&response.body)
+        .map_err(|error| format!("接口返回无法解析：{error}"))?;
     let content = parsed
         .pointer("/choices/0/message/content")
         .and_then(message_content_text)
@@ -380,7 +394,9 @@ fn generate_text(
             .map_err(|error| error.to_string())?;
         agents
     };
-    let preferred = preferred_agent_id.map(str::trim).filter(|id| !id.is_empty());
+    let preferred = preferred_agent_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
     let mut selected = None;
     if let Some(id) = preferred {
         let mut agent = agents
@@ -558,7 +574,11 @@ pub fn steer(app: &AppHandle, session_id: &str, text: &str) -> Result<bool, Stri
     Ok(true)
 }
 
-pub fn resolve_permission(app: &AppHandle, request_id: &str, option_id: &str) -> Result<(), String> {
+pub fn resolve_permission(
+    app: &AppHandle,
+    request_id: &str,
+    option_id: &str,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
     let active = state
         .active_runs
@@ -853,20 +873,19 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
         if abort_stopped(&app, &run, None) {
             return;
         }
-        let (resume_id, history) =
-            match conversation::prepare(
-                &app,
-                &run.session_id,
-                &run.agent_id,
-                &run.runtime_id,
-                &launch_provider,
-            ) {
-                Ok(value) => value,
-                Err(error) => {
-                    finish(&app, &run, "failed", "", Some(error));
-                    return;
-                }
-            };
+        let (resume_id, history) = match conversation::prepare(
+            &app,
+            &run.session_id,
+            &run.agent_id,
+            &run.runtime_id,
+            &launch_provider,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                finish(&app, &run, "failed", "", Some(error));
+                return;
+            }
+        };
         let prompt = {
             let locale = app
                 .state::<AppState>()
@@ -915,16 +934,40 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             .as_ref()
             .map(|file| file.path().to_string_lossy().to_string());
         let custom_launch = custom_runtime_launch(&app, &run.runtime_id).ok();
+        let gateway = match custom_launch
+            .as_ref()
+            .filter(|launch| launch.kind == "gateway")
+            .map(|launch| prepare_gateway(launch, &run.model))
+            .transpose()
+        {
+            Ok(gateway) => gateway,
+            Err(error) => {
+                finish(&app, &run, "failed", "", Some(error));
+                return;
+            }
+        };
         let launch_provider = custom_launch
             .as_ref()
             .map(|item| item.provider.as_str())
             .unwrap_or(run.runtime_id.as_str())
             .to_string();
+        let mut launch_args = args;
+        if let Some(gateway) = &gateway {
+            let insertion = launch_args
+                .iter()
+                .position(|arg| arg == &run.assignment)
+                .unwrap_or(launch_args.len());
+            launch_args.splice(insertion..insertion, gateway.args.clone());
+        }
+        let cli_model = gateway
+            .as_ref()
+            .map(|gateway| gateway.cli_model.as_str())
+            .unwrap_or(run.model.as_str());
         let final_args = conversation::apply_resume(
             apply_options(
-                replace_assignment(args, &run.assignment, &prompt),
+                replace_assignment(launch_args, &run.assignment, &prompt),
                 &launch_provider,
-                &run.model,
+                cli_model,
                 &workspace_context.1,
                 mcp_path.as_deref(),
             ),
@@ -979,6 +1022,11 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     }
                 }
                 for (key, value) in &launch.env {
+                    command.env(key, value);
+                }
+            }
+            if let Some(gateway) = &gateway {
+                for (key, value) in &gateway.env {
                     command.env(key, value);
                 }
             }
@@ -1056,7 +1104,12 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
         });
         let stdout = protocol_stdout
             .map(|stream| Box::new(stream) as Box<dyn Read + Send>)
-            .or_else(|| child.stdout.take().map(|stream| Box::new(stream) as Box<dyn Read + Send>));
+            .or_else(|| {
+                child
+                    .stdout
+                    .take()
+                    .map(|stream| Box::new(stream) as Box<dyn Read + Send>)
+            });
         let stderr = child.stderr.take();
         let child = Arc::new(Mutex::new(child));
         let supervisor_alive = Arc::new(AtomicBool::new(true));
@@ -1574,7 +1627,8 @@ fn finish(
                         automation_run_id
                     ],
                 );
-                let _ = crate::ops::automation::publish_result(&db, &run.session_id, automation_status);
+                let _ =
+                    crate::ops::automation::publish_result(&db, &run.session_id, automation_status);
             }
         }
         let _ = crate::ops::task::sync_from_run(
@@ -1584,9 +1638,11 @@ fn finish(
             &completed_at.to_rfc3339(),
         );
         if status == "completed" || status == "failed" {
-            if let Ok(Some(resume)) =
-                crate::ops::task::maybe_resume_parent(&db, &run.session_id, &completed_at.to_rfc3339())
-            {
+            if let Ok(Some(resume)) = crate::ops::task::maybe_resume_parent(
+                &db,
+                &run.session_id,
+                &completed_at.to_rfc3339(),
+            ) {
                 parent_resume = Some(resume);
             }
         }
@@ -2027,10 +2083,7 @@ fn workspace_context(
 /// 没关联项目时，给这次会话一块应用数据目录里的工作目录。同一会话重复运行沿用同一目录。
 fn scratch_workdir(app: &AppHandle, session_id: &str) -> Result<String, String> {
     let session_id = session_id.trim();
-    if session_id.is_empty()
-        || session_id.contains(['/', '\\', '.'])
-        || session_id.contains('\0')
-    {
+    if session_id.is_empty() || session_id.contains(['/', '\\', '.']) || session_id.contains('\0') {
         return Err("会话标识无效，无法准备工作目录".to_string());
     }
     let dir = app
@@ -2097,7 +2150,10 @@ fn invoked_skill_names(message: &str) -> Vec<String> {
     message
         .split_whitespace()
         .filter_map(|word| word.strip_prefix('/'))
-        .map(|name| name.trim_end_matches([',', '，', '。', '.', ':', '：']).to_string())
+        .map(|name| {
+            name.trim_end_matches([',', '，', '。', '.', ':', '：'])
+                .to_string()
+        })
         .filter(|name| !name.is_empty() && !name.contains('/'))
         .collect()
 }
@@ -2151,10 +2207,7 @@ fn resource_context(
         }
     }
     for resource_id in skill_ids {
-        let Some(resource) = scanned
-            .iter()
-            .find(|resource| resource.id == resource_id)
-        else {
+        let Some(resource) = scanned.iter().find(|resource| resource.id == resource_id) else {
             continue;
         };
         let skill_path = std::path::Path::new(&resource.source_path).join("SKILL.md");
@@ -2237,14 +2290,13 @@ fn execution_for(
         .path
         .map(std::path::PathBuf::from)
         .ok_or_else(|| format!("未找到自定义运行时命令：{}", detected.command))?;
-    let model = launch.models.first().map(String::as_str).unwrap_or("");
     let args = runtime::compose_args(
         &launch.provider,
         &launch.args,
         assignment,
-        launch.kind == "gateway",
-        &launch.api_url,
-        model,
+        false,
+        "",
+        "",
         &launch.wire_api,
     );
     Ok((path, args, launch.limit.clamp(1, 6)))
@@ -2259,6 +2311,76 @@ fn provider_for(app: &AppHandle, runtime_id: &str) -> String {
         .unwrap_or_else(|_| runtime_id.to_string())
 }
 
+struct PreparedGateway {
+    _proxy: crate::gateway_proxy::GatewayProxy,
+    args: Vec<String>,
+    env: std::collections::HashMap<String, String>,
+    cli_model: String,
+}
+
+fn prepare_gateway(launch: &CustomLaunch, selected_model: &str) -> Result<PreparedGateway, String> {
+    use crate::gateway_proxy::{ApiFormat, GatewayProxy, GatewayProxyConfig};
+
+    let model = if selected_model.trim().is_empty() || selected_model == "auto" {
+        launch.models.first().map(String::as_str).unwrap_or("")
+    } else {
+        selected_model.trim()
+    };
+    if model.is_empty() {
+        return Err("自定义 API 中转站需要配置默认模型".into());
+    }
+    let client_format = ApiFormat::parse(
+        runtime::native_api_format(&launch.provider),
+        ApiFormat::Chat,
+    );
+    let upstream_format = ApiFormat::parse(&launch.api_format, client_format);
+    let client_model = runtime::gateway_client_model(&launch.provider);
+    let proxy = GatewayProxy::start(GatewayProxyConfig {
+        client_format,
+        upstream_format,
+        api_url: launch.api_url.clone(),
+        api_key: launch.api_key.clone(),
+        key_style: launch.key_style.clone(),
+        model: model.to_string(),
+        client_model: client_model.to_string(),
+    })?;
+    let base_url = runtime::gateway_local_base_url(&launch.provider, proxy.origin());
+    let env_model = if launch.provider == "opencode" {
+        "default"
+    } else {
+        client_model
+    };
+    let env = runtime::gateway_env(
+        &launch.provider,
+        &base_url,
+        proxy.token(),
+        env_model,
+        "bearer",
+    );
+    let mut args = runtime::gateway_args(
+        &launch.provider,
+        &base_url,
+        "",
+        runtime::native_api_format(&launch.provider),
+    );
+    args.extend(runtime::gateway_settings_args(
+        &launch.provider,
+        &base_url,
+        proxy.token(),
+    ));
+    let cli_model = if launch.provider == "opencode" {
+        format!("multara/{env_model}")
+    } else {
+        client_model.to_string()
+    };
+    Ok(PreparedGateway {
+        _proxy: proxy,
+        args,
+        env,
+        cli_model,
+    })
+}
+
 struct CustomLaunch {
     name: String,
     command: String,
@@ -2267,10 +2389,13 @@ struct CustomLaunch {
     provider: String,
     protocol: String,
     api_url: String,
+    api_key: String,
     models: Vec<String>,
     env: std::collections::HashMap<String, String>,
     kind: String,
     wire_api: String,
+    api_format: String,
+    key_style: String,
 }
 
 fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaunch, String> {
@@ -2283,14 +2408,16 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
         "SELECT c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 1),
                 c.provider, c.protocol, c.api_url, c.api_key, c.models_json, c.env_json,
                 COALESCE(c.kind, 'profile'), COALESCE(c.wire_api, 'responses'),
-                COALESCE(c.key_style, 'bearer')
+                COALESCE(c.api_format, ''), COALESCE(c.key_style, 'bearer')
          FROM custom_runtimes c
          LEFT JOIN runtime_settings s ON s.runtime_id = c.id
          WHERE c.id = ?1",
         [runtime_id],
         |row| {
-            let args: Vec<String> = serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
-            let models: Vec<String> = serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default();
+            let args: Vec<String> =
+                serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default();
+            let models: Vec<String> =
+                serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default();
             let mut env: std::collections::HashMap<String, String> =
                 serde_json::from_str(&row.get::<_, String>(9)?).unwrap_or_default();
             let protocol: String = row.get(5)?;
@@ -2299,17 +2426,10 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
             let provider: String = row.get(4)?;
             let kind: String = row.get(10)?;
             let wire_api: String = row.get(11)?;
-            let key_style: String = row.get(12)?;
+            let api_format: String = row.get(12)?;
+            let key_style: String = row.get(13)?;
             for key in runtime::managed_env_keys() {
                 env.remove(*key);
-            }
-            if kind == "gateway" {
-                let model = models.first().cloned().unwrap_or_default();
-                for (key, value) in
-                    runtime::gateway_env(&provider, &api_url, &api_key, &model, &key_style)
-                {
-                    env.insert(key, value);
-                }
             }
             Ok(CustomLaunch {
                 name: row.get(0)?,
@@ -2319,10 +2439,13 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
                 provider,
                 protocol,
                 api_url,
+                api_key,
                 models,
                 env,
                 kind,
                 wire_api,
+                api_format,
+                key_style,
             })
         },
     )
@@ -2692,7 +2815,9 @@ fn normalize_copilot(value: &Value) -> Vec<NormalizedEvent> {
     match event_type {
         "assistant.message" => {
             let mut events = Vec::new();
-            if let Some(thinking) = text_at(data, &["/reasoningText"]).filter(|text| !text.is_empty()) {
+            if let Some(thinking) =
+                text_at(data, &["/reasoningText"]).filter(|text| !text.is_empty())
+            {
                 events.push(normalized("thinking", Some(thinking)));
             }
             if let Some(text) = text_at(data, &["/content"]).filter(|text| !text.is_empty()) {
@@ -2702,7 +2827,10 @@ fn normalize_copilot(value: &Value) -> Vec<NormalizedEvent> {
                 for tool in tools {
                     events.push(NormalizedEvent {
                         event_type: "tool_use",
-                        call_id: tool.get("toolCallId").and_then(Value::as_str).map(str::to_string),
+                        call_id: tool
+                            .get("toolCallId")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
                         tool: tool.get("name").and_then(Value::as_str).map(str::to_string),
                         content: None,
                         input: tool.get("arguments").cloned(),
@@ -2720,14 +2848,19 @@ fn normalize_copilot(value: &Value) -> Vec<NormalizedEvent> {
             .map(|text| normalized("text", Some(text)))
             .into_iter()
             .collect(),
-        "assistant.reasoning" | "assistant.reasoning_delta" => text_at(data, &["/content", "/delta"])
-            .filter(|text| !text.is_empty())
-            .map(|text| normalized("thinking", Some(text)))
-            .into_iter()
-            .collect(),
+        "assistant.reasoning" | "assistant.reasoning_delta" => {
+            text_at(data, &["/content", "/delta"])
+                .filter(|text| !text.is_empty())
+                .map(|text| normalized("thinking", Some(text)))
+                .into_iter()
+                .collect()
+        }
         "tool.execution_complete" => vec![NormalizedEvent {
             event_type: "tool_result",
-            call_id: data.get("toolCallId").and_then(Value::as_str).map(str::to_string),
+            call_id: data
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             tool: None,
             content: text_at(data, &["/result/content", "/error/message"]),
             input: None,
@@ -2755,7 +2888,10 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
             let mut events = vec![NormalizedEvent {
                 event_type: "tool_use",
                 call_id: call_id.clone(),
-                tool: value.pointer("/part/tool").and_then(Value::as_str).map(str::to_string),
+                tool: value
+                    .pointer("/part/tool")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 content: None,
                 input: value.pointer("/part/state/input").cloned(),
                 output: None,
@@ -2763,7 +2899,9 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
                 parent_call_id: None,
                 status: None,
             }];
-            if let Some(output) = text_at(value, &["/part/state/output"]).filter(|text| !text.is_empty()) {
+            if let Some(output) =
+                text_at(value, &["/part/state/output"]).filter(|text| !text.is_empty())
+            {
                 events.push(NormalizedEvent {
                     event_type: "tool_result",
                     call_id,
@@ -2787,11 +2925,21 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
 }
 
 fn normalize_pi(value: &Value) -> Vec<NormalizedEvent> {
-    match value.get("type").and_then(Value::as_str).unwrap_or_default() {
-        "message_update" => text_at(value, &["/assistantMessageEvent/delta", "/assistantMessageEvent/content"])
-            .map(|text| normalized("text", Some(text)))
-            .into_iter()
-            .collect(),
+    match value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+    {
+        "message_update" => text_at(
+            value,
+            &[
+                "/assistantMessageEvent/delta",
+                "/assistantMessageEvent/content",
+            ],
+        )
+        .map(|text| normalized("text", Some(text)))
+        .into_iter()
+        .collect(),
         "tool_execution_start" => vec![NormalizedEvent {
             event_type: "tool_use",
             call_id: text_at(value, &["/toolCallId"]),
@@ -2826,9 +2974,19 @@ fn normalize_pi(value: &Value) -> Vec<NormalizedEvent> {
 }
 
 fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
-    match value.get("type").and_then(Value::as_str).unwrap_or_default() {
-        "text" => text_at(value, &["/text"]).map(|text| normalized("text", Some(text))).into_iter().collect(),
-        "thinking" => text_at(value, &["/thinking"]).map(|text| normalized("thinking", Some(text))).into_iter().collect(),
+    match value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+    {
+        "text" => text_at(value, &["/text"])
+            .map(|text| normalized("text", Some(text)))
+            .into_iter()
+            .collect(),
+        "thinking" => text_at(value, &["/thinking"])
+            .map(|text| normalized("thinking", Some(text)))
+            .into_iter()
+            .collect(),
         "tool_use" => vec![NormalizedEvent {
             event_type: "tool_use",
             call_id: text_at(value, &["/id"]),
@@ -2851,7 +3009,10 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             parent_call_id: None,
             status: None,
         }],
-        "error" => text_at(value, &["/error"]).map(|text| normalized("error", Some(text))).into_iter().collect(),
+        "error" => text_at(value, &["/error"])
+            .map(|text| normalized("error", Some(text)))
+            .into_iter()
+            .collect(),
         "plan" => vec![NormalizedEvent {
             event_type: "plan",
             call_id: None,
@@ -2968,7 +3129,10 @@ fn tool_result_event(value: &Value) -> NormalizedEvent {
         let text = blocks
             .iter()
             .filter_map(|block| match block.get("type").and_then(Value::as_str) {
-                Some("text") => block.get("text").and_then(Value::as_str).map(str::to_string),
+                Some("text") => block
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 Some("image") => Some("[图片]".to_string()),
                 _ => None,
             })
@@ -3319,12 +3483,10 @@ mod tests {
         );
         assert_eq!(codex[0].content.as_deref(), Some("ok"));
         assert!(codex[0].replaces_final_text);
-        assert!(normalize_runtime_line(
-            "codex",
-            "Reading additional input from stdin...",
-            false,
-        )
-        .is_empty());
+        assert!(
+            normalize_runtime_line("codex", "Reading additional input from stdin...", false,)
+                .is_empty()
+        );
         let qwen = normalize_runtime_line(
             "qwen",
             r#"{"type":"tool_result","call_id":"q1","output":"saved"}"#,
@@ -3365,7 +3527,13 @@ mod tests {
             false,
         );
         assert_eq!(opencode[0].content.as_deref(), Some("hello"));
-        assert_eq!(crate::conversation::id_from_line(r#"{"type":"text","sessionID":"ses-1","part":{"text":"hello"}}"#).as_deref(), Some("ses-1"));
+        assert_eq!(
+            crate::conversation::id_from_line(
+                r#"{"type":"text","sessionID":"ses-1","part":{"text":"hello"}}"#
+            )
+            .as_deref(),
+            Some("ses-1")
+        );
     }
 
     #[test]

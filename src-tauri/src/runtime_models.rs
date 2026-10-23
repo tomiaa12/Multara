@@ -35,7 +35,7 @@ fn cache() -> &'static Mutex<HashMap<String, (Instant, Vec<RuntimeModel>)>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// 与 executor::apply_options 保持一致：只有这三个运行时会把模型透传给 CLI
+/// 这些运行时会把模型透传给 CLI；不能可靠枚举时允许手动填写。
 pub fn list(runtime_id: &str, refresh: bool) -> RuntimeModels {
     match runtime_id {
         "cursor" => cursor_models(refresh),
@@ -43,14 +43,31 @@ pub fn list(runtime_id: &str, refresh: bool) -> RuntimeModels {
         "claude" => RuntimeModels {
             supported: true,
             source: "preset",
-            models: [("sonnet", "Sonnet（最新）"), ("opus", "Opus（最新）"), ("haiku", "Haiku（最新）")]
-                .into_iter()
-                .map(|(id, label)| RuntimeModel { id: id.into(), label: label.into() })
-                .collect(),
+            models: [
+                ("sonnet", "Sonnet（最新）"),
+                ("opus", "Opus（最新）"),
+                ("haiku", "Haiku（最新）"),
+            ]
+            .into_iter()
+            .map(|(id, label)| RuntimeModel {
+                id: id.into(),
+                label: label.into(),
+            })
+            .collect(),
             error: None,
         },
-        "codex" => RuntimeModels { supported: true, source: "manual", models: Vec::new(), error: None },
-        _ => RuntimeModels { supported: false, source: "manual", models: Vec::new(), error: None },
+        "codex" | "gemini" | "qwen" | "opencode" => RuntimeModels {
+            supported: true,
+            source: "manual",
+            models: Vec::new(),
+            error: None,
+        },
+        _ => RuntimeModels {
+            supported: false,
+            source: "manual",
+            models: Vec::new(),
+            error: None,
+        },
     }
 }
 
@@ -59,7 +76,12 @@ fn cursor_models(refresh: bool) -> RuntimeModels {
         if let Ok(cache) = cache().lock() {
             if let Some((at, models)) = cache.get("cursor") {
                 if at.elapsed() < CACHE_TTL {
-                    return RuntimeModels { supported: true, source: "cli", models: models.clone(), error: None };
+                    return RuntimeModels {
+                        supported: true,
+                        source: "cli",
+                        models: models.clone(),
+                        error: None,
+                    };
                 }
             }
         }
@@ -72,7 +94,12 @@ fn cursor_models(refresh: bool) -> RuntimeModels {
             if let Ok(mut cache) = cache().lock() {
                 cache.insert("cursor".into(), (Instant::now(), models.clone()));
             }
-            RuntimeModels { supported: true, source: "cli", models, error: None }
+            RuntimeModels {
+                supported: true,
+                source: "cli",
+                models,
+                error: None,
+            }
         }
         Ok(_) => RuntimeModels {
             supported: true,
@@ -80,13 +107,22 @@ fn cursor_models(refresh: bool) -> RuntimeModels {
             models: Vec::new(),
             error: Some("Cursor CLI 没有返回模型列表，可能还没登录（cursor-agent login）".into()),
         },
-        Err(error) => RuntimeModels { supported: true, source: "manual", models: Vec::new(), error: Some(error) },
+        Err(error) => RuntimeModels {
+            supported: true,
+            source: "manual",
+            models: Vec::new(),
+            error: Some(error),
+        },
     }
 }
 
 fn run_with_timeout(path: std::path::PathBuf, args: &[&str]) -> Result<String, String> {
     let mut command = crate::process::command(path);
-    command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let (sender, receiver) = mpsc::channel();
     // output() 会边读边等，避免输出较多时管道写满卡死；超时后丢弃结果，子进程随后自行退出
     thread::spawn(move || {
@@ -98,7 +134,11 @@ fn run_with_timeout(path: std::path::PathBuf, args: &[&str]) -> Result<String, S
         .map_err(|error| error.to_string())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() { "查询模型列表失败".into() } else { stderr });
+        return Err(if stderr.is_empty() {
+            "查询模型列表失败".into()
+        } else {
+            stderr
+        });
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -143,7 +183,14 @@ fn parse_cursor_models(text: &str) -> Vec<RuntimeModel> {
                 .replace("(current)", "")
                 .replace("(default)", "");
             let label = label.split_whitespace().collect::<Vec<_>>().join(" ");
-            Some(RuntimeModel { id: id.to_string(), label: if label.is_empty() { id.to_string() } else { label } })
+            Some(RuntimeModel {
+                id: id.to_string(),
+                label: if label.is_empty() {
+                    id.to_string()
+                } else {
+                    label
+                },
+            })
         })
         .collect()
 }
@@ -167,6 +214,8 @@ mod tests {
     fn only_model_aware_runtimes_are_supported() {
         assert!(list("claude", false).supported);
         assert!(list("codex", false).supported);
-        assert!(!list("gemini", false).supported);
+        assert!(list("gemini", false).supported);
+        assert!(list("qwen", false).supported);
+        assert!(list("opencode", false).supported);
     }
 }

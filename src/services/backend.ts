@@ -195,6 +195,7 @@ export async function getCustomRuntime(runtimeId: string): Promise<CustomRuntime
       kind: "profile",
       description: "",
       wireApi: "responses",
+      apiFormat: "",
       keyStyle: "bearer",
       hasApiKey: false,
     };
@@ -216,6 +217,7 @@ export async function testRuntimeConnection(input: {
   apiKey: string;
   model: string;
   wireApi: string;
+  apiFormat: string;
   keyStyle: string;
   env: Record<string, string>;
 }): Promise<string> {
