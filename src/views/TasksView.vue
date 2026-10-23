@@ -144,6 +144,11 @@ const cardMenuItems = computed<ContextMenuItem[]>(() => [
   { type: "sep" },
   { id: "delete", label: t("tasks.delete") },
 ]);
+/** 仅待规划 / 待办列可直接新建任务 */
+const CREATE_COLUMN_STATUSES: TaskStatus[] = ["backlog", "todo"];
+function canAddInColumn(status: TaskStatus) {
+  return CREATE_COLUMN_STATUSES.includes(status);
+}
 const columnMenuItems: ContextMenuItem[] = [{ id: "add", label: t("tasks.addTask") }];
 
 function loadOrder() {
@@ -292,6 +297,7 @@ function openCardMenu(event: MouseEvent, task: Task) {
 }
 
 function openColumnMenu(event: MouseEvent, status: TaskStatus) {
+  if (!canAddInColumn(status)) return;
   cardMenu.value = null;
   columnMenu.value = { x: event.clientX, y: event.clientY, status };
 }
@@ -425,12 +431,14 @@ function onColumnMenu(id: string) {
           <component :is="icons[column.id]" :size="15" />
           <strong>{{ column.label }}</strong>
           <span>{{ columnTasks(column.id).length }}</span>
-          <button type="button" class="task-icon-button" :title="t('tasks.columnMenu')" @click="openColumnMenu($event, column.id)">
-            <MoreHorizontal :size="15" />
-          </button>
-          <button type="button" class="task-icon-button" :title="t('tasks.addTask')" @click="openCreate(column.id)">
-            <Plus :size="15" />
-          </button>
+          <template v-if="canAddInColumn(column.id)">
+            <button type="button" class="task-icon-button" :title="t('tasks.columnMenu')" @click="openColumnMenu($event, column.id)">
+              <MoreHorizontal :size="15" />
+            </button>
+            <button type="button" class="task-icon-button" :title="t('tasks.addTask')" @click="openCreate(column.id)">
+              <Plus :size="15" />
+            </button>
+          </template>
         </header>
         <div class="task-column-list vs-scroll">
           <article

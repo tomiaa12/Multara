@@ -253,10 +253,12 @@ a.titlebar-crumb:hover {
 }
 .nav-label {
   padding: 0 var(--spacing-2-5) var(--spacing-1-5);
+  overflow: hidden;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .nav-item {
   position: relative;
@@ -312,6 +314,8 @@ a.titlebar-crumb:hover {
   color: #fff;
 }
 .nav-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -333,20 +337,20 @@ button.nav-item,
   text-align: left;
 }
 
-/* 折叠为图标栏：只作用主侧栏（> .sidebar），避免 MCP/Skills/设置页内部来源菜单被一起藏字 */
-.app-shell.is-sidebar-collapsed > .sidebar .nav-label,
-.app-shell.is-sidebar-collapsed > .sidebar .nav-item-label {
+/* 折叠为图标栏：主侧栏与设置/Skills/MCP 二级侧栏共用（.is-sidebar-collapsed 打在 nav 上） */
+.sidebar.is-sidebar-collapsed .nav-label,
+.sidebar.is-sidebar-collapsed .nav-item-label {
   display: none;
 }
-.app-shell.is-sidebar-collapsed > .sidebar .nav-group {
+.sidebar.is-sidebar-collapsed .nav-group {
   justify-items: center;
 }
-.app-shell.is-sidebar-collapsed > .sidebar .nav-item {
+.sidebar.is-sidebar-collapsed .nav-item {
   justify-content: center;
   width: 36px;
   padding: 0;
 }
-.app-shell.is-sidebar-collapsed > .sidebar .nav-badge {
+.sidebar.is-sidebar-collapsed .nav-badge {
   position: absolute;
   top: 2px;
   right: 2px;
@@ -355,7 +359,7 @@ button.nav-item,
   padding: 0 3px;
   font-size: 9px;
 }
-.app-shell.is-sidebar-collapsed > .sidebar .nav-badge[data-digits="1"] {
+.sidebar.is-sidebar-collapsed .nav-badge[data-digits="1"] {
   width: 14px;
   min-width: 14px;
   padding: 0;

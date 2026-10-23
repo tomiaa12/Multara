@@ -6,6 +6,7 @@ import type { CatalogItem, GlobalResource, PromptFile, ResourceSource } from "..
 import AgentAvatar from "../components/AgentAvatar.vue";
 import CliSourceIcon from "../components/CliSourceIcon.vue";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
+import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
 import type { DirectoryColumn } from "../components/ui/directory-table";
 import { cliLabel, cliSkillsDisplay } from "../domain/cli-catalog";
@@ -268,6 +269,7 @@ const emptyHint = computed(() => {
       class="settings-nav"
       :aria-label="t('skills.filterBySource')"
       :groups="sourceNavGroups"
+      :width-key="SETTINGS_NAV_WIDTH_KEY"
       @select="onSourceSelect"
     >
       <template #leading="{ item }">

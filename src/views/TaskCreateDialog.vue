@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { Maximize2, Minimize2, Paperclip, X } from "@lucide/vue";
-import type { EditorSelectionContext, TaskStatus } from "../domain/types";
+import type { EditorSelectionContext, MessageAttachmentInput, TaskStatus } from "../domain/types";
 import { isMiku } from "../domain/types";
 import { useAppStore } from "../stores/app";
 import * as backend from "../services/backend";
 import ChatComposer from "../components/chat/ChatComposer.vue";
+import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import { formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import {
   resolvePathInWorkspaces,
@@ -44,12 +45,16 @@ const keepOpen = ref(false);
 const showTagManage = ref(false);
 const categories = ref<RequirementCategoryState>(loadRequirementCategories(localStorage));
 const contexts = ref<EditorSelectionContext[]>([]);
+const pastes = ref<Array<MessageAttachmentInput & { previewUrl: string }>>([]);
 const composer = ref<{
   clear: () => void;
   insertChip: (item: EditorSelectionContext) => void;
   focus: () => void;
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
 } | null>(null);
+
+const PASTE_LIMIT = 8;
+const PASTE_MAX_BYTES = 25 * 1024 * 1024;
 
 const form = reactive({
   title: "",
@@ -127,16 +132,45 @@ function onKey(event: KeyboardEvent) {
   if (event.key === "Escape") emit("close");
 }
 
+function clearPastes() {
+  for (const image of pastes.value) URL.revokeObjectURL(image.previewUrl);
+  pastes.value = [];
+}
+
 onMounted(() => document.addEventListener("keydown", onKey));
-onBeforeUnmount(() => document.removeEventListener("keydown", onKey));
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKey);
+  clearPastes();
+});
 
 function rememberChip(context: EditorSelectionContext) {
-  const existing = contexts.value.find((item) => item.path === context.path && item.startLine === context.startLine);
-  contexts.value = existing
-    ? contexts.value.map((item) => (item.id === existing.id ? { ...context, id: existing.id } : item))
-    : [...contexts.value, context].slice(-8);
-  composer.value?.insertChip(existing ? { ...context, id: existing.id } : context);
+  contexts.value = [...contexts.value, context];
+  composer.value?.insertChip(context);
   composer.value?.focus();
+}
+
+async function pasteImages(files: File[]) {
+  error.value = "";
+  const room = Math.max(0, PASTE_LIMIT - pastes.value.length);
+  for (const file of files.slice(0, room)) {
+    try {
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+      if (bytes.length > PASTE_MAX_BYTES) {
+        error.value = t("chat.pasteTooLarge");
+        continue;
+      }
+      const saved = await backend.savePastedAttachment(bytes, file.type || "image/png", file.name || undefined);
+      pastes.value.push({ ...saved, previewUrl: URL.createObjectURL(file) });
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : t("chat.pasteFailed");
+    }
+  }
+}
+
+function removePaste(path: string) {
+  const target = pastes.value.find((item) => item.path === path);
+  if (target) URL.revokeObjectURL(target.previewUrl);
+  pastes.value = pastes.value.filter((item) => item.path !== path);
 }
 
 async function addWorkspaceChip(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
@@ -218,20 +252,24 @@ async function onDropOs(entries: OsDroppedEntry[]) {
     error.value = t("chat.noRefFiles");
     return;
   }
-  for (const entry of entries) await addExternalChip(entry);
-}
-
-async function pickPaths(directory: boolean) {
-  error.value = "";
-  const paths = await backend.selectPaths(directory);
-  for (const path of paths) {
-    const name = path.split(/[\\/]/).pop() || path;
-    await addExternalChip({ path, name, isDirectory: directory });
+  const images = entries.flatMap((entry) =>
+    entry.file?.type.startsWith("image/") ? [entry.file] : [],
+  );
+  if (images.length) await pasteImages(images);
+  for (const entry of entries) {
+    if (entry.file?.type.startsWith("image/")) continue;
+    await addExternalChip(entry);
   }
 }
 
-async function pickFiles() {
-  await pickPaths(false);
+async function pickFilesOrFolders() {
+  error.value = "";
+  const picked = await backend.selectFilesOrFolders();
+  if (!picked.length) return;
+  for (const item of picked) {
+    const name = item.path.split(/[\\/]/).pop() || item.path;
+    await addExternalChip({ path: item.path, name, isDirectory: item.isDirectory });
+  }
 }
 
 async function create() {
@@ -240,20 +278,28 @@ async function create() {
   error.value = "";
   try {
     const nodes = composer.value?.serialize().nodes ?? [];
+    const description = formatAgentPrompt(nodes);
+    const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));
+    // 有粘贴附件时先建为 backlog，再 send 带附件开跑，避免 todo 创建时无附件先排队。
+    const createStatus = attachments.length && form.status === "todo" ? "backlog" : form.status;
     const task = await store.createTask({
       title: form.title.trim(),
-      description: formatAgentPrompt(nodes),
+      description,
       agentId: assigneeId.value,
       projectId: form.projectId || null,
-      status: form.status,
+      status: createStatus,
     });
     if (task) {
       writeTaskMeta(task.id, { priority: "none", labels: [...form.labels] });
       await store.updateTaskMeta({ taskId: task.id, labels: [...form.labels] });
+      if (attachments.length) {
+        store.send(description || form.title.trim(), task.sessionId, attachments);
+      }
     }
     form.title = "";
     form.labels = [];
     contexts.value = [];
+    clearPastes();
     composer.value?.clear();
     if (!keepOpen.value) emit("close");
   } catch (cause) {
@@ -295,7 +341,13 @@ async function create() {
         @target-change="form.agentId = $event"
         @drop-workspace-file="onDropWorkspace"
         @drop-os-files="onDropOs"
+        @paste-image="pasteImages"
       >
+        <ComposerPasteImages
+          :images="pastes.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
+          removable
+          @remove="removePaste"
+        />
         <template #tools>
           <div class="task-create-tools">
             <UiSelect v-model="form.status" size="sm" :aria-label="t('tasks.field.status')" :options="statusOptions" />
@@ -317,7 +369,7 @@ async function create() {
           </div>
         </template>
         <template #actions>
-          <UiButton type="button" size="icon" variant="ghost" :title="t('tasks.addFile')" @click="pickFiles">
+          <UiButton type="button" size="icon" variant="ghost" :title="t('tasks.addFileOrFolder')" @click="pickFilesOrFolders">
             <Paperclip :size="16" />
           </UiButton>
           <label class="task-create-keep">

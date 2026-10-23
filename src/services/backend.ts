@@ -1117,6 +1117,14 @@ export async function selectPaths(directory: boolean): Promise<string[]> {
   return Array.isArray(selected) ? selected : [selected];
 }
 
+export type PickedPath = { path: string; isDirectory: boolean };
+
+/** 系统选择器：一次可多选文件和/或文件夹（macOS 支持混选）。 */
+export async function selectFilesOrFolders(): Promise<PickedPath[]> {
+  if (!inTauri()) return [];
+  return invoke<PickedPath[]>("select_files_or_folders");
+}
+
 export async function selectFolders(): Promise<string[]> {
   if (!inTauri()) return [];
   const selected = await open({ directory: true, multiple: true });

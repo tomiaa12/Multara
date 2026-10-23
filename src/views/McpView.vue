@@ -4,6 +4,7 @@ import { Network, Pencil, Plus, RefreshCw, Search, SearchX, Store, X } from "@lu
 import type { CatalogItem, GlobalResource, McpInput, McpProbe, ResourceSource } from "../domain/types";
 import CliSourceIcon from "../components/CliSourceIcon.vue";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
+import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
 import type { DirectoryColumn } from "../components/ui/directory-table";
 import * as backend from "../services/backend";
@@ -495,6 +496,7 @@ async function authorizeForm() {
       class="settings-nav"
       :aria-label="t('mcp.filterBySource')"
       :groups="sourceNavGroups"
+      :width-key="SETTINGS_NAV_WIDTH_KEY"
       @select="onSourceSelect"
     >
       <template #leading="{ item }">

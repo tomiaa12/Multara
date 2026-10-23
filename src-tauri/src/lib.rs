@@ -26,6 +26,7 @@ pub mod merge_flow;
 pub mod hook_runtime;
 pub mod lsp;
 pub mod models;
+pub mod native_pick;
 pub mod ops;
 pub mod process;
 pub mod protocol;
@@ -183,6 +184,7 @@ pub fn run() {
             terminal_services,
             list_workspace_directory,
             list_external_directory,
+            native_pick::select_files_or_folders,
             read_workspace_file,
             read_external_file,
             write_workspace_file,
