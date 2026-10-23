@@ -3,20 +3,25 @@ import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { ArrowUp } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import ChatComposerField from "./ChatComposerField.vue";
-import ComposerSuggestMenu, { type ComposerSuggestItem } from "./ComposerSuggestMenu.vue";
+import ComposerSuggestMenu, {
+  type ComposerSuggestCategoryItem,
+  type ComposerSuggestItem,
+} from "./ComposerSuggestMenu.vue";
 import ContextUsageButton from "./ContextUsageButton.vue";
 import type { EditorSelectionContext } from "../../domain/types";
+import type { SelectOption } from "../ui/select-types";
 import type { ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
 import { getCaretClientRect } from "./composer-caret";
-import { activeSlashQuery, filterSkillSlash, replaceSlashToken, type SkillSlashHit } from "./skill-slash";
+import { filterCommands } from "./composer-mentions";
+import { replaceSlashToken } from "./skill-slash";
+import { groupChatTargetOptions } from "./chat-target-options";
 import {
-  activeMentionQuery,
-  filterCommands,
-  filterMentions,
-  replaceMentionToken,
-  type MentionHit,
-} from "./composer-mentions";
+  activeComposerTrigger,
+  replaceTriggerWithReference,
+  type ComposerEntityItem,
+  type ComposerTrigger,
+} from "./composer-entities";
 import { t } from "../../i18n";
 import {
   isWorkspaceFileDrag,
@@ -34,7 +39,7 @@ const props = withDefaults(defineProps<{
   targetLabel: string;
   targetAvatar: string;
   targetValue?: string;
-  targetOptions?: Array<{ value: string; label: string; avatar: string }>;
+  targetOptions?: SelectOption<string>[];
   allowTargetChange?: boolean;
   footerMode?: "always" | "focus";
   canSend?: boolean;
@@ -45,6 +50,8 @@ const props = withDefaults(defineProps<{
   embedded?: boolean;
   /** 是否展示 /compact、/fork 等会话命令（需求工作台 / 右下角气泡）。 */
   sessionCommands?: boolean;
+  /** 是否在级联一级菜单展示系统文件/文件夹选择入口。 */
+  allowFilePicker?: boolean;
 }>(), {
   targetValue: "",
   targetOptions: () => [],
@@ -56,6 +63,7 @@ const props = withDefaults(defineProps<{
   showContextUsage: true,
   embedded: false,
   sessionCommands: false,
+  allowFilePicker: false,
 });
 
 const emit = defineEmits<{
@@ -65,15 +73,14 @@ const emit = defineEmits<{
   "target-change": [value: string];
   "drop-workspace-file": [file: WorkspaceFileDragPayload];
   "drop-os-files": [entries: OsDroppedEntry[]];
+  "pick-files-or-folders": [];
 }>();
 
 const store = useAppStore();
 const rootEl = ref<HTMLElement | null>(null);
 const dropOver = ref(false);
-const slashHits = ref<SkillSlashHit[]>([]);
-const slashIndex = ref(0);
-const mentionHits = ref<MentionHit[]>([]);
-const mentionIndex = ref(0);
+const suggestTrigger = ref<ComposerTrigger | null>(null);
+const suggestMenu = ref<{ handleKeydown: (event: KeyboardEvent) => boolean } | null>(null);
 const suggestAnchor = ref<{ left: number; top: number; bottom: number; width?: number } | null>(null);
 const stopDragWatch = onWorkspaceFileDragChange((state) => {
   dropOver.value = state.over === "composer";
@@ -82,38 +89,99 @@ onBeforeUnmount(() => {
   stopDragWatch();
 });
 
-const suggestKind = computed<"mention" | "slash" | null>(() => {
-  if (mentionHits.value.length) return "mention";
-  if (slashHits.value.length) return "slash";
-  return null;
-});
-const suggestIndex = computed(() =>
-  suggestKind.value === "mention" ? mentionIndex.value : slashIndex.value,
-);
-const suggestItems = computed<ComposerSuggestItem[]>(() => {
-  if (suggestKind.value === "mention") {
-    return mentionHits.value.map((hit) => ({
-      id: hit.id,
-      label: hit.insert.trim() || hit.label,
-      description: hit.detail || undefined,
-      avatar: hit.avatar,
-      leading: hit.kind === "task" ? "hash" : undefined,
-    }));
+function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
+  let leading: ComposerSuggestItem["leading"] = "bot";
+  if (item.kind === "skill") leading = "sparkles";
+  if (item.kind === "task") leading = "hash";
+  if (item.kind === "requirement") leading = "requirement";
+  return {
+    id: item.id,
+    kind: item.kind,
+    label: item.label,
+    description: item.description,
+    avatar: item.avatar,
+    leading,
+  };
+}
+
+const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
+  const data = store.data;
+  const commands = props.sessionCommands
+    ? filterCommands("").map((item) => ({
+      id: `command:${item.id}`,
+      kind: "skill" as const,
+      label: `/${item.label}`,
+      description: item.detail,
+      group: "commands",
+    }))
+    : [];
+  const entities: ComposerEntityItem[] = [
+    ...(data?.agents ?? []).map((item) => ({
+      id: item.id,
+      kind: "agent" as const,
+      label: item.name,
+      description: item.description || item.model,
+      avatar: item.avatar,
+      group: "agents",
+    })),
+    ...(data?.squads ?? []).map((item) => ({
+      id: item.id,
+      kind: "squad" as const,
+      label: item.name,
+      description: item.description,
+      avatar: data?.agents.find((agent) => agent.id === item.leaderAgentId)?.avatar,
+      group: "squads",
+    })),
+    ...(data?.resources ?? [])
+      .filter((item) => item.kind === "skill" && item.enabled)
+      .map((item) => ({
+        id: item.id,
+        kind: "skill" as const,
+        label: item.name,
+        description: item.description,
+        group: "skills",
+      })),
+    ...(data?.tasks ?? []).map((item) => ({
+      id: item.id,
+      kind: "task" as const,
+      label: item.title,
+      description: item.status,
+      group: "tasks",
+    })),
+    ...(data?.projects ?? []).map((item) => ({
+      id: item.id,
+      kind: "requirement" as const,
+      label: item.name,
+      description: item.note,
+      group: "requirements",
+    })),
+    ...commands,
+  ];
+  const group = (id: string, label: string) => ({
+    id,
+    label,
+    items: entities.filter((item) => item.group === id).map(suggestItem),
+  });
+  const categories: ComposerSuggestCategoryItem[] = [
+    { id: "agent", label: "智能体", groups: [group("agents", "智能体"), group("squads", "小队")] },
+    { id: "skill", label: "Skills", groups: [group("skills", "Skills"), group("commands", "会话命令")] },
+    { id: "task", label: "任务", groups: [group("tasks", "任务")] },
+    { id: "requirement", label: "需求", groups: [group("requirements", "需求")] },
+  ];
+  if (props.allowFilePicker) {
+    categories.push({
+      id: "file",
+      label: t("tasks.fileOrFolder"),
+      groups: [],
+      action: "pick-files-or-folders",
+    });
   }
-  if (suggestKind.value === "slash") {
-    return slashHits.value.map((hit) => ({
-      id: hit.id,
-      label: `/${hit.name}`,
-      description: hit.description || undefined,
-      leading: "sparkles",
-    }));
-  }
-  return [];
+  return categories;
 });
 
 async function refreshSuggestAnchor() {
   await nextTick();
-  if (!suggestKind.value) {
+  if (!suggestTrigger.value) {
     suggestAnchor.value = null;
     return;
   }
@@ -137,21 +205,6 @@ async function refreshSuggestAnchor() {
   suggestAnchor.value = rect
     ? { left: rect.left, top: rect.top, bottom: rect.bottom, width: Math.min(rect.width, 280) }
     : null;
-}
-
-function onSuggestHighlight(index: number) {
-  if (suggestKind.value === "mention") mentionIndex.value = index;
-  else if (suggestKind.value === "slash") slashIndex.value = index;
-}
-
-function onSuggestSelect(index: number) {
-  if (suggestKind.value === "mention") {
-    const hit = mentionHits.value[index];
-    if (hit) void pickMention(hit);
-    return;
-  }
-  const hit = slashHits.value[index];
-  if (hit) void pickSkill(hit);
 }
 
 function onDragOver(event: DragEvent) {
@@ -204,74 +257,43 @@ function trailingText(nodes: ComposerNode[]) {
 
 function onComposerChange(nodes: ComposerNode[]) {
   emit("change", nodes);
-  const line = trailingText(nodes);
-  const query = activeSlashQuery(line);
-  const skills = query === null ? [] : filterSkillSlash(store.data?.resources ?? [], query);
-  const commands = query === null || !props.sessionCommands ? [] : filterCommands(query);
-  slashHits.value = [
-    ...commands.map((item) => ({ id: item.id, name: item.label, description: item.detail })),
-    ...skills,
-  ];
-  if (slashIndex.value >= slashHits.value.length) slashIndex.value = 0;
-  const mention = activeMentionQuery(line);
-  mentionHits.value = mention
-    ? filterMentions(mention.kind, mention.query, store.data?.agents ?? [], store.data?.tasks ?? [])
-    : [];
-  if (mentionIndex.value >= mentionHits.value.length) mentionIndex.value = 0;
+  suggestTrigger.value = activeComposerTrigger(trailingText(nodes));
   void refreshSuggestAnchor();
 }
 
-async function pickSkill(hit: SkillSlashHit) {
-  const next = replaceSlashToken(field.value?.snapshot() ?? [], hit.name);
+async function onSuggestSelect(item: ComposerSuggestItem) {
+  const trigger = suggestTrigger.value;
+  if (!trigger) return;
+  const next = item.id.startsWith("command:")
+    ? replaceSlashToken(field.value?.snapshot() ?? [], item.label.slice(1))
+    : replaceTriggerWithReference(field.value?.snapshot() ?? [], trigger, {
+      id: item.id,
+      kind: item.kind,
+      label: item.label,
+      description: item.description,
+      avatar: item.avatar,
+      group: "",
+    });
   field.value?.restore(next);
   emit("change", next);
-  slashHits.value = [];
-  mentionHits.value = [];
+  closeSuggest();
   await nextTick();
   field.value?.focusEnd();
 }
 
-async function pickMention(hit: MentionHit) {
-  const next = replaceMentionToken(field.value?.snapshot() ?? [], hit.insert);
-  field.value?.restore(next);
-  emit("change", next);
-  mentionHits.value = [];
-  slashHits.value = [];
-  await nextTick();
-  field.value?.focusEnd();
+function closeSuggest() {
+  suggestTrigger.value = null;
+  suggestAnchor.value = null;
+}
+
+function onSuggestCategoryAction(action: "pick-files-or-folders") {
+  closeSuggest();
+  if (action === "pick-files-or-folders") emit("pick-files-or-folders");
 }
 
 function onComposerKeydown(event: KeyboardEvent) {
-  if (!suggestKind.value || !suggestItems.value.length) return;
-  const isMention = suggestKind.value === "mention";
-  const count = suggestItems.value.length;
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    event.stopPropagation();
-    if (isMention) mentionIndex.value = (mentionIndex.value + 1) % count;
-    else slashIndex.value = (slashIndex.value + 1) % count;
-    return;
-  }
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    event.stopPropagation();
-    if (isMention) mentionIndex.value = (mentionIndex.value - 1 + count) % count;
-    else slashIndex.value = (slashIndex.value - 1 + count) % count;
-    return;
-  }
-  if (event.key === "Enter" || event.key === "Tab") {
-    event.preventDefault();
-    event.stopPropagation();
-    onSuggestSelect(suggestIndex.value);
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    slashHits.value = [];
-    mentionHits.value = [];
-    suggestAnchor.value = null;
-  }
+  if (!suggestTrigger.value) return;
+  suggestMenu.value?.handleKeydown(event);
 }
 
 const field = ref<{
@@ -292,16 +314,9 @@ const selectedTarget = computed({
   set: (value: string) => emit("target-change", value),
 });
 // 按 value 前缀（agent: / squad:）分组展示；小队标签去掉「小队 · 」前缀，由分组标题说明
-const targetGroups = computed(() => {
-  const agents = props.targetOptions.filter((option) => !option.value.startsWith("squad:"));
-  const squads = props.targetOptions
-    .filter((option) => option.value.startsWith("squad:"))
-    .map((option) => ({ ...option, label: option.label.replace(/^小队 · /, "") }));
-  return [
-    { label: "智能体", options: agents },
-    { label: "小队", options: squads },
-  ].filter((group) => group.options.length);
-});
+const targetGroups = computed(() =>
+  groupChatTargetOptions(props.targetOptions, { agents: t("nav.agents"), squads: t("nav.squads") }),
+);
 
 defineExpose({
   focus: () => field.value?.focus(),
@@ -335,12 +350,15 @@ defineExpose({
       <span>{{ t("chat.dropToAttach") }}</span>
     </div>
     <ComposerSuggestMenu
-      v-if="suggestItems.length"
-      :items="suggestItems"
-      :active-index="suggestIndex"
+      v-if="suggestTrigger"
+      ref="suggestMenu"
+      :categories="suggestCategories"
+      :default-category="suggestTrigger.category"
+      :query="suggestTrigger.query"
       :anchor="suggestAnchor"
-      :aria-label="suggestKind === 'mention' ? 'Mentions' : 'Skills'"
-      @highlight="onSuggestHighlight"
+      aria-label="插入引用"
+      @category-action="onSuggestCategoryAction"
+      @close="closeSuggest"
       @select="onSuggestSelect"
     />
     <ChatComposerField
@@ -360,6 +378,8 @@ defineExpose({
           v-model="selectedTarget"
           variant="ghost"
           size="sm"
+          searchable
+          :page-size="5"
           aria-label="选择要询问的智能体或小队"
           :groups="targetGroups"
         />

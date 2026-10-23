@@ -44,4 +44,21 @@ describe("parseUserPromptNodes", () => {
     expect(parsed.some((node) => node.type === "chip")).toBe(true);
     expect(visiblePromptText(content)).toContain("App.vue (1-2)");
   });
+
+  test("round-trips structured references with stable ids", () => {
+    const nodes: ComposerNode[] = [
+      { type: "text", value: "请让 " },
+      {
+        type: "chip",
+        id: "agent:agent-42",
+        referenceId: "agent-42",
+        referenceKind: "agent",
+        label: "Miku 助手",
+      },
+      { type: "text", value: " 处理" },
+    ];
+    const content = formatAgentPrompt(nodes);
+    expect(content).toContain("[实体引用] agent agent-42 Miku%20%E5%8A%A9%E6%89%8B");
+    expect(parseUserPromptNodes(content)).toEqual(nodes);
+  });
 });

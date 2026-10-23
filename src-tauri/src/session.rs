@@ -17,6 +17,24 @@ pub fn project_lock(state: &AppState, project_id: &str) -> Result<Arc<Mutex<()>>
         .clone())
 }
 
+pub fn project_locks(
+    state: &AppState,
+    project_ids: &[String],
+) -> Result<Vec<Arc<Mutex<()>>>, String> {
+    let project_ids = sorted_project_ids(project_ids);
+    project_ids
+        .iter()
+        .map(|project_id| project_lock(state, project_id))
+        .collect()
+}
+
+fn sorted_project_ids(project_ids: &[String]) -> Vec<String> {
+    let mut project_ids = project_ids.to_vec();
+    project_ids.sort();
+    project_ids.dedup();
+    project_ids
+}
+
 pub fn project_id(db: &Connection, session_id: &str) -> Result<Option<String>, String> {
     db.query_row(
         "SELECT project_id FROM chat_sessions WHERE id=?1",
@@ -26,8 +44,58 @@ pub fn project_id(db: &Connection, session_id: &str) -> Result<Option<String>, S
     .map_err(|_| "聊天不存在".to_string())
 }
 
+pub fn linked_project_ids(db: &Connection, session_id: &str) -> Result<Vec<String>, String> {
+    let exists: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE id=?1)",
+            [session_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !exists {
+        return Err("聊天不存在".to_string());
+    }
+    let mut statement = db
+        .prepare(
+            "SELECT project_id FROM session_projects
+             WHERE session_id=?1 ORDER BY sort_order, project_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let project_ids = statement
+        .query_map([session_id], |row| row.get(0))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    if !project_ids.is_empty() {
+        return Ok(project_ids);
+    }
+    Ok(project_id(db, session_id)?.into_iter().collect())
+}
+
+pub fn replace_linked_projects(
+    db: &Connection,
+    session_id: &str,
+    project_ids: &[String],
+) -> Result<(), String> {
+    db.execute(
+        "DELETE FROM session_projects WHERE session_id=?1",
+        [session_id],
+    )
+    .map_err(|error| error.to_string())?;
+    for (sort_order, project_id) in project_ids.iter().enumerate() {
+        db.execute(
+            "INSERT INTO session_projects (session_id, project_id, sort_order)
+             VALUES (?1, ?2, ?3)",
+            params![session_id, project_id, sort_order as i64],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn session_workspaces(db: &Connection, session_id: &str) -> Result<Vec<Workspace>, String> {
-    let mut explicit = db
+    let project_ids = linked_project_ids(db, session_id)?;
+    let mut workspaces = db
         .prepare(
             "SELECT w.id, w.project_id, w.session_id, w.source_workspace_id, w.name, w.kind,
                     w.source_path, w.work_path, w.branch, w.isolation_mode, w.created_at
@@ -40,13 +108,7 @@ pub fn session_workspaces(db: &Connection, session_id: &str) -> Result<Vec<Works
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    if !explicit.is_empty() {
-        return Ok(explicit);
-    }
-    let Some(project_id) = project_id(db, session_id)? else {
-        return Ok(Vec::new());
-    };
-    explicit = db
+    let mut statement = db
         .prepare(
             "SELECT id, project_id, session_id, source_workspace_id, name, kind,
                     source_path, work_path, branch, isolation_mode, created_at
@@ -54,12 +116,20 @@ pub fn session_workspaces(db: &Connection, session_id: &str) -> Result<Vec<Works
              WHERE project_id=?1 AND session_id IS NULL
              ORDER BY created_at",
         )
-        .map_err(|error| error.to_string())?
-        .query_map([project_id], workspace_from_row)
-        .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    Ok(explicit)
+    for project_id in project_ids {
+        let rows = statement
+            .query_map([project_id], workspace_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| error.to_string())?;
+        for workspace in rows {
+            if !workspaces.iter().any(|item| item.id == workspace.id) {
+                workspaces.push(workspace);
+            }
+        }
+    }
+    Ok(workspaces)
 }
 
 pub(crate) fn ensure_project_idle(db: &Connection, project_id: &str) -> Result<(), String> {
@@ -68,7 +138,19 @@ pub(crate) fn ensure_project_idle(db: &Connection, project_id: &str) -> Result<(
             "SELECT EXISTS(
                SELECT 1 FROM agent_runs r
                JOIN chat_sessions s ON s.id=r.session_id
-               WHERE s.project_id=?1 AND r.status IN ('queued', 'running')
+               WHERE r.status IN ('queued', 'running')
+                 AND (
+                   EXISTS (
+                     SELECT 1 FROM session_projects sp
+                     WHERE sp.session_id=s.id AND sp.project_id=?1
+                   )
+                   OR (
+                     s.project_id=?1
+                     AND NOT EXISTS (
+                       SELECT 1 FROM session_projects sp WHERE sp.session_id=s.id
+                     )
+                   )
+                 )
              )",
             [project_id],
             |row| row.get(0),
@@ -79,6 +161,13 @@ pub(crate) fn ensure_project_idle(db: &Connection, project_id: &str) -> Result<(
     } else {
         Ok(())
     }
+}
+
+pub(crate) fn ensure_projects_idle(db: &Connection, project_ids: &[String]) -> Result<(), String> {
+    for project_id in project_ids {
+        ensure_project_idle(db, project_id)?;
+    }
+    Ok(())
 }
 
 pub fn complete_turn(app: &AppHandle, turn_id: &str) -> Result<(), String> {
@@ -142,4 +231,72 @@ fn workspace_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
         },
         created_at: row.get(10)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_projects_idle, linked_project_ids, session_workspaces, sorted_project_ids};
+    use rusqlite::Connection;
+
+    fn database() -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES
+               ('p1', '需求一', 'now', 'now'),
+               ('p2', '需求二', 'now', 'now');
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('s1', 'p1', '会话', 'agent', 'a1', 'now', 'now');
+             INSERT INTO session_projects (session_id, project_id, sort_order) VALUES
+               ('s1', 'p1', 0),
+               ('s1', 'p2', 1);
+             INSERT INTO workspaces
+               (id, project_id, name, kind, source_path, work_path, isolation_mode, created_at)
+             VALUES
+               ('w1', 'p1', '仓库一', 'folder', '/p1', '/p1', 'direct', '1'),
+               ('w2', 'p2', '仓库二', 'folder', '/p2', '/p2', 'direct', '2');",
+        )
+        .unwrap();
+        db
+    }
+
+    #[test]
+    fn returns_linked_projects_and_all_project_workspaces_in_order() {
+        let db = database();
+
+        assert_eq!(linked_project_ids(&db, "s1").unwrap(), ["p1", "p2"]);
+        let workspaces = session_workspaces(&db, "s1").unwrap();
+        assert_eq!(
+            workspaces
+                .iter()
+                .map(|workspace| workspace.id.as_str())
+                .collect::<Vec<_>>(),
+            ["w1", "w2"]
+        );
+    }
+
+    #[test]
+    fn idle_check_finds_runs_linked_through_any_project() {
+        let db = database();
+        db.execute_batch(
+            "INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('a1', '智能体', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO agent_runs
+               (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('r1', 's1', 'a1', 'cursor', '任务', 'running', 'now');",
+        )
+        .unwrap();
+
+        assert!(ensure_projects_idle(&db, &["p2".to_string()]).is_err());
+    }
+
+    #[test]
+    fn project_locks_use_stable_sorted_unique_order() {
+        assert_eq!(
+            sorted_project_ids(&["p2".to_string(), "p1".to_string(), "p2".to_string()]),
+            ["p1", "p2"]
+        );
+    }
 }

@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
+import { Bot, FolderKanban, Hash, Sparkles } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import Codicon from "../ui/Codicon.vue";
 import type { EditorSelectionContext } from "../../domain/types";
 import { composerClipboardHtml, decodeComposerClipboard } from "./composer-clipboard";
-import { chipLabel, fileName, isWholeFileChip, lineRange, type ComposerNode } from "./composer-content";
+import {
+  chipLabel,
+  fileName,
+  isWholeFileChip,
+  lineRange,
+  type ComposerFileChipNode,
+  type ComposerNode,
+  type ComposerReferenceChipNode,
+} from "./composer-content";
 import { createComposerIme } from "./composer-ime";
 import { insertComposerLineBreak, LINE_BREAK_PAD, stripLineBreakPad } from "./composer-linebreak";
 
@@ -38,32 +47,61 @@ function unmountChip(chip: HTMLElement) {
 }
 
 function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionContext) {
-  chipText.set(item.id, item.text);
   const chip = document.createElement("span");
   chip.className = "composer-chip";
   chip.contentEditable = "false";
   chip.dataset.contextId = item.id;
-  chip.dataset.path = item.path;
-  chip.dataset.startLine = String(item.startLine);
-  chip.dataset.endLine = String(item.endLine);
-  if (item.isDirectory) chip.dataset.directory = "1";
-  if (item.source === "terminal") chip.dataset.source = "terminal";
-  const kind = item.source === "terminal" ? "terminal" : item.isDirectory ? "folder" : isWholeFileChip(item) ? "file" : "line";
-  chip.dataset.chipKind = kind;
-  chip.title = kind === "line" ? `${item.path} ${lineRange(item)}` : item.path;
+  const reference = "referenceKind" in item ? item as ComposerReferenceChipNode : null;
+  const file = reference ? null : item as ComposerFileChipNode | EditorSelectionContext;
+  if (reference) {
+    chip.dataset.referenceId = reference.referenceId;
+    chip.dataset.referenceKind = reference.referenceKind;
+    chip.dataset.referenceLabel = reference.label;
+    chip.dataset.chipKind = reference.referenceKind;
+    chip.title = reference.label;
+  } else {
+    if (!file) return chip;
+    chipText.set(file.id, file.text);
+    chip.dataset.path = file.path;
+    chip.dataset.startLine = String(file.startLine);
+    chip.dataset.endLine = String(file.endLine);
+    if (file.isDirectory) chip.dataset.directory = "1";
+    if (file.source === "terminal") chip.dataset.source = "terminal";
+    const kind = file.source === "terminal" ? "terminal" : file.isDirectory ? "folder" : isWholeFileChip(file) ? "file" : "line";
+    chip.dataset.chipKind = kind;
+    chip.title = kind === "line" ? `${file.path} ${lineRange(file)}` : file.path;
+  }
 
   const icon = document.createElement("span");
   icon.className = "composer-chip-icon";
-  render(
-    item.source === "terminal"
-      ? createVNode(Codicon, { name: "terminal", size: 12 })
-      : createVNode(FileTypeIcon, { name: fileName(item.path), directory: Boolean(item.isDirectory), size: 12 }),
-    icon,
-  );
+  if (reference) {
+    let component = Bot;
+    if (reference.referenceKind === "skill") component = Sparkles;
+    if (reference.referenceKind === "task") component = Hash;
+    if (reference.referenceKind === "requirement") component = FolderKanban;
+    render(createVNode(component, { size: 12 }), icon);
+  } else {
+    if (!file) return chip;
+    render(
+      file.source === "terminal"
+        ? createVNode(Codicon, { name: "terminal", size: 12 })
+        : createVNode(FileTypeIcon, { name: fileName(file.path), directory: Boolean(file.isDirectory), size: 12 }),
+      icon,
+    );
+  }
 
   const label = document.createElement("span");
   label.className = "composer-chip-label";
-  label.textContent = chipLabel(item);
+  label.textContent = chipLabel(reference ?? {
+    type: "chip",
+    id: file?.id ?? "",
+    path: file?.path ?? "",
+    startLine: file?.startLine ?? 0,
+    endLine: file?.endLine ?? 0,
+    text: file?.text ?? "",
+    isDirectory: file?.isDirectory,
+    source: file?.source,
+  });
 
   chip.append(icon, label);
   return chip;
@@ -71,6 +109,16 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
 
 function contextFromChip(chip: HTMLElement): ComposerNode & { type: "chip" } {
   const id = chip.dataset.contextId ?? "";
+  const referenceKind = chip.dataset.referenceKind;
+  if (referenceKind && ["agent", "squad", "skill", "task", "requirement"].includes(referenceKind)) {
+    return {
+      type: "chip",
+      id,
+      referenceId: chip.dataset.referenceId ?? "",
+      referenceKind: referenceKind as "agent" | "squad" | "skill" | "task" | "requirement",
+      label: chip.dataset.referenceLabel ?? "",
+    };
+  }
   const stored = props.contexts.find((item) => item.id === id);
   return {
     type: "chip",
@@ -447,7 +495,7 @@ function insertNodesAtCaret(nodes: ComposerNode[]) {
   let last: Node | null = null;
   for (const node of nodes) {
     if (node.type === "chip") {
-      const chip = createChip({ ...node, id: crypto.randomUUID() });
+      const chip = createChip("referenceKind" in node ? node : { ...node, id: crypto.randomUUID() });
       const space = document.createTextNode("\u00a0");
       fragment.append(chip, space);
       last = space;

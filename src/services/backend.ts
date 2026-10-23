@@ -550,7 +550,8 @@ export async function createTask(input: TaskInput): Promise<Task> {
     };
     previewData.sessions.unshift({
       id: created.sessionId,
-      projectId: input.projectId ?? null,
+      projectId: input.projectIds?.[0] ?? input.projectId ?? null,
+      projectIds: input.projectIds ?? (input.projectId ? [input.projectId] : []),
       title: created.title,
       targetType: "agent",
       targetId: created.agentId,

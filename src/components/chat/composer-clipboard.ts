@@ -19,9 +19,24 @@ export function decodeComposerClipboard(raw: string): ComposerNode[] | null {
     const nodes: ComposerNode[] = [];
     for (const item of parsed) {
       if (!item || typeof item !== "object") continue;
-      const node = item as Partial<ComposerNode> & { type?: string };
+      const node = item as Record<string, unknown>;
       if (node.type === "text" && typeof node.value === "string") {
         nodes.push({ type: "text", value: node.value });
+        continue;
+      }
+      if (
+        node.type === "chip"
+        && typeof node.referenceId === "string"
+        && typeof node.label === "string"
+        && ["agent", "squad", "skill", "task", "requirement"].includes(String(node.referenceKind))
+      ) {
+        nodes.push({
+          type: "chip",
+          id: `${String(node.referenceKind)}:${node.referenceId}`,
+          referenceId: node.referenceId,
+          referenceKind: node.referenceKind as "agent" | "squad" | "skill" | "task" | "requirement",
+          label: node.label,
+        });
         continue;
       }
       if (node.type !== "chip" || typeof node.path !== "string") continue;

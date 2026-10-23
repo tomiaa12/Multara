@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   /** ghost：无边框透明背景，用于属性面板、工具栏等行内场景 */
   variant?: "default" | "ghost";
   emptyText?: string;
+  /** 每组首次展示及每次“查看更多”的数量；不传则展示全部。 */
+  pageSize?: number;
 }>(), {
   modelValue: undefined,
   options: undefined,
@@ -53,6 +55,7 @@ const props = withDefaults(defineProps<{
   size: "md",
   variant: "default",
   emptyText: undefined,
+  pageSize: undefined,
 });
 
 const { t } = useI18n();
@@ -107,6 +110,7 @@ const loading = ref(false);
 const remoteOptions = ref<SelectOption[] | null>(null);
 // 远程选中项 / 新创建项：保留下来，保证关闭后触发器仍能显示其标签
 const extraOptions = ref<SelectOption[]>([]);
+const visibleCounts = ref<Record<number, number>>({});
 
 const sourceGroups = computed<SelectGroup[]>(() => {
   const groups = props.groups ?? [{ label: "", options: props.options ?? [] }];
@@ -232,6 +236,7 @@ interface ViewOption {
 interface ListItem {
   option?: SelectOption;
   create?: string;
+  loadMoreGroup?: number;
   disabled: boolean;
 }
 
@@ -239,9 +244,18 @@ const view = computed(() => {
   const keyword = query.value.trim();
   const groups = remoteOptions.value ? [{ label: "", options: remoteOptions.value }] : sourceGroups.value;
   const items: ListItem[] = [];
-  const visibleGroups: Array<{ label: string; options: ViewOption[] }> = [];
-  for (const group of groups) {
-    const options: ViewOption[] = [];
+  const visibleGroups: Array<{
+    label: string;
+    options: ViewOption[];
+    total: number;
+    loadMoreIndex: number;
+  }> = [];
+  groups.forEach((group, groupIndex) => {
+    const matched: Array<{
+      option: SelectOption;
+      range: MatchRange | null;
+      descRange: MatchRange | null;
+    }> = [];
     for (const option of group.options) {
       let range: MatchRange | null = null;
       let descRange: MatchRange | null = null;
@@ -252,6 +266,13 @@ const view = computed(() => {
         const keywordHit = !range && !descRange && option.keywords?.some((item) => matchText(item, keyword));
         if (!range && !descRange && !keywordHit) continue;
       }
+      matched.push({ option, range, descRange });
+    }
+    const limit = props.pageSize
+      ? visibleCounts.value[groupIndex] ?? props.pageSize
+      : matched.length;
+    const options: ViewOption[] = [];
+    for (const { option, range, descRange } of matched.slice(0, limit)) {
       const disabled = Boolean(option.disabled) || (reachedMax.value && !isSelected(option.value));
       items.push({ option, disabled });
       options.push({
@@ -262,8 +283,18 @@ const view = computed(() => {
         description: option.description ? splitByRange(option.description, descRange) : undefined,
       });
     }
-    if (options.length) visibleGroups.push({ label: group.label, options });
-  }
+    let loadMoreIndex = -1;
+    if (options.length < matched.length) {
+      items.push({ loadMoreGroup: groupIndex, disabled: false });
+      loadMoreIndex = items.length - 1;
+    }
+    if (options.length) visibleGroups.push({
+      label: group.label,
+      options,
+      total: matched.length,
+      loadMoreIndex,
+    });
+  });
   // 可创建：输入内容与任何选项都不完全相同时，追加「创建」项
   let createIndex = -1;
   const exists = allOptions.value.some((option) => option.label.toLowerCase() === keyword.toLowerCase());
@@ -272,6 +303,10 @@ const view = computed(() => {
     createIndex = items.length - 1;
   }
   return { groups: visibleGroups, items, createIndex };
+});
+
+watch(query, () => {
+  visibleCounts.value = {};
 });
 
 const emptyMessage = computed(() => (
@@ -395,6 +430,15 @@ function toggle(value: SelectValue) {
 function choose(index: number) {
   const item = view.value.items[index];
   if (!item || item.disabled) return;
+  if (item.loadMoreGroup != null) {
+    const groupIndex = item.loadMoreGroup;
+    visibleCounts.value = {
+      ...visibleCounts.value,
+      [groupIndex]: (visibleCounts.value[groupIndex] ?? props.pageSize ?? 0) + (props.pageSize ?? 0),
+    };
+    nextTick(() => setActive(index, false));
+    return;
+  }
   if (item.create) {
     const option: SelectOption = { value: item.create, label: item.create };
     extraOptions.value = [...extraOptions.value, option];
@@ -701,6 +745,21 @@ onBeforeUnmount(() => {
                 <span v-if="item.option.meta" class="ds-select-option-meta">{{ item.option.meta }}</span>
                 <span class="ds-select-check"><Check :size="14" /></span>
               </div>
+              <button
+                v-if="group.loadMoreIndex >= 0"
+                type="button"
+                class="ds-select-option ds-select-load-more"
+                :data-index="group.loadMoreIndex"
+                :data-active="group.loadMoreIndex === activeIndex ? '' : undefined"
+                @mousemove="group.loadMoreIndex !== activeIndex && setActive(group.loadMoreIndex, false)"
+                @click="choose(group.loadMoreIndex)"
+              >
+                <span class="ds-select-option-body">
+                  <span class="ds-select-option-label">
+                    {{ t("select.loadMore", { n: Math.min(pageSize ?? 0, group.total - group.options.length) }) }}
+                  </span>
+                </span>
+              </button>
             </div>
             <div
               v-if="view.createIndex >= 0"

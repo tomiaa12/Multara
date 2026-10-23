@@ -26,4 +26,15 @@ describe("composer clipboard", () => {
   test("ignores plain text that is not a composer payload", () => {
     expect(decodeComposerClipboard("App.vue (11-32)")).toBeNull();
   });
+
+  test("keeps entity ids stable when copied", () => {
+    const reference: ComposerNode[] = [{
+      type: "chip",
+      id: "requirement:req-7",
+      referenceId: "req-7",
+      referenceKind: "requirement",
+      label: "级联输入",
+    }];
+    expect(decodeComposerClipboard(composerClipboardHtml(reference, "需求 · 级联输入"))).toEqual(reference);
+  });
 });
