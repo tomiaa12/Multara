@@ -62,6 +62,11 @@ const MANAGED_ENV_KEYS: &[&str] = &[
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL",
+    "CLAUDE_CODE_SUBAGENT_MODEL",
     "OPENAI_BASE_URL",
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
@@ -71,6 +76,9 @@ const MANAGED_ENV_KEYS: &[&str] = &[
     "MULTARA_GATEWAY_KEY",
     "OPENCODE_CONFIG_CONTENT",
 ];
+
+const CLAUDE_PROXY_ALIAS: &str = "sonnet";
+const CLAUDE_PROXY_MODEL: &str = "claude-sonnet-4-5-20250929";
 
 pub fn managed_env_keys() -> &'static [&'static str] {
     MANAGED_ENV_KEYS
@@ -121,7 +129,10 @@ pub fn protocol_driver(provider: &str) -> Option<&'static str> {
 }
 
 pub fn provider_gateway(provider: &str) -> bool {
-    matches!(provider, "claude" | "codex" | "gemini" | "qwen" | "opencode")
+    matches!(
+        provider,
+        "claude" | "codex" | "gemini" | "qwen" | "opencode"
+    )
 }
 
 pub fn protocol_for(provider: &str) -> &'static str {
@@ -130,6 +141,51 @@ pub fn protocol_for(provider: &str) -> &'static str {
         "gemini" => "gemini",
         _ => "openai",
     }
+}
+
+pub fn native_api_format(provider: &str) -> &'static str {
+    match provider {
+        "claude" => "anthropic",
+        "codex" => "responses",
+        "gemini" => "gemini",
+        _ => "chat",
+    }
+}
+
+pub fn gateway_client_model(provider: &str) -> &'static str {
+    match provider {
+        "claude" => CLAUDE_PROXY_ALIAS,
+        "codex" => "multara-proxy",
+        "gemini" => "gemini-2.5-pro",
+        "qwen" => "qwen3-coder-plus",
+        _ => "default",
+    }
+}
+
+pub fn gateway_settings_args(provider: &str, url: &str, token: &str) -> Vec<String> {
+    if provider != "claude" {
+        return Vec::new();
+    }
+    let settings = serde_json::json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": trim_base_url(url),
+            "ANTHROPIC_AUTH_TOKEN": token,
+            "ANTHROPIC_MODEL": CLAUDE_PROXY_ALIAS,
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": CLAUDE_PROXY_MODEL,
+            "ANTHROPIC_DEFAULT_SONNET_MODEL": CLAUDE_PROXY_MODEL,
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": CLAUDE_PROXY_MODEL,
+            "ANTHROPIC_DEFAULT_FABLE_MODEL": CLAUDE_PROXY_MODEL,
+            "CLAUDE_CODE_SUBAGENT_MODEL": CLAUDE_PROXY_MODEL
+        }
+    });
+    vec!["--settings".into(), settings.to_string()]
+}
+
+pub fn gateway_local_base_url(provider: &str, origin: &str) -> String {
+    if matches!(provider, "codex" | "qwen" | "opencode") {
+        return format!("{}/v1", origin.trim_end_matches('/'));
+    }
+    origin.trim_end_matches('/').to_string()
 }
 
 pub fn prompt_via_stdin(provider: &str) -> bool {
@@ -274,6 +330,26 @@ pub fn gateway_env(
             }
             if !model.is_empty() {
                 env.insert("ANTHROPIC_MODEL".into(), model.into());
+                env.insert(
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".into(),
+                    CLAUDE_PROXY_MODEL.into(),
+                );
+                env.insert(
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL".into(),
+                    CLAUDE_PROXY_MODEL.into(),
+                );
+                env.insert(
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL".into(),
+                    CLAUDE_PROXY_MODEL.into(),
+                );
+                env.insert(
+                    "ANTHROPIC_DEFAULT_FABLE_MODEL".into(),
+                    CLAUDE_PROXY_MODEL.into(),
+                );
+                env.insert(
+                    "CLAUDE_CODE_SUBAGENT_MODEL".into(),
+                    CLAUDE_PROXY_MODEL.into(),
+                );
             }
         }
         "gemini" => {
@@ -349,7 +425,11 @@ pub fn gateway_args(provider: &str, url: &str, model: &str, wire_api: &str) -> V
     if base.is_empty() {
         return Vec::new();
     }
-    let wire = if wire_api == "chat" { "chat" } else { "responses" };
+    let wire = if wire_api == "chat" {
+        "chat"
+    } else {
+        "responses"
+    };
     let mut args = vec![
         "-c".into(),
         "model_provider=multara".into(),
@@ -505,7 +585,12 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
             "--disallowedTools".into(),
             "ExitPlanMode".into(),
         ],
-        "codearts" => vec!["run".into(), "--format".into(), "json".into(), "--auto".into()],
+        "codearts" => vec![
+            "run".into(),
+            "--format".into(),
+            "json".into(),
+            "--auto".into(),
+        ],
         "deveco" => vec![
             "run".into(),
             "--format".into(),
@@ -518,7 +603,13 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
             "--local".into(),
             "--json".into(),
             "--session-id".into(),
-            format!("multara-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)),
+            format!(
+                "multara-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            ),
             "--message".into(),
             assignment.into(),
         ],
@@ -636,7 +727,10 @@ fn probe_cli_version(path: &Path) -> Option<String> {
 
 fn extract_version_line(raw: &str) -> Option<String> {
     let pattern = regex::Regex::new(r"\d+\.\d+\.\d+").ok()?;
-    raw.lines().map(str::trim).find(|line| !line.is_empty() && pattern.is_match(line)).map(truncate_version)
+    raw.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && pattern.is_match(line))
+        .map(truncate_version)
 }
 
 fn truncate_version(line: &str) -> String {
@@ -706,7 +800,10 @@ fn codex_bundle_paths() -> Vec<PathBuf> {
 fn bundle_override() -> Option<Vec<PathBuf>> {
     #[cfg(test)]
     {
-        return CODEX_BUNDLE_OVERRIDE.lock().ok().and_then(|guard| guard.clone());
+        return CODEX_BUNDLE_OVERRIDE
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
     }
     #[cfg(not(test))]
     None
@@ -839,7 +936,10 @@ fn native_path_dirs() -> Vec<PathBuf> {
 fn supplemental_override() -> Option<Vec<PathBuf>> {
     #[cfg(test)]
     {
-        return SUPPLEMENTAL_PATH_OVERRIDE.lock().ok().and_then(|guard| guard.clone());
+        return SUPPLEMENTAL_PATH_OVERRIDE
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
     }
     #[cfg(not(test))]
     None
@@ -1009,12 +1109,13 @@ fn wait_with_timeout(child: &mut std::process::Child, timeout: Duration) -> bool
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, fs};
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    use std::{collections::HashSet, fs};
 
     use super::{
-        build_args, compose_args, detect, execution, extract_version_line, gateway_env,
+        build_args, compose_args, detect, execution, extract_version_line, gateway_client_model,
+        gateway_env, gateway_local_base_url, gateway_settings_args, native_api_format,
         resolve_runtime_command, runtime_specs, CODEX_BUNDLE_OVERRIDE, CODEX_FIXTURE,
         PATH_LOOKUP_DISABLED, SUPPLEMENTAL_PATH_OVERRIDE,
     };
@@ -1098,8 +1199,12 @@ mod tests {
             "",
         );
         assert_eq!(&args[..2], ["--model", "composer-2.5"]);
-        assert!(args.windows(2).any(|pair| pair == ["--output-format", "stream-json"]));
-        assert!(!args.iter().any(|arg| arg == "never put this prompt in argv"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--output-format", "stream-json"]));
+        assert!(!args
+            .iter()
+            .any(|arg| arg == "never put this prompt in argv"));
     }
 
     #[test]
@@ -1133,17 +1238,62 @@ mod tests {
             "sonnet",
             "bearer",
         );
-        assert_eq!(claude.get("ANTHROPIC_BASE_URL").unwrap(), "https://aigw.example/v1");
+        assert_eq!(
+            claude.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://aigw.example/v1"
+        );
         assert_eq!(claude.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "sk-test");
         assert!(claude.get("ANTHROPIC_API_KEY").is_none());
+        assert_eq!(
+            claude.get("ANTHROPIC_DEFAULT_HAIKU_MODEL").unwrap(),
+            "claude-sonnet-4-5-20250929"
+        );
+        assert_eq!(
+            claude.get("ANTHROPIC_DEFAULT_SONNET_MODEL").unwrap(),
+            "claude-sonnet-4-5-20250929"
+        );
+        assert_eq!(
+            claude.get("ANTHROPIC_DEFAULT_OPUS_MODEL").unwrap(),
+            "claude-sonnet-4-5-20250929"
+        );
 
-        let x_api = gateway_env("claude", "https://aigw.example", "sk-test", "sonnet", "x-api-key");
+        let x_api = gateway_env(
+            "claude",
+            "https://aigw.example",
+            "sk-test",
+            "sonnet",
+            "x-api-key",
+        );
         assert_eq!(x_api.get("ANTHROPIC_API_KEY").unwrap(), "sk-test");
 
-        let codex = gateway_env("codex", "https://gw.example/v1", "sk-test", "gpt-4.1", "bearer");
+        let codex = gateway_env(
+            "codex",
+            "https://gw.example/v1",
+            "sk-test",
+            "gpt-4.1",
+            "bearer",
+        );
         assert_eq!(codex.get("MULTARA_GATEWAY_KEY").unwrap(), "sk-test");
         assert!(codex.get("OPENAI_MODEL").is_none());
         assert!(codex.get("OPENAI_BASE_URL").is_none());
+    }
+
+    #[test]
+    fn gateway_proxy_defaults_follow_each_cli_contract() {
+        assert_eq!(native_api_format("claude"), "anthropic");
+        assert_eq!(native_api_format("codex"), "responses");
+        assert_eq!(native_api_format("gemini"), "gemini");
+        assert_eq!(native_api_format("qwen"), "chat");
+        assert_eq!(gateway_client_model("claude"), "sonnet");
+        assert_eq!(gateway_client_model("opencode"), "default");
+        assert_eq!(
+            gateway_local_base_url("codex", "http://127.0.0.1:1234/"),
+            "http://127.0.0.1:1234/v1"
+        );
+        let settings = gateway_settings_args("claude", "http://127.0.0.1:1234", "token");
+        assert_eq!(settings[0], "--settings");
+        assert!(settings[1].contains("claude-sonnet-4-5-20250929"));
+        assert!(settings[1].contains("http://127.0.0.1:1234"));
     }
 
     #[test]
@@ -1270,7 +1420,8 @@ mod tests {
     #[test]
     fn codex_override_does_not_fall_back_to_the_bundle() {
         let _guard = CODEX_FIXTURE.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!("multara-codex-override-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("multara-codex-override-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let binary = dir.join("codex");

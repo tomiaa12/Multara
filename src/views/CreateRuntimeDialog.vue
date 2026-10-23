@@ -83,6 +83,9 @@ function applyLoaded(current: CustomRuntimeForm) {
       apiKey: current.apiKey,
       modelsText: current.models.join("\n"),
       wireApi: current.wireApi === "chat" ? "chat" : "responses",
+      apiFormat: ["anthropic", "responses", "chat", "gemini"].includes(current.apiFormat)
+        ? current.apiFormat as typeof gateway.value.apiFormat
+        : gatewayDraftFor(current.provider).apiFormat,
       keyStyle: current.keyStyle === "x-api-key" ? "x-api-key" : "bearer",
       envText: envTextFrom(current.env),
     };
@@ -148,6 +151,7 @@ async function saveProfile(payload: {
     models: [],
     env: {},
     wireApi: "responses",
+    apiFormat: "",
     keyStyle: "bearer",
   });
 }
@@ -162,6 +166,7 @@ async function saveGateway(payload: {
   apiKey: string;
   models: string[];
   wireApi: "responses" | "chat";
+  apiFormat: "anthropic" | "responses" | "chat" | "gemini";
   keyStyle: "bearer" | "x-api-key";
   env: Record<string, string>;
   maxConcurrent: number;
@@ -181,6 +186,7 @@ async function save(payload: {
   models: string[];
   env: Record<string, string>;
   wireApi: string;
+  apiFormat: string;
   keyStyle: string;
   maxConcurrent: number;
 }) {
@@ -203,6 +209,7 @@ async function save(payload: {
       kind: payload.kind,
       description: payload.description,
       wireApi: payload.wireApi,
+      apiFormat: payload.apiFormat,
       keyStyle: payload.keyStyle,
     });
     emit("close");
@@ -285,6 +292,7 @@ async function save(payload: {
         :has-api-key="hasApiKey"
         :models-text="gateway.modelsText"
         :wire-api="gateway.wireApi"
+        :api-format="gateway.apiFormat"
         :key-style="gateway.keyStyle"
         :env-text="gateway.envText"
         :max-concurrent="gateway.maxConcurrent"

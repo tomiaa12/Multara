@@ -24,6 +24,7 @@ const props = defineProps<{
   hasApiKey: boolean;
   modelsText: string;
   wireApi: string;
+  apiFormat: string;
   keyStyle: string;
   envText: string;
   maxConcurrent: number;
@@ -45,6 +46,7 @@ const emit = defineEmits<{
     apiKey: string;
     models: string[];
     wireApi: "responses" | "chat";
+    apiFormat: "anthropic" | "responses" | "chat" | "gemini";
     keyStyle: "bearer" | "x-api-key";
     env: Record<string, string>;
     maxConcurrent: number;
@@ -60,6 +62,9 @@ draft.value.commandLine = props.commandLine || draft.value.commandLine;
 draft.value.apiUrl = props.apiUrl;
 draft.value.modelsText = props.modelsText;
 draft.value.wireApi = props.wireApi === "chat" ? "chat" : "responses";
+if (["anthropic", "responses", "chat", "gemini"].includes(props.apiFormat)) {
+  draft.value.apiFormat = props.apiFormat as typeof draft.value.apiFormat;
+}
 draft.value.keyStyle = props.keyStyle === "x-api-key" ? "x-api-key" : "bearer";
 draft.value.envText = props.envText;
 const apiKey = ref(props.initialApiKey ?? "");
@@ -71,6 +76,27 @@ let stopLog: (() => void) | undefined;
 
 const spec = computed(() => familyOf(draft.value.provider));
 const parsed = computed(() => parseCommandLine(draft.value.commandLine));
+const modelLines = computed(() =>
+  draft.value.modelsText.split("\n").map((line) => line.trim()).filter(Boolean),
+);
+const defaultModel = computed({
+  get: () => modelLines.value[0] ?? "",
+  set: (value: string) => {
+    const next = value.trim();
+    draft.value.modelsText = [next, ...modelLines.value.slice(1)]
+      .filter(Boolean)
+      .join("\n");
+  },
+});
+const additionalModels = computed({
+  get: () => modelLines.value.slice(1).join("\n"),
+  set: (value: string) => {
+    draft.value.modelsText = [
+      defaultModel.value,
+      ...value.split("\n").map((line) => line.trim()).filter(Boolean),
+    ].filter(Boolean).join("\n");
+  },
+});
 const useApiKey = computed({
   get: () => draft.value.keyStyle === "x-api-key",
   set: (value: boolean) => {
@@ -126,8 +152,9 @@ async function testConnection() {
       args: parsedLine.fixedArgs,
       apiUrl: draft.value.apiUrl,
       apiKey: apiKey.value,
-      model: draft.value.modelsText.split("\n").map((line) => line.trim()).filter(Boolean)[0] ?? "",
+      model: defaultModel.value,
       wireApi: draft.value.wireApi,
+      apiFormat: draft.value.apiFormat,
       keyStyle: draft.value.keyStyle,
       env: parseEnvText(draft.value.envText),
     });
@@ -146,7 +173,7 @@ async function testConnection() {
 onBeforeUnmount(() => stopLog?.());
 
 function submit() {
-  if (!parsed.value.ok || !draft.value.name.trim() || !draft.value.apiUrl.trim()) return;
+  if (!parsed.value.ok || !draft.value.name.trim() || !draft.value.apiUrl.trim() || !defaultModel.value) return;
   if (!apiKey.value.trim() && !props.hasApiKey) return;
   emit("save", {
     provider: draft.value.provider,
@@ -156,8 +183,9 @@ function submit() {
     description: draft.value.description.trim(),
     apiUrl: draft.value.apiUrl.trim().replace(/\/+$/, ""),
     apiKey: apiKey.value,
-    models: draft.value.modelsText.split("\n").map((line) => line.trim()).filter(Boolean),
-    wireApi: draft.value.wireApi,
+    models: modelLines.value,
+    wireApi: draft.value.apiFormat === "chat" ? "chat" : "responses",
+    apiFormat: draft.value.apiFormat,
     keyStyle: draft.value.keyStyle,
     env: parseEnvText(draft.value.envText),
     maxConcurrent: Number(draft.value.maxConcurrent) || 2,
@@ -201,15 +229,19 @@ function submit() {
       </button>
     </span>
   </label>
-  <label>{{ t("runtime.field.models") }}<UiTextarea v-model="draft.modelsText" rows="3" placeholder="gpt-4.1" /></label>
-  <label v-if="draft.provider === 'codex'">{{ t("runtime.gateway.wire") }}
+  <label>{{ t("runtime.field.defaultModel") }}<UiInput v-model="defaultModel" placeholder="gpt-4.1" /></label>
+  <label>{{ t("runtime.field.additionalModels") }}<UiTextarea v-model="additionalModels" rows="3" :placeholder="t('runtime.field.additionalModelsPlaceholder')" /></label>
+  <label>{{ t("runtime.gateway.apiFormat") }}
     <UiSelect
-      v-model="draft.wireApi"
+      v-model="draft.apiFormat"
       :options="[
-        { value: 'responses', label: t('runtime.gateway.wire.responses') },
-        { value: 'chat', label: t('runtime.gateway.wire.chat') },
+        { value: 'anthropic', label: t('runtime.gateway.apiFormat.anthropic') },
+        { value: 'responses', label: t('runtime.gateway.apiFormat.responses') },
+        { value: 'chat', label: t('runtime.gateway.apiFormat.chat') },
+        { value: 'gemini', label: t('runtime.gateway.apiFormat.gemini') },
       ]"
     />
+    <small>{{ t("runtime.gateway.apiFormatHint") }}</small>
   </label>
   <label v-if="draft.provider === 'claude'" class="check-row">
     <UiInput v-model="useApiKey" type="checkbox" />
@@ -233,7 +265,7 @@ function submit() {
   <p v-if="error" class="form-error">{{ error }}</p>
   <div class="ds-modal-footer">
     <UiButton type="button" :disabled="busy" @click="emit('back')">{{ t("common.back") }}</UiButton>
-    <UiButton type="button" variant="primary" :disabled="busy || !draft.name.trim() || !draft.apiUrl.trim() || !parsed.ok || (!apiKey.trim() && !hasApiKey)" @click="submit">
+    <UiButton type="button" variant="primary" :disabled="busy || !draft.name.trim() || !draft.apiUrl.trim() || !defaultModel || !parsed.ok || (!apiKey.trim() && !hasApiKey)" @click="submit">
       {{ busy ? t("common.saving") : t("common.save") }}
     </UiButton>
   </div>
