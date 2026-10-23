@@ -6,7 +6,9 @@ import {
   formatCommandLine,
   gatewayDraftFor,
   gatewayHost,
+  headersTextFrom,
   parseCommandLine,
+  parseHeadersText,
 } from "./runtime-catalog";
 
 describe("runtime catalog", () => {
@@ -96,5 +98,13 @@ describe("gatewayDraftFor", () => {
 describe("gatewayHost", () => {
   it("returns the hostname of a base URL", () => {
     expect(gatewayHost("https://aigw.example.com/v1/")).toBe("aigw.example.com");
+  });
+});
+
+describe("gateway headers", () => {
+  it("round trips custom request headers and ignores malformed lines", () => {
+    const headers = parseHeadersText("X-Trace: abc\ninvalid\nX-Mode: fast");
+    expect(headers).toEqual({ "X-Trace": "abc", "X-Mode": "fast" });
+    expect(headersTextFrom(headers)).toContain("X-Trace: abc");
   });
 });

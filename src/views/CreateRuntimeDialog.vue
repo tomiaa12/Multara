@@ -12,6 +12,8 @@ import {
   familyOf,
   formatCommandLine,
   gatewayDraftFor,
+  headersTextFrom,
+  parseHeadersText,
 } from "./runtime-catalog";
 import RuntimeGatewayForm from "./RuntimeGatewayForm.vue";
 import RuntimeProfileForm from "./RuntimeProfileForm.vue";
@@ -36,6 +38,14 @@ const profile = ref({
   maxConcurrent: 2,
 });
 const gateway = ref(gatewayDraftFor("claude"));
+const gatewayOptions = computed(() => ({
+  compatibilityMode: gateway.value.compatibilityMode,
+  fullUrl: gateway.value.fullUrl,
+  customUserAgent: gateway.value.customUserAgent,
+  customHeaders: parseHeadersText(gateway.value.customHeadersText),
+  reasoningEffort: gateway.value.reasoningEffort,
+  promptCache: gateway.value.promptCache,
+}));
 
 const title = computed(() => (editingId.value ? t("runtime.editTitle") : t("runtime.createTitle")));
 
@@ -87,6 +97,12 @@ function applyLoaded(current: CustomRuntimeForm) {
         ? current.apiFormat as typeof gateway.value.apiFormat
         : gatewayDraftFor(current.provider).apiFormat,
       keyStyle: current.keyStyle === "x-api-key" ? "x-api-key" : "bearer",
+      compatibilityMode: current.gatewayOptions.compatibilityMode,
+      fullUrl: current.gatewayOptions.fullUrl,
+      customUserAgent: current.gatewayOptions.customUserAgent,
+      customHeadersText: headersTextFrom(current.gatewayOptions.customHeaders),
+      reasoningEffort: current.gatewayOptions.reasoningEffort,
+      promptCache: current.gatewayOptions.promptCache,
       envText: envTextFrom(current.env),
     };
     step.value = "gateway";
@@ -168,6 +184,7 @@ async function saveGateway(payload: {
   wireApi: "responses" | "chat";
   apiFormat: "anthropic" | "responses" | "chat" | "gemini";
   keyStyle: "bearer" | "x-api-key";
+  gatewayOptions: CustomRuntimeForm["gatewayOptions"];
   env: Record<string, string>;
   maxConcurrent: number;
 }) {
@@ -188,6 +205,7 @@ async function save(payload: {
   wireApi: string;
   apiFormat: string;
   keyStyle: string;
+  gatewayOptions?: CustomRuntimeForm["gatewayOptions"];
   maxConcurrent: number;
 }) {
   if (busy.value) return;
@@ -211,6 +229,7 @@ async function save(payload: {
       wireApi: payload.wireApi,
       apiFormat: payload.apiFormat,
       keyStyle: payload.keyStyle,
+      gatewayOptions: payload.gatewayOptions,
     });
     emit("close");
   } catch (cause) {
@@ -294,6 +313,7 @@ async function save(payload: {
         :wire-api="gateway.wireApi"
         :api-format="gateway.apiFormat"
         :key-style="gateway.keyStyle"
+        :gateway-options="gatewayOptions"
         :env-text="gateway.envText"
         :max-concurrent="gateway.maxConcurrent"
         :locked="locked"

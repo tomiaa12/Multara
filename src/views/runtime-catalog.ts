@@ -151,6 +151,12 @@ export interface GatewayDraft {
   wireApi: "responses" | "chat";
   apiFormat: "anthropic" | "responses" | "chat" | "gemini";
   keyStyle: "bearer" | "x-api-key";
+  compatibilityMode: "auto" | "generic" | "openai" | "codex_oauth" | "xai" | "moonshot" | "opencode" | "openrouter" | "gemini";
+  fullUrl: boolean;
+  customUserAgent: string;
+  customHeadersText: string;
+  reasoningEffort: "auto" | "low" | "medium" | "high" | "xhigh" | "max";
+  promptCache: boolean;
   envText: string;
   maxConcurrent: number;
 }
@@ -177,9 +183,33 @@ export function gatewayDraftFor(provider: RuntimeFamilyId, previous?: Partial<Ga
     wireApi: "responses",
     apiFormat: nativeApiFormat(provider),
     keyStyle: "bearer",
+    compatibilityMode: "auto",
+    fullUrl: false,
+    customUserAgent: "",
+    customHeadersText: "",
+    reasoningEffort: "auto",
+    promptCache: true,
     envText: "",
     maxConcurrent: previous?.maxConcurrent ?? 2,
   };
+}
+
+export function parseHeadersText(text: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const separator = line.indexOf(":");
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (key && value && !/[\r\n]/.test(value)) headers[key] = value;
+  }
+  return headers;
+}
+
+export function headersTextFrom(headers: Record<string, string>): string {
+  return Object.entries(headers)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
 }
 
 export function parseEnvText(text: string): Record<string, string> {

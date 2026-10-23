@@ -445,6 +445,12 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "key_style",
         "TEXT NOT NULL DEFAULT 'bearer'",
     )?;
+    ensure_column(
+        db,
+        "custom_runtimes",
+        "gateway_options_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
     db.execute(
         "UPDATE custom_runtimes
          SET api_format = CASE provider

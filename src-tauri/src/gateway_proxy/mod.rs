@@ -1,6 +1,9 @@
+mod protocol;
+mod streaming;
 mod transform;
 
 use std::{
+    collections::HashMap,
     io::Read,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -42,6 +45,8 @@ pub struct GatewayProxyConfig {
     pub key_style: String,
     pub model: String,
     pub client_model: String,
+    pub client_provider: String,
+    pub options: crate::models::GatewayOptions,
 }
 
 pub struct GatewayProxy {
@@ -49,6 +54,67 @@ pub struct GatewayProxy {
     token: String,
     stopped: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct GatewayState {
+    gemini_tools: HashMap<String, (String, Option<String>)>,
+}
+
+impl GatewayState {
+    fn prepare_gemini_request(&self, body: &mut Value) {
+        for part in body
+            .get_mut("contents")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+            .filter_map(|content| content.get_mut("parts").and_then(Value::as_array_mut))
+            .flatten()
+        {
+            if let Some(call) = part.get_mut("functionCall") {
+                let id = call.get("id").and_then(Value::as_str).unwrap_or_default();
+                if let Some((_, Some(signature))) = self.gemini_tools.get(id) {
+                    call["thoughtSignature"] = Value::String(signature.clone());
+                }
+            }
+            if let Some(result) = part.get_mut("functionResponse") {
+                let id = result.get("id").and_then(Value::as_str).unwrap_or_default();
+                if let Some((name, _)) = self.gemini_tools.get(id) {
+                    result["name"] = Value::String(name.clone());
+                }
+            }
+        }
+    }
+
+    fn capture_gemini_response(&mut self, body: &mut Value) {
+        for part in body
+            .pointer_mut("/candidates/0/content/parts")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            let Some(call) = part.get_mut("functionCall") else {
+                continue;
+            };
+            let name = call
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("tool")
+                .to_string();
+            let id = call
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("gemini_{}", uuid::Uuid::new_v4().simple()));
+            let signature = call
+                .get("thoughtSignature")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            call["id"] = Value::String(id.clone());
+            self.gemini_tools.insert(id, (name, signature));
+        }
+    }
 }
 
 impl GatewayProxy {
@@ -66,9 +132,12 @@ impl GatewayProxy {
         let handle = thread::Builder::new()
             .name("multara-gateway-proxy".into())
             .spawn(move || {
+                let mut state = GatewayState::default();
                 while !thread_stopped.load(Ordering::Relaxed) {
                     match server.recv_timeout(Duration::from_millis(100)) {
-                        Ok(Some(request)) => handle_request(request, &config, &thread_token),
+                        Ok(Some(request)) => {
+                            handle_request(request, &config, &thread_token, &mut state)
+                        }
                         Ok(None) => {}
                         Err(_) => break,
                     }
@@ -101,7 +170,12 @@ impl Drop for GatewayProxy {
     }
 }
 
-fn handle_request(mut request: Request, config: &GatewayProxyConfig, token: &str) {
+fn handle_request(
+    mut request: Request,
+    config: &GatewayProxyConfig,
+    token: &str,
+    state: &mut GatewayState,
+) {
     if !authorized(&request, token) {
         respond_json(
             request,
@@ -148,7 +222,7 @@ fn handle_request(mut request: Request, config: &GatewayProxyConfig, token: &str
             return;
         }
     };
-    let (mapped, body_stream) = match transform::rewrite_request(
+    let (mut mapped, body_stream) = match transform::rewrite_request(
         input,
         config.client_format,
         config.upstream_format,
@@ -160,8 +234,94 @@ fn handle_request(mut request: Request, config: &GatewayProxyConfig, token: &str
             return;
         }
     };
+    apply_request_options(&mut mapped, config);
+    if config.upstream_format == ApiFormat::Gemini {
+        state.prepare_gemini_request(&mut mapped);
+    }
     let mut headers = forwarded_headers(&request);
+    apply_custom_headers(&mut headers, config, token);
     apply_upstream_auth(&mut headers, config);
+    if incoming_stream || body_stream {
+        mapped["stream"] = Value::Bool(true);
+        headers.retain(|(key, _)| !key.eq_ignore_ascii_case("accept"));
+        headers.push(("Accept".into(), "text/event-stream".into()));
+        let mut upstream = match crate::http_client::request_stream(
+            "POST",
+            &upstream_stream_url(config),
+            &headers,
+            Some(&mapped.to_string()),
+            600,
+        ) {
+            Ok(response) => response,
+            Err(error) => {
+                respond_error(request, 502, &format!("上游请求失败：{error}"));
+                return;
+            }
+        };
+        let status = upstream.status;
+        if !(200..300).contains(&status) {
+            respond_reader(request, status, "application/json", upstream);
+            return;
+        }
+        let streaming_content = upstream.headers.iter().any(|(key, value)| {
+            key.eq_ignore_ascii_case("content-type")
+                && (value.contains("text/event-stream")
+                    || value.contains("application/x-ndjson")
+                    || value.contains("application/json-seq"))
+        });
+        if !streaming_content {
+            let mut raw = String::new();
+            if upstream.read_to_string(&mut raw).is_err() {
+                respond_error(request, 502, "读取上游响应失败");
+                return;
+            }
+            let mut output: Value = match serde_json::from_str(&raw) {
+                Ok(output) => output,
+                Err(error) => {
+                    respond_error(request, 502, &format!("上游返回了无法解析的响应：{error}"));
+                    return;
+                }
+            };
+            if config.upstream_format == ApiFormat::Gemini {
+                state.capture_gemini_response(&mut output);
+            }
+            let (_, canonical) = match transform::rewrite_response(
+                output,
+                config.upstream_format,
+                config.client_format,
+                &config.model,
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    respond_error(request, 502, &error);
+                    return;
+                }
+            };
+            respond_text(
+                request,
+                200,
+                "text/event-stream",
+                transform::synthetic_sse(config.client_format, &canonical).into_bytes(),
+            );
+            return;
+        }
+        if config.client_format == config.upstream_format {
+            respond_reader(request, status, "text/event-stream", upstream);
+        } else {
+            respond_reader(
+                request,
+                status,
+                "text/event-stream",
+                streaming::BridgeReader::new(
+                    upstream,
+                    config.upstream_format,
+                    config.client_format,
+                    config.model.clone(),
+                ),
+            );
+        }
+        return;
+    }
     let upstream = match crate::http_client::request(
         "POST",
         &upstream_url(config),
@@ -188,13 +348,16 @@ fn handle_request(mut request: Request, config: &GatewayProxyConfig, token: &str
         );
         return;
     }
-    let output: Value = match serde_json::from_str(&upstream.body) {
+    let mut output: Value = match serde_json::from_str(&upstream.body) {
         Ok(output) => output,
         Err(error) => {
             respond_error(request, 502, &format!("上游返回了无法解析的响应：{error}"));
             return;
         }
     };
+    if config.upstream_format == ApiFormat::Gemini {
+        state.capture_gemini_response(&mut output);
+    }
     let (mapped_response, canonical) = match transform::rewrite_response(
         output,
         config.upstream_format,
@@ -207,15 +370,7 @@ fn handle_request(mut request: Request, config: &GatewayProxyConfig, token: &str
             return;
         }
     };
-    if incoming_stream || body_stream {
-        respond_text(
-            request,
-            200,
-            "text/event-stream",
-            transform::synthetic_sse(config.client_format, &canonical).into_bytes(),
-        );
-        return;
-    }
+    let _ = canonical;
     respond_json(request, 200, &mapped_response);
 }
 
@@ -269,11 +424,126 @@ fn apply_upstream_auth(headers: &mut Vec<(String, String)>, config: &GatewayProx
         headers.push(("x-goog-api-key".into(), config.api_key.clone()));
         return;
     }
+    if config.key_style == "x-api-key" {
+        headers.push(("x-api-key".into(), config.api_key.clone()));
+        return;
+    }
     headers.push(("Authorization".into(), format!("Bearer {}", config.api_key)));
+}
+
+fn apply_custom_headers(
+    headers: &mut Vec<(String, String)>,
+    config: &GatewayProxyConfig,
+    session_id: &str,
+) {
+    for (key, value) in &config.options.custom_headers {
+        if !matches!(
+            key.to_ascii_lowercase().as_str(),
+            "authorization"
+                | "x-api-key"
+                | "x-goog-api-key"
+                | "host"
+                | "content-length"
+                | "content-type"
+                | "accept"
+        ) {
+            headers.push((key.clone(), value.clone()));
+        }
+    }
+    if !config.options.custom_user_agent.is_empty() {
+        headers.retain(|(key, _)| !key.eq_ignore_ascii_case("user-agent"));
+        headers.push((
+            "User-Agent".into(),
+            config.options.custom_user_agent.clone(),
+        ));
+    }
+    if config.client_provider == "opencode" || compatibility_mode(config) == "opencode" {
+        headers.retain(|(key, _)| !key.eq_ignore_ascii_case("x-opencode-session"));
+        headers.push(("x-opencode-session".into(), session_id.to_string()));
+        if config.options.custom_user_agent.is_empty() {
+            headers.push(("User-Agent".into(), "opencode/multara".into()));
+        }
+    }
+    if config.upstream_format == ApiFormat::Anthropic {
+        headers.retain(|(key, _)| !key.eq_ignore_ascii_case("anthropic-beta"));
+        headers.push(("anthropic-beta".into(), "claude-code-20250219".into()));
+    }
+}
+
+fn apply_request_options(body: &mut Value, config: &GatewayProxyConfig) {
+    if let Some(object) = body.as_object_mut() {
+        if config.options.reasoning_effort != "auto" && !config.options.reasoning_effort.is_empty()
+        {
+            let effort = Value::String(config.options.reasoning_effort.clone());
+            match config.upstream_format {
+                ApiFormat::Responses => {
+                    object.insert("reasoning".into(), json!({ "effort": effort }));
+                }
+                ApiFormat::Chat => {
+                    object.insert("reasoning_effort".into(), effort);
+                }
+                ApiFormat::Anthropic => {
+                    object.insert("output_config".into(), json!({ "effort": effort }));
+                    object.insert("thinking".into(), json!({ "type": "adaptive" }));
+                }
+                ApiFormat::Gemini => {}
+            }
+        }
+        if config.options.prompt_cache && config.upstream_format == ApiFormat::Responses {
+            object.insert(
+                "prompt_cache_key".into(),
+                Value::String(format!(
+                    "{}:{}",
+                    config.client_provider, config.client_model
+                )),
+            );
+        }
+        match compatibility_mode(config) {
+            "codex_oauth" => {
+                object.insert("store".into(), Value::Bool(false));
+                object.insert("include".into(), json!(["reasoning.encrypted_content"]));
+                object.remove("temperature");
+            }
+            "xai" => {
+                object.remove("prompt_cache_key");
+                object.remove("safety_identifier");
+            }
+            "moonshot" => {
+                object.remove("parallel_tool_calls");
+            }
+            _ => {}
+        }
+    }
+}
+
+fn compatibility_mode(config: &GatewayProxyConfig) -> &str {
+    let configured = config.options.compatibility_mode.trim();
+    if !configured.is_empty() && configured != "auto" {
+        return configured;
+    }
+    let url = config.api_url.to_ascii_lowercase();
+    if url.contains("chatgpt.com/backend-api/codex") {
+        "codex_oauth"
+    } else if url.contains("api.x.ai") {
+        "xai"
+    } else if url.contains("moonshot") || url.contains("kimi") {
+        "moonshot"
+    } else if url.contains("openrouter") {
+        "openrouter"
+    } else if url.contains("generativelanguage.googleapis.com") {
+        "gemini"
+    } else if config.client_provider == "opencode" {
+        "opencode"
+    } else {
+        "generic"
+    }
 }
 
 fn upstream_url(config: &GatewayProxyConfig) -> String {
     let base = config.api_url.trim_end_matches('/');
+    if config.options.full_url {
+        return base.to_string();
+    }
     let endpoint = match config.upstream_format {
         ApiFormat::Anthropic => "/v1/messages",
         ApiFormat::Responses => "/v1/responses",
@@ -287,6 +557,14 @@ fn upstream_url(config: &GatewayProxyConfig) -> String {
         return format!("{base}/{}", endpoint.trim_start_matches("/v1/"));
     }
     format!("{base}{endpoint}")
+}
+
+fn upstream_stream_url(config: &GatewayProxyConfig) -> String {
+    let url = upstream_url(config);
+    if config.upstream_format != ApiFormat::Gemini || config.options.full_url {
+        return url;
+    }
+    url.replace(":generateContent", ":streamGenerateContent?alt=sse")
 }
 
 fn gemini_url(base: &str, model: &str) -> String {
@@ -329,6 +607,23 @@ fn respond_text(request: Request, status: u16, content_type: &str, body: Vec<u8>
     let _ = request.respond(response);
 }
 
+fn respond_reader(
+    request: Request,
+    status: u16,
+    content_type: &str,
+    reader: impl Read + Send + 'static,
+) {
+    let mut headers = Vec::new();
+    if let Ok(header) = Header::from_bytes("Content-Type", content_type) {
+        headers.push(header);
+    }
+    if let Ok(header) = Header::from_bytes("Cache-Control", "no-cache") {
+        headers.push(header);
+    }
+    let response = Response::new(StatusCode(status), headers, reader, None, None);
+    let _ = request.respond(response);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,6 +637,8 @@ mod tests {
             key_style: "bearer".into(),
             model: "model".into(),
             client_model: "sonnet".into(),
+            client_provider: "claude".into(),
+            options: crate::models::GatewayOptions::default(),
         }
     }
 
@@ -390,6 +687,8 @@ mod tests {
             key_style: "bearer".into(),
             model: "gpt-6.1-sol".into(),
             client_model: "sonnet".into(),
+            client_provider: "claude".into(),
+            options: crate::models::GatewayOptions::default(),
         })
         .unwrap();
         let response = crate::http_client::request(
@@ -408,6 +707,53 @@ mod tests {
         assert_eq!(response.status, 200);
         let body: Value = serde_json::from_str(&response.body).unwrap();
         assert_eq!(body["content"][0]["text"], "ok");
+        upstream_thread.join().unwrap();
+    }
+
+    #[test]
+    fn streams_chat_upstream_as_anthropic_sse() {
+        let upstream = Server::http("127.0.0.1:0").unwrap();
+        let upstream_address = upstream.server_addr().to_ip().unwrap();
+        let upstream_thread = thread::spawn(move || {
+            let mut request = upstream.recv().unwrap();
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body).unwrap();
+            let body: Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(body["stream"], true);
+            let response = Response::from_string(concat!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n"
+            ))
+            .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap());
+            request.respond(response).unwrap();
+        });
+        let proxy = GatewayProxy::start(GatewayProxyConfig {
+            client_format: ApiFormat::Anthropic,
+            upstream_format: ApiFormat::Chat,
+            api_url: format!("http://{upstream_address}"),
+            api_key: "upstream-key".into(),
+            key_style: "bearer".into(),
+            model: "gpt-5".into(),
+            client_model: "sonnet".into(),
+            client_provider: "claude".into(),
+            options: crate::models::GatewayOptions::default(),
+        })
+        .unwrap();
+        let response = crate::http_client::request(
+            "POST",
+            &format!("{}/v1/messages", proxy.origin()),
+            &[
+                ("Authorization".into(), format!("Bearer {}", proxy.token())),
+                ("Content-Type".into(), "application/json".into()),
+            ],
+            Some(r#"{"model":"sonnet","stream":true,"messages":[{"role":"user","content":"hi"}]}"#),
+            10,
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        assert!(response.body.contains("text_delta"));
+        assert!(response.body.contains("message_stop"));
         upstream_thread.join().unwrap();
     }
 }

@@ -152,6 +152,16 @@ export interface CustomRuntimeInput {
   wireApi?: string;
   apiFormat?: string;
   keyStyle?: string;
+  gatewayOptions?: GatewayOptions;
+}
+
+export interface GatewayOptions {
+  compatibilityMode: "auto" | "generic" | "openai" | "codex_oauth" | "xai" | "moonshot" | "opencode" | "openrouter" | "gemini";
+  fullUrl: boolean;
+  customUserAgent: string;
+  customHeaders: Record<string, string>;
+  reasoningEffort: "auto" | "low" | "medium" | "high" | "xhigh" | "max";
+  promptCache: boolean;
 }
 
 export interface CustomRuntimeForm {
@@ -171,6 +181,7 @@ export interface CustomRuntimeForm {
   wireApi: string;
   apiFormat: string;
   keyStyle: string;
+  gatewayOptions: GatewayOptions;
   hasApiKey: boolean;
 }
 

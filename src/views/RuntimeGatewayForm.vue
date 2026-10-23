@@ -2,12 +2,16 @@
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import ProviderLogo from "../components/ProviderLogo.vue";
+import type { GatewayOptions } from "../domain/types";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
+import RuntimeGatewayAdvancedFields from "./RuntimeGatewayAdvancedFields.vue";
 import {
   GATEWAY_FAMILIES,
   familyOf,
   gatewayDraftFor,
+  headersTextFrom,
+  parseHeadersText,
   parseCommandLine,
   parseEnvText,
   type RuntimeFamilyId,
@@ -26,6 +30,7 @@ const props = defineProps<{
   wireApi: string;
   apiFormat: string;
   keyStyle: string;
+  gatewayOptions: GatewayOptions;
   envText: string;
   maxConcurrent: number;
   locked: boolean;
@@ -48,6 +53,7 @@ const emit = defineEmits<{
     wireApi: "responses" | "chat";
     apiFormat: "anthropic" | "responses" | "chat" | "gemini";
     keyStyle: "bearer" | "x-api-key";
+    gatewayOptions: GatewayOptions;
     env: Record<string, string>;
     maxConcurrent: number;
   }];
@@ -66,6 +72,12 @@ if (["anthropic", "responses", "chat", "gemini"].includes(props.apiFormat)) {
   draft.value.apiFormat = props.apiFormat as typeof draft.value.apiFormat;
 }
 draft.value.keyStyle = props.keyStyle === "x-api-key" ? "x-api-key" : "bearer";
+draft.value.compatibilityMode = props.gatewayOptions.compatibilityMode || "auto";
+draft.value.fullUrl = props.gatewayOptions.fullUrl;
+draft.value.customUserAgent = props.gatewayOptions.customUserAgent;
+draft.value.customHeadersText = headersTextFrom(props.gatewayOptions.customHeaders);
+draft.value.reasoningEffort = props.gatewayOptions.reasoningEffort || "auto";
+draft.value.promptCache = props.gatewayOptions.promptCache;
 draft.value.envText = props.envText;
 const apiKey = ref(props.initialApiKey ?? "");
 const showKey = ref(false);
@@ -102,6 +114,17 @@ const useApiKey = computed({
   set: (value: boolean) => {
     draft.value.keyStyle = value ? "x-api-key" : "bearer";
   },
+});
+const advancedGateway = computed({
+  get: () => ({
+    compatibilityMode: draft.value.compatibilityMode,
+    fullUrl: draft.value.fullUrl,
+    customUserAgent: draft.value.customUserAgent,
+    customHeadersText: draft.value.customHeadersText,
+    reasoningEffort: draft.value.reasoningEffort,
+    promptCache: draft.value.promptCache,
+  }),
+  set: (value) => Object.assign(draft.value, value),
 });
 
 function pickCli(id: string) {
@@ -156,6 +179,14 @@ async function testConnection() {
       wireApi: draft.value.wireApi,
       apiFormat: draft.value.apiFormat,
       keyStyle: draft.value.keyStyle,
+      gatewayOptions: {
+        compatibilityMode: draft.value.compatibilityMode,
+        fullUrl: draft.value.fullUrl,
+        customUserAgent: draft.value.customUserAgent,
+        customHeaders: parseHeadersText(draft.value.customHeadersText),
+        reasoningEffort: draft.value.reasoningEffort,
+        promptCache: draft.value.promptCache,
+      },
       env: parseEnvText(draft.value.envText),
     });
   } catch (cause) {
@@ -187,6 +218,14 @@ function submit() {
     wireApi: draft.value.apiFormat === "chat" ? "chat" : "responses",
     apiFormat: draft.value.apiFormat,
     keyStyle: draft.value.keyStyle,
+    gatewayOptions: {
+      compatibilityMode: draft.value.compatibilityMode,
+      fullUrl: draft.value.fullUrl,
+      customUserAgent: draft.value.customUserAgent.trim(),
+      customHeaders: parseHeadersText(draft.value.customHeadersText),
+      reasoningEffort: draft.value.reasoningEffort,
+      promptCache: draft.value.promptCache,
+    },
     env: parseEnvText(draft.value.envText),
     maxConcurrent: Number(draft.value.maxConcurrent) || 2,
   });
@@ -243,12 +282,13 @@ function submit() {
     />
     <small>{{ t("runtime.gateway.apiFormatHint") }}</small>
   </label>
-  <label v-if="draft.provider === 'claude'" class="check-row">
+  <label class="check-row">
     <UiInput v-model="useApiKey" type="checkbox" />
     {{ t("runtime.gateway.keyStyle") }}
   </label>
   <details class="runtime-advanced">
     <summary>{{ t("runtime.advanced") }}</summary>
+    <RuntimeGatewayAdvancedFields v-model="advancedGateway" />
     <label>{{ t("runtime.field.commandLine") }}<UiInput v-model="draft.commandLine" spellcheck="false" /></label>
     <p v-if="!parsed.ok && draft.commandLine.trim()" class="form-error">{{ t(`runtime.commandError.${parsed.error}`) }}</p>
     <label>{{ t("runtime.field.description") }}<UiTextarea v-model="draft.description" rows="2" /></label>
