@@ -195,6 +195,38 @@ pub struct CustomRuntimeInput {
     pub api_format: String,
     #[serde(default)]
     pub key_style: String,
+    #[serde(default)]
+    pub gateway_options: GatewayOptions,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayOptions {
+    #[serde(default)]
+    pub compatibility_mode: String,
+    #[serde(default)]
+    pub full_url: bool,
+    #[serde(default)]
+    pub custom_user_agent: String,
+    #[serde(default)]
+    pub custom_headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub reasoning_effort: String,
+    #[serde(default)]
+    pub prompt_cache: bool,
+}
+
+impl Default for GatewayOptions {
+    fn default() -> Self {
+        Self {
+            compatibility_mode: "auto".into(),
+            full_url: false,
+            custom_user_agent: String::new(),
+            custom_headers: std::collections::HashMap::new(),
+            reasoning_effort: "auto".into(),
+            prompt_cache: true,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -216,6 +248,7 @@ pub struct CustomRuntimeForm {
     pub wire_api: String,
     pub api_format: String,
     pub key_style: String,
+    pub gateway_options: GatewayOptions,
     pub has_api_key: bool,
 }
 

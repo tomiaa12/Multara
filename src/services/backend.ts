@@ -197,6 +197,14 @@ export async function getCustomRuntime(runtimeId: string): Promise<CustomRuntime
       wireApi: "responses",
       apiFormat: "",
       keyStyle: "bearer",
+      gatewayOptions: {
+        compatibilityMode: "auto",
+        fullUrl: false,
+        customUserAgent: "",
+        customHeaders: {},
+        reasoningEffort: "auto",
+        promptCache: true,
+      },
       hasApiKey: false,
     };
   }
@@ -219,6 +227,7 @@ export async function testRuntimeConnection(input: {
   wireApi: string;
   apiFormat: string;
   keyStyle: string;
+  gatewayOptions: import("../domain/types").GatewayOptions;
   env: Record<string, string>;
 }): Promise<string> {
   if (!inTauri()) throw new Error("请在桌面应用中测试连接");

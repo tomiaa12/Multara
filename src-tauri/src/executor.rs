@@ -2343,6 +2343,8 @@ fn prepare_gateway(launch: &CustomLaunch, selected_model: &str) -> Result<Prepar
         key_style: launch.key_style.clone(),
         model: model.to_string(),
         client_model: client_model.to_string(),
+        client_provider: launch.provider.clone(),
+        options: launch.gateway_options.clone(),
     })?;
     let base_url = runtime::gateway_local_base_url(&launch.provider, proxy.origin());
     let env_model = if launch.provider == "opencode" {
@@ -2396,6 +2398,7 @@ struct CustomLaunch {
     wire_api: String,
     api_format: String,
     key_style: String,
+    gateway_options: crate::models::GatewayOptions,
 }
 
 fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaunch, String> {
@@ -2408,7 +2411,8 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
         "SELECT c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 1),
                 c.provider, c.protocol, c.api_url, c.api_key, c.models_json, c.env_json,
                 COALESCE(c.kind, 'profile'), COALESCE(c.wire_api, 'responses'),
-                COALESCE(c.api_format, ''), COALESCE(c.key_style, 'bearer')
+                COALESCE(c.api_format, ''), COALESCE(c.key_style, 'bearer'),
+                COALESCE(c.gateway_options_json, '{}')
          FROM custom_runtimes c
          LEFT JOIN runtime_settings s ON s.runtime_id = c.id
          WHERE c.id = ?1",
@@ -2428,6 +2432,8 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
             let wire_api: String = row.get(11)?;
             let api_format: String = row.get(12)?;
             let key_style: String = row.get(13)?;
+            let gateway_options =
+                serde_json::from_str(&row.get::<_, String>(14)?).unwrap_or_default();
             for key in runtime::managed_env_keys() {
                 env.remove(*key);
             }
@@ -2446,6 +2452,7 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
                 wire_api,
                 api_format,
                 key_style,
+                gateway_options,
             })
         },
     )
