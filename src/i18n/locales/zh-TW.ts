@@ -386,6 +386,8 @@ const catalog: MessageCatalog = {
   "settings.explorer.naming.disabled": "詢問是否取代",
   "settings.explorer.exclude": "排除檔案",
   "settings.explorer.excludeHint": "一行一个 glob，符合的檔案不出现在資源管理器。以 # 开头的行会被忽略。",
+  "settings.explorer.watcherExclude": "排除檔案監聽",
+  "settings.explorer.watcherExcludeHint": "每行一個 glob，符合路徑的變更不會觸發重新整理。適合排除頻繁變更的建置輸出與快取目錄。",
   "settings.git.executable": "Git 可執行檔案",
   "settings.git.executableHint": "命令名或完整路徑。",
   "settings.git.executablePlaceholder": "git 或完整路徑",

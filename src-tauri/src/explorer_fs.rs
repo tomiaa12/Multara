@@ -8,7 +8,9 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
     sync::{
-        mpsc::{self, RecvTimeoutError},
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, RecvTimeoutError, TrySendError},
+        Arc,
         Mutex, OnceLock,
     },
     thread,
@@ -17,6 +19,7 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use notify::{EventKind, RecursiveMode, Watcher};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -31,7 +34,11 @@ const MAX_BACKUP_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_BACKUP_FILES: usize = 5_000;
 const BACKUP_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_COPY_DEPTH: usize = 64;
-const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
+/// 对齐 VS Code watcher：先聚合 75ms，再分批处理并在高负载时让出 200ms。
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(75);
+const WATCH_THROTTLE_DELAY: Duration = Duration::from_millis(200);
+const MAX_WATCH_EVENTS_PER_BATCH: usize = 500;
+const MAX_BUFFERED_WATCH_EVENTS: usize = 30_000;
 const MAX_CHANGED_PATHS: usize = 500;
 /// 回收站失败时的错误前缀。前端据此询问是否改为永久删除，与 VS Code 相同。
 pub const TRASH_FAILED: &str = "TRASH_FAILED:";
@@ -836,6 +843,7 @@ struct WatchRegistry {
     /// 每个工作台实例（owner）各自要监听的工作区，实际监听取并集。
     owners: HashMap<String, HashSet<String>>,
     watchers: HashMap<String, notify::RecommendedWatcher>,
+    excludes: Vec<String>,
 }
 
 fn registry() -> &'static Mutex<WatchRegistry> {
@@ -844,6 +852,7 @@ fn registry() -> &'static Mutex<WatchRegistry> {
         Mutex::new(WatchRegistry {
             owners: HashMap::new(),
             watchers: HashMap::new(),
+            excludes: Vec::new(),
         })
     })
 }
@@ -873,11 +882,138 @@ fn is_git_state_change(relative: &str) -> bool {
         || relative.starts_with(".git/refs/")
 }
 
-fn flush_changes(app: &AppHandle, workspace_id: &str, roots: &[PathBuf], events: Vec<notify::Event>) {
+fn split_glob_alternatives(chars: &[char]) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0;
+    let mut current = String::new();
+    for char in chars {
+        match char {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(current);
+                current = String::new();
+                continue;
+            }
+            _ => {}
+        }
+        current.push(*char);
+    }
+    parts.push(current);
+    parts
+}
+
+fn glob_regex_source(pattern: &str) -> String {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        match chars[index] {
+            '*' => {
+                if chars.get(index + 1) == Some(&'*') {
+                    let segment_start = index == 0 || chars.get(index - 1) == Some(&'/');
+                    let next = chars.get(index + 2);
+                    index += 1;
+                    if segment_start && next == Some(&'/') {
+                        index += 1;
+                        out.push_str("(?:.*/)?");
+                    } else if segment_start && next.is_none() {
+                        out.push_str(".*");
+                    } else {
+                        out.push_str("[^/]*");
+                    }
+                } else {
+                    out.push_str("[^/]*");
+                }
+            }
+            '?' => out.push_str("[^/]"),
+            '{' => {
+                let mut depth = 1;
+                let mut end = index + 1;
+                while end < chars.len() && depth > 0 {
+                    if chars[end] == '{' {
+                        depth += 1;
+                    } else if chars[end] == '}' {
+                        depth -= 1;
+                    }
+                    end += 1;
+                }
+                if depth == 0 {
+                    let alternatives = split_glob_alternatives(&chars[index + 1..end - 1])
+                        .into_iter()
+                        .map(|part| glob_regex_source(&part))
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    out.push_str(&format!("(?:{alternatives})"));
+                    index = end - 1;
+                } else {
+                    out.push_str(r"\{");
+                }
+            }
+            '[' => {
+                if let Some(offset) = chars[index + 1..].iter().position(|char| *char == ']') {
+                    let end = index + 1 + offset;
+                    let mut body: String = chars[index + 1..end].iter().collect();
+                    let negate = body.starts_with('!') || body.starts_with('^');
+                    if negate {
+                        body.remove(0);
+                    }
+                    out.push('[');
+                    if negate {
+                        out.push('^');
+                    }
+                    out.push_str(&body.replace('\\', r"\\").replace(']', r"\]"));
+                    out.push(']');
+                    index = end;
+                } else {
+                    out.push_str(r"\[");
+                }
+            }
+            char => out.push_str(&regex::escape(&char.to_string())),
+        }
+        index += 1;
+    }
+    out
+}
+
+struct WatchExcludes(Vec<Regex>);
+
+impl WatchExcludes {
+    fn is_match(&self, path: &str) -> bool {
+        self.0.iter().any(|pattern| pattern.is_match(path))
+    }
+}
+
+fn compile_watch_excludes(patterns: &[String]) -> WatchExcludes {
+    let mut compiled = Vec::new();
+    for pattern in patterns {
+        let normalized = pattern
+            .trim()
+            .replace('\\', "/")
+            .trim_start_matches("./")
+            .trim_end_matches('/')
+            .to_string();
+        if normalized.is_empty() {
+            continue;
+        }
+        if let Ok(regex) = Regex::new(&format!("^{}$", glob_regex_source(&normalized))) {
+            compiled.push(regex);
+        }
+    }
+    WatchExcludes(compiled)
+}
+
+fn flush_changes(
+    app: &AppHandle,
+    workspace_id: &str,
+    roots: &[PathBuf],
+    events: Vec<notify::Event>,
+    queue_overflow: bool,
+) {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
     let mut git = false;
-    let mut overflow = false;
+    let mut overflow = queue_overflow;
     for event in events {
         if matches!(event.kind, EventKind::Access(_)) {
             continue;
@@ -920,17 +1056,45 @@ fn flush_changes(app: &AppHandle, workspace_id: &str, roots: &[PathBuf], events:
     );
 }
 
-fn start_watch(app: AppHandle, workspace_id: String, root: String) -> Result<notify::RecommendedWatcher, String> {
+fn start_watch(
+    app: AppHandle,
+    workspace_id: String,
+    root: String,
+    excludes: &[String],
+) -> Result<notify::RecommendedWatcher, String> {
     let root_path = PathBuf::from(&root);
     let mut roots = vec![root_path.clone()];
     if let Ok(canonical) = root_path.canonicalize() {
         roots.push(strip_verbatim(canonical.clone()));
         roots.push(canonical);
     }
-    let (sender, receiver) = mpsc::channel::<notify::Event>();
+    let callback_roots = roots.clone();
+    let exclude_set = compile_watch_excludes(excludes);
+    let queue_overflow = Arc::new(AtomicBool::new(false));
+    let callback_overflow = Arc::clone(&queue_overflow);
+    let (sender, receiver) = mpsc::sync_channel::<notify::Event>(MAX_BUFFERED_WATCH_EVENTS);
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        if let Ok(event) = result {
-            let _ = sender.send(event);
+        if let Ok(mut event) = result {
+            event.paths.retain(|path| {
+                relative_change(path, &callback_roots)
+                    .is_some_and(|relative| !exclude_set.is_match(&relative))
+            });
+            if event.paths.is_empty() {
+                return;
+            }
+            if event.paths.len() > MAX_CHANGED_PATHS {
+                event.paths.truncate(MAX_CHANGED_PATHS);
+                if !callback_overflow.swap(true, Ordering::Relaxed) {
+                    crate::diag::write("文件监听事件过多，已丢弃积压并安排完整刷新");
+                }
+            }
+            if let Err(error) = sender.try_send(event) {
+                if matches!(error, TrySendError::Full(_))
+                    && !callback_overflow.swap(true, Ordering::Relaxed)
+                {
+                    crate::diag::write("文件监听事件过多，已丢弃积压并安排完整刷新");
+                }
+            }
         }
     })
     .map_err(|error| error.to_string())?;
@@ -946,6 +1110,9 @@ fn start_watch(app: AppHandle, workspace_id: String, root: String) -> Result<not
         let deadline = Instant::now() + WATCH_DEBOUNCE;
         let mut closed = false;
         loop {
+            if batch.len() >= MAX_WATCH_EVENTS_PER_BATCH {
+                break;
+            }
             let now = Instant::now();
             if now >= deadline {
                 break;
@@ -959,9 +1126,19 @@ fn start_watch(app: AppHandle, workspace_id: String, root: String) -> Result<not
                 }
             }
         }
-        flush_changes(&app, &workspace_id, &roots, batch);
+        let throttled = batch.len() >= MAX_WATCH_EVENTS_PER_BATCH;
+        flush_changes(
+            &app,
+            &workspace_id,
+            &roots,
+            batch,
+            queue_overflow.swap(false, Ordering::Relaxed),
+        );
         if closed {
             return;
+        }
+        if throttled {
+            thread::sleep(WATCH_THROTTLE_DELAY);
         }
     });
     Ok(watcher)
@@ -971,10 +1148,15 @@ fn start_watch(app: AppHandle, workspace_id: String, root: String) -> Result<not
 pub fn explorer_watch_workspaces(
     owner: String,
     workspace_ids: Vec<String>,
+    excludes: Vec<String>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut registry = registry().lock().map_err(|error| error.to_string())?;
+    if registry.excludes != excludes {
+        registry.excludes = excludes;
+        registry.watchers.clear();
+    }
     if workspace_ids.is_empty() {
         registry.owners.remove(&owner);
     } else {
@@ -989,7 +1171,7 @@ pub fn explorer_watch_workspaces(
         let Ok(root) = workspace_root(&state, &id) else {
             continue;
         };
-        match start_watch(app.clone(), id.clone(), root) {
+        match start_watch(app.clone(), id.clone(), root, &registry.excludes) {
             Ok(watcher) => {
                 registry.watchers.insert(id, watcher);
             }
@@ -1004,8 +1186,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        create_entry, delete_entries, list_directory, restore_entry, transfer_one, write_bytes,
-        TransferRequest, TARGET_EXISTS,
+        compile_watch_excludes, create_entry, delete_entries, list_directory, restore_entry,
+        transfer_one, write_bytes, TransferRequest, TARGET_EXISTS,
     };
 
     fn roots(path: &std::path::Path) -> std::collections::HashMap<String, std::path::PathBuf> {
@@ -1028,6 +1210,21 @@ mod tests {
         assert!(listed[0].is_directory);
         assert_eq!(listed[0].path, "src/deep");
         assert!(listed.iter().all(|entry| entry.mtime > 0));
+    }
+
+    #[test]
+    fn watcher_excludes_match_workspace_relative_paths() {
+        let excludes = compile_watch_excludes(&[
+            ".git/objects/**".to_string(),
+            "*/.git/objects/**".to_string(),
+            "**/target/**".to_string(),
+            "[".to_string(),
+        ]);
+        assert!(excludes.is_match(".git/objects/ab/cd"));
+        assert!(excludes.is_match("nested/.git/objects/ab/cd"));
+        assert!(excludes.is_match("crate/target/debug/output"));
+        assert!(!excludes.is_match(".git/index"));
+        assert!(!excludes.is_match("src/main.rs"));
     }
 
     #[test]

@@ -329,6 +329,7 @@ describe("settings", () => {
     expect(parsed.incrementalNaming).toBe("simple");
     expect(serializeExplorerSettings(parsed)).toBe('{"sortOrder":"type"}');
     expect(parseExplorerSettings("not json").confirmDelete).toBe(true);
+    expect(parseExplorerSettings(null).watcherExclude[".git/objects/**"]).toBe(true);
   });
 
   test("path separators", () => {

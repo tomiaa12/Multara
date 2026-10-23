@@ -82,6 +82,7 @@ const form = reactive({
 });
 const explorerForm = reactive<ExplorerSettings>(structuredClone(DEFAULT_EXPLORER_SETTINGS));
 const filesExcludeText = ref(filesExcludeToText(DEFAULT_EXPLORER_SETTINGS.filesExclude));
+const watcherExcludeText = ref(filesExcludeToText(DEFAULT_EXPLORER_SETTINGS.watcherExclude));
 const message = ref("");
 const version = ref("");
 let hydrating = true;
@@ -177,6 +178,7 @@ watch(
     form.genApiKey = settings.genApiKey ?? "";
     Object.assign(explorerForm, parseExplorerSettings(settings.explorerSettings));
     filesExcludeText.value = filesExcludeToText(explorerForm.filesExclude);
+    watcherExcludeText.value = filesExcludeToText(explorerForm.watcherExclude);
     applyTheme();
     applyLanguageSetting(form.language);
     void Promise.resolve().then(() => {
@@ -219,6 +221,7 @@ watch(
     form.genApiModel,
     form.genApiKey,
     filesExcludeText.value,
+    watcherExcludeText.value,
     JSON.stringify(explorerForm),
   ],
   () => scheduleSave(),
@@ -266,6 +269,7 @@ function settingsPayload() {
     explorerSettings: serializeExplorerSettings({
       ...explorerForm,
       filesExclude: filesExcludeFromText(filesExcludeText.value),
+      watcherExclude: filesExcludeFromText(watcherExcludeText.value),
     }),
   };
 }
@@ -520,6 +524,17 @@ onBeforeUnmount(() => {
               v-model="filesExcludeText"
               rows="7"
               placeholder="**/.git&#10;**/node_modules"
+            />
+          </div>
+          <div class="settings-row settings-row-stack">
+            <div>
+              <strong>{{ t("settings.explorer.watcherExclude") }}</strong>
+              <p>{{ t("settings.explorer.watcherExcludeHint") }}</p>
+            </div>
+            <UiTextarea
+              v-model="watcherExcludeText"
+              rows="7"
+              placeholder=".git/objects/**&#10;*/.git/objects/**"
             />
           </div>
         </section>
