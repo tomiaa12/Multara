@@ -1098,11 +1098,26 @@
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-focus);
 }
-.composer-drop-hint {
-  margin: 0 0 6px;
-  color: var(--color-primary);
-  font-size: var(--font-size-xs);
+/* 拖入文件时盖住整个输入区；pointer-events:none 让 drop 仍落到 composer */
+.composer-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-3);
+  border: 1px dashed var(--color-primary);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-bg));
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   text-align: center;
+  pointer-events: none;
+}
+.composer-drop-overlay > span {
+  max-width: 16em;
 }
 .chat-surface > .chat-composer,
 .chat-surface > .chat-editing-dock {
@@ -2378,18 +2393,18 @@ button.read-row-line.is-clickable:hover .read-row-text {
 }
 .composer-paste-images {
   display: flex;
-  gap: 8px;
-  padding-bottom: 8px;
+  gap: 6px;
+  padding-bottom: 6px;
   overflow-x: auto;
 }
 .composer-paste-image {
   position: relative;
   flex: 0 0 auto;
-  width: 72px;
-  height: 72px;
+  width: 44px;
+  height: 44px;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--color-bg-tertiary);
 }
 .composer-paste-image img {
@@ -2397,14 +2412,23 @@ button.read-row-line.is-clickable:hover .read-row-text {
   height: 100%;
   object-fit: cover;
 }
-.composer-paste-image .ui-button {
+.composer-paste-image .ui-button[data-size="icon"] {
   position: absolute;
-  top: 3px;
-  right: 3px;
-  min-height: 20px;
-  width: 20px;
+  top: 1px;
+  right: 1px;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  max-width: 14px;
+  max-height: 14px;
+  padding: 0;
   background: var(--color-overlay);
   color: var(--color-text-strong);
+}
+.composer-paste-image .ui-button[data-size="icon"] svg {
+  width: 10px;
+  height: 10px;
 }
 .composer-error {
   display: flex;
@@ -7441,6 +7465,13 @@ body.is-dragging-workspace-file * {
   border-color: transparent;
   box-shadow: none;
 }
+.task-create-dialog .chat-composer.is-drop-over {
+  border-color: transparent;
+  box-shadow: none;
+}
+.task-create-dialog .composer-drop-overlay {
+  border-radius: var(--radius-md);
+}
 .task-create-dialog .chat-composer .composer-field {
   flex: 1 1 auto;
   min-height: 96px;
@@ -7856,6 +7887,7 @@ body.is-dragging-workspace-file * {
 .inbox-rail header {
   display: grid;
   gap: var(--spacing-1);
+  min-width: 0;
   padding: var(--spacing-5) var(--spacing-4) var(--spacing-3);
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -7877,7 +7909,17 @@ body.is-dragging-workspace-file * {
 }
 .inbox-filters {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   margin-top: var(--spacing-2);
+}
+/* 多筛选标签在窄栏内换行，避免横向撑破左侧 inbox 栏 */
+.inbox-filters .ds-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .inbox-unread-toggle {
   display: inline-flex;
@@ -9632,9 +9674,19 @@ button.runtime-key-toggle:hover {
 .settings-nav {
   flex: 0 0 var(--settings-nav-width, 224px);
   width: var(--settings-nav-width, 224px);
+  max-width: 100%;
   padding: var(--spacing-4) var(--spacing-3);
   border-right: 1px solid var(--color-border);
-  overflow: auto;
+  /* 只纵向滚动；长标签用 ellipsis，避免横向滚动条 */
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.settings-nav.is-sidebar-resizing {
+  transition: none;
+}
+.settings-nav.is-sidebar-collapsed {
+  padding-left: var(--spacing-2);
+  padding-right: var(--spacing-2);
 }
 .settings-body {
   flex: 1;

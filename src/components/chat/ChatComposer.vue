@@ -15,6 +15,7 @@ import {
   replaceMentionToken,
   type MentionHit,
 } from "./composer-mentions";
+import { t } from "../../i18n";
 import {
   isWorkspaceFileDrag,
   listOsDroppedEntries,
@@ -103,12 +104,18 @@ function onDrop(event: DragEvent) {
     emit("drop-workspace-file", fromTree);
     return;
   }
-  const hasFiles = Boolean(event.dataTransfer?.files.length || event.dataTransfer?.items.length);
-  if (!hasFiles && !event.dataTransfer?.types.includes("Files")) return;
+  // 与 dragover 同一判定，避免只认 files.length 而漏掉 uri-list / 文件夹
+  if (!isWorkspaceFileDrag(event.dataTransfer)) return;
   event.preventDefault();
   event.stopPropagation();
+  // dataTransfer 在 handler 返回后可能被清空；先快照。
+  // beginExternalDrop 会在下一帧还原 contenteditable（清掉系统默认插入），
+  // 必须等还原后再通知父组件插 chip，否则 chip 会被一并清掉。
+  const entries = listOsDroppedEntries(event.dataTransfer);
   field.value?.beginExternalDrop();
-  emit("drop-os-files", listOsDroppedEntries(event.dataTransfer));
+  requestAnimationFrame(() => {
+    emit("drop-os-files", entries);
+  });
 }
 
 function trailingText(nodes: ComposerNode[]) {
@@ -251,7 +258,9 @@ defineExpose({
     @drop.capture="onDrop"
   >
     <slot />
-    <p v-if="dropOver" class="composer-drop-hint">放到这里，添加到提问</p>
+    <div v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
+      <span>{{ t("chat.dropToAttach") }}</span>
+    </div>
     <ul v-if="mentionHits.length" class="skill-slash-menu" role="listbox" aria-label="Mentions">
       <li v-for="(hit, index) in mentionHits" :key="hit.id">
         <button
