@@ -1435,11 +1435,27 @@ fn prepare_custom_runtime(
     } else {
         ""
     };
-    let key_style = if provider == "claude" && input.key_style.trim() == "x-api-key" {
+    let key_style = if input.key_style.trim() == "x-api-key" {
         "x-api-key"
     } else {
         "bearer"
     };
+    let mut gateway_options = input.gateway_options.clone();
+    gateway_options.compatibility_mode = match gateway_options.compatibility_mode.trim() {
+        "generic" | "openai" | "codex_oauth" | "xai" | "moonshot" | "opencode" | "openrouter"
+        | "gemini" => gateway_options.compatibility_mode.trim().to_string(),
+        _ => "auto".to_string(),
+    };
+    gateway_options.reasoning_effort = match gateway_options.reasoning_effort.trim() {
+        "low" | "medium" | "high" | "xhigh" | "max" => {
+            gateway_options.reasoning_effort.trim().to_string()
+        }
+        _ => "auto".to_string(),
+    };
+    gateway_options.custom_user_agent = gateway_options.custom_user_agent.trim().to_string();
+    gateway_options
+        .custom_headers
+        .retain(|key, value| !key.trim().is_empty() && !value.contains(['\r', '\n']));
     if kind != "gateway" {
         kind = "profile";
     }
@@ -1458,6 +1474,7 @@ fn prepare_custom_runtime(
         wire_api: wire_api.to_string(),
         api_format: api_format.to_string(),
         key_style: key_style.to_string(),
+        gateway_options,
     })
 }
 
@@ -1476,6 +1493,7 @@ struct PreparedCustomRuntime {
     wire_api: String,
     api_format: String,
     key_style: String,
+    gateway_options: crate::models::GatewayOptions,
 }
 
 #[tauri::command]
@@ -1513,14 +1531,15 @@ pub fn save_custom_runtime(
     db.execute(
         "INSERT INTO custom_runtimes (
             id, name, command, args_json, provider, protocol, api_url, api_key, models_json, env_json,
-            kind, description, wire_api, api_format, key_style
+            kind, description, wire_api, api_format, key_style, gateway_options_json
          )
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT(id) DO UPDATE SET name=excluded.name, command=excluded.command,
            args_json=excluded.args_json, provider=excluded.provider, protocol=excluded.protocol,
            api_url=excluded.api_url, api_key=excluded.api_key, models_json=excluded.models_json,
            env_json=excluded.env_json, kind=excluded.kind, description=excluded.description,
-           wire_api=excluded.wire_api, api_format=excluded.api_format, key_style=excluded.key_style",
+           wire_api=excluded.wire_api, api_format=excluded.api_format, key_style=excluded.key_style,
+           gateway_options_json=excluded.gateway_options_json",
         params![
             id,
             prepared.name,
@@ -1537,6 +1556,7 @@ pub fn save_custom_runtime(
             prepared.wire_api,
             prepared.api_format,
             prepared.key_style,
+            serde_json::to_string(&prepared.gateway_options).map_err(|error| error.to_string())?,
         ],
     )
     .map_err(|error| error.to_string())?;
@@ -1564,14 +1584,14 @@ pub fn get_custom_runtime(
                 c.provider, c.protocol, c.api_url, c.models_json, c.env_json,
                 COALESCE(c.kind, 'profile'), COALESCE(c.description, ''),
                 COALESCE(c.wire_api, 'responses'), COALESCE(c.api_format, ''),
-                COALESCE(c.key_style, 'bearer'),
+                COALESCE(c.key_style, 'bearer'), COALESCE(c.gateway_options_json, '{}'),
                 c.api_key
          FROM custom_runtimes c
          LEFT JOIN runtime_settings s ON s.runtime_id = c.id
          WHERE c.id = ?1",
         [&runtime_id],
         |row| {
-            let api_key: String = row.get(15)?;
+            let api_key: String = row.get(16)?;
             Ok(CustomRuntimeForm {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -1590,6 +1610,8 @@ pub fn get_custom_runtime(
                 wire_api: row.get(12)?,
                 api_format: row.get(13)?,
                 key_style: row.get(14)?,
+                gateway_options: serde_json::from_str(&row.get::<_, String>(15)?)
+                    .unwrap_or_default(),
             })
         },
     )
@@ -1645,6 +1667,8 @@ pub struct RuntimeConnectionInput {
     pub wire_api: String,
     pub api_format: String,
     pub key_style: String,
+    #[serde(default)]
+    pub gateway_options: crate::models::GatewayOptions,
     #[serde(default)]
     pub env: HashMap<String, String>,
 }
@@ -1711,6 +1735,8 @@ fn run_runtime_connection_test(
             key_style: input.key_style.clone(),
             model: model.to_string(),
             client_model: runtime::gateway_client_model(&provider).to_string(),
+            client_provider: provider.clone(),
+            options: input.gateway_options.clone(),
         })?;
     let local_url = runtime::gateway_local_base_url(&provider, proxy.origin());
     let env_model = if provider == "opencode" {
