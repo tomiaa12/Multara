@@ -11,6 +11,7 @@ pub struct CreateTaskInput<'a> {
     pub description: &'a str,
     pub agent_id: &'a str,
     pub project_id: Option<&'a str>,
+    pub project_ids: &'a [String],
     pub source_session_id: Option<&'a str>,
     pub status: Option<&'a str>,
     pub parent_task_id: Option<&'a str>,
@@ -83,25 +84,40 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
         }
     }
     let status = parse_task_status(input.status.unwrap_or("todo"))?;
-    let mut project_id = input
-        .project_id
-        .map(str::trim)
+    let mut project_ids = input
+        .project_ids
+        .iter()
+        .map(|value| value.trim())
         .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    if project_id.is_none() {
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if project_ids.is_empty() {
+        project_ids.extend(
+            input
+                .project_id
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+        );
+    }
+    if project_ids.is_empty() {
         if let Some(session_id) = input.source_session_id {
-            project_id = db
-                .query_row(
-                    "SELECT project_id FROM chat_sessions WHERE id=?1",
-                    [session_id],
-                    |row| row.get(0),
-                )
-                .unwrap_or(None);
+            project_ids = crate::session::linked_project_ids(db, session_id)?;
         }
     }
-    if let Some(project_id) = project_id.as_deref() {
+    let mut unique_project_ids = Vec::new();
+    for project_id in project_ids {
+        if !unique_project_ids.contains(&project_id) {
+            unique_project_ids.push(project_id);
+        }
+    }
+    for project_id in &unique_project_ids {
         require_project(db, project_id)?;
     }
+    if status == "todo" {
+        crate::session::ensure_projects_idle(db, &unique_project_ids)?;
+    }
+    let project_id = unique_project_ids.first();
 
     let now = Utc::now().to_rfc3339();
     let task_id = Uuid::new_v4().to_string();
@@ -115,6 +131,7 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             params![session_id, project_id, title, input.agent_id, now],
         )
         .map_err(|error| error.to_string())?;
+    crate::session::replace_linked_projects(&transaction, &session_id, &unique_project_ids)?;
     transaction
         .execute(
             "INSERT INTO tasks
@@ -434,7 +451,19 @@ pub fn list(
              JOIN chat_sessions s ON s.id = t.session_id
              WHERE (?1 IS NULL OR t.status = ?1)
                AND (?2 IS NULL OR t.agent_id = ?2)
-               AND (?3 IS NULL OR s.project_id = ?3)
+               AND (
+                 ?3 IS NULL
+                 OR EXISTS (
+                   SELECT 1 FROM session_projects sp
+                   WHERE sp.session_id=s.id AND sp.project_id=?3
+                 )
+                 OR (
+                   s.project_id=?3
+                   AND NOT EXISTS (
+                     SELECT 1 FROM session_projects sp WHERE sp.session_id=s.id
+                   )
+                 )
+               )
              ORDER BY t.updated_at DESC"
             ),
         )
@@ -485,6 +514,10 @@ pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
     if active > 0 {
         return Ok(false);
     }
+    crate::session::ensure_projects_idle(
+        db,
+        &crate::session::linked_project_ids(db, &session_id)?,
+    )?;
     let assignment = if description.trim().is_empty() { title.as_str() } else { description.as_str() };
     let now = Utc::now().to_rfc3339();
     super::run::enqueue(
@@ -723,4 +756,53 @@ pub fn update(
         comment(db, task_id, comment_text)?;
     }
     get(db, task_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{create, list, CreateTaskInput};
+    use rusqlite::Connection;
+
+    #[test]
+    fn creates_multi_project_task_with_compatible_primary_and_filters() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES
+               ('p1', '需求一', 'now', 'now'),
+               ('p2', '需求二', 'now', 'now');
+             INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('a1', '智能体', '', '', '', 'cursor', 'auto', 1);",
+        )
+        .unwrap();
+
+        let created = create(
+            &mut db,
+            CreateTaskInput {
+                title: "跨需求任务",
+                description: "",
+                agent_id: "a1",
+                project_id: None,
+                project_ids: &["p1".to_string(), "p2".to_string()],
+                source_session_id: None,
+                status: Some("backlog"),
+                parent_task_id: None,
+            },
+        )
+        .unwrap();
+
+        let primary: String = db
+            .query_row(
+                "SELECT project_id FROM chat_sessions WHERE id=?1",
+                [&created.task.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(primary, "p1");
+        let linked = crate::session::linked_project_ids(&db, &created.task.session_id).unwrap();
+        assert_eq!(linked, ["p1", "p2"]);
+        assert_eq!(list(&db, None, None, Some("p1")).unwrap().len(), 1);
+        assert_eq!(list(&db, None, None, Some("p2")).unwrap().len(), 1);
+    }
 }

@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { ArrowUp, FileText, Square } from "@lucide/vue";
 import ChatComposer from "./ChatComposer.vue";
 import ComposerPasteImages from "./ComposerPasteImages.vue";
+import type { SelectOption } from "../ui/select-types";
 import type {
   ChatMessage,
   EditorSelectionContext,
@@ -11,14 +12,14 @@ import type {
 } from "../../domain/types";
 import * as backend from "../../services/backend";
 import type { ComposerNode } from "./composer-content";
-import { formatAgentPrompt, isPastedImage, parseUserPromptNodes } from "./composer-content";
+import { formatAgentPrompt, isFileChip, isPastedImage, parseUserPromptNodes } from "./composer-content";
 
 const props = withDefaults(defineProps<{
   message: ChatMessage;
   targetLabel?: string;
   targetAvatar?: string;
   targetValue?: string;
-  targetOptions?: Array<{ value: string; label: string; avatar: string }>;
+  targetOptions?: SelectOption<string>[];
   allowTargetChange?: boolean;
   enableReplay?: boolean;
   viewOnly?: boolean;
@@ -58,7 +59,7 @@ const pastedImages = computed(() => props.message.attachments.filter(isPastedIma
 const files = computed(() => props.message.attachments.filter((item) => !isPastedImage(item)));
 const contexts = computed<EditorSelectionContext[]>(() =>
   nodes.value
-    .filter((node): node is ComposerNode & { type: "chip" } => node.type === "chip")
+    .filter(isFileChip)
     .map((node) => ({
       id: node.id,
       workspaceId: "",

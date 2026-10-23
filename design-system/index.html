@@ -321,6 +321,34 @@
             </section>
 
             <section class="pg-section">
+              <header>
+                <h2>Composer Cascade 级联引用</h2>
+                <p><span class="ds-kbd">@</span> 默认智能体、<span class="ds-kbd">/</span> 默认 Skills、<span class="ds-kbd">#</span> 默认任务；左右切换类型，上下选择结果。</p>
+              </header>
+              <div class="pg-demo">
+                <div class="composer-suggest-menu ds-select-popover is-floating" style="position: relative; inset: auto; z-index: auto">
+                  <nav class="composer-suggest-categories" aria-label="引用类型">
+                    <button type="button" data-active><i data-icon="bot" data-size="14"></i><span>智能体</span><i data-icon="chevron-right" data-size="13"></i></button>
+                    <button type="button"><i data-icon="sparkles" data-size="14"></i><span>Skills</span><i data-icon="chevron-right" data-size="13"></i></button>
+                    <button type="button"><i data-icon="hash" data-size="14"></i><span>任务</span><i data-icon="chevron-right" data-size="13"></i></button>
+                    <button type="button"><i data-icon="folder-kanban" data-size="14"></i><span>需求</span><i data-icon="chevron-right" data-size="13"></i></button>
+                  </nav>
+                  <section class="composer-suggest-results">
+                    <label class="ds-select-search"><i data-icon="search" data-size="14"></i><input value="mi" readonly /></label>
+                    <div class="ds-select-list">
+                      <div class="ds-select-group">
+                        <div class="ds-select-group-label"><span>智能体</span><span>2/8</span></div>
+                        <div class="ds-select-option has-description" data-active><span class="composer-suggest-leading"><i data-icon="bot" data-size="14"></i></span><span class="ds-select-option-body"><span class="ds-select-option-label">Miku</span><span class="ds-select-option-desc">你的工作区总管</span></span></div>
+                        <div class="ds-select-option"><span class="composer-suggest-leading"><i data-icon="bot" data-size="14"></i></span><span class="ds-select-option-body"><span class="ds-select-option-label">Mira</span></span></div>
+                        <button type="button" class="composer-suggest-more">查看更多</button>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </section>
+
+            <section class="pg-section">
               <header><h2>Checkbox / Radio / Switch</h2></header>
               <div class="pg-demo">
                 <div class="pg-row">

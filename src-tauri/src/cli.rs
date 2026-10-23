@@ -141,6 +141,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                     description: &description,
                     agent_id: &assignee,
                     project_id: parsed.flag(&["project", "project-id"]),
+                    project_ids: &[],
                     source_session_id: source_session.as_deref(),
                     status: parsed.flag(&["status"]),
                     parent_task_id: parent_task_id.as_deref(),

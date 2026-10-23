@@ -1,6 +1,6 @@
 import { t } from "../../i18n";
 
-export type ComposerChipNode = {
+export type ComposerFileChipNode = {
   type: "chip";
   id: string;
   path: string;
@@ -10,6 +10,18 @@ export type ComposerChipNode = {
   isDirectory?: boolean;
   source?: "terminal";
 };
+
+export type ComposerEntityKind = "agent" | "squad" | "skill" | "task" | "requirement";
+
+export type ComposerReferenceChipNode = {
+  type: "chip";
+  id: string;
+  referenceId: string;
+  referenceKind: ComposerEntityKind;
+  label: string;
+};
+
+export type ComposerChipNode = ComposerFileChipNode | ComposerReferenceChipNode;
 
 export type ComposerNode =
   | { type: "text"; value: string }
@@ -21,6 +33,18 @@ const FOLDER_PATTERN =
   /\[文件夹\][ \t]+([^\n]+)(?:\n```[^\n]*\n([\s\S]*?)```)?/g;
 const FILE_PATTERN =
   /\[文件\][ \t]+([^\n]+)(?:\n```[^\n]*\n([\s\S]*?)```)?/g;
+const REFERENCE_PATTERN =
+  /\[实体引用\][ \t]+(agent|squad|skill|task|requirement)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
+const ASSIGNMENT_PATTERN =
+  /\[指派要求\][^\n]*\n(?:-[^\n]*\n?)+/g;
+
+export function isReferenceChip(node: ComposerNode): node is ComposerReferenceChipNode {
+  return node.type === "chip" && "referenceKind" in node;
+}
+
+export function isFileChip(node: ComposerNode): node is ComposerFileChipNode {
+  return node.type === "chip" && "path" in node;
+}
 
 export function fileName(path: string) {
   return path.split(/[\\/]/).pop() || path;
@@ -38,24 +62,25 @@ export function isWholeFileChip(item: { startLine: number; endLine: number; isDi
 
 const CHIP_MARK = "\u2060";
 
-export function chipLabel(item: {
-  path: string;
-  startLine: number;
-  endLine: number;
-  isDirectory?: boolean;
-  source?: "terminal";
-}) {
+const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
+  agent: "@",
+  squad: "@",
+  skill: "/",
+  task: "#",
+  requirement: "",
+};
+
+export function chipLabel(item: ComposerChipNode) {
+  if (isReferenceChip(item)) {
+    const prefix = REFERENCE_PREFIX[item.referenceKind];
+    return item.referenceKind === "requirement" ? `需求 · ${item.label}` : `${prefix}${item.label}`;
+  }
   if (item.source === "terminal") return t("chat.chip.terminal", { range: lineRange(item) });
   if (item.isDirectory || isWholeFileChip(item)) return fileName(item.path) || item.path;
   return `${fileName(item.path)} ${lineRange(item)}`;
 }
 
-function markedChipLabel(item: {
-  path: string;
-  startLine: number;
-  endLine: number;
-  isDirectory?: boolean;
-}) {
+function markedChipLabel(item: ComposerChipNode) {
   return `${CHIP_MARK}${chipLabel(item)}${CHIP_MARK}`;
 }
 
@@ -63,9 +88,25 @@ function cleanVisibleText(value: string) {
   return value.replaceAll(CHIP_MARK, "");
 }
 
+function decodeReferencePart(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function formatAgentPrompt(nodes: ComposerNode[]) {
+  const assignees = nodes.flatMap((node) =>
+    isReferenceChip(node) && (node.referenceKind === "agent" || node.referenceKind === "squad")
+      ? [`${node.referenceKind}:${node.referenceId}:${node.label}`]
+      : [],
+  );
   const citations = nodes.flatMap((node) => {
-    if (node.type !== "chip" || !node.path) return [];
+    if (isReferenceChip(node)) {
+      return [`[实体引用] ${node.referenceKind} ${encodeURIComponent(node.referenceId)} ${encodeURIComponent(node.label)}`];
+    }
+    if (!isFileChip(node) || !node.path) return [];
     if (node.source === "terminal") {
       const location = node.startLine === node.endLine ? `${node.startLine}` : `${node.startLine}-${node.endLine}`;
       return [`[终端] ${location}\n\`\`\`\n${node.text}\n\`\`\``];
@@ -91,7 +132,10 @@ export function formatAgentPrompt(nodes: ComposerNode[]) {
     .join("")
     .replace(/\u00a0/g, " ")
     .trim();
-  return [...citations, visible].filter((part) => part.trim()).join("\n\n");
+  const assignment = assignees.length
+    ? `[指派要求] 以下是用户明确选择的指派对象，请由当前 Miku 或小队队长按现有任务流程创建并指派可追踪的子任务，不要只在正文中口头声称已分配：\n${assignees.map((item) => `- ${item}`).join("\n")}`
+    : "";
+  return [...citations, assignment, visible].filter((part) => part.trim()).join("\n\n");
 }
 
 export function visiblePromptText(content: string) {
@@ -105,6 +149,18 @@ export function visiblePromptText(content: string) {
 export function parseUserPromptNodes(content: string): ComposerNode[] {
   const citations: ComposerChipNode[] = [];
   const visible = content
+    .replace(ASSIGNMENT_PATTERN, "")
+    .replace(REFERENCE_PATTERN, (_raw, referenceKind: ComposerEntityKind, referenceId: string, label: string) => {
+      const decodedId = decodeReferencePart(referenceId);
+      citations.push({
+        type: "chip",
+        id: `${referenceKind}:${decodedId}`,
+        referenceId: decodedId,
+        referenceKind,
+        label: decodeReferencePart(label),
+      });
+      return "";
+    })
     .replace(CITATION_PATTERN, (_raw, path: string, start: string, end: string | undefined, code: string) => {
       citations.push({
         type: "chip",

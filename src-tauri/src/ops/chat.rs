@@ -26,6 +26,8 @@ pub fn fork_session(db: &Connection, session_id: &str) -> Result<ChatSession, St
         params![id, project_id, forked_title, target_type, target_id, now],
     )
     .map_err(|error| error.to_string())?;
+    let project_ids = crate::session::linked_project_ids(db, session_id)?;
+    crate::session::replace_linked_projects(db, &id, &project_ids)?;
     let mut source = db
         .prepare(
             "SELECT id, role, content, failure_reason, elapsed_ms, message_kind, quick_actions_json,
@@ -111,15 +113,24 @@ pub fn fork_session(db: &Connection, session_id: &str) -> Result<ChatSession, St
     Ok(ChatSession {
         id,
         project_id,
+        project_ids,
         title: forked_title,
-        target_type: if target_type == "squad" { "squad" } else { "agent" },
+        target_type: if target_type == "squad" {
+            "squad"
+        } else {
+            "agent"
+        },
         target_id,
         created_at: now.clone(),
         updated_at: now,
     })
 }
 
-pub fn set_feedback(db: &Connection, message_id: &str, feedback: Option<&str>) -> Result<(), String> {
+pub fn set_feedback(
+    db: &Connection,
+    message_id: &str,
+    feedback: Option<&str>,
+) -> Result<(), String> {
     let value = match feedback.map(str::trim).filter(|item| !item.is_empty()) {
         Some("up") | Some("down") => feedback.map(str::trim),
         Some(_) => return Err("反馈只能是 up 或 down".to_string()),
@@ -180,7 +191,11 @@ pub fn compact_history_text(db: &Connection, session_id: &str) -> Result<String,
     let mut out = String::from("请把下面的对话压缩成不超过 800 字的中文摘要，保留目标、已做改动、未完成事项和待确认问题：\n\n");
     for (role, content) in lines {
         let clipped: String = content.chars().take(1200).collect();
-        out.push_str(if role == "user" { "用户：" } else { "助手：" });
+        out.push_str(if role == "user" {
+            "用户："
+        } else {
+            "助手："
+        });
         out.push_str(&clipped);
         out.push_str("\n\n");
     }
@@ -195,4 +210,37 @@ pub fn last_message_id(db: &Connection, session_id: &str) -> Result<Option<Strin
     )
     .optional()
     .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fork_session;
+    use rusqlite::Connection;
+
+    #[test]
+    fn fork_copies_all_linked_projects_in_order() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES
+               ('p1', '需求一', 'now', 'now'),
+               ('p2', '需求二', 'now', 'now');
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('s1', 'p1', '会话', 'agent', 'a1', 'now', 'now');
+             INSERT INTO session_projects (session_id, project_id, sort_order) VALUES
+               ('s1', 'p1', 0),
+               ('s1', 'p2', 1);",
+        )
+        .unwrap();
+
+        let forked = fork_session(&db, "s1").unwrap();
+
+        assert_eq!(forked.project_id.as_deref(), Some("p1"));
+        assert_eq!(forked.project_ids, ["p1", "p2"]);
+        assert_eq!(
+            crate::session::linked_project_ids(&db, &forked.id).unwrap(),
+            ["p1", "p2"]
+        );
+    }
 }

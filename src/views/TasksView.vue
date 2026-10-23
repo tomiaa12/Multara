@@ -91,8 +91,9 @@ const filtered = computed(() =>
       if (squadFilter.value && session.targetId !== squadFilter.value) return false;
     }
     if (projectFilters.value.length) {
-      const projectId = session?.projectId ?? "";
-      if (!projectFilters.value.includes(projectId)) return false;
+      let projectIds = session?.projectIds ?? [];
+      if (!projectIds.length && session?.projectId) projectIds = [session.projectId];
+      if (!projectIds.some((id) => projectFilters.value.includes(id))) return false;
     }
     if (tagFilters.value.length && !taskMatchesTags(task, tagFilters.value)) return false;
     return true;

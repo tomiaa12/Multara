@@ -204,6 +204,8 @@ export interface Squad {
 export interface ChatSession {
   id: string;
   projectId: string | null;
+  /** 会话关联的全部需求；projectId 保留为首项兼容值。 */
+  projectIds?: string[];
   title: string;
   targetType: "agent" | "squad";
   targetId: string;
@@ -249,6 +251,7 @@ export interface TaskInput {
   description: string;
   agentId: string;
   projectId?: string | null;
+  projectIds?: string[];
   status?: TaskStatus;
   sourceSessionId?: string | null;
   parentTaskId?: string | null;

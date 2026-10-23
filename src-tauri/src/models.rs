@@ -279,6 +279,7 @@ pub struct SquadInput {
 pub struct ChatSession {
     pub id: String,
     pub project_id: Option<String>,
+    pub project_ids: Vec<String>,
     pub title: String,
     pub target_type: &'static str,
     pub target_id: String,
@@ -325,6 +326,8 @@ pub struct TaskInput {
     pub agent_id: String,
     #[serde(default)]
     pub project_id: Option<String>,
+    #[serde(default)]
+    pub project_ids: Vec<String>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]

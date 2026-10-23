@@ -56,7 +56,16 @@ const metaTick = ref(0);
 const task = computed(() => store.data?.tasks.find((item) => item.id === route.params.taskId));
 const session = computed(() => store.data?.sessions.find((item) => item.id === task.value?.sessionId));
 const agent = computed(() => store.data?.agents.find((item) => item.id === task.value?.agentId));
-const project = computed(() => store.data?.projects.find((item) => item.id === session.value?.projectId));
+const projectIds = computed(() => {
+  if (session.value?.projectIds?.length) return session.value.projectIds;
+  return session.value?.projectId ? [session.value.projectId] : [];
+});
+const projects = computed(() =>
+  projectIds.value.flatMap((id) => {
+    const project = store.data?.projects.find((item) => item.id === id);
+    return project ? [project] : [];
+  }),
+);
 const meta = computed(() => {
   void metaTick.value;
   return task.value ? readTaskMeta(task.value.id) : { priority: "none" as TaskPriority, labels: [] as string[] };
@@ -266,6 +275,7 @@ async function createChild() {
     description: "",
     agentId: task.value.agentId,
     projectId: session.value?.projectId ?? null,
+    projectIds: [...projectIds.value],
     parentTaskId: task.value.id,
   });
   if (created) await router.push(`/tasks/${created.id}`);
@@ -396,7 +406,7 @@ function openLatestRunLog() {
           </div>
           <div class="task-prop-row">
             <span>{{ t('tasks.project') }}</span>
-            <span>{{ project?.name ?? t('tasks.noProject') }}</span>
+            <span>{{ projects.length ? projects.map((item) => item.name).join('、') : t('tasks.noProject') }}</span>
           </div>
           <div class="task-prop-row">
             <span>{{ t('tasks.priority') }}</span>

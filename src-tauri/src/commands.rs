@@ -1085,6 +1085,7 @@ pub fn delete_project(project_id: String, state: State<'_, AppState>) -> Result<
     for item in &workspaces {
         workspace::remove(item, &git_command);
     }
+    unlink_project_sessions(&db, &project_id)?;
     db.execute(
         "DELETE FROM inbox_items WHERE project_id=?1 OR session_id IN
          (SELECT id FROM chat_sessions WHERE project_id=?1)",
@@ -1130,6 +1131,41 @@ pub fn delete_project(project_id: String, state: State<'_, AppState>) -> Result<
     .map_err(|error| error.to_string())?;
     db.execute("DELETE FROM projects WHERE id = ?1", [&project_id])
         .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn unlink_project_sessions(db: &Connection, project_id: &str) -> Result<(), String> {
+    db.execute(
+        "UPDATE chat_sessions
+         SET project_id=(
+           SELECT sp.project_id FROM session_projects sp
+           WHERE sp.session_id=chat_sessions.id AND sp.project_id<>?1
+           ORDER BY sp.sort_order, sp.project_id LIMIT 1
+         )
+         WHERE project_id=?1
+           AND EXISTS (
+             SELECT 1 FROM session_projects sp
+             WHERE sp.session_id=chat_sessions.id AND sp.project_id<>?1
+           )",
+        [project_id],
+    )
+    .map_err(|error| error.to_string())?;
+    db.execute(
+        "UPDATE inbox_items
+         SET project_id=(SELECT s.project_id FROM chat_sessions s WHERE s.id=inbox_items.session_id)
+         WHERE project_id=?1
+           AND EXISTS (
+             SELECT 1 FROM chat_sessions s
+             WHERE s.id=inbox_items.session_id AND s.project_id<>?1
+           )",
+        [project_id],
+    )
+    .map_err(|error| error.to_string())?;
+    db.execute(
+        "DELETE FROM session_projects WHERE project_id=?1",
+        [project_id],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -2699,6 +2735,23 @@ pub fn bootstrap(state: State<'_, AppState>) -> Result<BootstrapData, String> {
 pub fn create_task(input: TaskInput, app: AppHandle) -> Result<Task, String> {
     let _span = crate::diag::span("create_task");
     let state = app.state::<AppState>();
+    let project_ids = {
+        let db = state.lock_db()?;
+        if !input.project_ids.is_empty() {
+            input.project_ids.clone()
+        } else if let Some(project_id) = input.project_id.as_ref() {
+            vec![project_id.clone()]
+        } else if let Some(session_id) = input.source_session_id.as_ref() {
+            session::linked_project_ids(&db, session_id)?
+        } else {
+            Vec::new()
+        }
+    };
+    let project_locks = session::project_locks(&state, &project_ids)?;
+    let _project_guards = project_locks
+        .iter()
+        .map(|lock| crate::diag::lock_mutex(lock, "project"))
+        .collect::<Result<Vec<_>, _>>()?;
     let created = {
         let mut db = state.lock_db()?;
         ops::task::create(
@@ -2708,6 +2761,7 @@ pub fn create_task(input: TaskInput, app: AppHandle) -> Result<Task, String> {
                 description: &input.description,
                 agent_id: &input.agent_id,
                 project_id: input.project_id.as_deref(),
+                project_ids: &input.project_ids,
                 source_session_id: input.source_session_id.as_deref(),
                 status: input.status.as_deref(),
                 parent_task_id: input.parent_task_id.as_deref(),
@@ -2728,6 +2782,22 @@ pub fn update_task_status(
 ) -> Result<Vec<Task>, String> {
     let _span = crate::diag::span("update_task_status");
     let state = app.state::<AppState>();
+    let project_ids = {
+        let db = state.lock_db()?;
+        let session_id: String = db
+            .query_row(
+                "SELECT session_id FROM tasks WHERE id=?1",
+                [&task_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "任务不存在".to_string())?;
+        session::linked_project_ids(&db, &session_id)?
+    };
+    let project_locks = session::project_locks(&state, &project_ids)?;
+    let _project_guards = project_locks
+        .iter()
+        .map(|lock| crate::diag::lock_mutex(lock, "project"))
+        .collect::<Result<Vec<_>, _>>()?;
     let (tasks, queued) = {
         let db = state.lock_db()?;
         let previous: Option<String> = db
@@ -2938,6 +3008,9 @@ pub fn delete_task(
         )
         .map_err(|error| error.to_string())?;
     transaction
+        .execute("DELETE FROM session_projects WHERE session_id=?1", [&session_id])
+        .map_err(|error| error.to_string())?;
+    transaction
         .execute("DELETE FROM run_events WHERE session_id=?1", [&session_id])
         .map_err(|error| error.to_string())?;
     transaction
@@ -2997,9 +3070,11 @@ pub fn create_chat_session(
         )
         .map_err(|_| "选择的智能体或小队不存在".to_string())?;
     let now = Utc::now().to_rfc3339();
+    let project_ids = input.project_id.clone().into_iter().collect::<Vec<_>>();
     let session = ChatSession {
         id: Uuid::new_v4().to_string(),
         project_id: input.project_id,
+        project_ids: project_ids.clone(),
         title: input
             .title
             .filter(|title| !title.trim().is_empty())
@@ -3028,6 +3103,7 @@ pub fn create_chat_session(
         ],
     )
     .map_err(|error| error.to_string())?;
+    session::replace_linked_projects(&db, &session.id, &project_ids)?;
     Ok(session)
 }
 
@@ -3473,28 +3549,23 @@ fn send_message_inner(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    let project_id = {
+    let project_ids = {
         let db = state.lock_db()?;
-        session::project_id(&db, &session_id)?
+        session::linked_project_ids(&db, &session_id)?
     };
-    let project_lock = project_id
-        .as_deref()
-        .map(|project_id| session::project_lock(&state, project_id))
-        .transpose()?;
-    let _project_guard = project_lock
-        .as_ref()
+    let project_locks = session::project_locks(&state, &project_ids)?;
+    let _project_guards = project_locks
+        .iter()
         .map(|lock| crate::diag::lock_mutex(lock, "project"))
-        .transpose()?;
+        .collect::<Result<Vec<_>, _>>()?;
     let can_steer = executor::can_steer(&app, &session_id);
     let mut db = state.lock_db()?;
     let transaction = db.transaction().map_err(|error| error.to_string())?;
-    if let Some(project_id) = &project_id {
-        if !can_steer {
-            session::ensure_project_idle(&transaction, project_id)?;
-        }
+    if !can_steer {
+        session::ensure_projects_idle(&transaction, &project_ids)?;
     }
     let now = Utc::now().to_rfc3339();
-    let turn_id = project_id.as_ref().map(|_| Uuid::new_v4().to_string());
+    let turn_id = (!project_ids.is_empty()).then(|| Uuid::new_v4().to_string());
     let (session_target_type, session_target_id): (String, String) = transaction
         .query_row(
             "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
@@ -4329,12 +4400,13 @@ fn list_sessions(db: &Connection) -> Result<Vec<ChatSession>, String> {
              FROM chat_sessions ORDER BY updated_at DESC",
         )
         .map_err(|error| error.to_string())?;
-    let sessions = statement
+    let mut sessions = statement
         .query_map([], |row| {
             let target_type: String = row.get(3)?;
             Ok(ChatSession {
                 id: row.get(0)?,
                 project_id: row.get(1)?,
+                project_ids: Vec::new(),
                 title: row.get(2)?,
                 target_type: if target_type == "squad" {
                     "squad"
@@ -4349,6 +4421,10 @@ fn list_sessions(db: &Connection) -> Result<Vec<ChatSession>, String> {
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
+    drop(statement);
+    for session in &mut sessions {
+        session.project_ids = crate::session::linked_project_ids(db, &session.id)?;
+    }
     Ok(sessions)
 }
 
@@ -4529,6 +4605,11 @@ fn execute_automation_source(
         ],
     )
     .map_err(|error| error.to_string())?;
+    session::replace_linked_projects(
+        &db,
+        &session_id,
+        &project_id.clone().into_iter().collect::<Vec<_>>(),
+    )?;
     let assignment = if let Some(payload) = payload {
         format!("{prompt}\n\n触发载荷：\n{payload}")
     } else {
@@ -4772,7 +4853,22 @@ fn usage_where(project_id: Option<&str>, agent_id: Option<&str>) -> String {
     let mut index = 2;
     if project_id.is_some() {
         sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM chat_sessions s WHERE s.id = r.session_id AND s.project_id = ?{index})"
+            " AND EXISTS (
+                SELECT 1 FROM chat_sessions s
+                WHERE s.id = r.session_id
+                  AND (
+                    EXISTS (
+                      SELECT 1 FROM session_projects sp
+                      WHERE sp.session_id=s.id AND sp.project_id=?{index}
+                    )
+                    OR (
+                      s.project_id=?{index}
+                      AND NOT EXISTS (
+                        SELECT 1 FROM session_projects sp WHERE sp.session_id=s.id
+                      )
+                    )
+                  )
+              )"
         ));
         index += 1;
     }
@@ -5193,8 +5289,52 @@ mod tests {
     use super::{
         coerce_branch_name, due_automations, list_tasks, local_branch_name, run_statistics,
         sanitize_branch_prefix, truncate_messages_from, validate_cron, validate_settings,
-        verify_webhook_signature,
+        verify_webhook_signature, unlink_project_sessions,
     };
+
+    #[test]
+    fn unlinking_project_promotes_next_linked_project() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES
+               ('p1', '需求一', 'now', 'now'),
+               ('p2', '需求二', 'now', 'now');
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('s1', 'p1', '会话', 'agent', 'a1', 'now', 'now');
+             INSERT INTO session_projects (session_id, project_id, sort_order) VALUES
+               ('s1', 'p1', 0),
+               ('s1', 'p2', 1);
+             INSERT INTO inbox_items
+               (id, session_id, project_id, title, preview, status, created_at)
+             VALUES ('i1', 's1', 'p1', '会话', '', 'completed', 'now');",
+        )
+        .unwrap();
+
+        unlink_project_sessions(&db, "p1").unwrap();
+
+        let primary: String = db
+            .query_row(
+                "SELECT project_id FROM chat_sessions WHERE id='s1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let inbox_project: String = db
+            .query_row(
+                "SELECT project_id FROM inbox_items WHERE id='i1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(primary, "p2");
+        assert_eq!(inbox_project, "p2");
+        assert_eq!(
+            crate::session::linked_project_ids(&db, "s1").unwrap(),
+            ["p2"]
+        );
+    }
 
     #[test]
     fn scheduled_trigger_in_the_past_is_due() {

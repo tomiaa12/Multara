@@ -9,6 +9,7 @@ import ChatEditingBar from "./chat/ChatEditingBar.vue";
 import ChatQuestionCarousel from "./chat/ChatQuestionCarousel.vue";
 import { extractQuestions } from "./chat/question-block";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
+import { buildChatTargetOptions } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
 import { formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
 import ReshuffleModal from "./chat/ReshuffleModal.vue";
@@ -213,18 +214,13 @@ const sessionQueue = computed(() =>
       .map((item, index) => ({ ...item, index }))
       .filter((item) => item.sessionId === session.value?.id),
 );
-const targetOptions = computed(() => [
-  ...(store.data?.agents.map((agent) => ({
-    value: `agent:${agent.id}`,
-    label: agent.name,
-    avatar: agent.avatar,
-  })) ?? []),
-  ...(store.data?.squads.map((squad) => ({
-    value: `squad:${squad.id}`,
-    label: t("chat.squadLabel", { name: squad.name }),
-    avatar: store.data?.agents.find((agent) => agent.id === squad.leaderAgentId)?.avatar ?? "◉",
-  })) ?? []),
-]);
+const targetOptions = computed(() =>
+  buildChatTargetOptions(
+    store.data?.agents ?? [],
+    store.data?.squads ?? [],
+    (name) => t("chat.squadLabel", { name }),
+  ),
+);
 const targetValue = computed({
   get: () => session.value ? `${session.value.targetType}:${session.value.targetId}` : "",
   set: (value: string) => {

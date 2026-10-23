@@ -1,44 +1,120 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
-import { Hash, Sparkles } from "@lucide/vue";
+import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { Bot, ChevronRight, FolderKanban, Hash, Paperclip, Search, Sparkles } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import { nextPopupZIndex } from "../ui/popup-z-index";
+import type { ComposerSuggestCategory } from "./composer-entities";
+import {
+  matchesCascadeQuery,
+  navigateCascade,
+  nextCascadeVisibleCount,
+  type CascadePane,
+} from "./composer-cascade";
+import { t } from "../../i18n";
 
 export type ComposerSuggestItem = {
   id: string;
+  kind: ComposerSuggestCategory;
   label: string;
   description?: string;
   /** 有头像时按智能体下拉选项渲染（AgentAvatar + ds-select-option） */
   avatar?: string | null;
-  leading?: "sparkles" | "hash";
+  leading?: "bot" | "sparkles" | "hash" | "requirement";
+};
+
+export type ComposerSuggestGroup = {
+  id: string;
+  label: string;
+  items: ComposerSuggestItem[];
+};
+
+export type ComposerSuggestCategoryItem = {
+  id: ComposerSuggestCategory | "file";
+  label: string;
+  groups: ComposerSuggestGroup[];
+  action?: "pick-files-or-folders";
 };
 
 const props = defineProps<{
-  items: ComposerSuggestItem[];
-  activeIndex: number;
+  categories: ComposerSuggestCategoryItem[];
+  defaultCategory: ComposerSuggestCategory;
+  query: string;
   /** 光标或输入区的视口矩形，用于浮层定位（不占输入框文档流） */
   anchor: { left: number; top: number; bottom: number; width?: number } | null;
   ariaLabel?: string;
 }>();
 
 const emit = defineEmits<{
-  select: [index: number];
-  highlight: [index: number];
+  select: [item: ComposerSuggestItem];
+  "category-action": [action: "pick-files-or-folders"];
+  close: [];
 }>();
 
 /** 默认在光标下方；仅下方放不下菜单高度时才翻到上方 */
 const POPOVER_GAP = 4;
 const VIEWPORT_MARGIN = 12;
-const MENU_MAX_WIDTH = 220;
-const MENU_MAX_HEIGHT = 200;
+const MENU_MAX_WIDTH = 520;
+const MENU_MAX_HEIGHT = 360;
+const PAGE_SIZE = 5;
 /** 下方至少要能放下这么高，否则改向上 */
-const MIN_BELOW = 120;
+const MIN_BELOW = 220;
 
 const root = ref<HTMLElement | null>(null);
 const listEl = ref<HTMLElement | null>(null);
+const categoryIndex = ref(0);
+const activeIndex = ref(0);
+const activePane = ref<CascadePane>("categories");
+const searchQuery = ref(props.query);
+const visibleCounts = reactive<Record<string, number>>({});
 const placement = ref<"bottom" | "top">("bottom");
 const layerZ = nextPopupZIndex();
 const popoverStyle = ref<Record<string, string>>({ zIndex: String(layerZ) });
+
+const activeCategory = computed(() => props.categories[categoryIndex.value] ?? props.categories[0]);
+const filteredGroups = computed(() =>
+  (activeCategory.value?.groups ?? []).map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      matchesCascadeQuery(item.label, item.description, searchQuery.value),
+    ),
+  })),
+);
+const visibleGroups = computed(() =>
+  filteredGroups.value.map((group) => ({
+    ...group,
+    items: group.items.slice(0, visibleCounts[`${activeCategory.value?.id}:${group.id}`] ?? PAGE_SIZE),
+  })),
+);
+const navigationEntries = computed(() =>
+  visibleGroups.value.flatMap((group) => {
+    const entries: Array<{ item?: ComposerSuggestItem; more?: ComposerSuggestGroup }> =
+      group.items.map((item) => ({ item }));
+    const total = filteredGroups.value.find((item) => item.id === group.id)?.items.length ?? 0;
+    if (group.items.length < total) entries.push({ more: group });
+    return entries;
+  }),
+);
+
+function selectCategory(index: number) {
+  categoryIndex.value = index;
+  activeIndex.value = 0;
+}
+
+function activateCategory(index: number) {
+  selectCategory(index);
+  const action = props.categories[index]?.action;
+  if (action) {
+    emit("category-action", action);
+    return;
+  }
+  activePane.value = "results";
+}
+
+function resetCategory() {
+  const index = props.categories.findIndex((item) => item.id === props.defaultCategory);
+  selectCategory(Math.max(index, 0));
+  activePane.value = "categories";
+}
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) return min;
@@ -71,16 +147,19 @@ function updatePosition() {
 async function scrollActiveIntoView() {
   await nextTick();
   const list = listEl.value;
-  const active = list?.querySelector<HTMLElement>("[data-active]");
+  const active = list?.querySelector<HTMLElement>(`[data-nav-index="${activeIndex.value}"]`);
   if (!list || !active) return;
   const listRect = list.getBoundingClientRect();
   const activeRect = active.getBoundingClientRect();
-  if (activeRect.top < listRect.top) {
-    list.scrollTop -= listRect.top - activeRect.top;
+  const activeTop = list.scrollTop + activeRect.top - listRect.top;
+  const activeBottom = activeTop + activeRect.height;
+  if (activeTop < list.scrollTop) {
+    list.scrollTop = activeTop;
     return;
   }
-  if (activeRect.bottom > listRect.bottom) {
-    list.scrollTop += activeRect.bottom - listRect.bottom;
+  const visibleBottom = list.scrollTop + list.clientHeight;
+  if (activeBottom > visibleBottom) {
+    list.scrollTop = activeBottom - list.clientHeight;
   }
 }
 
@@ -90,12 +169,58 @@ async function layout() {
   await scrollActiveIntoView();
 }
 
-watch(() => [props.anchor, props.items.length] as const, () => {
+watch(() => [props.anchor, navigationEntries.value.length] as const, () => {
   void layout();
 });
-watch(() => props.activeIndex, () => {
+watch([activePane, categoryIndex, activeIndex], () => {
   void scrollActiveIntoView();
 });
+watch(() => props.defaultCategory, resetCategory, { immediate: true });
+watch(() => props.query, (query) => {
+  searchQuery.value = query;
+  activeIndex.value = 0;
+});
+watch(searchQuery, () => {
+  activeIndex.value = 0;
+});
+
+function loadMore(group: ComposerSuggestGroup) {
+  const key = `${activeCategory.value?.id}:${group.id}`;
+  const total = filteredGroups.value.find((item) => item.id === group.id)?.items.length ?? 0;
+  visibleCounts[key] = nextCascadeVisibleCount(visibleCounts[key], total, PAGE_SIZE);
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  const result = navigateCascade(
+    {
+      pane: activePane.value,
+      categoryIndex: categoryIndex.value,
+      resultIndex: activeIndex.value,
+    },
+    event.key,
+    props.categories.length,
+    navigationEntries.value.length,
+  );
+  if (!result.handled) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  activePane.value = result.state.pane;
+  categoryIndex.value = result.state.categoryIndex;
+  activeIndex.value = result.state.resultIndex;
+  if (result.intent === "close") emit("close");
+  if (result.intent === "enter-results" && activeCategory.value?.action) {
+    emit("category-action", activeCategory.value.action);
+    return true;
+  }
+  if (result.intent === "activate-result") {
+    const entry = navigationEntries.value[activeIndex.value];
+    if (entry?.item) emit("select", entry.item);
+    if (entry?.more) loadMore(entry.more);
+  }
+  return true;
+}
+
+defineExpose({ handleKeydown });
 
 function onViewportChange() {
   updatePosition();
@@ -124,38 +249,88 @@ onBeforeUnmount(() => {
       :aria-label="ariaLabel"
       :style="popoverStyle"
     >
-      <div ref="listEl" class="ds-select-list" @mousedown.prevent>
-        <div
-          v-for="(item, index) in items"
-          :key="item.id"
-          class="ds-select-option"
-          :class="{ 'has-description': Boolean(item.description) }"
-          role="option"
-          :data-index="index"
-          :data-active="index === activeIndex ? '' : undefined"
-          aria-selected="false"
-          @mousemove="index !== activeIndex && emit('highlight', index)"
-          @click="emit('select', index)"
+      <nav class="composer-suggest-categories" aria-label="引用类型">
+        <button
+          v-for="(category, index) in categories"
+          :key="category.id"
+          type="button"
+          :data-active="index === categoryIndex ? '' : undefined"
+          @mousedown.prevent
+          @mousemove="activePane = 'categories'; selectCategory(index)"
+          @click="activateCategory(index)"
         >
-          <AgentAvatar
-            v-if="item.avatar"
-            class="ds-avatar"
-            :value="item.avatar"
-            :name="item.label"
-            :size="null"
+          <Bot v-if="category.id === 'agent'" :size="14" />
+          <Sparkles v-else-if="category.id === 'skill'" :size="14" />
+          <Hash v-else-if="category.id === 'task'" :size="14" />
+          <FolderKanban v-else-if="category.id === 'requirement'" :size="14" />
+          <Paperclip v-else :size="14" />
+          <span>{{ category.label }}</span>
+          <ChevronRight v-if="!category.action" :size="13" />
+        </button>
+      </nav>
+      <section class="composer-suggest-results">
+        <label class="ds-select-search">
+          <Search :size="14" />
+          <input
+            v-model="searchQuery"
+            :placeholder="t('select.searchPlaceholder')"
+            @focus="activePane = 'results'"
+            @keydown="handleKeydown"
           />
-          <span v-else-if="item.leading === 'sparkles'" class="composer-suggest-leading">
-            <Sparkles :size="14" />
-          </span>
-          <span v-else-if="item.leading === 'hash'" class="composer-suggest-leading">
-            <Hash :size="14" />
-          </span>
-          <span class="ds-select-option-body">
-            <span class="ds-select-option-label">{{ item.label }}</span>
-            <span v-if="item.description" class="ds-select-option-desc">{{ item.description }}</span>
-          </span>
+        </label>
+        <div ref="listEl" class="ds-select-list" @mousedown.prevent>
+          <template v-for="group in visibleGroups" :key="group.id">
+            <div v-if="group.items.length" class="ds-select-group">
+              <div class="ds-select-group-label">
+                <span>{{ group.label }}</span>
+                <span>{{ group.items.length }}/{{ filteredGroups.find((item) => item.id === group.id)?.items.length }}</span>
+              </div>
+              <div
+                v-for="item in group.items"
+                :key="`${item.kind}:${item.id}`"
+                class="ds-select-option"
+                :class="{ 'has-description': Boolean(item.description) }"
+                role="option"
+                :data-nav-index="navigationEntries.findIndex((entry) => entry.item === item)"
+                :data-active="activePane === 'results' && navigationEntries.findIndex((entry) => entry.item === item) === activeIndex ? '' : undefined"
+                aria-selected="false"
+                @mousemove="activePane = 'results'; activeIndex = navigationEntries.findIndex((entry) => entry.item === item)"
+                @click="emit('select', item)"
+              >
+                <AgentAvatar
+                  v-if="item.avatar"
+                  class="ds-avatar"
+                  :value="item.avatar"
+                  :name="item.label"
+                  :size="null"
+                />
+                <span v-else class="composer-suggest-leading">
+                  <Sparkles v-if="item.leading === 'sparkles'" :size="14" />
+                  <Hash v-else-if="item.leading === 'hash'" :size="14" />
+                  <FolderKanban v-else-if="item.leading === 'requirement'" :size="14" />
+                  <Bot v-else :size="14" />
+                </span>
+                <span class="ds-select-option-body">
+                  <span class="ds-select-option-label">{{ item.label }}</span>
+                  <span v-if="item.description" class="ds-select-option-desc">{{ item.description }}</span>
+                </span>
+              </div>
+              <button
+                v-if="group.items.length < (filteredGroups.find((item) => item.id === group.id)?.items.length ?? 0)"
+                type="button"
+                class="composer-suggest-more"
+                :data-nav-index="navigationEntries.findIndex((entry) => entry.more?.id === group.id)"
+                :data-active="activePane === 'results' && navigationEntries.findIndex((entry) => entry.more?.id === group.id) === activeIndex ? '' : undefined"
+                @mousemove="activePane = 'results'; activeIndex = navigationEntries.findIndex((entry) => entry.more?.id === group.id)"
+                @click="loadMore(group)"
+              >
+                {{ t("select.loadMore", { n: Math.min(PAGE_SIZE, (filteredGroups.find((item) => item.id === group.id)?.items.length ?? 0) - group.items.length) }) }}
+              </button>
+            </div>
+          </template>
+          <div v-if="!navigationEntries.length" class="ds-select-empty">{{ t("select.empty") }}</div>
         </div>
-      </div>
+      </section>
     </div>
   </Teleport>
 </template>

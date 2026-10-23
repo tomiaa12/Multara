@@ -463,6 +463,7 @@ fn start_conflict_session(
     let session = ChatSession {
         id: Uuid::new_v4().to_string(),
         project_id: Some(workspace.project_id.clone()),
+        project_ids: vec![workspace.project_id.clone()],
         title: format!("合并 {} → {}", start.source_label, start.target.branch),
         target_type: if input.chat_target_type == "agent" { "agent" } else { "squad" },
         target_id: input.chat_target_id.clone(),
@@ -528,6 +529,11 @@ fn start_conflict_session(
                 ],
             )
             .map_err(|error| error.to_string())?;
+        crate::session::replace_linked_projects(
+            &transaction,
+            &session.id,
+            &session.project_ids,
+        )?;
         transaction
             .execute(
                 "INSERT INTO workspaces

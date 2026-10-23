@@ -408,7 +408,8 @@ export const useAppStore = defineStore("app", () => {
     if (!data.value.sessions.some((session) => session.id === task.sessionId)) {
       data.value.sessions.unshift({
         id: task.sessionId,
-        projectId: input.projectId ?? null,
+        projectId: input.projectIds?.[0] ?? input.projectId ?? null,
+        projectIds: input.projectIds ?? (input.projectId ? [input.projectId] : []),
         title: task.title,
         targetType: "agent",
         targetId: task.agentId,
