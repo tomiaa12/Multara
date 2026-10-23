@@ -215,6 +215,12 @@ class OverlayScroll {
     if (this.disposed) return;
     this.ensureBars();
     this.barSize = this.readBarSize();
+
+    // 测量前移回内容原点，避免滚动条自身的 translate 撑大 scrollWidth / scrollHeight。
+    // 内容缩短时如果保留旧偏移，宿主会一直维持旧滚动范围，直到下一次手动滚动。
+    this.vertical.bar.style.transform = "none";
+    this.horizontal.bar.style.transform = "none";
+
     const visH = this.el.clientHeight;
     const visW = this.el.clientWidth;
     const totalH = this.el.scrollHeight;

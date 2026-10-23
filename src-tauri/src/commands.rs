@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::BufRead,
     path::{Path, PathBuf},
     str::FromStr,
@@ -3494,6 +3494,24 @@ pub fn save_pasted_attachment(
     })
 }
 
+fn explicit_chat_targets(content: &str) -> Vec<(String, String)> {
+    // Composer 选中的实体会序列化成稳定 id；明确 @ 提及优先于会话默认执行者。
+    let mut seen = HashSet::new();
+    content
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.strip_prefix("[实体引用] ")?.split_whitespace();
+            let target_type = fields.next()?;
+            let target_id = fields.next()?;
+            if !matches!(target_type, "agent" | "squad") || target_id.is_empty() {
+                return None;
+            }
+            let target = (target_type.to_string(), target_id.to_string());
+            seen.insert(target.clone()).then_some(target)
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn send_message(
     session_id: String,
@@ -3566,6 +3584,7 @@ fn send_message_inner(
     }
     let now = Utc::now().to_rfc3339();
     let turn_id = (!project_ids.is_empty()).then(|| Uuid::new_v4().to_string());
+    let explicit_targets = explicit_chat_targets(content);
     let (session_target_type, session_target_id): (String, String) = transaction
         .query_row(
             "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
@@ -3573,6 +3592,10 @@ fn send_message_inner(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
+    let effective_target = explicit_targets
+        .first()
+        .map(|(target_type, target_id)| (target_type.as_str(), target_id.as_str()))
+        .unwrap_or((session_target_type.as_str(), session_target_id.as_str()));
     let user = ChatMessage {
         id: Uuid::new_v4().to_string(),
         session_id: session_id.clone(),
@@ -3583,11 +3606,11 @@ fn send_message_inner(
         agent_id: None,
         audience_type: None,
         audience_id: None,
-        target_type: match session_target_type.as_str() {
+        target_type: match effective_target.0 {
             "squad" => Some("squad"),
             _ => Some("agent"),
         },
-        target_id: Some(session_target_id),
+        target_id: Some(effective_target.1.to_string()),
         failure_reason: None,
         elapsed_ms: None,
         message_kind: "message",
@@ -3673,7 +3696,7 @@ fn send_message_inner(
             serde_json::to_string_pretty(&paths).unwrap_or_default()
         )
     };
-    if can_steer {
+    if can_steer && explicit_targets.is_empty() {
         transaction.commit().map_err(|error| error.to_string())?;
         drop(db);
         executor::steer(&app, &session_id, assignment.trim())?;
@@ -3685,6 +3708,7 @@ fn send_message_inner(
         turn_id.as_deref(),
         assignment.trim(),
         &now,
+        &explicit_targets,
     )?;
     transaction.commit().map_err(|error| error.to_string())?;
     drop(db);
@@ -4050,62 +4074,71 @@ pub(crate) fn dispatch(
     turn_id: Option<&str>,
     assignment: &str,
     now: &str,
+    explicit_targets: &[(String, String)],
 ) -> Result<Vec<(String, String)>, String> {
-    let (target_type, target_id): (String, String) = db
-        .query_row(
-            "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
-            [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|error| error.to_string())?;
+    let targets = if explicit_targets.is_empty() {
+        vec![db
+            .query_row(
+                "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
+                [session_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| error.to_string())?]
+    } else {
+        explicit_targets.to_vec()
+    };
 
-    if target_type == "agent" {
-        let id = create_run(
-            db,
-            NewRun {
-                session_id,
-                turn_id,
-                agent_id: &target_id,
-                parent_run_id: None,
-                assignment,
-                status: "queued",
-                now,
-            },
-        )?;
-        return Ok(vec![(id, target_id)]);
+    let mut resolved: Vec<(String, String, bool)> = Vec::new();
+    for (target_type, target_id) in targets {
+        let (agent_id, target_assignment, is_squad) = if target_type == "agent" {
+            (target_id, assignment.to_string(), false)
+        } else {
+            let (leader_id, instructions): (String, String) = db
+                .query_row(
+                    "SELECT leader_agent_id, instructions FROM squads WHERE id = ?1",
+                    [&target_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(|error| error.to_string())?;
+            let guidance = instructions.trim();
+            let leader_assignment = if guidance.is_empty() {
+                format!(
+                    "你是小队队长。先向用户说明任务怎么拆、谁做什么。队员稍后会按你的说明执行，不要假装队员已经做完。\n\n用户需求：\n{assignment}"
+                )
+            } else {
+                format!(
+                    "你是小队队长。先向用户说明任务怎么拆、谁做什么。队员稍后会按你的说明执行，不要假装队员已经做完。\n\n小队指引：\n{guidance}\n\n用户需求：\n{assignment}"
+                )
+            };
+            (leader_id, leader_assignment, true)
+        };
+        if let Some(existing) = resolved.iter_mut().find(|item| item.0 == agent_id) {
+            if is_squad && !existing.2 {
+                *existing = (agent_id, target_assignment, true);
+            }
+            continue;
+        }
+        resolved.push((agent_id, target_assignment, is_squad));
     }
 
-    let (leader_id, instructions): (String, String) = db
-        .query_row(
-            "SELECT leader_agent_id, instructions FROM squads WHERE id = ?1",
-            [&target_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|error| error.to_string())?;
-    // 小队指引只注入队长这一轮，队员仍按队长拆分结果执行。
-    let guidance = instructions.trim();
-    let leader_assignment = if guidance.is_empty() {
-        format!(
-            "你是小队队长。先向用户说明任务怎么拆、谁做什么。队员稍后会按你的说明执行，不要假装队员已经做完。\n\n用户需求：\n{assignment}"
-        )
-    } else {
-        format!(
-            "你是小队队长。先向用户说明任务怎么拆、谁做什么。队员稍后会按你的说明执行，不要假装队员已经做完。\n\n小队指引：\n{guidance}\n\n用户需求：\n{assignment}"
-        )
-    };
-    let leader_run_id = create_run(
-        db,
-        NewRun {
-            session_id,
-            turn_id,
-            agent_id: &leader_id,
-            parent_run_id: None,
-            assignment: &leader_assignment,
-            status: "queued",
-            now,
-        },
-    )?;
-    Ok(vec![(leader_run_id, leader_id)])
+    resolved
+        .into_iter()
+        .map(|(agent_id, target_assignment, _)| {
+            let run_id = create_run(
+                db,
+                NewRun {
+                    session_id,
+                    turn_id,
+                    agent_id: &agent_id,
+                    parent_run_id: None,
+                    assignment: &target_assignment,
+                    status: "queued",
+                    now,
+                },
+            )?;
+            Ok((run_id, agent_id))
+        })
+        .collect()
 }
 
 struct NewRun<'a> {
@@ -4621,7 +4654,7 @@ fn execute_automation_source(
         params![Uuid::new_v4().to_string(), session_id, assignment, now],
     )
     .map_err(|error| error.to_string())?;
-    if let Err(error) = dispatch(&db, &session_id, None, &assignment, &now) {
+    if let Err(error) = dispatch(&db, &session_id, None, &assignment, &now, &[]) {
         db.execute(
             "UPDATE automation_runs SET status='skipped', completed_at=?1,
              reason_code='target_unavailable', failure_reason=?2 WHERE id=?3",
@@ -5287,10 +5320,68 @@ mod tests {
     use rusqlite::Connection;
 
     use super::{
-        coerce_branch_name, due_automations, list_tasks, local_branch_name, run_statistics,
-        sanitize_branch_prefix, truncate_messages_from, validate_cron, validate_settings,
-        verify_webhook_signature, unlink_project_sessions,
+        coerce_branch_name, dispatch, due_automations, explicit_chat_targets, list_tasks,
+        local_branch_name, run_statistics, sanitize_branch_prefix, truncate_messages_from,
+        unlink_project_sessions, validate_cron, validate_settings, verify_webhook_signature,
     };
+
+    #[test]
+    fn explicit_chat_mentions_are_deduplicated_in_user_order() {
+        assert_eq!(
+            explicit_chat_targets(
+                "[实体引用] agent docs-1 Docs\n\
+                 [实体引用] squad team-1 Team\n\
+                 [实体引用] agent docs-1 Docs\n\
+                 @Docs 你会做什么"
+            ),
+            [
+                ("agent".to_string(), "docs-1".to_string()),
+                ("squad".to_string(), "team-1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn explicit_chat_mention_dispatches_to_the_mentioned_agent() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        crate::database::seed(&db).unwrap();
+        db.execute(
+            "INSERT INTO agents
+             (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('docs', '文档助手', '🤖', '', '', 'cursor', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO chat_sessions
+             (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('session', '测试', 'agent', 'miku', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+
+        let created = dispatch(
+            &db,
+            "session",
+            None,
+            "@文档助手 你会做什么",
+            "now",
+            &[("agent".into(), "docs".into())],
+        )
+        .unwrap();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].1, "docs");
+        let dispatched: String = db
+            .query_row(
+                "SELECT agent_id FROM agent_runs WHERE session_id='session'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(dispatched, "docs");
+    }
 
     #[test]
     fn unlinking_project_promotes_next_linked_project() {

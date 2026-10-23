@@ -122,9 +122,23 @@ pub fn save(
         })
         .optional()
         .map_err(|error| error.to_string())?;
+    let custom_runtime = if input.runtime_id.starts_with("custom:") {
+        db.query_row(
+            "SELECT command, provider FROM custom_runtimes WHERE id=?1",
+            [&input.runtime_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+    } else {
+        None
+    };
     let runtime_ok = existing_runtime.as_deref() == Some(input.runtime_id.as_str())
         || runtime::detect().iter().any(|runtime| {
             runtime.id == input.runtime_id && (!require_online || runtime.status == "online")
+        })
+        || custom_runtime.is_some_and(|(command, provider)| {
+            !require_online || runtime::resolve_runtime_command(&command, &provider).is_some()
         });
     if !runtime_ok {
         return Err("请选择本机已检测到的运行时".to_string());
@@ -312,6 +326,48 @@ mod tests {
             })
             .unwrap();
         assert_eq!(miku_key, "miku");
+    }
+
+    #[test]
+    fn save_accepts_an_online_custom_runtime() {
+        let mut db = db();
+        let executable = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        db.execute(
+            "INSERT INTO custom_runtimes (id, name, command, provider)
+             VALUES ('custom:test', 'Test', ?1, 'custom')",
+            [&executable],
+        )
+        .unwrap();
+
+        let agents = save(
+            &mut db,
+            AgentInput {
+                id: Some("specialist".into()),
+                name: "Specialist".into(),
+                avatar: "🤖".into(),
+                description: String::new(),
+                instructions: String::new(),
+                runtime_id: "custom:test".into(),
+                model: "auto".into(),
+                max_concurrent_tasks: 1,
+                skill_ids: Vec::new(),
+                mcp_ids: Vec::new(),
+            },
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            agents
+                .iter()
+                .find(|agent| agent.id == "specialist")
+                .unwrap()
+                .runtime_id,
+            "custom:test"
+        );
     }
 
     #[test]

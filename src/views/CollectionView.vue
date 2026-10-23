@@ -400,6 +400,7 @@ function runtimeSubtitle(runtime: Runtime) {
         <span class="agent-directory-field" @click.stop @mousedown.stop>
           <RuntimeSelect
             size="sm"
+            variant="ghost"
             :model-value="agent.runtimeId"
             :online-only="false"
             :placeholder="t('collection.pickRuntime')"
