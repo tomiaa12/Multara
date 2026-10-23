@@ -5811,6 +5811,7 @@ defineExpose({
         ref="chatPanel"
         :project-id="preview ? PREVIEW_PROJECT_ID : projectId"
         compact
+        session-commands
         :preview="preview"
         :preview-interactive="previewInteractive"
         :preview-messages="previewMessages"

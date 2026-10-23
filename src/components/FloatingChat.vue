@@ -32,7 +32,7 @@ const fabVisible = computed(() => !store.chatOpen && !props.hidden);
   <!-- 收起/换页用 v-show，保留会话/滚动；勿用 v-if 把 ChatPanel 拆掉 -->
   <Transition name="floating-chat">
     <section v-show="panelOpen" class="floating-chat" :class="{ expanded }">
-      <ChatPanel v-if="retained" :key="projectId ?? 'global'" :project-id="projectId" compact>
+      <ChatPanel v-if="retained" :key="projectId ?? 'global'" :project-id="projectId" compact session-commands>
         <template #header-actions>
           <UiButton class="icon-button" variant="ghost" size="icon" :title="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="expanded = !expanded">
             <Minimize2 v-if="expanded" :size="15" />

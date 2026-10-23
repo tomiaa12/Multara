@@ -7,6 +7,7 @@ export type MentionHit = {
   label: string;
   detail: string;
   insert: string;
+  avatar?: string | null;
 };
 
 export function activeMentionQuery(text: string): { kind: "@" | "#"; query: string } | null {
@@ -27,10 +28,11 @@ export function filterMentions(
       .slice(0, 8)
       .map((agent) => ({
         id: agent.id,
-        kind: "agent",
+        kind: "agent" as const,
         label: agent.name,
         detail: agent.model || "",
         insert: `@${agent.name} `,
+        avatar: agent.avatar,
       }));
   }
   return tasks
@@ -38,7 +40,7 @@ export function filterMentions(
     .slice(0, 8)
     .map((task) => ({
       id: task.id,
-      kind: "task",
+      kind: "task" as const,
       label: task.title,
       detail: task.status,
       insert: `#${task.title} `,
