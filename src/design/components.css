@@ -1636,10 +1636,6 @@ button.ds-stat.is-on {
   min-height: var(--control-height-sm);
 }
 .runtime-directory .agent-directory-row > .runtime-directory-actions .ui-button.icon-button {
-  opacity: 0;
-}
-.runtime-directory .agent-directory-row:hover > .runtime-directory-actions .ui-button.icon-button,
-.runtime-directory .agent-directory-row > .runtime-directory-actions .ui-button.icon-button:focus-visible {
   opacity: 1;
 }
 .agent-directory-status {
@@ -1659,15 +1655,19 @@ button.ds-stat.is-on {
 }
 .agent-directory-status[data-status="running"]::before,
 .agent-directory-status[data-status="运行中"]::before,
-.agent-directory-status[data-status="就绪"]::before {
-  background: var(--color-success);
-  box-shadow: 0 0 0 3px var(--color-success-subtle);
-}
+.agent-directory-status[data-status="就绪"]::before,
 .agent-directory-status[data-status="online"]::before,
 .agent-directory-status[data-status="idle"]::before,
 .agent-directory-status[data-status="空闲"]::before,
 .agent-directory-status[data-status="在线"]::before {
-  background: var(--color-primary);
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-subtle);
+}
+.agent-directory-status[data-status="online"],
+.agent-directory-status[data-status="idle"],
+.agent-directory-status[data-status="空闲"],
+.agent-directory-status[data-status="在线"] {
+  color: var(--color-success);
 }
 .agent-directory-status[data-status="offline"]::before,
 .agent-directory-status[data-status="离线"]::before {
@@ -1683,6 +1683,8 @@ button.ds-stat.is-on {
 
 /* ════════════════════════════════════════════════════════════════
  * Modal / Drawer
+ * 遮罩须经 UiModal（Teleport → body）挂载；落在 .vs-scroll 内时
+ * transform 会让 fixed 相对滚动容器，滚动后弹窗会出现在页面顶部。
  * ════════════════════════════════════════════════════════════════ */
 .modal-backdrop,
 .ds-backdrop {

@@ -506,7 +506,7 @@ defineExpose({ refresh });
       @merged="onMerged"
     />
 
-    <div v-if="discardAsk" class="modal-backdrop" @click.self="discardAsk = null">
+    <UiModal v-if="discardAsk" @click.self="discardAsk = null">
       <div class="modal" role="dialog" aria-modal="true" :aria-label="t('scm.discardConfirmTitle')">
         <h2>{{ t("scm.discardConfirmTitle") }}</h2>
         <p>{{ discardAsk.message }}</p>
@@ -515,6 +515,6 @@ defineExpose({ refresh });
           <UiButton variant="danger" @click="confirmDiscard">{{ t("scm.discard") }}</UiButton>
         </div>
       </div>
-    </div>
+    </UiModal>
   </UiPaneView>
 </template>

@@ -284,7 +284,7 @@ async function copyTranscript() {
 </script>
 
 <template>
-  <div class="modal-backdrop run-log-backdrop" @click.self="emit('close')">
+  <UiModal class="run-log-backdrop" @click.self="emit('close')">
     <div
       class="run-log-dialog"
       role="dialog"
@@ -523,5 +523,5 @@ async function copyTranscript() {
         </aside>
       </div>
     </div>
-  </div>
+  </UiModal>
 </template>

@@ -335,7 +335,7 @@ async function create() {
 </script>
 
 <template>
-  <div class="modal-backdrop" @mousedown.self="emit('close')">
+  <UiModal @mousedown.self="emit('close')">
     <form class="task-create-dialog" :class="{ 'is-expanded': expanded }" @submit.prevent="create">
       <header>
         <p>
@@ -423,5 +423,5 @@ async function create() {
         form.labels = form.labels.filter((item) => item !== id);
       }"
     />
-  </div>
+  </UiModal>
 </template>

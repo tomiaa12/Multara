@@ -26,7 +26,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="finish(false)" @keydown="onKeydown">
+  <UiModal @click.self="finish(false)" @keydown="onKeydown">
     <div class="modal explorer-dialog" role="alertdialog" aria-modal="true" :aria-label="props.request.message">
       <div class="explorer-dialog-body">
         <Codicon
@@ -54,7 +54,7 @@ onMounted(() => {
         </UiButton>
       </div>
     </div>
-  </div>
+  </UiModal>
 </template>
 
 <style scoped>

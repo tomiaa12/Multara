@@ -257,7 +257,7 @@ function toggleWeekday(day: number) {
       </article>
     </div>
 
-    <div v-if="showForm" class="modal-backdrop" @click.self="showForm = false">
+    <UiModal v-if="showForm" @click.self="showForm = false">
       <form class="modal automation-dialog" @submit.prevent="save">
         <header class="automation-dialog-head">
           <h2>{{ form.id ? t("automation.edit") : t("automation.create") }}</h2>
@@ -470,6 +470,6 @@ function toggleWeekday(day: number) {
           </div>
         </footer>
       </form>
-    </div>
+    </UiModal>
   </div>
 </template>

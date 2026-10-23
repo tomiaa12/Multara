@@ -215,7 +215,7 @@ async function save(payload: {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="!busy && emit('close')">
+  <UiModal @click.self="!busy && emit('close')">
     <form class="modal domain-modal runtime-create-dialog" @submit.prevent>
       <header class="modal-heading">
         <div class="skill-create-title">
@@ -296,5 +296,5 @@ async function save(payload: {
         @save="saveGateway"
       />
     </form>
-  </div>
+  </UiModal>
 </template>

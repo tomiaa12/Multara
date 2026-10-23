@@ -1576,7 +1576,7 @@ defineExpose({
         @confirm="confirmReshuffle"
         @cancel="cancelReask()"
       />
-      <div v-if="rollbackFailureOpen" class="modal-backdrop" @click.self="finishRollbackFailure(false)">
+      <UiModal v-if="rollbackFailureOpen" @click.self="finishRollbackFailure(false)">
         <div class="modal" role="dialog" aria-modal="true">
           <h2>{{ t("chat.rollbackFailTitle") }}</h2>
           <p>{{ t("chat.rollbackFailBody") }}</p>
@@ -1586,8 +1586,8 @@ defineExpose({
             <UiButton variant="danger" @click="finishRollbackFailure(true)">{{ t("chat.rollbackFailConfirm") }}</UiButton>
           </div>
         </div>
-      </div>
-      <div v-if="dirtyRollbackOpen" class="modal-backdrop" @click.self="finishDirtyRollback(false)">
+      </UiModal>
+      <UiModal v-if="dirtyRollbackOpen" @click.self="finishDirtyRollback(false)">
         <div class="modal" role="dialog" aria-modal="true">
           <h2>{{ t("dialog.unsavedTitle") }}</h2>
           <p>{{ dirtyRollbackMessage }}</p>
@@ -1596,7 +1596,7 @@ defineExpose({
             <UiButton variant="danger" @click="finishDirtyRollback(true)">{{ t("chat.dirtyRollbackContinue") }}</UiButton>
           </div>
         </div>
-      </div>
+      </UiModal>
       <ContextMenu
         v-if="tabMenu"
         :x="tabMenu.x"
