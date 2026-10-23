@@ -32,7 +32,7 @@ function commit(id: string, fallback: string) {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
+  <UiModal @click.self="emit('close')">
     <div class="modal">
       <div class="modal-heading">
         <h2>{{ t('dashboard.manageTags') }}</h2>
@@ -71,5 +71,5 @@ function commit(id: string, fallback: string) {
       </div>
       <p v-else class="tag-empty">{{ t('tags.emptyHint') }}</p>
     </div>
-  </div>
+  </UiModal>
 </template>

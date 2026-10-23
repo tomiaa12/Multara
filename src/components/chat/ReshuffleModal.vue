@@ -17,7 +17,7 @@ const choice = ref<"keep" | "rollback">("keep");
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('cancel')">
+  <UiModal @click.self="emit('cancel')">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reshuffle-title">
       <h2 id="reshuffle-title">{{ t('diff.reshuffleTitle') }}</h2>
       <p>{{ reshuffleHintText(afterCount) }}</p>
@@ -35,5 +35,5 @@ const choice = ref<"keep" | "rollback">("keep");
         <UiButton variant="primary" @click="emit('confirm', choice === 'rollback')">{{ t('diff.reshuffleConfirmSend') }}</UiButton>
       </div>
     </div>
-  </div>
+  </UiModal>
 </template>

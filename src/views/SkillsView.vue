@@ -423,7 +423,7 @@ const emptyHint = computed(() => {
     @created="onCreated"
   />
   <CatalogBrowse v-if="browsing" kind="skill" @close="browsing = false" @install="installCatalog" />
-  <div v-if="converting" class="modal-backdrop" @click.self="converting = false">
+  <UiModal v-if="converting" @click.self="converting = false">
     <div class="modal domain-modal">
       <header class="modal-heading">
         <h2>{{ t("skills.convertTitle") }}</h2>
@@ -443,7 +443,7 @@ const emptyHint = computed(() => {
         </span>
       </button>
     </div>
-  </div>
+  </UiModal>
   <ContextMenu
     v-if="menu"
     :x="menu.x"

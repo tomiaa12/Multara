@@ -69,7 +69,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
+  <UiModal @click.self="emit('close')">
     <div class="modal domain-modal catalog-dialog">
       <header class="modal-heading">
         <h2>{{ kind === "skill" ? t("catalog.browseSkills") : t("catalog.browseMcp") }}</h2>
@@ -115,5 +115,5 @@ onMounted(() => {
         {{ kind === "skill" ? t("catalog.sourceSkills") : t("catalog.sourceMcp") }}
       </p>
     </div>
-  </div>
+  </UiModal>
 </template>

@@ -15,7 +15,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('cancel')">
+  <UiModal @click.self="emit('cancel')">
     <div class="modal unsaved-modal" role="dialog" aria-modal="true">
       <h2>{{ title }}</h2>
       <p>{{ message }}</p>
@@ -27,5 +27,5 @@ const emit = defineEmits<{
         </UiButton>
       </div>
     </div>
-  </div>
+  </UiModal>
 </template>

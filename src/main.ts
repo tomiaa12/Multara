@@ -14,6 +14,7 @@ import UiCountBadge from "./components/ui/UiCountBadge.vue";
 import UiDirectoryTable from "./components/ui/UiDirectoryTable.vue";
 import UiTooltip from "./components/ui/UiTooltip.vue";
 import UiNotice from "./components/ui/UiNotice.vue";
+import UiModal from "./components/ui/UiModal.vue";
 import UiTextarea from "./components/ui/UiTextarea.vue";
 import { router } from "./router";
 import { overlayScrollPlugin } from "./ui/overlay-scroll";
@@ -44,6 +45,7 @@ createApp(App)
   .component("UiTooltip", UiTooltip)
   .component("UiTextarea", UiTextarea)
   .component("UiNotice", UiNotice)
+  .component("UiModal", UiModal)
   .use(createPinia())
   .use(router)
   .mount("#app");

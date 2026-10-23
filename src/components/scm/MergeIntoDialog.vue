@@ -294,9 +294,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="modal-backdrop merge-backdrop" @click.self="!blocked && emit('close')">
-      <section class="modal merge-dialog" role="dialog" :aria-label="t('scm.merge.title')">
+  <UiModal class="merge-backdrop" @click.self="!blocked && emit('close')">
+    <section class="modal merge-dialog" role="dialog" :aria-label="t('scm.merge.title')">
         <div class="modal-heading">
           <h2>{{ outcomes.length ? resultTitle : t('scm.merge.title') }}</h2>
           <UiButton
@@ -443,7 +442,6 @@ onMounted(async () => {
             <UiButton v-else variant="primary" @click="emit('close')">{{ t('common.ok') }}</UiButton>
           </div>
         </template>
-      </section>
-    </div>
-  </Teleport>
+    </section>
+  </UiModal>
 </template>
