@@ -192,6 +192,8 @@ pub struct CustomRuntimeInput {
     #[serde(default)]
     pub wire_api: String,
     #[serde(default)]
+    pub api_format: String,
+    #[serde(default)]
     pub key_style: String,
 }
 
@@ -212,6 +214,7 @@ pub struct CustomRuntimeForm {
     pub kind: String,
     pub description: String,
     pub wire_api: String,
+    pub api_format: String,
     pub key_style: String,
     pub has_api_key: bool,
 }

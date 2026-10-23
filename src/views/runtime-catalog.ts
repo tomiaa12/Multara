@@ -149,9 +149,19 @@ export interface GatewayDraft {
   apiKey: string;
   modelsText: string;
   wireApi: "responses" | "chat";
+  apiFormat: "anthropic" | "responses" | "chat" | "gemini";
   keyStyle: "bearer" | "x-api-key";
   envText: string;
   maxConcurrent: number;
+}
+
+export function nativeApiFormat(
+  provider: RuntimeFamilyId,
+): GatewayDraft["apiFormat"] {
+  if (provider === "claude") return "anthropic";
+  if (provider === "codex") return "responses";
+  if (provider === "gemini") return "gemini";
+  return "chat";
 }
 
 export function gatewayDraftFor(provider: RuntimeFamilyId, previous?: Partial<GatewayDraft>): GatewayDraft {
@@ -165,6 +175,7 @@ export function gatewayDraftFor(provider: RuntimeFamilyId, previous?: Partial<Ga
     apiKey: "",
     modelsText: "",
     wireApi: "responses",
+    apiFormat: nativeApiFormat(provider),
     keyStyle: "bearer",
     envText: "",
     maxConcurrent: previous?.maxConcurrent ?? 2,
@@ -188,6 +199,11 @@ const MANAGED_ENV_KEYS = new Set([
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+  "CLAUDE_CODE_SUBAGENT_MODEL",
   "OPENAI_BASE_URL",
   "OPENAI_API_KEY",
   "OPENAI_MODEL",

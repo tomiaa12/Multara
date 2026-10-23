@@ -150,6 +150,7 @@ export interface CustomRuntimeInput {
   kind?: "profile" | "gateway" | string;
   description?: string;
   wireApi?: string;
+  apiFormat?: string;
   keyStyle?: string;
 }
 
@@ -168,6 +169,7 @@ export interface CustomRuntimeForm {
   kind: string;
   description: string;
   wireApi: string;
+  apiFormat: string;
   keyStyle: string;
   hasApiKey: boolean;
 }
