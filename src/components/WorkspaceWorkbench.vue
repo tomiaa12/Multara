@@ -2432,6 +2432,16 @@ const undoFileActionDisabled = computed(
     editorPendingChunks.value === 0,
 );
 
+const currentFileHasPending = computed(
+  () => pendingDiffIndex.value >= 0 || activeFileMissing.value,
+);
+const showDiffFallbackActions = computed(
+  () =>
+    pendingDiffFiles.value.length > 0 &&
+    !currentFileHasPending.value &&
+    !activeFileBeingWritten.value,
+);
+
 function onEditorPendingChunks(count: number) {
   editorPendingChunks.value = count;
 }
@@ -2486,6 +2496,56 @@ async function undoAllCurrentFile() {
   } finally {
     diffFileActionBusy.value = false;
   }
+}
+
+async function acceptAllPendingFiles() {
+  if (diffFileActionBusy.value) return;
+  const files = pendingDiffFiles.value.slice();
+  if (!files.length) return;
+  diffFileActionBusy.value = true;
+  try {
+    const contents = new Map(pendingFileContents.value);
+    for (const tab of editorTabs.value) {
+      if (tab.gitDiff) continue;
+      contents.set(diffFileKey(tab.workspaceId, tab.path), tab.file.content);
+    }
+    if (activeFile.value) {
+      contents.set(
+        diffFileKey(activeFile.value.workspaceId, activeFile.value.path),
+        activeFile.value.content,
+      );
+    }
+    const nextContents = new Map(pendingFileContents.value);
+    for (const file of files) {
+      const key = diffFileKey(file.workspaceId, file.filePath);
+      if (diffStore.missingFiles.has(key)) {
+        await diffStore.acceptMissingFile(file.workspaceId, file.filePath);
+      } else {
+        await diffStore.acceptAllChunks(
+          file.workspaceId,
+          file.filePath,
+          contents.get(key),
+        );
+      }
+      nextContents.delete(key);
+    }
+    pendingFileContents.value = nextContents;
+  } finally {
+    diffFileActionBusy.value = false;
+  }
+}
+
+async function goNextChangeFile() {
+  const files = pendingDiffFiles.value;
+  if (!files.length) return;
+  const current = activeFile.value;
+  const target = current
+    ? (files.find((file) => {
+        const byPath = file.filePath.localeCompare(current.path);
+        return byPath > 0 || (byPath === 0 && file.workspaceId.localeCompare(current.workspaceId) > 0);
+      }) ?? files[0])
+    : files[0];
+  await openEditorFile(target.workspaceId, target.filePath, { revealTree: true });
 }
 
 async function goPendingDiffFile(delta: number) {
@@ -5655,25 +5715,48 @@ defineExpose({
               <ChevronDown :size="13" />
             </UiButton>
           </template>
-          <UiButton
-            class="diff-file-action diff-file-action-keep"
-            size="small"
-            :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.keepAllTitle')"
-            :disabled="acceptFileActionDisabled"
-            @click="acceptAllCurrentFile"
-          >
-            {{ t('diff.keep') }}
-          </UiButton>
-          <UiButton
-            class="diff-file-action"
-            variant="ghost"
-            size="small"
-            :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.undoAllWriteBackTitle')"
-            :disabled="undoFileActionDisabled"
-            @click="undoAllCurrentFile"
-          >
-            {{ t('diff.undo') }}
-          </UiButton>
+          <template v-if="showDiffFallbackActions">
+            <UiButton
+              class="diff-file-action diff-file-action-keep"
+              size="small"
+              :title="t('diff.keepAllFilesTitle')"
+              :disabled="diffFileActionBusy"
+              @click="acceptAllPendingFiles"
+            >
+              {{ t('diff.keepAllFiles') }}
+            </UiButton>
+            <UiButton
+              class="diff-file-action"
+              variant="ghost"
+              size="small"
+              :title="t('diff.nextChangeFileTitle')"
+              :disabled="diffFileActionBusy"
+              @click="goNextChangeFile"
+            >
+              {{ t('diff.nextChangeFile') }}
+            </UiButton>
+          </template>
+          <template v-else>
+            <UiButton
+              class="diff-file-action diff-file-action-keep"
+              size="small"
+              :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.keepAllTitle')"
+              :disabled="acceptFileActionDisabled"
+              @click="acceptAllCurrentFile"
+            >
+              {{ t('diff.keep') }}
+            </UiButton>
+            <UiButton
+              class="diff-file-action"
+              variant="ghost"
+              size="small"
+              :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.undoAllWriteBackTitle')"
+              :disabled="undoFileActionDisabled"
+              @click="undoAllCurrentFile"
+            >
+              {{ t('diff.undo') }}
+            </UiButton>
+          </template>
         </div>
         <MediaPreview
           v-if="activeMedia"
