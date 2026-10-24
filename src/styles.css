@@ -5980,6 +5980,67 @@ body.is-dragging-workspace-file * {
   font-size: var(--font-size-sm);
   line-height: 1.55;
 }
+.requirement-create-modal {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+}
+.requirement-create-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+.requirement-create-head p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+}
+.requirement-create-body {
+  display: grid;
+  gap: var(--spacing-5);
+  min-height: 0;
+}
+.workspace-picker {
+  display: grid;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+.workspace-picker > .workspace-drop {
+  width: 100%;
+}
+.requirement-create-name {
+  display: grid;
+  gap: var(--spacing-1-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.requirement-create-section {
+  display: grid;
+  gap: var(--spacing-2);
+}
+.requirement-create-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+}
+.requirement-create-section-head strong {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.requirement-create-section-head small {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+.requirement-create-modal .workspace-drop {
+  min-height: 96px;
+  padding: 16px;
+}
+.requirement-create-modal .workspace-pick-list {
+  max-height: 30vh;
+}
 .workspace-drop {
   display: grid;
   justify-items: center;
