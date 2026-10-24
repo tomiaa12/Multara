@@ -310,6 +310,8 @@ export interface ChatMessage {
   attachments: MessageAttachment[];
   createdAt: string;
   feedback?: "up" | "down" | null;
+  sourceType?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -718,4 +720,46 @@ export interface MergeFinishResult {
   pushed: boolean;
   localUpdated: boolean;
   notes: string[];
+}
+
+export type ChannelType = "feishu" | "lark";
+export type ChannelStatus = "connected" | "connecting" | "disconnected" | "error";
+
+export interface ChannelInstallation {
+  id: string;
+  channelType: ChannelType;
+  name: string;
+  targetType: "agent" | "squad";
+  targetId: string;
+  projectId?: string | null;
+  appId: string;
+  region: "feishu" | "lark";
+  botName?: string | null;
+  botOpenId?: string | null;
+  groupEnabled: boolean;
+  pairingCode: string;
+  enabled: boolean;
+  status: ChannelStatus;
+  lastError?: string | null;
+  hasSecret: boolean;
+}
+
+export interface ChannelInstallationInput {
+  id?: string;
+  name: string;
+  channelType: ChannelType;
+  targetType: "agent" | "squad";
+  targetId: string;
+  projectId?: string | null;
+  appId: string;
+  appSecret?: string;
+  region?: "feishu" | "lark";
+  groupEnabled: boolean;
+  enabled: boolean;
+}
+
+export interface ChannelUser {
+  channelUserId: string;
+  displayName?: string | null;
+  role: string;
 }

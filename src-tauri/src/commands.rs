@@ -2563,6 +2563,7 @@ pub fn save_settings(
             "genApiUrl",
             "genApiModel",
             "genApiKey",
+            "permissionMode",
         ]
         .contains(&key.as_str())
         {
@@ -3416,7 +3417,8 @@ pub fn list_chat_messages(
                         )
                       END
                     ),
-                    m.target_type, m.target_id, m.feedback
+                    m.target_type, m.target_id, m.feedback,
+                    m.source_type, m.source_meta_json
              FROM messages m
              WHERE m.session_id=?1
              ORDER BY m.created_at, m.rowid",
@@ -3467,6 +3469,10 @@ pub fn list_chat_messages(
                 attachments: Vec::new(),
                 created_at: row.get(10)?,
                 feedback: row.get(16)?,
+                source_type: row.get(17)?,
+                source_meta: row
+                    .get::<_, Option<String>>(18)?
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok()),
             })
         })
         .map_err(|error| error.to_string())?
@@ -3574,6 +3580,8 @@ fn orphan_run_messages(
             attachments: Vec::new(),
             created_at,
             feedback: None,
+            source_type: None,
+            source_meta: None,
         });
     }
     Ok(out)
@@ -3745,6 +3753,51 @@ fn send_message_inner(
     attachments: Option<Vec<MessageAttachmentInput>>,
     app: AppHandle,
 ) -> Result<Vec<ChatMessage>, String> {
+    let (messages, _, _) = send_message_inner_ext(session_id, content, attachments, app, None)?;
+    Ok(messages)
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MessageSource {
+    pub source_type: String,
+    pub meta: serde_json::Value,
+}
+
+pub(crate) struct ChannelSendOutcome {
+    pub run_ids: Vec<String>,
+    pub steered: bool,
+}
+
+/// 渠道（飞书等）发来的消息走这里：与本地输入共用同一条写入与派发路径。
+pub(crate) fn send_channel_message(
+    app: &AppHandle,
+    session_id: &str,
+    content: &str,
+    attachments: Vec<MessageAttachmentInput>,
+    source_type: &str,
+    meta: serde_json::Value,
+) -> Result<ChannelSendOutcome, String> {
+    let source = MessageSource {
+        source_type: source_type.to_string(),
+        meta,
+    };
+    let (_, run_ids, steered) = send_message_inner_ext(
+        session_id.to_string(),
+        content.to_string(),
+        Some(attachments),
+        app.clone(),
+        Some(source),
+    )?;
+    Ok(ChannelSendOutcome { run_ids, steered })
+}
+
+fn send_message_inner_ext(
+    session_id: String,
+    content: String,
+    attachments: Option<Vec<MessageAttachmentInput>>,
+    app: AppHandle,
+    source: Option<MessageSource>,
+) -> Result<(Vec<ChatMessage>, Vec<String>, bool), String> {
     let state = app.state::<AppState>();
     let content = content.trim();
     let attachments = attachments.unwrap_or_default();
@@ -3828,6 +3881,8 @@ fn send_message_inner(
         attachments: Vec::new(),
         created_at: now.clone(),
         feedback: None,
+        source_type: source.as_ref().map(|value| value.source_type.clone()),
+        source_meta: source.as_ref().map(|value| value.meta.clone()),
     };
     if let Some(turn_id) = &turn_id {
         let seq: u32 = transaction
@@ -3849,8 +3904,9 @@ fn send_message_inner(
     transaction
         .execute(
             "INSERT INTO messages
-         (id, session_id, turn_id, role, content, target_type, target_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         (id, session_id, turn_id, role, content, target_type, target_id, created_at,
+          source_type, source_meta_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 user.id,
                 user.session_id,
@@ -3859,7 +3915,11 @@ fn send_message_inner(
                 user.content,
                 user.target_type,
                 user.target_id,
-                user.created_at
+                user.created_at,
+                user.source_type,
+                user.source_meta
+                    .as_ref()
+                    .map(|value| value.to_string())
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -3909,7 +3969,7 @@ fn send_message_inner(
         transaction.commit().map_err(|error| error.to_string())?;
         drop(db);
         if executor::steer(&app, &session_id, assignment.trim())? {
-            return Ok(vec![user]);
+            return Ok((vec![user], Vec::new(), true));
         }
         // 运行刚好在这一刻结束：退回普通派发，别把已经落库的消息丢掉。
         let db = state.lock_db()?;
@@ -3926,7 +3986,8 @@ fn send_message_inner(
             executor::notify_run(&app, run_id, &session_id, agent_id, "queued");
         }
         executor::dispatch(app);
-        return Ok(vec![user]);
+        let run_ids = created.iter().map(|(run_id, _)| run_id.clone()).collect();
+        return Ok((vec![user], run_ids, false));
     }
     let created = dispatch(
         &transaction,
@@ -3942,7 +4003,8 @@ fn send_message_inner(
         executor::notify_run(&app, run_id, &session_id, agent_id, "queued");
     }
     executor::dispatch(app);
-    Ok(vec![user])
+    let run_ids = created.iter().map(|(run_id, _)| run_id.clone()).collect();
+    Ok((vec![user], run_ids, false))
 }
 
 #[derive(serde::Serialize)]

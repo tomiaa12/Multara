@@ -1068,6 +1068,20 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             let gate = crate::protocol::PermissionGate {
                 prompt: permission_prompt(&app),
                 pending: permissions.clone(),
+                notify: {
+                    let app = app.clone();
+                    let session_id = run.session_id.clone();
+                    let run_id = run.id.clone();
+                    Some(Arc::new(move |request_id: &str, params: Option<&Value>| {
+                        crate::channel::outbound::on_permission_request(
+                            &app,
+                            &session_id,
+                            &run_id,
+                            request_id,
+                            params,
+                        );
+                    }))
+                },
             };
             thread::spawn(move || {
                 let (Some(stdout), Some(mut stdin)) = (stdout, stdin) else {
@@ -1668,6 +1682,7 @@ fn finish(
     if let Some((run_id, session_id, agent_id)) = &parent_resume {
         notify_run(app, run_id, session_id, agent_id, "queued");
     }
+    crate::channel::outbound::on_run_finished(app, &run.session_id);
     dispatch(app.clone());
 }
 
