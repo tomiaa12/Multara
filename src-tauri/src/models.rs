@@ -453,6 +453,11 @@ pub struct ChatMessage {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feedback: Option<String>,
+    /// 消息来源渠道；NULL 表示本地输入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_meta: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Serialize)]
