@@ -1416,6 +1416,15 @@
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
+.chat-editing-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 约 6 行，再多就滚动，避免把聊天区挤没 */
+  max-height: 142px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .chat-editing-overview {
   display: flex;
   align-items: center;

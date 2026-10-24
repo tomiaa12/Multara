@@ -25,8 +25,41 @@ const TARGET: Record<string, typescript.ScriptTarget> = {
   esnext: typescript.ScriptTarget.ESNext,
 };
 
-export function monacoThemeName(theme: string | undefined): "vs" | "vs-dark" {
-  return theme === "light" ? "vs" : "vs-dark";
+/** 内置 vs / vs-dark 没给 sticky scroll 铺底色，滚动时会和下方代码叠字。 */
+const THEME_LIGHT = "multara-light";
+const THEME_DARK = "multara-dark";
+
+let editorThemesDefined = false;
+
+function defineEditorThemes() {
+  if (editorThemesDefined) return;
+  editorThemesDefined = true;
+  monaco.editor.defineTheme(THEME_DARK, {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editorStickyScroll.background": "#1E1E1E",
+      "editorStickyScrollGutter.background": "#1E1E1E",
+      "editorStickyScrollHover.background": "#2A2D2E",
+    },
+  });
+  monaco.editor.defineTheme(THEME_LIGHT, {
+    base: "vs",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editorStickyScroll.background": "#FFFFFE",
+      "editorStickyScrollGutter.background": "#FFFFFE",
+      "editorStickyScrollHover.background": "#F0F0F0",
+    },
+  });
+}
+
+defineEditorThemes();
+
+export function monacoThemeName(theme: string | undefined): string {
+  return theme === "light" ? THEME_LIGHT : THEME_DARK;
 }
 
 export function currentDocumentTheme(): "light" | "dark" {
