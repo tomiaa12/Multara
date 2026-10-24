@@ -11,6 +11,9 @@ import type {
   CatalogItem,
   ChatMessage,
   ChatSession,
+  ChannelInstallation,
+  ChannelInstallationInput,
+  ChannelUser,
   MessageAttachmentInput,
   CustomRuntimeForm,
   CustomRuntimeInput,
@@ -1812,4 +1815,50 @@ export async function truncateSessionFromMessage(
     messageId,
     alsoClearSnapshots,
   });
+}
+
+export async function listChannelInstallations(): Promise<ChannelInstallation[]> {
+  if (!inTauri()) return [];
+  return invoke<ChannelInstallation[]>("list_channel_installations");
+}
+
+export async function saveChannelInstallation(
+  input: ChannelInstallationInput,
+): Promise<ChannelInstallation> {
+  if (!inTauri()) {
+    return { ...input, id: input.id ?? "preview", botName: null, botOpenId: null, pairingCode: "000000", status: "disconnected", lastError: null, hasSecret: true } as ChannelInstallation;
+  }
+  return invoke<ChannelInstallation>("save_channel_installation", { input });
+}
+
+export async function deleteChannelInstallation(id: string): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("delete_channel_installation", { id });
+}
+
+export async function setChannelEnabled(id: string, enabled: boolean): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("set_channel_enabled", { id, enabled });
+}
+
+export async function testChannelInstallation(
+  id: string,
+): Promise<Record<string, string>> {
+  if (!inTauri()) return { name: "预览机器人", openId: "ou_preview" };
+  return invoke<Record<string, string>>("test_channel_installation", { id });
+}
+
+export async function listChannelAllowedUsers(id: string): Promise<ChannelUser[]> {
+  if (!inTauri()) return [];
+  return invoke<ChannelUser[]>("list_channel_allowed_users", { id });
+}
+
+export async function removeChannelAllowedUser(id: string, userId: string): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("remove_channel_allowed_user", { id, userId });
+}
+
+export async function rotateChannelPairingCode(id: string): Promise<string> {
+  if (!inTauri()) return "000000";
+  return invoke<string>("rotate_channel_pairing_code", { id });
 }

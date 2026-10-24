@@ -25,6 +25,7 @@ multara — Multara 内置 CLI
   squad        list|get|create|update|member
   project      list|get|create|update
   automation   list|get|create
+  channel      list|get|enable|disable
   skill        list|get|builtin|import
   runtime      list
   session      history|resume
@@ -64,6 +65,7 @@ pub fn should_run_as_cli(args: &[String]) -> bool {
             | "squad"
             | "project"
             | "automation"
+            | "channel"
             | "skill"
             | "runtime"
             | "session"
@@ -339,6 +341,26 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&ops::automation::get(db, &id)?)
         }
         ("automation", "create") => create_automation(db, &parsed),
+        ("channel", "list") => {
+            let rows = crate::channel::store::list_installations(db)?;
+            ops::json(&rows.iter().map(channel_json).collect::<Vec<_>>())
+        }
+        ("channel", "get") => {
+            let id = id.ok_or_else(|| "缺少渠道 id".to_string())?;
+            let installation = crate::channel::store::get_installation(db, &id)?
+                .ok_or_else(|| "渠道不存在".to_string())?;
+            ops::json(&channel_json(&installation))
+        }
+        ("channel", "enable") | ("channel", "disable") => {
+            let id = id.ok_or_else(|| "缺少渠道 id".to_string())?;
+            let enabled = verb == "enable";
+            db.execute(
+                "UPDATE channel_installations SET enabled=?1, updated_at=?2 WHERE id=?3",
+                rusqlite::params![enabled as i64, chrono::Utc::now().to_rfc3339(), id],
+            )
+            .map_err(|error| error.to_string())?;
+            ops::json(&serde_json::json!({ "id": id, "enabled": enabled }))
+        }
         ("skill", "list") => ops::json(&ops::skill::list_scanned()),
         ("skill", "get") => {
             let id = id.ok_or_else(|| "缺少 skill id".to_string())?;
@@ -620,6 +642,24 @@ fn parse_args(args: &[String]) -> ParsedArgs {
         index += 1;
     }
     ParsedArgs { positional, flags }
+}
+
+fn channel_json(installation: &crate::channel::Installation) -> serde_json::Value {
+    serde_json::json!({
+        "id": installation.id,
+        "channelType": installation.channel_type,
+        "name": installation.name,
+        "targetType": installation.target_type,
+        "targetId": installation.target_id,
+        "projectId": installation.project_id,
+        "appId": installation.config.app_id,
+        "region": installation.config.region(),
+        "botName": installation.config.bot_name,
+        "groupEnabled": installation.config.group_enabled,
+        "enabled": installation.enabled,
+        "status": installation.status,
+        "lastError": installation.last_error,
+    })
 }
 
 #[cfg(test)]

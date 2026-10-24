@@ -25,6 +25,7 @@ export const router = createRouter({
       meta: { titleKey: "route.taskDetail", parent: "/tasks" },
     },
     { path: "/automation", component: () => import("./views/AutomationView.vue"), meta: { titleKey: "nav.automation" } },
+    { path: "/channels", component: () => import("./views/ChannelsView.vue"), meta: { titleKey: "nav.channels" } },
     { path: "/agents", component: CollectionView, meta: { titleKey: "nav.agents", kind: "agents" } },
     {
       path: "/agents/:agentId",

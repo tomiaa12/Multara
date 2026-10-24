@@ -38,10 +38,14 @@ impl Read for ByteReceiver {
 
 use serde_json::{json, Value};
 
+pub type PermissionNotifier = Arc<dyn Fn(&str, Option<&Value>) + Send + Sync>;
+
 #[derive(Clone)]
 pub struct PermissionGate {
     pub prompt: bool,
     pub pending: Arc<Mutex<HashMap<String, Sender<String>>>>,
+    /// 需要用户确认时通知外部（例如把卡片发到聊天渠道）。
+    pub notify: Option<PermissionNotifier>,
 }
 
 impl PermissionGate {
@@ -49,6 +53,9 @@ impl PermissionGate {
         let fallback = permission_option(params);
         if !self.prompt {
             return fallback;
+        }
+        if let Some(notify) = &self.notify {
+            notify(request_id, params);
         }
         let (tx, rx) = mpsc::channel();
         if let Ok(mut pending) = self.pending.lock() {

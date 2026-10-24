@@ -5,6 +5,7 @@ import AssistantMessage from "./chat/AssistantMessage.vue";
 import { sentTargetForMessage, speakerForMessage } from "./chat/message-speaker";
 import UserPrompt from "./chat/UserPrompt.vue";
 import { useAppStore } from "../stores/app";
+import { t } from "../i18n";
 import type { SelectOption } from "./ui/select-types";
 
 const props = withDefaults(defineProps<{
@@ -68,6 +69,18 @@ const sentTarget = computed(() =>
   ),
 );
 
+const channelSource = computed(() => {
+  if (!props.message.sourceType) return "";
+  const meta = (props.message.sourceMeta ?? {}) as Record<string, unknown>;
+  const channel = props.message.sourceType === "lark"
+    ? "Lark"
+    : props.message.sourceType === "feishu"
+      ? t("channels.feishu")
+      : props.message.sourceType;
+  const sender = String(meta.senderName ?? meta.senderId ?? "").trim();
+  return sender ? t("chat.fromChannel", { channel, sender }) : channel;
+});
+
 function startReask(
   messageId: string,
   content: string,
@@ -78,23 +91,25 @@ function startReask(
 </script>
 
 <template>
-  <UserPrompt
-    v-if="message.role === 'user'"
-    :message="message"
-    :target-label="sentTarget?.label ?? targetLabel"
-    :target-avatar="sentTarget?.avatar ?? targetAvatar"
-    :target-value="sentTarget?.value ?? targetValue"
-    :target-options="targetOptions"
-    :allow-target-change="false"
-    :enable-replay="enableReplay && !viewOnly"
-    :view-only="viewOnly"
-    :restore-nonce="restoreNonce"
-    :restore-message-id="restoreMessageId"
-    :running="turnRunning"
-    @start-reask="startReask"
-    @stop="emit('stop')"
-    @target-change="emit('target-change', $event)"
-  />
+  <div v-if="message.role === 'user'">
+    <div v-if="channelSource" class="channel-message-source">{{ channelSource }}</div>
+    <UserPrompt
+      :message="message"
+      :target-label="sentTarget?.label ?? targetLabel"
+      :target-avatar="sentTarget?.avatar ?? targetAvatar"
+      :target-value="sentTarget?.value ?? targetValue"
+      :target-options="targetOptions"
+      :allow-target-change="false"
+      :enable-replay="enableReplay && !viewOnly"
+      :view-only="viewOnly"
+      :restore-nonce="restoreNonce"
+      :restore-message-id="restoreMessageId"
+      :running="turnRunning"
+      @start-reask="startReask"
+      @stop="emit('stop')"
+      @target-change="emit('target-change', $event)"
+    />
+  </div>
   <AssistantMessage
     v-else
     :message="message"
@@ -106,3 +121,11 @@ function startReask(
     @pick-action="emit('pick-action', $event)"
   />
 </template>
+
+<style scoped>
+.channel-message-source {
+  margin: 0 0 4px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+</style>

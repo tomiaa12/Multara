@@ -3,6 +3,7 @@ pub mod automation;
 pub mod builtin_agents;
 pub mod builtin_skills;
 pub mod catalog;
+pub mod channel;
 pub mod cli;
 pub mod cli_catalog;
 pub mod code_index;
@@ -151,6 +152,8 @@ pub fn run() {
             automation::start(app.handle().clone());
             webhook::start(app.handle().clone());
             executor::start_poller(app.handle().clone());
+            channel::supervisor::start(app.handle().clone());
+            channel::outbound::recover_pending(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -162,6 +165,14 @@ pub fn run() {
             create_task,
             delete_project,
             set_project_archived,
+            channel::commands::list_channel_installations,
+            channel::commands::save_channel_installation,
+            channel::commands::delete_channel_installation,
+            channel::commands::set_channel_enabled,
+            channel::commands::test_channel_installation,
+            channel::commands::list_channel_allowed_users,
+            channel::commands::remove_channel_allowed_user,
+            channel::commands::rotate_channel_pairing_code,
             merge_flow::git_merge_preview,
             merge_flow::git_merge_into_branch,
             merge_flow::git_finish_merge_session,

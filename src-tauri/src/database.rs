@@ -218,6 +218,75 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS channel_installations (
+          id TEXT PRIMARY KEY,
+          channel_type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          target_type TEXT NOT NULL CHECK(target_type IN ('agent', 'squad')),
+          target_id TEXT NOT NULL,
+          project_id TEXT,
+          config_json TEXT NOT NULL DEFAULT '{}',
+          secret_ref TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          status TEXT NOT NULL DEFAULT 'disconnected',
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS channel_allowed_users (
+          installation_id TEXT NOT NULL,
+          channel_user_id TEXT NOT NULL,
+          display_name TEXT,
+          role TEXT NOT NULL DEFAULT 'owner',
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (installation_id, channel_user_id)
+        );
+        CREATE TABLE IF NOT EXISTS channel_session_bindings (
+          id TEXT PRIMARY KEY,
+          installation_id TEXT NOT NULL,
+          route_key TEXT NOT NULL,
+          chat_id TEXT NOT NULL,
+          chat_type TEXT NOT NULL,
+          thread_id TEXT,
+          session_id TEXT NOT NULL,
+          retired_at TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_binding_active
+          ON channel_session_bindings(installation_id, route_key) WHERE retired_at IS NULL;
+        CREATE TABLE IF NOT EXISTS channel_inbound_dedup (
+          installation_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          PRIMARY KEY (installation_id, message_id)
+        );
+        CREATE TABLE IF NOT EXISTS channel_run_deliveries (
+          run_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          binding_id TEXT NOT NULL,
+          installation_id TEXT NOT NULL,
+          chat_id TEXT NOT NULL,
+          chat_type TEXT NOT NULL,
+          reply_to_message_id TEXT,
+          thread_id TEXT,
+          sender_id TEXT,
+          typing_reaction_id TEXT,
+          state TEXT NOT NULL DEFAULT 'pending',
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_channel_deliveries_session
+          ON channel_run_deliveries(session_id, state);
+        CREATE TABLE IF NOT EXISTS channel_outbound_messages (
+          installation_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          run_id TEXT,
+          kind TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (installation_id, message_id)
+        );
         CREATE TABLE IF NOT EXISTS automation_triggers (
           id TEXT PRIMARY KEY,
           automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
@@ -380,6 +449,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     ensure_column(db, "messages", "audience_id", "TEXT")?;
     ensure_column(db, "messages", "target_type", "TEXT")?;
     ensure_column(db, "messages", "target_id", "TEXT")?;
+    ensure_column(db, "messages", "source_type", "TEXT")?;
+    ensure_column(db, "messages", "source_meta_json", "TEXT")?;
     ensure_column(db, "agent_runs", "turn_id", "TEXT")?;
     ensure_column(
         db,
