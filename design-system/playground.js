@@ -430,18 +430,17 @@ const VIEWPORTS = { desktop: "100%", tablet: "820px", mobile: "390px" };
 let previewPage = localStorage.getItem("multara.playground.page") ?? "dashboard";
 
 function previewFrame() {
-  return document.querySelector(".pg-viewport iframe");
+  return document.querySelector("#view-pages .pg-viewport iframe");
 }
 
 function sendToPreview() {
-  previewFrame()?.contentWindow?.postMessage(
-    { type: "pg-state", theme: state.theme, cssText: root.style.cssText, page: previewPage },
-    "*",
-  );
+  const message = { type: "pg-state", theme: state.theme, cssText: root.style.cssText, page: previewPage };
+  previewFrame()?.contentWindow?.postMessage(message, "*");
+  document.querySelector("#pg-chat-plan-frame")?.contentWindow?.postMessage(message, "*");
 }
 
 function bindPreview() {
-  const viewport = document.querySelector(".pg-viewport");
+  const viewport = document.querySelector("#view-pages .pg-viewport");
   const nav = document.querySelector("#pg-page-select");
 
   function show(page) {
@@ -454,6 +453,7 @@ function bindPreview() {
   nav.value = previewPage;
   nav.addEventListener("change", () => show(nav.value));
   previewFrame().addEventListener("load", sendToPreview);
+  document.querySelector("#pg-chat-plan-frame")?.addEventListener("load", sendToPreview);
   window.addEventListener("message", (event) => {
     const data = event.data ?? {};
     if (data.type === "pg-page") show(data.page);

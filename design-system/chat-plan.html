@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multara · Plan 与 Sub-agent 交互预览</title>
+    <link rel="icon" type="image/svg+xml" href="../src/assets/logo.svg" />
+    <link rel="stylesheet" href="../src/design/tokens.css" />
+    <link rel="stylesheet" href="../src/design/base.css" />
+    <link rel="stylesheet" href="../src/design/components.css" />
+    <link rel="stylesheet" href="./chat-plan.css" />
+  </head>
+  <body>
+    <header class="cp-preview-bar">
+      <div class="cp-preview-brand"><i data-icon="panel" data-size="16"></i><strong>交互预览</strong><span>Plan & Sub-agent</span></div>
+      <nav class="cp-surfaces" aria-label="聊天入口">
+        <button type="button" data-surface="chat" aria-pressed="true">普通聊天</button>
+        <button type="button" data-surface="workbench" aria-pressed="false">工作台</button>
+        <button type="button" data-surface="floating" aria-pressed="false">气泡聊天</button>
+        <button type="button" data-surface="inbox" aria-pressed="false">收件箱</button>
+      </nav>
+      <div class="cp-preview-actions">
+        <label class="cp-scenario-label">场景
+          <select class="ui-select" id="cp-scenario" aria-label="预览场景">
+            <option value="review">计划待审阅</option>
+            <option value="running">执行与多层子代理</option>
+            <option value="completed">执行已完成</option>
+            <option value="limited">不支持原生 Plan</option>
+            <option value="error">异常与恢复</option>
+          </select>
+        </label>
+        <button type="button" class="cp-icon-button" data-action="reset" title="重置当前演示" aria-label="重置当前演示"><i data-icon="refresh" data-size="15"></i></button>
+        <button type="button" class="cp-icon-button" data-action="theme" title="切换深浅主题" aria-label="切换深浅主题"><i data-icon="sun" data-size="16"></i></button>
+      </div>
+    </header>
+    <main id="cp-app" class="cp-app" aria-label="聊天功能原型"></main>
+    <footer class="cp-preview-footer"><span><i data-icon="info" data-size="12"></i> 交互原型 · 仅本地模拟，不调用运行时或修改项目</span><span>选择模式 → 审阅计划 → 批准执行</span></footer>
+    <div id="cp-toast" class="cp-toast" role="status" aria-live="polite" hidden></div>
+    <script src="./icons.js"></script>
+    <script type="module" src="./chat-plan.js"></script>
+  </body>
+</html>
