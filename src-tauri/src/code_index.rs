@@ -1,15 +1,18 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs,
+    io::Read,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
+use ignore::WalkBuilder;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
 const MAX_SOURCE_FILES: usize = 3_000;
 const MAX_SOURCE_BYTES: u64 = 512 * 1024;
+const MAX_SOURCE_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TYPING_FILES: usize = 4_000;
 const MAX_TYPING_TOTAL_BYTES: u64 = 24 * 1024 * 1024;
 const MAX_TYPING_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -17,7 +20,7 @@ const MAX_PACKAGE_TYPINGS: usize = 600;
 const MAX_DEPTH: usize = 16;
 /// 构建产物里的 .js/.d.ts 会和源码重复声明，跳转时出现一堆无用候选。
 const BUILD_DIRS: &[&str] = &[
-    "dist", "build", "out", "target", ".next", ".nuxt", ".output", "coverage", ".turbo", ".vite", ".cache",
+    "dist", "build", "out", "out-build", "target", ".next", ".nuxt", ".output", "coverage", ".turbo", ".vite", ".cache", ".codeoss-build", ".pnpm-store",
 ];
 const DEPENDENCY_FIELDS: &[&str] = &["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 const TRANSITIVE_FIELDS: &[&str] = &["dependencies", "peerDependencies"];
@@ -60,68 +63,67 @@ pub fn collect_sources(
         .map(|item| item.trim_start_matches('.').to_ascii_lowercase())
         .collect();
     let mut batch = SourceBatch { files: Vec::new(), truncated: false };
-    walk_sources(&root, &root, 0, &extensions, known, &mut batch);
-    Ok(batch)
-}
-
-fn walk_sources(
-    root: &Path,
-    directory: &Path,
-    depth: usize,
-    extensions: &HashSet<String>,
-    known: &HashMap<String, u64>,
-    batch: &mut SourceBatch,
-) {
-    if depth > MAX_DEPTH || batch.truncated {
-        return;
-    }
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if crate::files::hidden_in_search(&name) || BUILD_DIRS.contains(&name.as_str()) {
-            continue;
-        }
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
-        if kind.is_symlink() {
-            continue;
-        }
-        if kind.is_dir() {
-            walk_sources(root, &path, depth + 1, extensions, known, batch);
-            if batch.truncated {
-                return;
+    let mut total = 0;
+    let walker = WalkBuilder::new(&root)
+        .hidden(false)
+        .require_git(false)
+        .follow_links(false)
+        .max_depth(Some(MAX_DEPTH))
+        .sort_by_file_path(|a, b| a.cmp(b))
+        .filter_entry(|entry| {
+            if entry.depth() == 0 {
+                return true;
             }
-            continue;
-        }
-        if !kind.is_file() || !has_extension(&name, extensions) {
+            let name = entry.file_name().to_string_lossy();
+            !crate::files::hidden_in_search(&name) && !BUILD_DIRS.contains(&name.as_ref())
+        })
+        .build();
+    for entry in walker.flatten() {
+        if !entry.file_type().is_some_and(|kind| kind.is_file())
+            || !has_extension(&entry.file_name().to_string_lossy(), &extensions)
+        {
             continue;
         }
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
         if metadata.len() > MAX_SOURCE_BYTES {
+            batch.truncated = true;
             continue;
         }
         if batch.files.len() >= MAX_SOURCE_FILES {
             batch.truncated = true;
-            return;
+            break;
         }
-        let relative = relative_path(root, &path);
+        if total + metadata.len() > MAX_SOURCE_TOTAL_BYTES {
+            batch.truncated = true;
+            continue;
+        }
+        let path = entry.path();
+        let relative = relative_path(&root, path);
         let mtime = modified_ms(&metadata);
         let content = if known.get(&relative) == Some(&mtime) {
             None
         } else {
-            match fs::read(&path).ok().and_then(|bytes| String::from_utf8(bytes).ok()) {
+            match read_limited(path, MAX_SOURCE_BYTES.min(MAX_SOURCE_TOTAL_BYTES - total)) {
                 Some(text) => Some(text),
                 None => continue,
             }
         };
+        total += content.as_ref().map_or(metadata.len(), |text| text.len() as u64);
         batch.files.push(SourceFile { path: relative, mtime, content });
     }
+    Ok(batch)
+}
+
+fn read_limited(path: &Path, limit: u64) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > limit {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 pub fn collect_typings(root: &str) -> Result<Vec<TypingFile>, String> {
@@ -154,6 +156,9 @@ pub fn collect_typings(root: &str) -> Result<Vec<TypingFile>, String> {
         };
         let virtual_root = format!("node_modules/{name}");
         let manifest_text = trimmed_manifest(&package);
+        if total + manifest_text.len() as u64 > MAX_TYPING_TOTAL_BYTES {
+            break;
+        }
         total += manifest_text.len() as u64;
         output.push(TypingFile {
             path: format!("{virtual_root}/package.json"),
@@ -166,7 +171,7 @@ pub fn collect_typings(root: &str) -> Result<Vec<TypingFile>, String> {
             if output.len() >= MAX_TYPING_FILES || total >= MAX_TYPING_TOTAL_BYTES {
                 break;
             }
-            let Ok(content) = fs::read_to_string(path) else {
+            let Some(content) = read_limited(path, MAX_TYPING_FILE_BYTES.min(MAX_TYPING_TOTAL_BYTES - total)) else {
                 continue;
             };
             total += content.len() as u64;
@@ -201,6 +206,9 @@ fn walk_declarations(root: &Path, directory: &Path, depth: usize, output: &mut V
         let Ok(kind) = entry.file_type() else {
             continue;
         };
+        if kind.is_symlink() {
+            continue;
+        }
         if kind.is_dir() {
             if name == "node_modules" || name.starts_with('.') {
                 continue;
@@ -231,7 +239,7 @@ fn resolve_package(from: &Path, name: &str) -> Option<PathBuf> {
 }
 
 fn read_manifest(directory: &Path) -> Option<Value> {
-    let text = fs::read_to_string(directory.join("package.json")).ok()?;
+    let text = read_limited(&directory.join("package.json"), MAX_TYPING_FILE_BYTES)?;
     serde_json::from_str(&text).ok()
 }
 
@@ -331,6 +339,76 @@ mod tests {
         let second = collect_sources(root.to_str().unwrap(), &extensions, &known).unwrap();
         assert_eq!(second.files.len(), 1);
         assert!(second.files[0].content.is_none());
+    }
+
+    #[test]
+    fn sources_respect_nested_gitignores_and_negations_without_a_git_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join(".gitignore"), "generated/\n*.generated.ts\n");
+        write(&root.join("src/.gitignore"), "*.ts\n!keep.ts\n");
+        write(&root.join("generated/large.ts"), "export const generated = 1;");
+        write(&root.join("a.generated.ts"), "export const generated = 2;");
+        write(&root.join("src/ignored.ts"), "export const ignored = 1;");
+        write(&root.join("src/keep.ts"), "export const keep = 1;");
+        let batch = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        assert_eq!(batch.files.iter().map(|file| file.path.as_str()).collect::<Vec<_>>(), ["src/keep.ts"]);
+        assert!(!batch.truncated);
+    }
+
+    #[test]
+    fn sources_skip_build_caches_even_without_gitignore() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for directory in [".codeoss-build", ".pnpm-store", "out-build", "node_modules", "dist", "target"] {
+            write(&root.join(directory).join("nested/index.ts"), "export {};");
+        }
+        write(&root.join("src/index.ts"), "export {};");
+        let batch = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        assert_eq!(batch.files.len(), 1);
+        assert_eq!(batch.files[0].path, "src/index.ts");
+    }
+
+    #[test]
+    fn sources_bound_total_size_including_unchanged_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let content = "x".repeat(MAX_SOURCE_BYTES as usize);
+        let limit = (MAX_SOURCE_TOTAL_BYTES / MAX_SOURCE_BYTES) as usize;
+        for i in 0..limit + 2 {
+            write(&root.join(format!("{i:03}.ts")), &content);
+        }
+        write(&root.join("zzz-small.ts"), "export {};");
+        let first = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        assert!(first.truncated);
+        assert_eq!(first.files.len(), limit);
+        assert_eq!(first.files.iter().map(|file| file.content.as_ref().unwrap().len() as u64).sum::<u64>(), MAX_SOURCE_TOTAL_BYTES);
+        let known = first.files.iter().map(|file| (file.path.clone(), file.mtime)).collect();
+        let second = collect_sources(root.to_str().unwrap(), &["ts".into()], &known).unwrap();
+        assert!(second.truncated);
+        assert_eq!(second.files.iter().map(|file| &file.path).collect::<Vec<_>>(), first.files.iter().map(|file| &file.path).collect::<Vec<_>>());
+        assert!(second.files.iter().all(|file| file.content.is_none()));
+    }
+
+    #[test]
+    fn sources_skip_oversized_files_but_keep_small_neighbors() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("large.ts"), &"x".repeat(MAX_SOURCE_BYTES as usize + 1));
+        write(&root.join("small.ts"), "export {};");
+        let batch = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        assert!(batch.truncated);
+        assert_eq!(batch.files.len(), 1);
+        assert_eq!(batch.files[0].path, "small.ts");
+    }
+
+    #[test]
+    fn limited_reads_reject_growing_or_oversized_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.ts");
+        write(&path, "12345");
+        assert_eq!(read_limited(&path, 5).as_deref(), Some("12345"));
+        assert!(read_limited(&path, 4).is_none());
     }
 
     #[test]

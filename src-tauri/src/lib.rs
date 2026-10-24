@@ -70,7 +70,8 @@ use commands::{
     list_agent_runs, list_agents_and_squads, list_automation_runs, list_chat_messages,
     list_external_directory, list_mcp_tool_cache, list_project_git_status, list_prompt_files,
     list_quick_open_files, list_resource_sources, list_runtime_models, list_skill_directory,
-    list_task_runs, list_webhook_deliveries, list_workspace_directory, list_workspace_tree,
+    list_task_inbox_surfaces, list_task_runs, list_webhook_deliveries, list_workspace_directory,
+    list_workspace_tree,
     load_active_diff_data, load_attachment_preview, load_session_diff_data, mark_inbox_all_read,
     mark_inbox_read, mark_inbox_unread, open_external_url, open_message_attachment, probe_mcp,
     probe_runtime_command, read_external_file, read_skill_file, read_workspace_file,
@@ -154,6 +155,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            list_task_inbox_surfaces,
             list_agents_and_squads,
             create_project,
             update_project,

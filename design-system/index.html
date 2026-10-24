@@ -133,6 +133,7 @@
             <button type="button" class="active" data-view-tab="view-foundation">基础 Token</button>
             <button type="button" data-view-tab="view-components">组件</button>
             <button type="button" data-view-tab="view-pages">页面预览</button>
+            <button type="button" data-view-tab="view-chat-plan">Plan 与 Sub-agent</button>
           </nav>
           <span class="ds-hint">所有修改实时作用于下方组件与页面</span>
         </header>
@@ -695,6 +696,15 @@
             </div>
             <div class="pg-viewport">
               <iframe src="./pages.html" title="页面预览"></iframe>
+            </div>
+          </div>
+          <div class="pg-content pg-view" id="view-chat-plan" hidden style="max-width: none">
+            <div class="pg-preview-bar">
+              <div><h2>Plan 与 Sub-agent</h2><p>四种入口共享交互原型；所有动作仅使用本地模拟数据。</p></div>
+              <a class="ui-button" href="./chat-plan.html" target="_blank" rel="noopener">独立打开原型</a>
+            </div>
+            <div class="pg-viewport">
+              <iframe id="pg-chat-plan-frame" src="./chat-plan.html" title="Plan 与 Sub-agent 交互原型"></iframe>
             </div>
           </div>
         </div>

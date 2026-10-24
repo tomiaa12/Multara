@@ -56,10 +56,12 @@ export const useAppStore = defineStore("app", () => {
   const error = ref("");
   const chatOpen = ref(false);
   const activeSessionId = ref("welcome");
-  /** priority：回答提问 / 「立即发送」的消息，排到最前且不受提问暂停影响 */
-  const queuedMessages = ref<{ sessionId: string; content: string; attachments: MessageAttachmentInput[]; priority?: boolean }[]>([]);
+  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; priority?: boolean; immediate?: boolean };
+  const queuedMessages = ref<QueuedMessage[]>([]);
   const dismissedQuestions = ref(new Set<string>(readDismissedQuestions()));
-  const sendingMessage = ref(false);
+  const sendingSessions = ref(new Set<string>());
+  const pendingRunSessions = ref(new Set<string>());
+  const optimisticMessages = new Map<string, string>();
   const runStates = ref<Record<string, RunEvent>>({});
   const composerContexts = ref<EditorSelectionContext[]>([]);
   const composerFocusNonce = ref(0);
@@ -83,6 +85,8 @@ export const useAppStore = defineStore("app", () => {
   const workspaceJobs = ref<WorkspacePrepJob[]>([]);
   const openSessionTabs = ref<Record<string, string[]>>(loadOpenTabsMap());
   let eventsReady = false;
+  let taskInboxRefresh: Promise<void> | undefined;
+  let taskInboxRefreshQueued = false;
 
   const activeSession = computed(() =>
     data.value?.sessions.find((session) => session.id === activeSessionId.value),
@@ -96,7 +100,16 @@ export const useAppStore = defineStore("app", () => {
       )
       .map((event) => event.runId),
   );
-  const processingMessage = computed(() => sendingMessage.value || activeRunIds.value.length > 0);
+  function sessionProcessing(sessionId: string) {
+    return sendingSessions.value.has(sessionId)
+      || pendingRunSessions.value.has(sessionId)
+      || Object.values(runStates.value).some((event) =>
+        event.sessionId === sessionId
+        && (event.status === "queued" || event.status === "running")
+        && !event.runId.startsWith("pending:"),
+      );
+  }
+  const processingMessage = computed(() => sessionProcessing(activeSessionId.value));
 
   async function initialize() {
     loading.value = true;
@@ -175,6 +188,10 @@ export const useAppStore = defineStore("app", () => {
         return;
       }
       runStates.value[payload.runId] = payload;
+      if (pendingRunSessions.value.delete(payload.sessionId)) {
+        queueMicrotask(() => drainMessageQueue());
+      }
+      let surfacesRefresh: Promise<void> | undefined;
       if (data.value) {
         if (payload.status === "running" && previous?.status !== "running") {
           data.value.stats.running += 1;
@@ -184,11 +201,11 @@ export const useAppStore = defineStore("app", () => {
           if (payload.status === "completed") data.value.stats.completedToday += 1;
           if (payload.status === "failed") data.value.stats.failedToday += 1;
         }
-        // CLI `multara task create` 只写库；跑起来时若本地还没有这条任务/会话，拉回看板。
-        const knownSession = data.value.sessions.some((item) => item.id === payload.sessionId);
-        const knownTask = data.value.tasks.some((item) => item.sessionId === payload.sessionId);
-        if (!knownSession || !knownTask) {
-          void refreshTaskInboxSurfaces();
+        // CLI writes become visible at run boundaries, not on every streamed chunk.
+        if (previous?.status !== payload.status) {
+          surfacesRefresh = refreshTaskInboxSurfaces().catch((cause) => {
+            console.error("[app] task/inbox refresh failed", cause);
+          });
         }
         syncTaskStatusFromRunEvent(payload);
       }
@@ -258,10 +275,13 @@ export const useAppStore = defineStore("app", () => {
       }
       messages.value[payload.sessionId] = [...sessionMessages];
       if (["completed", "failed", "stopped"].includes(payload.status)) {
+        await surfacesRefresh;
         const persisted = await backend.listChatMessages(payload.sessionId);
         const persistedIds = new Set(persisted.map((message) => message.id));
         const live = (messages.value[payload.sessionId] ?? []).filter((message) => {
-          if (persistedIds.has(message.id) || !message.runId) return false;
+          if (persistedIds.has(message.id)) return false;
+          if (optimisticMessages.has(message.id)) return true;
+          if (!message.runId) return false;
           const status = runStates.value[message.runId]?.status;
           return status === "queued" || status === "running";
         });
@@ -275,7 +295,7 @@ export const useAppStore = defineStore("app", () => {
         // 对话里可能通过 CLI 增删智能体/小队，结束后同步列表
         void refreshAgentsAndSquads();
         queueMicrotask(() => {
-          if (!processingMessage.value) void drainMessageQueue();
+          drainMessageQueue();
         });
       }
     });
@@ -593,12 +613,25 @@ export const useAppStore = defineStore("app", () => {
     clearLastProjectsPath(projectId);
   }
 
-  async function refreshTaskInboxSurfaces() {
-    const next = await backend.bootstrap();
-    if (!data.value) return;
-    data.value.tasks = next.tasks;
-    data.value.sessions = next.sessions;
-    data.value.inbox = next.inbox;
+  function refreshTaskInboxSurfaces(): Promise<void> {
+    if (taskInboxRefresh) {
+      taskInboxRefreshQueued = true;
+      return taskInboxRefresh;
+    }
+    taskInboxRefresh = (async () => {
+      do {
+        taskInboxRefreshQueued = false;
+        const next = await backend.listTaskInboxSurfaces();
+        if (!data.value) return;
+        data.value.tasks = next.tasks;
+        data.value.sessions = next.sessions;
+        data.value.inbox = next.inbox;
+      } while (taskInboxRefreshQueued);
+    })().finally(() => {
+      taskInboxRefresh = undefined;
+      taskInboxRefreshQueued = false;
+    });
+    return taskInboxRefresh;
   }
 
   /** CLI（如对话里 `multara agent create`）只写库，需主动拉回前端缓存。 */
@@ -1296,26 +1329,37 @@ export const useAppStore = defineStore("app", () => {
     return queuedMessages.value.splice(index, 1)[0] ?? null;
   }
 
-  /** 立即发送：挪到最前并越过提问暂停；正在运行时会在这一轮结束后第一个发 */
   function promoteQueuedMessage(index: number) {
     const item = takeQueuedMessage(index);
     if (!item) return;
-    queuedMessages.value.unshift({ ...item, priority: true });
-    void drainMessageQueue();
+    queuedMessages.value.unshift({ ...item, priority: true, immediate: true });
+    drainMessageQueue();
   }
 
-  async function drainMessageQueue() {
-    if (processingMessage.value) return;
-    const nextIndex = queuedMessages.value.findIndex((item) =>
-      item.priority || !awaitingAnswer(item.sessionId),
+  function drainMessageQueue() {
+    const ready = queuedMessages.value.filter((item) =>
+      !sendingSessions.value.has(item.sessionId)
+      // 「立即发送」不等首个 run 事件：sendMessage 已经返回，消息已落库。
+      && (item.immediate || !pendingRunSessions.value.has(item.sessionId))
+      && (item.immediate || !sessionProcessing(item.sessionId))
+      && (item.priority || !awaitingAnswer(item.sessionId)),
     );
-    if (nextIndex < 0) return;
-    sendingMessage.value = true;
+    for (const item of ready) {
+      if (sendingSessions.value.has(item.sessionId)) continue;
+      const index = queuedMessages.value.indexOf(item);
+      if (index < 0) continue;
+      queuedMessages.value.splice(index, 1);
+      sendingSessions.value.add(item.sessionId);
+      void sendQueuedMessage(item);
+    }
+  }
+
+  async function sendQueuedMessage(next: QueuedMessage) {
+    let failed = false;
+    const optimisticId = crypto.randomUUID();
+    optimisticMessages.set(optimisticId, next.sessionId);
     try {
-      const next = queuedMessages.value.splice(nextIndex, 1)[0];
-      if (!next) return;
       const isFirstPrompt = !(messages.value[next.sessionId] ?? []).some((item) => item.role === "user");
-      const optimisticId = crypto.randomUUID();
       const session = data.value?.sessions.find((item) => item.id === next.sessionId);
       messages.value[next.sessionId] = [
         ...(messages.value[next.sessionId] ?? []),
@@ -1346,6 +1390,7 @@ export const useAppStore = defineStore("app", () => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
       try {
+        pendingRunSessions.value.add(next.sessionId);
         const result = await backend.sendMessage(next.sessionId, next.content, next.attachments);
         const returnedUser = result.find((message) => message.role === "user");
         if (returnedUser) {
@@ -1356,8 +1401,12 @@ export const useAppStore = defineStore("app", () => {
         const assistant = result.filter((message) => message.role === "assistant");
         messages.value[next.sessionId] = [...(messages.value[next.sessionId] ?? []), ...assistant];
         if (isFirstPrompt) void nameSessionFromFirstPrompt(next.sessionId, next.content);
-        if (assistant.length) queueMicrotask(() => void drainMessageQueue());
+        if (assistant.length || Object.values(runStates.value).some((event) =>
+          event.sessionId === next.sessionId && (event.status === "queued" || event.status === "running"),
+        )) pendingRunSessions.value.delete(next.sessionId);
       } catch (cause) {
+        failed = true;
+        pendingRunSessions.value.delete(next.sessionId);
         const message = cause instanceof Error ? cause.message : String(cause);
         messages.value[next.sessionId] = (messages.value[next.sessionId] ?? []).filter(
           (item) => item.id !== optimisticId,
@@ -1371,7 +1420,9 @@ export const useAppStore = defineStore("app", () => {
         };
       }
     } finally {
-      sendingMessage.value = false;
+      optimisticMessages.delete(optimisticId);
+      sendingSessions.value.delete(next.sessionId);
+      if (!failed) drainMessageQueue();
     }
   }
 
@@ -1413,6 +1464,7 @@ export const useAppStore = defineStore("app", () => {
     fileReveal,
     runStates,
     processingMessage,
+    sessionProcessing,
     activeRunIds,
     activeSession,
     initialize,

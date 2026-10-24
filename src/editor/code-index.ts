@@ -7,8 +7,14 @@ import { applyWorkspaceTypescript } from "./monaco-workspace";
 import { mergeWorkspaceCompilerOptions, type WorkspaceCompilerOptions } from "./tsconfig-options";
 import { workspaceModelUri } from "./workspace-models";
 
+const MAX_INDEXED_SOURCE_BYTES = 32 * 1024 * 1024;
+const MAX_INDEXED_SOURCE_FILES = 3_000;
+const MAX_INDEXED_TYPING_BYTES = 32 * 1024 * 1024;
+const MAX_INDEXED_TYPING_FILES = 4_000;
+
 type WorkspaceEntry = {
   mtimes: Map<string, number>;
+  sourceBytes: Map<string, number>;
   typings: backend.TypingFileRecord[];
   refreshing: Promise<void> | null;
   queued: boolean;
@@ -24,6 +30,8 @@ class WorkspaceCodeIndex {
   private readonly openCheckers = new Set<(workspaceId: string, path: string) => boolean>();
   private readonly compilerOptions = new Map<string, WorkspaceCompilerOptions>();
   private typingLocations = new Map<string, LocatedFile | null>();
+  private indexedSourceBytes = 0;
+  private indexedSourceFiles = 0;
 
   setWorkspaces(owner: object, workspaceIds: string[]) {
     this.owners.set(owner, workspaceIds);
@@ -68,7 +76,7 @@ class WorkspaceCodeIndex {
     for (const id of wanted) {
       if (this.workspaces.has(id)) continue;
       added = true;
-      this.workspaces.set(id, { mtimes: new Map(), typings: [], refreshing: null, queued: false });
+      this.workspaces.set(id, { mtimes: new Map(), sourceBytes: new Map(), typings: [], refreshing: null, queued: false });
       void this.refresh(id);
       void this.loadTypings(id);
     }
@@ -79,9 +87,7 @@ class WorkspaceCodeIndex {
     const entry = this.workspaces.get(workspaceId);
     if (!entry) return;
     this.workspaces.delete(workspaceId);
-    for (const path of entry.mtimes.keys()) {
-      if (!this.isOpen(workspaceId, path)) monaco.editor.getModel(workspaceModelUri(workspaceId, path))?.dispose();
-    }
+    for (const path of entry.mtimes.keys()) this.removeSource(workspaceId, entry, path);
     this.applyExtraLibs();
     this.applyCompilerOptions();
   }
@@ -108,16 +114,31 @@ class WorkspaceCodeIndex {
   private async syncSources(workspaceId: string, entry: WorkspaceEntry) {
     const known: Record<string, number> = {};
     for (const [path, mtime] of entry.mtimes) {
-      // 模型可能被编辑器卸载时顺手销毁，那就当作没见过，重新传内容。
       if (monaco.editor.getModel(workspaceModelUri(workspaceId, path))) known[path] = mtime;
     }
     const batch = await backend.collectSourceFiles(workspaceId, SCRIPT_EXTENSIONS, known);
     if (this.workspaces.get(workspaceId) !== entry) return;
-    const seen = new Set<string>();
-    for (const file of batch.files) {
-      seen.add(file.path);
-      entry.mtimes.set(file.path, file.mtime);
+    const seen = new Set(batch.files.map((file) => file.path));
+    for (const path of entry.mtimes.keys()) {
+      if (!seen.has(path)) this.removeSource(workspaceId, entry, path);
+    }
+    const encoder = new TextEncoder();
+    let limited = batch.truncated;
+    for (let index = 0; index < batch.files.length; index++) {
+      if (index > 0 && index % 50 === 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (this.workspaces.get(workspaceId) !== entry) return;
+      }
+      const file = batch.files[index]!;
       if (file.content == null) continue;
+      const previousSize = entry.sourceBytes.get(file.path);
+      const size = encoder.encode(file.content).byteLength;
+      if (this.indexedSourceBytes - (previousSize ?? 0) + size > MAX_INDEXED_SOURCE_BYTES
+        || (previousSize == null && this.indexedSourceFiles >= MAX_INDEXED_SOURCE_FILES)) {
+        this.removeSource(workspaceId, entry, file.path);
+        limited = true;
+        continue;
+      }
       const uri = workspaceModelUri(workspaceId, file.path);
       const model = monaco.editor.getModel(uri);
       if (!model) {
@@ -125,24 +146,54 @@ class WorkspaceCodeIndex {
       } else if (!this.isOpen(workspaceId, file.path) && model.getValue() !== file.content) {
         model.setValue(file.content);
       }
+      this.indexedSourceBytes += size - (previousSize ?? 0);
+      if (previousSize == null) this.indexedSourceFiles++;
+      entry.sourceBytes.set(file.path, size);
+      entry.mtimes.set(file.path, file.mtime);
     }
-    for (const path of [...entry.mtimes.keys()]) {
-      if (seen.has(path)) continue;
-      entry.mtimes.delete(path);
-      if (!this.isOpen(workspaceId, path)) monaco.editor.getModel(workspaceModelUri(workspaceId, path))?.dispose();
+    if (limited) console.warn(`[code-index] ${workspaceId}: background indexing limited to protect editor memory`);
+  }
+
+  private removeSource(workspaceId: string, entry: WorkspaceEntry, path: string) {
+    const size = entry.sourceBytes.get(path);
+    if (size != null) {
+      this.indexedSourceBytes -= size;
+      this.indexedSourceFiles--;
     }
+    entry.sourceBytes.delete(path);
+    entry.mtimes.delete(path);
+    if (!this.isOpen(workspaceId, path)) monaco.editor.getModel(workspaceModelUri(workspaceId, path))?.dispose();
   }
 
   private async loadTypings(workspaceId: string) {
+    const entry = this.workspaces.get(workspaceId);
+    if (!entry) return;
     let typings: backend.TypingFileRecord[] = [];
     try {
       typings = await backend.collectWorkspaceTypings(workspaceId);
     } catch {
       return;
     }
-    const entry = this.workspaces.get(workspaceId);
-    if (!entry) return;
-    entry.typings = typings;
+    if (this.workspaces.get(workspaceId) !== entry) return;
+    const encoder = new TextEncoder();
+    let bytes = 0;
+    let files = 0;
+    for (const other of this.workspaces.values()) {
+      if (other === entry) continue;
+      for (const typing of other.typings) {
+        bytes += encoder.encode(typing.content).byteLength;
+        files++;
+      }
+    }
+    entry.typings = [];
+    for (const typing of typings) {
+      const size = encoder.encode(typing.content).byteLength;
+      if (files >= MAX_INDEXED_TYPING_FILES) break;
+      if (bytes + size > MAX_INDEXED_TYPING_BYTES) continue;
+      bytes += size;
+      files++;
+      entry.typings.push(typing);
+    }
     this.applyExtraLibs();
   }
 

@@ -239,8 +239,8 @@ const targetLabel = computed(() =>
     : targetOptions.value.find((option) => option.value === targetValue.value)?.label ?? t("chat.pickTarget"),
 );
 const headerSubtitle = computed(() =>
-  !props.preview && store.processingMessage
-    ? t("chat.executingQueued", { n: store.queuedMessages.length })
+  !props.preview && sessionProcessing.value
+    ? t("chat.executingQueued", { n: sessionQueue.value.length })
     : targetLabel.value,
 );
 const composerPlaceholder = computed(() =>
@@ -274,18 +274,9 @@ const workingAgents = computed(() => {
   }
   return agents;
 });
-const sessionProcessing = computed(() => {
-  if (props.preview) return props.previewBusy;
-  if (!session.value) return false;
-  if (store.processingMessage && (!store.activeSessionId || store.activeSessionId === session.value.id)) {
-    return true;
-  }
-  return Object.values(store.runStates).some((event) =>
-    event.sessionId === session.value!.id &&
-    (event.status === "queued" || event.status === "running") &&
-    !event.runId.startsWith("pending:"),
-  );
-});
+const sessionProcessing = computed(() =>
+  props.preview ? props.previewBusy : Boolean(session.value && store.sessionProcessing(session.value.id)),
+);
 const liveClock = ref(Date.now());
 const liveAnchorFallback = ref<number | null>(null);
 let liveTimer = 0;
@@ -314,7 +305,7 @@ const liveRunStatus = computed(() => {
   );
   if (events.some((event) => event.status === "running")) return "running" as const;
   if (events.some((event) => event.status === "queued")) return "queued" as const;
-  if (store.processingMessage && (!store.activeSessionId || store.activeSessionId === session.value.id)) {
+  if (sessionProcessing.value) {
     return "sending" as const;
   }
   return null;
@@ -1476,7 +1467,7 @@ defineExpose({
               <UiButton
                 variant="ghost"
                 size="small"
-                :title="sessionProcessing ? t('chat.queuePromoteRunning') : queueHeld ? t('chat.queueSkipQuestion') : t('chat.queueSendImmediate')"
+                :title="queueHeld ? t('chat.queueSkipQuestion') : t('chat.queueSendImmediate')"
                 @click="store.promoteQueuedMessage(queued.index)"
               >{{ t("chat.queueSendNow") }}</UiButton>
               <UiButton class="icon-button" variant="ghost" size="icon" :title="t('chat.queueEdit')" @click="editQueued(queued.index)">

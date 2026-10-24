@@ -22,7 +22,7 @@ use crate::{
         GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus, GlobalResource,
         InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
         MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunStatistics,
-        Squad, SquadInput, StatisticGroup, Task, TaskChecklistItem, TaskInput, TimelineItem,
+        Runtime, Squad, SquadInput, StatisticGroup, Task, TaskChecklistItem, TaskInput, TimelineItem,
         UsageDay, WebhookDelivery, WebhookInput, Workspace, WorkspaceCandidate,
     },
     ops, resources as resource_manager, runtime, session, snapshot_db, workspace,
@@ -2859,24 +2859,77 @@ pub fn delete_squad(squad_id: String, state: State<'_, AppState>) -> Result<Vec<
 }
 
 #[tauri::command]
-pub fn bootstrap(state: State<'_, AppState>) -> Result<BootstrapData, String> {
-    let _span = crate::diag::span("bootstrap");
-    let db = state.lock_db()?;
-    Ok(BootstrapData {
-        projects: list_projects(&db)?,
-        workspaces: list_workspaces(&db)?,
-        runtimes: runtimes(&db)?,
-        agents: list_agents(&db)?,
-        squads: list_squads(&db)?,
-        sessions: list_sessions(&db)?,
-        tasks: list_tasks(&db)?,
-        resources: scan_all(&db),
-        stats: stats(&db)?,
-        automations: list_automations(&db)?,
-        inbox: list_inbox(&db)?,
-        settings: settings_map(&db)?,
-        merge_sessions: crate::merge_flow::list_active(&db)?,
+pub async fn bootstrap(app: AppHandle) -> Result<BootstrapData, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _span = crate::diag::span("bootstrap");
+        let detected = runtime::detect();
+        let state = app.state::<AppState>();
+        let (mut data, custom, limits) = {
+            let db = state.lock_db()?;
+            let (custom, limits) = runtime_configuration(&db, &detected)?;
+            let data = BootstrapData {
+                projects: list_projects(&db)?,
+                workspaces: list_workspaces(&db)?,
+                runtimes: Vec::new(),
+                agents: list_agents(&db)?,
+                squads: list_squads(&db)?,
+                sessions: list_sessions(&db)?,
+                tasks: list_tasks(&db)?,
+                resources: Vec::new(),
+                stats: stats(&db)?,
+                automations: list_automations(&db)?,
+                inbox: list_inbox(&db)?,
+                settings: settings_map(&db)?,
+                merge_sessions: crate::merge_flow::list_active(&db)?,
+            };
+            (data, custom, limits)
+        };
+        data.runtimes = detect_configured_runtimes(detected, custom, limits);
+        resource_manager::set_workspace_roots(
+            data.workspaces
+                .iter()
+                .map(|item| {
+                    let path = if item.work_path.trim().is_empty() {
+                        &item.source_path
+                    } else {
+                        &item.work_path
+                    };
+                    (item.id.clone(), item.name.clone(), PathBuf::from(path))
+                })
+                .collect(),
+        );
+        data.resources = resource_manager::scan();
+        Ok(data)
     })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInboxSurfaces {
+    tasks: Vec<Task>,
+    sessions: Vec<ChatSession>,
+    inbox: Vec<InboxItem>,
+}
+
+fn task_inbox_surfaces(db: &Connection) -> Result<TaskInboxSurfaces, String> {
+    Ok(TaskInboxSurfaces {
+        tasks: ops::task::list(db, None, None, None)?,
+        sessions: list_sessions(db)?,
+        inbox: list_inbox(db)?,
+    })
+}
+
+#[tauri::command]
+pub async fn list_task_inbox_surfaces(app: AppHandle) -> Result<TaskInboxSurfaces, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        task_inbox_surfaces(&db)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -3735,15 +3788,12 @@ fn send_message_inner(
         .iter()
         .map(|lock| crate::diag::lock_mutex(lock, "project"))
         .collect::<Result<Vec<_>, _>>()?;
-    let can_steer = executor::can_steer(&app, &session_id);
+    let explicit_targets = explicit_chat_targets(content);
+    let can_steer = explicit_targets.is_empty() && executor::can_steer(&app, &session_id);
     let mut db = state.lock_db()?;
     let transaction = db.transaction().map_err(|error| error.to_string())?;
-    if !can_steer {
-        session::ensure_projects_idle(&transaction, &project_ids)?;
-    }
     let now = Utc::now().to_rfc3339();
     let turn_id = (!project_ids.is_empty()).then(|| Uuid::new_v4().to_string());
-    let explicit_targets = explicit_chat_targets(content);
     let (session_target_type, session_target_id): (String, String) = transaction
         .query_row(
             "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
@@ -3855,10 +3905,27 @@ fn send_message_inner(
             serde_json::to_string_pretty(&paths).unwrap_or_default()
         )
     };
-    if can_steer && explicit_targets.is_empty() {
+    if can_steer {
         transaction.commit().map_err(|error| error.to_string())?;
         drop(db);
-        executor::steer(&app, &session_id, assignment.trim())?;
+        if executor::steer(&app, &session_id, assignment.trim())? {
+            return Ok(vec![user]);
+        }
+        // 运行刚好在这一刻结束：退回普通派发，别把已经落库的消息丢掉。
+        let db = state.lock_db()?;
+        let created = dispatch(
+            &*db,
+            &session_id,
+            turn_id.as_deref(),
+            assignment.trim(),
+            &now,
+            &explicit_targets,
+        )?;
+        drop(db);
+        for (run_id, agent_id) in &created {
+            executor::notify_run(&app, run_id, &session_id, agent_id, "queued");
+        }
+        executor::dispatch(app);
         return Ok(vec![user]);
     }
     let created = dispatch(
@@ -5506,6 +5573,126 @@ mod tests {
     };
 
     #[test]
+    fn dispatch_allows_parallel_tabs_of_the_same_project() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at)
+             VALUES ('project', 'Project', 'now', 'now');
+             INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('agent', 'Agent', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES
+               ('first', 'project', 'First', 'agent', 'agent', 'now', 'now'),
+               ('second', 'project', 'Second', 'agent', 'agent', 'now', 'now');
+             INSERT INTO agent_runs
+               (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('first-run', 'first', 'agent', 'cursor', 'Work', 'running', 'now');",
+        )
+        .unwrap();
+
+        crate::session::ensure_session_idle(&db, "second").unwrap();
+        let created = dispatch(&db, "second", None, "Parallel work", "now", &[]).unwrap();
+        assert_eq!(created.len(), 1);
+        let status: String = db.query_row(
+            "SELECT status FROM agent_runs WHERE id=?1", [&created[0].0], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "queued");
+        assert!(crate::session::ensure_session_idle(&db, "second").is_err());
+        assert!(crate::session::ensure_project_idle(&db, "project").is_err());
+
+        // 同一个 tab 正在运行时也能继续发消息：新 run 排队，而不是报错。
+        let same_tab = dispatch(&db, "first", None, "Send now", "now", &[]).unwrap();
+        assert_eq!(same_tab.len(), 1);
+        let status: String = db.query_row(
+            "SELECT status FROM agent_runs WHERE id=?1", [&same_tab[0].0], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "queued");
+    }
+
+    #[test]
+    fn task_inbox_refresh_only_reads_persisted_surfaces() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO chat_sessions
+               (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('chat', 'Chat', 'agent', 'miku', 'now', 'now');
+             INSERT INTO tasks
+               (id, session_id, title, description, agent_id, status, created_at, updated_at)
+             VALUES ('task', 'chat', 'Task', '', 'miku', 'in_review', 'now', 'now');
+             INSERT INTO inbox_items
+               (id, session_id, task_id, title, preview, status, created_at)
+             VALUES ('notice', 'chat', 'task', 'Task', 'Ready', 'completed', 'now');
+             PRAGMA query_only=ON;",
+        )
+        .unwrap();
+        let changes = db.total_changes();
+
+        let surfaces = super::task_inbox_surfaces(&db).unwrap();
+        assert_eq!(surfaces.tasks.len(), 1);
+        assert_eq!(surfaces.tasks[0].status, "in_review");
+        assert_eq!(surfaces.sessions[0].id, "chat");
+        assert_eq!(surfaces.inbox[0].id, "notice");
+        assert_eq!(db.total_changes(), changes);
+        let json = serde_json::to_value(surfaces).unwrap();
+        assert_eq!(json.as_object().unwrap().len(), 3);
+        assert!(json.get("runtimes").is_none());
+        assert!(json.get("resources").is_none());
+    }
+
+    #[test]
+    fn runtime_configuration_loads_custom_fields_without_probing_commands() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO custom_runtimes
+               (id, name, command, args_json, provider, protocol, api_url, models_json, kind, description)
+             VALUES ('custom:test', 'Gateway', '/nonexistent/multara-test-command', '[\"--stdio\"]',
+                     'custom', 'http', 'https://example.invalid', '[\"model\"]', 'gateway', 'Test');
+             INSERT INTO runtime_settings (runtime_id, max_concurrent) VALUES ('custom:test', 4);
+             PRAGMA query_only=ON;",
+        )
+        .unwrap();
+
+        let (custom, limits) = super::runtime_configuration(&db, &[]).unwrap();
+        assert_eq!(custom.len(), 1);
+        assert_eq!(custom[0].id, "custom:test");
+        assert_eq!(custom[0].command, "/nonexistent/multara-test-command");
+        assert_eq!(custom[0].args, ["--stdio"]);
+        assert_eq!(custom[0].max_concurrent, 4);
+        assert_eq!(custom[0].models, ["model"]);
+        assert_eq!(custom[0].kind, "gateway");
+        assert_eq!(limits.get("custom:test"), Some(&4));
+    }
+
+    #[test]
+    fn runtime_detection_applies_persisted_limits_to_detected_runtimes() {
+        let runtime = crate::models::Runtime {
+            id: "test".into(),
+            name: "Test".into(),
+            provider: "custom".into(),
+            command: "test".into(),
+            args: Vec::new(),
+            path: None,
+            version: None,
+            status: "not_found",
+            max_concurrent: 1,
+            protocol: String::new(),
+            api_url: String::new(),
+            models: Vec::new(),
+            kind: "builtin".into(),
+            description: String::new(),
+        };
+        let limits = HashMap::from([("test".to_string(), 9)]);
+        let detected = super::detect_configured_runtimes(vec![runtime], Vec::new(), limits);
+        assert_eq!(detected.len(), 1);
+        assert_eq!(detected[0].max_concurrent, 6);
+    }
+
+    #[test]
     fn explicit_chat_mentions_are_deduplicated_in_user_order() {
         assert_eq!(
             explicit_chat_targets(
@@ -5863,9 +6050,31 @@ mod tests {
     }
 }
 
-fn runtimes(db: &Connection) -> Result<Vec<crate::models::Runtime>, String> {
-    let mut runtimes = runtime::detect();
-    for runtime in &runtimes {
+struct RuntimeConfiguration {
+    id: String,
+    name: String,
+    command: String,
+    args: Vec<String>,
+    max_concurrent: u8,
+    provider: String,
+    protocol: String,
+    api_url: String,
+    models: Vec<String>,
+    kind: String,
+    description: String,
+}
+
+fn runtimes(db: &Connection) -> Result<Vec<Runtime>, String> {
+    let detected = runtime::detect();
+    let (custom, limits) = runtime_configuration(db, &detected)?;
+    Ok(detect_configured_runtimes(detected, custom, limits))
+}
+
+fn runtime_configuration(
+    db: &Connection,
+    detected: &[Runtime],
+) -> Result<(Vec<RuntimeConfiguration>, HashMap<String, u8>), String> {
+    for runtime in detected {
         db.execute(
             "INSERT OR IGNORE INTO runtime_settings (runtime_id, max_concurrent) VALUES (?1, ?2)",
             params![runtime.id, runtime.max_concurrent],
@@ -5884,24 +6093,23 @@ fn runtimes(db: &Connection) -> Result<Vec<crate::models::Runtime>, String> {
         .map_err(|error| error.to_string())?;
     let custom = custom_statement
         .query_map([], |row| {
-            Ok(runtime::detect_custom(
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
-                row.get(4)?,
-                row.get(5)?,
-                row.get(6)?,
-                row.get(7)?,
-                serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default(),
-                row.get(9)?,
-                row.get(10)?,
-            ))
+            Ok(RuntimeConfiguration {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                command: row.get(2)?,
+                args: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
+                max_concurrent: row.get(4)?,
+                provider: row.get(5)?,
+                protocol: row.get(6)?,
+                api_url: row.get(7)?,
+                models: serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default(),
+                kind: row.get(9)?,
+                description: row.get(10)?,
+            })
         })
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    runtimes.extend(custom);
     let mut statement = db
         .prepare("SELECT runtime_id, max_concurrent FROM runtime_settings")
         .map_err(|error| error.to_string())?;
@@ -5912,10 +6120,33 @@ fn runtimes(db: &Connection) -> Result<Vec<crate::models::Runtime>, String> {
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<HashMap<_, _>>>()
         .map_err(|error| error.to_string())?;
-    for runtime in &mut runtimes {
-        if let Some(limit) = settings.get(&runtime.id) {
+    Ok((custom, settings))
+}
+
+fn detect_configured_runtimes(
+    mut detected: Vec<Runtime>,
+    custom: Vec<RuntimeConfiguration>,
+    limits: HashMap<String, u8>,
+) -> Vec<Runtime> {
+    detected.extend(custom.into_iter().map(|config| {
+        runtime::detect_custom(
+            config.id,
+            config.name,
+            config.command,
+            config.args,
+            config.max_concurrent,
+            config.provider,
+            config.protocol,
+            config.api_url,
+            config.models,
+            config.kind,
+            config.description,
+        )
+    }));
+    for runtime in &mut detected {
+        if let Some(limit) = limits.get(&runtime.id) {
             runtime.max_concurrent = (*limit).clamp(1, 6);
         }
     }
-    Ok(runtimes)
+    detected
 }

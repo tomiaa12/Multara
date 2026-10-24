@@ -52,14 +52,7 @@ const sessionRunning = computed(() =>
     && !event.runId.startsWith("pending:"),
   ),
 );
-/** 含发送中：任务会话不一定等于 activeSessionId，不能照搬 ChatPanel。 */
-const sessionProcessing = computed(() => {
-  if (sessionRunning.value) return true;
-  if (store.queuedMessages.some((item) => item.sessionId === props.sessionId)) return true;
-  if (!store.processingMessage) return false;
-  const last = messages.value[messages.value.length - 1];
-  return last?.sessionId === props.sessionId && last.role === "user";
-});
+const sessionProcessing = computed(() => store.sessionProcessing(props.sessionId));
 const workingAgents = computed(() => {
   const seen = new Set<string>();
   const agents: Array<{ id: string; name: string; avatar: string }> = [];
