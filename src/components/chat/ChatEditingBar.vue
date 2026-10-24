@@ -146,19 +146,21 @@ function openFirst() {
         <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
       </span>
     </header>
-    <div v-for="row in rows" :key="fileKey(row.workspaceId, row.filePath)" class="chat-editing-file">
-      <button type="button" class="chat-editing-file-name" @click="open(row.workspaceId, row.filePath)">
-        <FileTypeIcon :name="fileName(row.filePath)" />
-        <span :title="fileLabel(row.workspaceId, row.filePath)">{{ fileName(row.filePath) }}</span>
-      </button>
-      <span class="working-set-line-counts">
-        <span v-if="row.added" class="working-set-lines-added">+{{ row.added }}</span>
-        <span v-if="row.removed" class="working-set-lines-removed">−{{ row.removed }}</span>
-      </span>
-      <span class="chat-editing-file-actions">
-        <UiButton variant="ghost" size="small" :title="t('chat.editingKeepTitle')" :disabled="busy" @click="keep(row.workspaceId, row.filePath)">{{ t('chat.editingKeep') }}</UiButton>
-        <UiButton variant="ghost" size="small" :title="t('chat.editingUndoTitle')" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">{{ t('chat.editingUndo') }}</UiButton>
-      </span>
+    <div class="chat-editing-files vs-scroll">
+      <div v-for="row in rows" :key="fileKey(row.workspaceId, row.filePath)" class="chat-editing-file">
+        <button type="button" class="chat-editing-file-name" @click="open(row.workspaceId, row.filePath)">
+          <FileTypeIcon :name="fileName(row.filePath)" />
+          <span :title="fileLabel(row.workspaceId, row.filePath)">{{ fileName(row.filePath) }}</span>
+        </button>
+        <span class="working-set-line-counts">
+          <span v-if="row.added" class="working-set-lines-added">+{{ row.added }}</span>
+          <span v-if="row.removed" class="working-set-lines-removed">−{{ row.removed }}</span>
+        </span>
+        <span class="chat-editing-file-actions">
+          <UiButton variant="ghost" size="small" :title="t('chat.editingKeepTitle')" :disabled="busy" @click="keep(row.workspaceId, row.filePath)">{{ t('chat.editingKeep') }}</UiButton>
+          <UiButton variant="ghost" size="small" :title="t('chat.editingUndoTitle')" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">{{ t('chat.editingUndo') }}</UiButton>
+        </span>
+      </div>
     </div>
   </section>
 </template>
