@@ -19,6 +19,12 @@ import { t } from "../i18n";
 import AddWorkspaceModal from "../components/dashboard/AddWorkspaceModal.vue";
 import RequirementEmptyState from "../components/dashboard/RequirementEmptyState.vue";
 import WorkspaceClipGrid from "../components/dashboard/WorkspaceClipGrid.vue";
+import WorkspacePickerFields from "../components/dashboard/WorkspacePickerFields.vue";
+import {
+  buildWorkspaceRequests,
+  validatePicker,
+  type PickerItem,
+} from "../components/dashboard/workspace-picker";
 import ContextMenu, {
   type ContextMenuItem,
 } from "../components/ui/ContextMenu.vue";
@@ -70,6 +76,9 @@ const categories = ref<RequirementCategoryState>(loadRequirementCategories(local
 const categoryFilter = ref<string[]>([]);
 const draftTags = ref<string[]>([]);
 const editingId = ref("");
+const draftWorkspaces = ref<PickerItem[]>([]);
+const workspacePicker = ref<InstanceType<typeof WorkspacePickerFields> | null>(null);
+const branchPrefix = computed(() => store.data?.settings.branchPrefix || "feat");
 const showManage = ref(false);
 const tagsExpanded = ref(false);
 const tagsOverflow = ref(false);
@@ -161,6 +170,7 @@ function openCreate() {
   projectName.value = "";
   note.value = "";
   draftTags.value = [];
+  draftWorkspaces.value = [];
   showCreate.value = true;
 }
 
@@ -169,12 +179,14 @@ function openEdit(projectId: string, name: string, projectNote: string) {
   projectName.value = name;
   note.value = projectNote;
   draftTags.value = [...(categories.value.assignments[projectId] ?? [])];
+  draftWorkspaces.value = [];
   showCreate.value = true;
 }
 
 function closeEditor() {
   showCreate.value = false;
   editingId.value = "";
+  draftWorkspaces.value = [];
 }
 
 async function measureTags() {
@@ -234,6 +246,7 @@ function canOpenProject(projectId: string, workspaceCount: number) {
 
 async function saveProject() {
   if (!projectName.value.trim() || busy.value) return;
+  if (!editingId.value && workspacePicker.value?.picking) return;
   busy.value = true;
   error.value = "";
   try {
@@ -243,18 +256,23 @@ async function saveProject() {
       closeEditor();
       return;
     }
-    const project = await store.createProject(projectName.value, note.value);
-    if (project) assignDraftTags(project.id);
+    const problem = validatePicker(draftWorkspaces.value, []);
+    if (problem?.code === "branch") {
+      error.value = t("workspace.needBranchName", { name: problem.name ?? "" });
+      return;
+    }
+    const requests = buildWorkspaceRequests(draftWorkspaces.value, []);
+    const project = await store.createProject(projectName.value, "");
+    if (!project) return;
+    assignDraftTags(project.id);
     closeEditor();
     projectName.value = "";
     note.value = "";
     draftTags.value = [];
-    if (project) {
-      const expanded = new Set(expandedProjects.value);
-      expanded.add(project.id);
-      expandedProjects.value = expanded;
-      openWorkspacePicker(project.id);
-    }
+    const expanded = new Set(expandedProjects.value);
+    expanded.add(project.id);
+    expandedProjects.value = expanded;
+    if (requests.length) store.queueAddWorkspaces(project.id, requests);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   } finally {
@@ -608,40 +626,58 @@ async function removeProject(projectId: string, projectName: string) {
       v-if="showCreate"
       @click.self="closeEditor"
     >
-      <form class="modal" @submit.prevent="saveProject">
-        <div class="modal-heading">
-          <h2>{{ editingId ? t("dashboard.edit") : t("dashboard.create") }}</h2>
+      <form class="modal requirement-create-modal" @submit.prevent="saveProject">
+        <header class="requirement-create-head">
+          <div>
+            <h2>{{ editingId ? t("dashboard.edit") : t("dashboard.create") }}</h2>
+            <p>{{ editingId ? t("dashboard.editHint") : t("dashboard.createHint") }}</p>
+          </div>
           <UiButton class="icon-button" size="icon" :title="t('common.close')" @click="closeEditor">
             <X :size="15" />
           </UiButton>
+        </header>
+
+        <div class="requirement-create-body">
+          <label class="requirement-create-name">
+            <span>{{ t("dashboard.nameLabel") }}</span>
+            <UiInput
+              v-model="projectName"
+              autofocus
+              :placeholder="t('dashboard.namePlaceholder')"
+            />
+          </label>
+
+          <section v-if="!editingId" class="requirement-create-section">
+            <header class="requirement-create-section-head">
+              <strong>{{ t("dashboard.workspacesLabel") }}</strong>
+              <small>{{ t("dashboard.workspacesHint") }}</small>
+            </header>
+            <WorkspacePickerFields
+              ref="workspacePicker"
+              v-model="draftWorkspaces"
+              :requirement-name="projectName"
+              :branch-prefix="branchPrefix"
+            />
+          </section>
+
+          <section class="requirement-create-section">
+            <header class="requirement-create-section-head">
+              <strong>{{ t("dashboard.tagsLabel") }}</strong>
+              <small>{{ t("dashboard.tagsHint") }}</small>
+            </header>
+            <TagPicker
+              v-model="draftTags"
+              :tags="categories.categories"
+              @create="onPickerCreate"
+              @manage="showManage = true"
+            />
+          </section>
         </div>
-        <label>
-          <span>{{ t("dashboard.nameLabel") }}</span>
-          <UiInput
-            v-model="projectName"
-            autofocus
-            :placeholder="t('dashboard.namePlaceholder')"
-          />
-        </label>
-        <label>
-          <span>{{ t("dashboard.noteLabel") }}</span>
-          <UiTextarea
-            v-model="note"
-            rows="3"
-            :placeholder="t('dashboard.notePlaceholder')"
-          />
-        </label>
-        <label>
-          <span>{{ t("dashboard.tagsLabel") }}</span>
-          <TagPicker
-            v-model="draftTags"
-            :tags="categories.categories"
-            @create="onPickerCreate"
-            @manage="showManage = true"
-          />
-        </label>
+
+        <div v-if="error" class="error-card">{{ error }}</div>
+
         <div class="modal-actions">
-          <UiButton @click="closeEditor">{{ t("common.cancel") }}</UiButton>
+          <UiButton type="button" @click="closeEditor">{{ t("common.cancel") }}</UiButton>
           <UiButton
             type="submit"
             variant="primary"

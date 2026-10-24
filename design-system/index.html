@@ -492,12 +492,33 @@
             <section class="pg-section">
               <header><h2>Modal / Drawer</h2><p>弹窗宽度自适应屏幕，内容超高时内部滚动。</p></header>
               <div class="pg-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
-                <div class="pg-static-overlay">
-                  <div class="modal">
-                    <div class="modal-heading"><h2>新建需求</h2><button class="ui-button icon-button"><i data-icon="x"></i></button></div>
-                    <label>标题<input class="ui-input" placeholder="一句话描述需求" /></label>
-                    <label>描述<textarea class="ui-textarea" placeholder="补充背景与验收标准"></textarea></label>
-                    <div class="modal-actions"><button class="ui-button">取消</button><button class="ui-button primary">创建</button></div>
+                <div class="pg-static-overlay" style="min-height: 460px">
+                  <div class="modal requirement-create-modal">
+                    <header class="requirement-create-head">
+                      <div>
+                        <h2>新建需求</h2>
+                        <p>说清楚要做什么，顺手挂上要改的文件夹。</p>
+                      </div>
+                      <button class="ui-button icon-button"><i data-icon="x"></i></button>
+                    </header>
+                    <div class="requirement-create-body">
+                      <label class="requirement-create-name"><span>需求名称</span><input class="ui-input" placeholder="一次改完前端、后端、管理后台" /></label>
+                      <section class="requirement-create-section">
+                        <header class="requirement-create-section-head"><strong>关联文件夹</strong><small>可选。Git 项目会迁出独立 worktree，普通文件夹直接使用原目录。</small></header>
+                        <div class="workspace-picker">
+                          <button type="button" class="workspace-drop">
+                            <span class="workspace-drop-icon"><i data-icon="folder" data-size="18"></i></span>
+                            <strong>添加文件夹</strong>
+                            <span class="workspace-drop-hint">点选或拖入，一次可选多个</span>
+                          </button>
+                        </div>
+                      </section>
+                      <section class="requirement-create-section">
+                        <header class="requirement-create-section-head"><strong>标签</strong><small>可选，用于筛选。</small></header>
+                        <input class="ui-input" placeholder="选择或新建标签" />
+                      </section>
+                    </div>
+                    <div class="modal-actions"><button class="ui-button">取消</button><button class="ui-button primary">创建需求</button></div>
                   </div>
                 </div>
                 <div class="pg-static-drawer">
