@@ -28,7 +28,7 @@ pub fn resume(
         .filter(|value| !value.is_empty())
         .unwrap_or(CONTINUE_ASSIGNMENT);
     let project_ids = session::linked_project_ids(db, session_id)?;
-    session::ensure_projects_idle(db, &project_ids)?;
+    session::ensure_session_idle(db, session_id)?;
     let (target_type, target_id): (String, String) = db
         .query_row(
             "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
@@ -98,4 +98,47 @@ pub fn resume(
         runtime_id,
         assignment: assignment.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resume;
+    use rusqlite::Connection;
+
+    #[test]
+    fn resume_is_independent_of_other_tabs_but_not_its_own_active_run() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at)
+             VALUES ('project', 'Project', 'now', 'now');
+             INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('agent', 'Agent', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES
+               ('first', 'project', 'First', 'agent', 'agent', 'now', 'now'),
+               ('second', 'project', 'Second', 'agent', 'agent', 'now', 'now');
+             INSERT INTO agent_runs
+               (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('other-run', 'first', 'agent', 'cursor', 'Work', 'running', 'now');",
+        )
+        .unwrap();
+        crate::conversation::save_id(&db, "second", "agent", "cursor", "saved-chat").unwrap();
+
+        let result = resume(&db, "second", Some("Continue second")).unwrap();
+        assert_eq!(result.session_id, "second");
+        assert_eq!(result.conversation_id, "saved-chat");
+        assert_eq!(result.assignment, "Continue second");
+        let status: String = db.query_row(
+            "SELECT status FROM agent_runs WHERE id=?1", [&result.run_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "queued");
+        assert!(resume(&db, "second", None).unwrap_err().contains("当前会话"));
+        let messages: i64 = db.query_row(
+            "SELECT COUNT(*) FROM messages WHERE session_id='second'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(messages, 1);
+    }
 }

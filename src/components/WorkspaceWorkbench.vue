@@ -319,6 +319,7 @@ const sourceControlPanel = ref<InstanceType<typeof SourceControlPanel> | null>(
   null,
 );
 const gitChangeRefreshScheduler = createRefreshScheduler(refreshGitViews);
+const diskChangeRefreshScheduler = createRefreshScheduler(refreshWorkspaceAfterDiskChange);
 const leftPanelWidth = ref(
   Number(localStorage.getItem("multara.workspace.leftWidth")) || 268,
 );
@@ -1285,6 +1286,20 @@ async function refreshGitViews() {
     return;
   }
   await refreshGitStatuses();
+}
+
+async function refreshWorkspaceAfterDiskChange() {
+  if (props.preview) return;
+  try {
+    refreshNavigationIndex();
+    await Promise.all([
+      loadWorkspaceRoots({ silent: true, preserve: true }),
+      refreshGitViews(),
+    ]);
+    await refreshActiveFile();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  }
 }
 
 function noteDiskChange(workspaceId: string, path: string, message: string) {
@@ -4641,6 +4656,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   gitChangeRefreshScheduler.dispose();
+  diskChangeRefreshScheduler.dispose();
   window.removeEventListener("pointerdown", onTerminalPickOutside, true);
   registerUnsavedLeaveHandler(null);
   registerUnsavedDirtyChecker(null);
@@ -4678,15 +4694,9 @@ watch(
 
 watch(
   () => diffStore.diskEpoch,
-  async (current, previous) => {
+  (current, previous) => {
     if (props.preview || !current || current === previous) return;
-    refreshNavigationIndex();
-    await Promise.all([
-      loadWorkspaceRoots({ silent: true, preserve: true }),
-      refreshGitStatuses(),
-      sourceControlPanel.value?.refresh(),
-    ]);
-    await refreshActiveFile();
+    diskChangeRefreshScheduler.request();
   },
 );
 
@@ -4868,12 +4878,7 @@ watch(
       .join("|"),
   async (current, previous) => {
     if (props.preview || !current || current === previous) return;
-    refreshNavigationIndex();
-    await Promise.all([
-      loadWorkspaceRoots({ silent: true, preserve: true }),
-      refreshGitStatuses(),
-      sourceControlPanel.value?.refresh(),
-    ]);
+    diffStore.notifyDiskChanged();
     const events = Object.values(store.runStates).filter((event) => {
       const session = store.data?.sessions.find(
         (item) => item.id === event.sessionId,
@@ -4898,7 +4903,6 @@ watch(
         });
       }
     }
-    diffStore.notifyDiskChanged();
   },
 );
 
@@ -4917,15 +4921,9 @@ watch(
       .map((event) => `${event.runId}:${event.status}`)
       .sort()
       .join("|"),
-  async (current, previous) => {
+  (current, previous) => {
     if (props.preview || !current || current === previous) return;
-    refreshNavigationIndex();
-    await Promise.all([
-      loadWorkspaceRoots({ silent: true, preserve: true }),
-      refreshGitStatuses(),
-      sourceControlPanel.value?.refresh(),
-    ]);
-    await refreshActiveFile();
+    diskChangeRefreshScheduler.request();
   },
 );
 

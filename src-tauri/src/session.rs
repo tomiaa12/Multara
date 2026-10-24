@@ -132,6 +132,24 @@ pub fn session_workspaces(db: &Connection, session_id: &str) -> Result<Vec<Works
     Ok(workspaces)
 }
 
+pub(crate) fn ensure_session_idle(db: &Connection, session_id: &str) -> Result<(), String> {
+    let active: bool = db
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM agent_runs
+               WHERE session_id=?1 AND status IN ('queued', 'running')
+             )",
+            [session_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if active {
+        Err("当前会话仍有智能体正在运行，此运行无法追加消息，请等待结束或停止后发送".to_string())
+    } else {
+        Ok(())
+    }
+}
+
 pub(crate) fn ensure_project_idle(db: &Connection, project_id: &str) -> Result<(), String> {
     let active: bool = db
         .query_row(
@@ -161,13 +179,6 @@ pub(crate) fn ensure_project_idle(db: &Connection, project_id: &str) -> Result<(
     } else {
         Ok(())
     }
-}
-
-pub(crate) fn ensure_projects_idle(db: &Connection, project_ids: &[String]) -> Result<(), String> {
-    for project_id in project_ids {
-        ensure_project_idle(db, project_id)?;
-    }
-    Ok(())
 }
 
 pub fn complete_turn(app: &AppHandle, turn_id: &str) -> Result<(), String> {
@@ -235,7 +246,7 @@ fn workspace_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_projects_idle, linked_project_ids, session_workspaces, sorted_project_ids};
+    use super::{ensure_project_idle, ensure_session_idle, linked_project_ids, session_workspaces, sorted_project_ids};
     use rusqlite::Connection;
 
     fn database() -> Connection {
@@ -289,7 +300,37 @@ mod tests {
         )
         .unwrap();
 
-        assert!(ensure_projects_idle(&db, &["p2".to_string()]).is_err());
+        assert!(ensure_project_idle(&db, "p2").is_err());
+    }
+
+    #[test]
+    fn session_idle_check_allows_other_tabs_but_preserves_project_disk_guard() {
+        let db = database();
+        db.execute_batch(
+            "INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('a1', 'Agent', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('s2', 'p1', '另一会话', 'agent', 'a1', 'now', 'now');
+             INSERT INTO agent_runs
+               (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('r1', 's1', 'a1', 'cursor', '任务', 'running', 'now');",
+        )
+        .unwrap();
+
+        assert!(ensure_session_idle(&db, "s2").is_ok());
+        let error = ensure_session_idle(&db, "s1").unwrap_err();
+        assert!(error.contains("当前会话"));
+        assert!(error.contains("停止后发送"));
+        assert!(ensure_project_idle(&db, "p1").is_err());
+        assert!(ensure_project_idle(&db, "p2").is_err());
+
+        db.execute("UPDATE agent_runs SET status='queued' WHERE id='r1'", []).unwrap();
+        assert!(ensure_session_idle(&db, "s1").is_err());
+        db.execute("UPDATE agent_runs SET status='completed' WHERE id='r1'", []).unwrap();
+        assert!(ensure_session_idle(&db, "s1").is_ok());
+        assert!(ensure_project_idle(&db, "p1").is_ok());
     }
 
     #[test]

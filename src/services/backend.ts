@@ -139,6 +139,15 @@ export async function bootstrap(): Promise<BootstrapData> {
   return invoke<BootstrapData>("bootstrap");
 }
 
+export type TaskInboxSurfaces = Pick<BootstrapData, "tasks" | "sessions" | "inbox">;
+
+export async function listTaskInboxSurfaces(): Promise<TaskInboxSurfaces> {
+  if (!inTauri()) {
+    return structuredClone({ tasks: previewData.tasks, sessions: previewData.sessions, inbox: previewData.inbox });
+  }
+  return invoke<TaskInboxSurfaces>("list_task_inbox_surfaces");
+}
+
 /** 智能体/小队页轻量刷新，避免整包 bootstrap（含 detect）卡住首屏。 */
 export async function listAgentsAndSquads(): Promise<{
   agents: BootstrapData["agents"];

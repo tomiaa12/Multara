@@ -114,9 +114,6 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
     for project_id in &unique_project_ids {
         require_project(db, project_id)?;
     }
-    if status == "todo" {
-        crate::session::ensure_projects_idle(db, &unique_project_ids)?;
-    }
     let project_id = unique_project_ids.first();
 
     let now = Utc::now().to_rfc3339();
@@ -514,10 +511,6 @@ pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
     if active > 0 {
         return Ok(false);
     }
-    crate::session::ensure_projects_idle(
-        db,
-        &crate::session::linked_project_ids(db, &session_id)?,
-    )?;
     let assignment = if description.trim().is_empty() { title.as_str() } else { description.as_str() };
     let now = Utc::now().to_rfc3339();
     super::run::enqueue(
@@ -762,6 +755,47 @@ pub fn update(
 mod tests {
     use super::{create, list, CreateTaskInput};
     use rusqlite::Connection;
+
+    #[test]
+    fn creates_and_starts_tasks_while_another_tab_in_the_project_is_running() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at)
+             VALUES ('project', 'Project', 'now', 'now');
+             INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('agent', 'Agent', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('other', 'project', 'Other', 'agent', 'agent', 'now', 'now');
+             INSERT INTO agent_runs
+               (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('other-run', 'other', 'agent', 'cursor', 'Work', 'running', 'now');",
+        )
+        .unwrap();
+
+        let queued = create(&mut db, CreateTaskInput {
+            title: "Parallel task", description: "", agent_id: "agent",
+            project_id: Some("project"), project_ids: &[], source_session_id: None,
+            status: Some("todo"), parent_task_id: None,
+        }).unwrap();
+        assert!(queued.queued);
+        assert!(!super::start_if_idle(&db, &queued.task.id).unwrap());
+
+        let backlog = create(&mut db, CreateTaskInput {
+            title: "Start later", description: "Task details", agent_id: "agent",
+            project_id: Some("project"), project_ids: &[], source_session_id: None,
+            status: Some("backlog"), parent_task_id: None,
+        }).unwrap();
+        assert!(!backlog.queued);
+        assert!(super::start_if_idle(&db, &backlog.task.id).unwrap());
+        assert!(!super::start_if_idle(&db, &backlog.task.id).unwrap());
+        let queued_count: i64 = db.query_row(
+            "SELECT COUNT(*) FROM agent_runs WHERE status='queued'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(queued_count, 2);
+    }
 
     #[test]
     fn creates_multi_project_task_with_compatible_primary_and_filters() {
