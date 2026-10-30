@@ -14,14 +14,17 @@ import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
 import { extractQuestions } from "./question-block";
 import { t } from "../../i18n";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   message: ChatMessage;
   speaker?: SpeakerInfo | null;
   duplicateCount?: number;
   running?: boolean;
   allowContinue?: boolean;
+  allowFork?: boolean;
   questionState?: "pending" | "answered" | "skipped" | null;
-}>();
+}>(), {
+  allowFork: false,
+});
 const emit = defineEmits<{
   "pick-action": [prompt: string];
 }>();
@@ -119,6 +122,9 @@ const showAssignmentOriginal = computed(() =>
         :content="footerText"
         :created-at="message.createdAt"
         :elapsed-ms="message.timeline.length ? null : message.elapsedMs"
+        :session-id="message.sessionId"
+        :message-id="message.id"
+        :allow-fork="allowFork"
       />
       <div v-if="message.quickActions.length && !running" class="quick-actions">
         <UiButton

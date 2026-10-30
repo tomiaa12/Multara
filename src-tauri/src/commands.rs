@@ -5066,10 +5066,11 @@ pub fn delete_inbox_item(id: String, state: State<'_, AppState>) -> Result<(), S
 #[tauri::command]
 pub fn fork_chat_session(
     session_id: String,
+    until_message_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ChatSession, String> {
     let db = state.lock_db()?;
-    ops::chat::fork_session(&db, &session_id)
+    ops::chat::fork_session(&db, &session_id, until_message_id.as_deref())
 }
 
 #[tauri::command]
