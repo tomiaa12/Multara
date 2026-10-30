@@ -8104,7 +8104,11 @@ body.is-dragging-workspace-file * {
   outline: none;
   box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
-.inbox-list button > span:not(.agent-avatar):not(.inbox-meta) {
+.inbox-list button > .ds-tooltip-trigger {
+  flex: 0 0 auto;
+  max-width: none;
+}
+.inbox-list button > span:not(.agent-avatar):not(.inbox-meta):not(.ds-tooltip-trigger) {
   display: grid;
   flex: 1;
   gap: var(--spacing-0-5);
