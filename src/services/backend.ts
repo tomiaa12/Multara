@@ -947,9 +947,15 @@ export async function deleteInboxItem(id: string): Promise<void> {
   await invoke("delete_inbox_item", { id });
 }
 
-export async function forkChatSession(sessionId: string): Promise<ChatSession> {
+export async function forkChatSession(
+  sessionId: string,
+  untilMessageId?: string | null,
+): Promise<ChatSession> {
   if (!inTauri()) throw new Error("请在桌面应用中复制会话");
-  return invoke<ChatSession>("fork_chat_session", { sessionId });
+  return invoke<ChatSession>("fork_chat_session", {
+    sessionId,
+    untilMessageId: untilMessageId ?? null,
+  });
 }
 
 export async function compactChatSession(sessionId: string): Promise<string> {

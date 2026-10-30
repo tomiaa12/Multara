@@ -4,17 +4,25 @@ use uuid::Uuid;
 
 use crate::models::ChatSession;
 
-pub fn fork_session(db: &Connection, session_id: &str) -> Result<ChatSession, String> {
+pub fn fork_session(
+    db: &Connection,
+    session_id: &str,
+    until_message_id: Option<&str>,
+) -> Result<ChatSession, String> {
     // 一次提交：长会话逐条自动提交要上千次 fsync，中途失败也会留下半个副本。
     let transaction = db
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
-    let forked = copy_session(&transaction, session_id)?;
+    let forked = copy_session(&transaction, session_id, until_message_id)?;
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(forked)
 }
 
-fn copy_session(db: &Connection, session_id: &str) -> Result<ChatSession, String> {
+fn copy_session(
+    db: &Connection,
+    session_id: &str,
+    until_message_id: Option<&str>,
+) -> Result<ChatSession, String> {
     let (project_id, title, target_type, target_id): (Option<String>, String, String, String) = db
         .query_row(
             "SELECT project_id, title, target_type, target_id FROM chat_sessions WHERE id=?1",
@@ -68,6 +76,16 @@ fn copy_session(db: &Connection, session_id: &str) -> Result<ChatSession, String
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
     drop(source);
+    let rows = match until_message_id.map(str::trim).filter(|item| !item.is_empty()) {
+        Some(until_id) => {
+            let end = rows
+                .iter()
+                .position(|(id, ..)| id == until_id)
+                .ok_or_else(|| "消息不存在或不属于该会话".to_string())?;
+            rows.into_iter().take(end + 1).collect::<Vec<_>>()
+        }
+        None => rows,
+    };
     for (
         old_id,
         role,
@@ -244,7 +262,7 @@ mod tests {
         )
         .unwrap();
 
-        let forked = fork_session(&db, "s1").unwrap();
+        let forked = fork_session(&db, "s1", None).unwrap();
 
         assert_eq!(forked.project_id.as_deref(), Some("p1"));
         assert_eq!(forked.project_ids, ["p1", "p2"]);
@@ -252,5 +270,45 @@ mod tests {
             crate::session::linked_project_ids(&db, &forked.id).unwrap(),
             ["p1", "p2"]
         );
+    }
+
+    #[test]
+    fn fork_until_message_keeps_prefix_only() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES
+               ('p1', '需求一', 'now', 'now');
+             INSERT INTO chat_sessions
+               (id, project_id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('s1', 'p1', '会话', 'agent', 'a1', 'now', 'now');
+             INSERT INTO session_projects (session_id, project_id, sort_order) VALUES ('s1', 'p1', 0);
+             INSERT INTO messages
+               (id, session_id, role, content, message_kind, quick_actions_json, created_at)
+             VALUES
+               ('m1', 's1', 'user', '问1', 'text', '[]', '2024-01-01T00:00:01Z'),
+               ('m2', 's1', 'assistant', '答1', 'text', '[]', '2024-01-01T00:00:02Z'),
+               ('m3', 's1', 'user', '问2', 'text', '[]', '2024-01-01T00:00:03Z'),
+               ('m4', 's1', 'assistant', '答2', 'text', '[]', '2024-01-01T00:00:04Z');",
+        )
+        .unwrap();
+
+        let forked = fork_session(&db, "s1", Some("m2")).unwrap();
+        let count: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE session_id=?1",
+                [&forked.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+        let last: String = db
+            .query_row(
+                "SELECT content FROM messages WHERE session_id=?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                [&forked.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(last, "答1");
     }
 }

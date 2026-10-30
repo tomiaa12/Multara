@@ -1044,6 +1044,7 @@ const catalog: MessageCatalog = {
   "chat.sampleAgent": "サンプルエージェント",
   "chat.pickTarget": "実行者を選択",
   "chat.forkSession": "セッションを複製",
+  "chat.forkFromMessage": "このメッセージから複製",
   "chat.compact": "コンテキストを圧縮",
   "chat.close": "閉じる",
   "chat.closeOthers": "他を閉じる",

@@ -827,11 +827,12 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
-  async function forkSession(sessionId: string) {
+  async function forkSession(sessionId: string, untilMessageId?: string | null) {
     if (!data.value) return null;
-    const session = await backend.forkChatSession(sessionId);
+    const session = await backend.forkChatSession(sessionId, untilMessageId);
     data.value.sessions.unshift(session);
     messages.value[session.id] = await backend.listChatMessages(session.id);
+    addOpenSessionTab(session.projectId, session.id);
     await selectSession(session.id);
     return session;
   }

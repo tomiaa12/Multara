@@ -1045,6 +1045,7 @@ Who is this for? Any constraints?
   "chat.sampleAgent": "Sample agent",
   "chat.pickTarget": "Select target",
   "chat.forkSession": "Fork session",
+  "chat.forkFromMessage": "Fork from this message",
   "chat.compact": "Compact context",
   "chat.close": "Close",
   "chat.closeOthers": "Close others",

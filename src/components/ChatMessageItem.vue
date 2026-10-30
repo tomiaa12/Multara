@@ -20,6 +20,8 @@ const props = withDefaults(defineProps<{
   enableReplay?: boolean;
   viewOnly?: boolean;
   allowContinue?: boolean;
+  /** 仅右下角气泡 / 工作台展示消息 fork */
+  allowFork?: boolean;
   restoreNonce?: number;
   restoreMessageId?: string;
   turnRunning?: boolean;
@@ -35,6 +37,7 @@ const props = withDefaults(defineProps<{
   enableReplay: true,
   viewOnly: false,
   allowContinue: true,
+  allowFork: false,
   restoreNonce: 0,
   restoreMessageId: "",
   turnRunning: false,
@@ -118,6 +121,7 @@ function startReask(
     :duplicate-count="duplicateCount"
     :running="running"
     :allow-continue="allowContinue"
+    :allow-fork="allowFork"
     :question-state="questionState"
     @pick-action="emit('pick-action', $event)"
   />

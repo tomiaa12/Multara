@@ -1044,6 +1044,7 @@ const catalog: MessageCatalog = {
   "chat.sampleAgent": "範例智能體",
   "chat.pickTarget": "選擇執行者",
   "chat.forkSession": "複製會話",
+  "chat.forkFromMessage": "從此訊息複製會話",
   "chat.compact": "壓縮脈絡",
   "chat.close": "關閉",
   "chat.closeOthers": "關閉其他",
