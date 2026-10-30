@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { Check, Copy, ThumbsDown, ThumbsUp } from "@lucide/vue";
 import { formatAbsoluteTime, formatRelativeTime } from "./message-time";
+import { useSharedNow } from "./shared-clock";
 import { useAppStore } from "../../stores/app";
 import { t } from "../../i18n";
 
@@ -14,8 +15,7 @@ const props = defineProps<{
 }>();
 const store = useAppStore();
 const copied = ref(false);
-const now = ref(Date.now());
-let timer = 0;
+const now = useSharedNow();
 
 const relativeTime = computed(() =>
   props.createdAt ? formatRelativeTime(props.createdAt, now.value) : "",
@@ -29,15 +29,6 @@ async function copyMessage() {
   copied.value = true;
   window.setTimeout(() => (copied.value = false), 1200);
 }
-
-onMounted(() => {
-  timer = window.setInterval(() => {
-    now.value = Date.now();
-  }, 30_000);
-});
-onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer);
-});
 </script>
 
 <template>

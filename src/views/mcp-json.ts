@@ -103,7 +103,8 @@ export function parseArgsText(text: string): string[] {
   if (trimmed.includes("\n")) {
     return trimmed.split("\n").map((line) => line.trim()).filter(Boolean);
   }
-  return trimmed.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, "")) ?? [trimmed];
+  // 每段里的引号都是成对的分隔符（与 shell 一致），`--flag="a b"` → `--flag=a b`
+  return trimmed.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/"/g, "")) ?? [trimmed];
 }
 
 export function argsToText(args: string[]): string {

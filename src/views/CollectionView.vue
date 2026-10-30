@@ -19,6 +19,7 @@ import {
   type RuntimeKindFilter,
 } from "./runtime-list";
 import { useAppStore } from "../stores/app";
+import { readStorage, writeStorage } from "../utils/safe-storage";
 import CreateRuntimeDialog from "./CreateRuntimeDialog.vue";
 
 const RUNTIME_VIEW_KEY = "multara.runtimes.view";
@@ -33,9 +34,9 @@ const route = useRoute();
 const store = useAppStore();
 const kind = computed(() => String(route.meta.kind ?? ""));
 const runtimeView = ref<"list" | "card">(
-  localStorage.getItem(RUNTIME_VIEW_KEY) === "card" ? "card" : "list",
+  readStorage(RUNTIME_VIEW_KEY) === "card" ? "card" : "list",
 );
-const savedRuntimeFilter = localStorage.getItem(RUNTIME_FILTER_KEY);
+const savedRuntimeFilter = readStorage(RUNTIME_FILTER_KEY);
 const runtimeKindFilter = ref<RuntimeKindFilter>(
   savedRuntimeFilter === "builtin" || savedRuntimeFilter === "custom"
     ? savedRuntimeFilter
@@ -44,12 +45,12 @@ const runtimeKindFilter = ref<RuntimeKindFilter>(
 
 function setRuntimeView(mode: "list" | "card") {
   runtimeView.value = mode;
-  localStorage.setItem(RUNTIME_VIEW_KEY, mode);
+  writeStorage(RUNTIME_VIEW_KEY, mode);
 }
 
 function setRuntimeFilter(filter: string) {
   runtimeKindFilter.value = filter === "builtin" || filter === "custom" ? filter : "all";
-  localStorage.setItem(RUNTIME_FILTER_KEY, runtimeKindFilter.value);
+  writeStorage(RUNTIME_FILTER_KEY, runtimeKindFilter.value);
 }
 
 function syncAgentsAndSquads() {
@@ -106,21 +107,31 @@ const runningAgentCount = computed(
   () => (store.data?.agents ?? []).filter((agent) => agentStatusKey(agent) === "running").length,
 );
 
+const runtimesById = computed(() => new Map((store.data?.runtimes ?? []).map((runtime) => [runtime.id, runtime])));
+const taskCountByAgent = computed(() => {
+  const counts = new Map<string, number>();
+  for (const task of store.data?.tasks ?? []) counts.set(task.agentId, (counts.get(task.agentId) ?? 0) + 1);
+  return counts;
+});
+const busyAgentIds = computed(() => new Set(
+  Object.values(store.runStates)
+    .filter((event) =>
+      (event.status === "running" || event.status === "queued")
+      && !event.runId.startsWith("pending:"),
+    )
+    .map((event) => event.agentId),
+));
+
 function agentRuntime(agent: Agent) {
-  return store.data?.runtimes.find((runtime) => runtime.id === agent.runtimeId) ?? null;
+  return runtimesById.value.get(agent.runtimeId) ?? null;
 }
 
 function agentTaskCount(agentId: string) {
-  return store.data?.tasks.filter((task) => task.agentId === agentId).length ?? 0;
+  return taskCountByAgent.value.get(agentId) ?? 0;
 }
 
 function agentStatusKey(agent: Agent): "running" | "online" | "offline" {
-  const running = Object.values(store.runStates).some((event) =>
-    event.agentId === agent.id
-    && (event.status === "running" || event.status === "queued")
-    && !event.runId.startsWith("pending:"),
-  );
-  if (running) return "running";
+  if (busyAgentIds.value.has(agent.id)) return "running";
   return agentRuntime(agent)?.status === "online" ? "online" : "offline";
 }
 

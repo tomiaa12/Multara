@@ -26,7 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::{
     commands::{setting_value, workspace_root},
     database::AppState,
-    files,
+    files::{self, remove_path},
 };
 
 /// 与 VS Code 的 `MAX_UNDO_FILE_SIZE` 一样：太大的条目不留备份，删除后不能撤销。
@@ -34,6 +34,8 @@ const MAX_BACKUP_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_BACKUP_FILES: usize = 5_000;
 const BACKUP_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_COPY_DEPTH: usize = 64;
+#[cfg(unix)]
+const DEFAULT_FILE_MODE: u32 = 0o644;
 /// 对齐 VS Code watcher：先聚合 75ms，再分批处理并在高负载时让出 200ms。
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(75);
 const WATCH_THROTTLE_DELAY: Duration = Duration::from_millis(200);
@@ -157,23 +159,12 @@ fn join_relative(parent: &str, name: &str) -> String {
     }
 }
 
-/// 工作区内的条目路径。不解析条目本身的符号链接，删除链接时只删链接。
+/// 工作区内的条目路径。不解析条目本身的符号链接，删除链接时只删链接；父目录不能经符号链接跳出根目录。
 fn entry_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
-    let relative = files::normalize_relative(relative)?;
-    if relative.is_empty() {
+    if files::normalize_relative(relative)?.is_empty() {
         return Err("不能操作工作区根目录".to_string());
     }
-    let target = root.join(Path::new(&relative));
-    let parent = target.parent().ok_or_else(|| "无效路径".to_string())?;
-    let name = target.file_name().ok_or_else(|| "无效路径".to_string())?;
-    let canonical_parent = if parent == root {
-        root.to_path_buf()
-    } else {
-        parent
-            .canonicalize()
-            .map_err(|_| format!("父目录不存在：{}", parent.display()))?
-    };
-    Ok(canonical_parent.join(name))
+    files::resolve_inside(root, relative)
 }
 
 /// 和 `entry_path` 一样，但会先建好缺失的父目录，用于新建 `a/b/c.ts`、粘贴和导入。
@@ -183,33 +174,13 @@ fn entry_path_creating_parents(root: &Path, relative: &str) -> Result<PathBuf, S
         return Err("不能操作工作区根目录".to_string());
     }
     if let Some(parent) = Path::new(&normalized).parent() {
-        if !parent.as_os_str().is_empty() {
-            let parent_path = root.join(parent);
-            if parent_path.exists() && !parent_path.is_dir() {
-                return Err(format!("{} 不是文件夹", parent.display()));
-            }
-            fs::create_dir_all(&parent_path).map_err(|error| error.to_string())?;
-        }
+        files::create_parents_inside(root, parent)?;
     }
     entry_path(root, &normalized)
 }
 
 fn exists_no_follow(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
-}
-
-fn remove_path(path: &Path) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
-    if metadata.file_type().is_symlink() {
-        return fs::remove_file(path)
-            .or_else(|_| fs::remove_dir(path))
-            .map_err(|error| error.to_string());
-    }
-    if metadata.is_dir() {
-        fs::remove_dir_all(path).map_err(|error| error.to_string())
-    } else {
-        fs::remove_file(path).map_err(|error| error.to_string())
-    }
 }
 
 fn copy_recursive(source: &Path, target: &Path, depth: usize) -> Result<(), String> {
@@ -229,12 +200,19 @@ fn copy_recursive(source: &Path, target: &Path, depth: usize) -> Result<(), Stri
     Ok(())
 }
 
+/// 复制失败时清掉写了一半的目标，保证失败后目标不存在。
+fn copy_or_clean(source: &Path, target: &Path) -> Result<(), String> {
+    copy_recursive(source, target, 0).inspect_err(|_| {
+        let _ = remove_path(target);
+    })
+}
+
 fn move_path(source: &Path, target: &Path) -> Result<(), String> {
     if fs::rename(source, target).is_ok() {
         return Ok(());
     }
     // 跨盘或跨卷时 rename 会失败，退回到复制后删除。
-    copy_recursive(source, target, 0)?;
+    copy_or_clean(source, target)?;
     remove_path(source)
 }
 
@@ -450,28 +428,53 @@ fn transfer_one(
         return Err("源和目标相同".to_string());
     }
     let source_is_dir = fs::metadata(&source).map(|meta| meta.is_dir()).unwrap_or(false);
-    if source_is_dir {
-        let canonical_source = source.canonicalize().unwrap_or_else(|_| source.clone());
-        let canonical_target_parent = target
-            .parent()
-            .and_then(|parent| parent.canonicalize().ok())
-            .unwrap_or_default();
-        if canonical_target_parent.starts_with(&canonical_source) {
-            return Err("不能把文件夹放进它自己里面".to_string());
-        }
+    let canonical_source = source.canonicalize().unwrap_or_else(|_| source.clone());
+    let canonical_target_parent = target
+        .parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .unwrap_or_default();
+    if source_is_dir && canonical_target_parent.starts_with(&canonical_source) {
+        return Err("不能把文件夹放进它自己里面".to_string());
     }
-    if exists_no_follow(&target) {
-        if !overwrite {
-            return Err(format!("{TARGET_EXISTS}{target_relative}"));
-        }
-        remove_path(&target)?;
+    if canonical_source.starts_with(&target) || source.starts_with(&target) {
+        return Err("不能用文件夹覆盖它自己里面的内容".to_string());
     }
-    if copy {
-        copy_recursive(&source, &target, 0)?;
+    let replaced = match exists_no_follow(&target) {
+        false => None,
+        true if !overwrite => return Err(format!("{TARGET_EXISTS}{target_relative}")),
+        true => Some(set_aside(&target)?),
+    };
+    let transferred = if copy {
+        copy_or_clean(&source, &target)
     } else {
-        move_path(&source, &target)?;
+        move_path(&source, &target)
+    };
+    match (transferred, replaced) {
+        (Ok(()), Some(aside)) => {
+            let _ = remove_path(&aside);
+        }
+        // 目标还在说明内容已经到位（只是删源失败），旧内容留在旁边的临时名下，不再挪回。
+        (Err(error), Some(aside)) => {
+            if !exists_no_follow(&target) {
+                let _ = fs::rename(&aside, &target);
+            }
+            return Err(error);
+        }
+        (Err(error), None) => return Err(error),
+        (Ok(()), None) => {}
     }
     Ok(target_relative)
+}
+
+/// 覆盖前先把旧目标改名到同目录的临时名，传输成功后再删，失败时挪回。
+fn set_aside(target: &Path) -> Result<PathBuf, String> {
+    let name = target
+        .file_name()
+        .ok_or_else(|| "无效路径".to_string())?
+        .to_string_lossy();
+    let aside = target.with_file_name(format!(".{name}.multara-replace-{}", uuid::Uuid::new_v4()));
+    fs::rename(target, &aside).map_err(|error| error.to_string())?;
+    Ok(aside)
 }
 
 pub fn create_entry(root: &str, relative: &str, is_directory: bool) -> Result<(), String> {
@@ -500,7 +503,26 @@ pub fn write_bytes(root: &str, relative: &str, bytes: &[u8], overwrite: bool) ->
             return Err("目标是文件夹，不能写入".to_string());
         }
     }
-    fs::write(&target, bytes).map_err(|error| error.to_string())
+    // 先写同目录临时文件再改名：原子替换，且最终分量是符号链接时替换链接本身而不是顺着写到链接目标。
+    let parent = target.parent().ok_or_else(|| "无效路径".to_string())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    temporary.write_all(bytes).map_err(|error| error.to_string())?;
+    // 临时文件默认 0600；沿用旧文件的权限，新文件用常规的 0644。
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&target)
+            .map(|meta| meta.permissions().mode())
+            .unwrap_or(DEFAULT_FILE_MODE);
+        temporary
+            .as_file()
+            .set_permissions(fs::Permissions::from_mode(mode))
+            .map_err(|error| error.to_string())?;
+    }
+    temporary
+        .persist(&target)
+        .map(|_| ())
+        .map_err(|error| error.error.to_string())
 }
 
 #[tauri::command]
@@ -651,12 +673,17 @@ pub async fn explorer_git_ignored(
             Ok(child) => child,
             Err(_) => return Ok(Vec::new()),
         };
-        if let Some(mut stdin) = child.stdin.take() {
-            let input = paths.join("\0");
-            let _ = stdin.write_all(input.as_bytes());
-            let _ = stdin.write_all(b"\0");
-        }
+        // 单独线程写 stdin：被忽略的路径很多时 git 会先写满 stdout，同线程先写后读会互相等死。
+        let writer = child.stdin.take().map(|mut stdin| {
+            thread::spawn(move || {
+                let _ = stdin.write_all(paths.join("\0").as_bytes());
+                let _ = stdin.write_all(b"\0");
+            })
+        });
         let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        if let Some(writer) = writer {
+            let _ = writer.join();
+        }
         // 0 表示有忽略项，1 表示没有，128 表示不在仓库里。
         if !matches!(output.status.code(), Some(0)) {
             return Ok(Vec::new());
@@ -723,11 +750,14 @@ pub fn explorer_open_external(
     let program = "open";
     #[cfg(all(unix, not(target_os = "macos")))]
     let program = "xdg-open";
-    crate::process::command(program)
+    let mut child = crate::process::command(program)
         .arg(&target)
         .spawn()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -1263,6 +1293,70 @@ mod tests {
         assert!(!temp.path().join("a/x.txt").exists());
         let into_self = transfer_one(&map, &request("b", "b/inner/b"), false, false).unwrap_err();
         assert!(into_self.contains("自己"));
+    }
+
+    #[test]
+    fn overwriting_a_parent_with_its_child_keeps_both() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("a/b")).unwrap();
+        fs::write(temp.path().join("a/b/x.txt"), "x").unwrap();
+        let map = roots(temp.path());
+        let request = TransferRequest {
+            source_workspace_id: Some("w".to_string()),
+            source: "a/b".to_string(),
+            target_workspace_id: "w".to_string(),
+            target: "a".to_string(),
+        };
+        assert!(transfer_one(&map, &request, false, true).is_err());
+        assert_eq!(fs::read_to_string(temp.path().join("a/b/x.txt")).unwrap(), "x");
+    }
+
+    #[test]
+    fn overwrite_replaces_the_old_target() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join("a")).unwrap();
+        fs::create_dir(temp.path().join("b")).unwrap();
+        fs::write(temp.path().join("a/x.txt"), "new").unwrap();
+        fs::write(temp.path().join("b/x.txt"), "old").unwrap();
+        let map = roots(temp.path());
+        let request = TransferRequest {
+            source_workspace_id: Some("w".to_string()),
+            source: "a/x.txt".to_string(),
+            target_workspace_id: "w".to_string(),
+            target: "b/x.txt".to_string(),
+        };
+        transfer_one(&map, &request, true, true).unwrap();
+        assert_eq!(fs::read_to_string(temp.path().join("b/x.txt")).unwrap(), "new");
+        assert_eq!(fs::read_dir(temp.path().join("b")).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_pointing_outside_cannot_be_used_to_escape_the_root() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let backups = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("keep.txt"), "keep").unwrap();
+        std::os::unix::fs::symlink(outside.path(), workspace.path().join("link")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("keep.txt"), workspace.path().join("file-link"))
+            .unwrap();
+        let root = workspace.path().to_str().unwrap();
+
+        assert!(write_bytes(root, "link/keep.txt", b"overwritten", true).is_err());
+        assert!(write_bytes(root, "link/deep/new.bin", b"x", false).is_err());
+        assert!(create_entry(root, "link/created.txt", false).is_err());
+        assert!(!outside.path().join("deep").exists());
+        assert!(!outside.path().join("created.txt").exists());
+        let nested = delete_entries(root, &["link/keep.txt".to_string()], false, backups.path()).unwrap();
+        assert!(nested[0].error.is_some());
+
+        write_bytes(root, "file-link", b"replaced", true).unwrap();
+        assert_eq!(fs::read_to_string(outside.path().join("keep.txt")).unwrap(), "keep");
+
+        let results = delete_entries(root, &["link".to_string()], false, backups.path()).unwrap();
+        assert!(results[0].error.is_none());
+        assert!(fs::symlink_metadata(workspace.path().join("link")).is_err());
+        assert_eq!(fs::read_to_string(outside.path().join("keep.txt")).unwrap(), "keep");
     }
 
     #[test]

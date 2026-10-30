@@ -87,7 +87,9 @@ class OverlayScroll {
   private raf = 0;
   private dragging = false;
   private pointerOver = false;
-  private barSize = DEFAULT_BAR_SIZE;
+  private hostStyle: { barSize: number; allowVertical: boolean; allowHorizontal: boolean } | null = null;
+  private barOffset = { x: 0, y: 0 };
+  private remeasure = true;
   private disposed = false;
 
   constructor(private readonly el: HTMLElement) {
@@ -107,11 +109,14 @@ class OverlayScroll {
     this.listenOn.addEventListener("pointerenter", this.onPointerEnter);
     this.listenOn.addEventListener("pointerleave", this.onPointerLeave);
 
-    this.resizeObserver = new ResizeObserver(() => this.scheduleRender());
+    this.resizeObserver = new ResizeObserver(() => {
+      this.hostStyle = null;
+      this.remeasure = true;
+      this.scheduleRender();
+    });
     this.resizeObserver.observe(this.el);
     this.mutationObserver = new MutationObserver((records) => {
       if (records.every((record) => this.isOwnMutation(record))) return;
-      this.ensureBars();
       this.scheduleRender();
     });
     this.mutationObserver.observe(this.el, { childList: true, subtree: true, characterData: true });
@@ -205,46 +210,63 @@ class OverlayScroll {
     });
   }
 
-  private readBarSize(): number {
-    const raw = getComputedStyle(this.el).getPropertyValue("--scrollbar-size").trim();
-    const parsed = Number.parseFloat(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_BAR_SIZE;
+  private readHostStyle(): { barSize: number; allowVertical: boolean; allowHorizontal: boolean } {
+    const style = getComputedStyle(this.el);
+    const parsed = Number.parseFloat(style.getPropertyValue("--scrollbar-size").trim());
+    // 仅 auto/scroll 才真能滚；visible 时 scrollWidth 被宽内容撑大也会误画横条
+    return {
+      barSize: Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_BAR_SIZE,
+      allowVertical: isScrollableOverflow(style.overflowY),
+      allowHorizontal: isScrollableOverflow(style.overflowX),
+    };
+  }
+
+  private measure() {
+    return {
+      visH: this.el.clientHeight,
+      visW: this.el.clientWidth,
+      totalH: this.el.scrollHeight,
+      totalW: this.el.scrollWidth,
+      top: this.el.scrollTop,
+      left: this.el.scrollLeft,
+    };
   }
 
   private render(): void {
     if (this.disposed) return;
     this.ensureBars();
-    this.barSize = this.readBarSize();
+    // 先读后写：样式只在尺寸变化时重读，几何量在任何 transform 写入之前读完。
+    this.hostStyle ??= this.readHostStyle();
+    const { barSize, allowVertical, allowHorizontal } = this.hostStyle;
+    let box = this.measure();
+    // 滚动条自身的 translate 可能撑大 scrollWidth / scrollHeight（内容缩短后宿主会维持旧滚动范围），
+    // 只有上次偏移可能顶到滚动边界时才移回原点重新测量。
+    const pinned = (this.barOffset.y > 0 && this.barOffset.y + box.visH >= box.totalH)
+      || (this.barOffset.x > 0 && this.barOffset.x + box.visW >= box.totalW);
+    if (this.remeasure || pinned) {
+      this.vertical.bar.style.transform = "none";
+      this.horizontal.bar.style.transform = "none";
+      box = this.measure();
+    }
+    this.remeasure = false;
+    const { visH, visW, totalH, totalW, top, left } = box;
 
-    // 测量前移回内容原点，避免滚动条自身的 translate 撑大 scrollWidth / scrollHeight。
-    // 内容缩短时如果保留旧偏移，宿主会一直维持旧滚动范围，直到下一次手动滚动。
-    this.vertical.bar.style.transform = "none";
-    this.horizontal.bar.style.transform = "none";
-
-    const visH = this.el.clientHeight;
-    const visW = this.el.clientWidth;
-    const totalH = this.el.scrollHeight;
-    const totalW = this.el.scrollWidth;
-    const top = this.el.scrollTop;
-    const left = this.el.scrollLeft;
-
-    // 仅 auto/scroll 才真能滚；visible 时 scrollWidth 被宽内容撑大也会误画横条
-    const style = getComputedStyle(this.el);
-    const allowVertical = isScrollableOverflow(style.overflowY);
-    const allowHorizontal = isScrollableOverflow(style.overflowX);
     // 行程必须按 client 尺寸算；轨道可因另一轴预留角落而更短，不能拿轨道长当 visible
     this.vertical.metrics = allowVertical
       ? overlaySliderMetrics(visH, totalH, top)
       : { needed: false, size: 0, position: 0, ratio: 0 };
-    const hTrack = this.vertical.metrics.needed ? Math.max(0, visW - this.barSize) : visW;
+    const hTrack = this.vertical.metrics.needed ? Math.max(0, visW - barSize) : visW;
     this.horizontal.metrics = allowHorizontal
       ? overlaySliderMetrics(visW, totalW, left, hTrack)
       : { needed: false, size: 0, position: 0, ratio: 0 };
+    this.barOffset = this.vertical.metrics.needed || this.horizontal.metrics.needed
+      ? { x: left, y: top }
+      : { x: 0, y: 0 };
 
     // 轨道锚在内容原点角上，用 transform 跟 scroll 平移（不影响 scrollWidth，避免横条）
     this.layoutBar("vertical", this.vertical, {
       anchor: "top-right",
-      width: this.barSize,
+      width: barSize,
       height: visH,
       translateX: left,
       translateY: top,
@@ -252,7 +274,7 @@ class OverlayScroll {
     this.layoutBar("horizontal", this.horizontal, {
       anchor: "bottom-left",
       width: hTrack,
-      height: this.barSize,
+      height: barSize,
       translateX: left,
       translateY: top,
     });

@@ -1,14 +1,15 @@
 use std::{
     collections::HashMap,
+    io::Read,
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{mpsc, Mutex, OnceLock},
+    sync::{mpsc, Mutex, OnceLock, PoisonError},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(unix)]
-use std::{io::Read, process::Command, time::Instant};
+use std::process::Command;
 
 use crate::models::Runtime;
 
@@ -52,10 +53,16 @@ fn detect_commands(id: &str, primary: &str) -> Vec<String> {
     }
 }
 
-fn command_path_cache() -> &'static Mutex<HashMap<String, PathBuf>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
+/// PATH 查找结果，未命中也记（`None`）。只在 `detect_fresh` 时清空。
+fn command_path_cache() -> &'static Mutex<HashMap<String, Option<PathBuf>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<PathBuf>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
+
+const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+/// 子进程退出后，等读线程把管道收完的上限；孙进程握着管道时不再傻等。
+const OUTPUT_DRAIN_GRACE: Duration = Duration::from_secs(2);
+const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 const MANAGED_ENV_KEYS: &[&str] = &[
     "ANTHROPIC_BASE_URL",
@@ -195,12 +202,28 @@ pub fn prompt_via_stdin(provider: &str) -> bool {
     )
 }
 
+/// 用进程内缓存（登录 shell PATH、命令路径、版本号）。首次调用会冷启动，之后很便宜。
+/// 并发调用串行执行，后来者直接吃前一个填好的缓存。
 pub fn detect() -> Vec<Runtime> {
-    // A login shell snapshot goes stale after installers edit the profile.
-    // Refresh it on every scan so "detect again" sees CLIs installed later.
+    static GATE: Mutex<()> = Mutex::new(());
+    let _gate = GATE.lock().unwrap_or_else(PoisonError::into_inner);
+    runtime_specs().iter().map(detect_spec).collect()
+}
+
+/// 用户点“重新检测”时用：重读登录 shell PATH，清掉命令路径和版本号缓存，
+/// 这样之后安装或升级的 CLI 能被看到。
+pub fn detect_fresh() -> Vec<Runtime> {
     #[cfg(unix)]
     refresh_login_path_dirs();
-    runtime_specs().iter().map(detect_spec).collect()
+    command_path_cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clear();
+    version_cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clear();
+    detect()
 }
 
 pub fn seed_runtime_id() -> String {
@@ -646,21 +669,12 @@ pub fn resolve_runtime_command(command: &str, provider: &str) -> Option<PathBuf>
         let path = PathBuf::from(command);
         return is_executable(&path).then_some(path);
     }
-    if let Ok(cache) = command_path_cache().lock() {
-        if let Some(cached) = cache.get(command) {
-            if is_executable(cached) {
-                return Some(cached.clone());
-            }
-        }
-    }
     let path = if path_lookup_disabled() {
         None
     } else {
-        which::which(command)
-            .ok()
-            .or_else(|| resolve_from_login_path(command))
-    }
-    .or_else(|| {
+        lookup_on_path(command)
+    };
+    path.or_else(|| {
         if provider == "codex" && command == "codex" {
             codex_bundle_paths()
                 .into_iter()
@@ -668,12 +682,27 @@ pub fn resolve_runtime_command(command: &str, provider: &str) -> Option<PathBuf>
         } else {
             None
         }
-    });
-    if let Some(path) = &path {
-        if let Ok(mut cache) = command_path_cache().lock() {
-            cache.insert(command.to_string(), path.clone());
-        }
+    })
+}
+
+fn lookup_on_path(command: &str) -> Option<PathBuf> {
+    let cached = command_path_cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(command)
+        .cloned();
+    match cached {
+        Some(None) => return None,
+        Some(Some(path)) if is_executable(&path) => return Some(path),
+        _ => {}
     }
+    let path = which::which(command)
+        .ok()
+        .or_else(|| resolve_from_login_path(command));
+    command_path_cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(command.to_string(), path.clone());
     path
 }
 
@@ -686,7 +715,8 @@ fn cli_version(path: &Path) -> Option<String> {
     if let Some(cached) = cache.lock().ok().and_then(|cache| cache.get(&key).cloned()) {
         return cached;
     }
-    let version = probe_cli_version(path);
+    // 超时不进缓存，下次检测再试；否则一次卡顿就要重启应用才能拿到版本号。
+    let version = probe_cli_version(path)?;
     if let Ok(mut cache) = cache.lock() {
         cache.insert(key, version.clone());
     }
@@ -698,35 +728,69 @@ fn version_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn probe_cli_version(path: &Path) -> Option<String> {
-    let path = path.to_path_buf();
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let output = crate::process::command(&path)
-            .arg("--version")
-            .env("CI", "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
-        let _ = tx.send(output);
-    });
-    let output = rx.recv_timeout(Duration::from_secs(8)).ok()?.ok()?;
+/// 外层 `None` 表示超时（不该缓存），内层是解析出的版本号。
+fn probe_cli_version(path: &Path) -> Option<Option<String>> {
+    let mut command = crate::process::command(path);
+    command.arg("--version").env("CI", "1");
+    let output = match output_with_timeout(&mut command, VERSION_PROBE_TIMEOUT) {
+        Ok(Some(output)) => output,
+        Ok(None) => return None,
+        Err(_) => return Some(None),
+    };
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    extract_version_line(&stdout)
-        .or_else(|| extract_version_line(&stderr))
-        .or_else(|| {
-            output.status.success().then(|| {
-                let raw = stdout.trim();
-                let raw = if raw.is_empty() { stderr.trim() } else { raw };
-                (!raw.is_empty()).then(|| truncate_version(raw))
-            })?
-        })
+    Some(
+        extract_version_line(&stdout)
+            .or_else(|| extract_version_line(&stderr))
+            .or_else(|| {
+                output.status.success().then(|| {
+                    let raw = stdout.trim();
+                    let raw = if raw.is_empty() { stderr.trim() } else { raw };
+                    (!raw.is_empty()).then(|| truncate_version(raw))
+                })?
+            }),
+    )
+}
+
+/// 跑完收集 stdout / stderr；超时杀掉子进程并返回 `Ok(None)`。
+pub(crate) fn output_with_timeout(
+    command: &mut std::process::Command,
+    timeout: Duration,
+) -> std::io::Result<Option<std::process::Output>> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = drain_pipe(child.stdout.take());
+    let stderr = drain_pipe(child.stderr.take());
+    if !wait_with_timeout(&mut child, timeout) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Ok(None);
+    }
+    Ok(Some(std::process::Output {
+        status: child.wait()?,
+        stdout: stdout.recv_timeout(OUTPUT_DRAIN_GRACE).unwrap_or_default(),
+        stderr: stderr.recv_timeout(OUTPUT_DRAIN_GRACE).unwrap_or_default(),
+    }))
+}
+
+fn drain_pipe(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
+    let (sender, receiver) = mpsc::channel();
+    if let Some(mut pipe) = pipe {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = pipe.read_to_end(&mut bytes);
+            let _ = sender.send(bytes);
+        });
+    }
+    receiver
 }
 
 fn extract_version_line(raw: &str) -> Option<String> {
-    let pattern = regex::Regex::new(r"\d+\.\d+\.\d+").ok()?;
+    static PATTERN: OnceLock<regex::Regex> = OnceLock::new();
+    let pattern = PATTERN.get_or_init(|| regex::Regex::new(r"\d+\.\d+\.\d+").expect("版本号正则"));
     raw.lines()
         .map(str::trim)
         .find(|line| !line.is_empty() && pattern.is_match(line))
@@ -832,7 +896,7 @@ static CODEX_FIXTURE: Mutex<()> = Mutex::new(());
 
 /// Directories added to PATH after this process started. `which` only sees the
 /// environment inherited at launch, so a CLI installed later is invisible
-/// until the app restarts. These directories are read again on every lookup.
+/// until the app restarts. The login-shell part is refreshed by `detect_fresh`.
 fn resolve_from_login_path(command: &str) -> Option<PathBuf> {
     which_in_dirs(command, &supplemental_path_dirs())
 }
@@ -1008,35 +1072,58 @@ fn expand_percent_vars(raw: &str) -> String {
 }
 
 #[cfg(unix)]
-fn login_path_cache() -> &'static Mutex<Option<Vec<PathBuf>>> {
-    static CACHE: OnceLock<Mutex<Option<Vec<PathBuf>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(None))
+#[derive(Default)]
+struct LoginPath {
+    dirs: Option<Vec<PathBuf>>,
+    /// 每加载一次加一，等待中的调用者据此判断别人是否已经替它加载过。
+    generation: u64,
+}
+
+#[cfg(unix)]
+fn login_path_cache() -> &'static Mutex<LoginPath> {
+    static CACHE: OnceLock<Mutex<LoginPath>> = OnceLock::new();
+    CACHE.get_or_init(Mutex::default)
 }
 
 #[cfg(unix)]
 fn login_path_dirs() -> Vec<PathBuf> {
-    if let Ok(guard) = login_path_cache().lock() {
-        if let Some(dirs) = guard.clone() {
-            return dirs;
-        }
-    }
-    let dirs = load_login_path_dirs();
-    if let Ok(mut guard) = login_path_cache().lock() {
-        if guard.is_none() {
-            *guard = Some(dirs.clone());
-        } else if let Some(existing) = guard.clone() {
-            return existing;
-        }
-    }
-    dirs
+    load_login_path_once(false)
 }
 
 #[cfg(unix)]
 fn refresh_login_path_dirs() {
-    let dirs = load_login_path_dirs();
-    if let Ok(mut guard) = login_path_cache().lock() {
-        *guard = Some(dirs);
+    load_login_path_once(true);
+}
+
+/// 单飞：同一时间只起一个登录 shell，并发调用者等它并共用结果。
+#[cfg(unix)]
+fn load_login_path_once(force: bool) -> Vec<PathBuf> {
+    static LOADING: Mutex<()> = Mutex::new(());
+    let seen = {
+        let cache = login_path_cache()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(dirs) = cache.dirs.as_ref().filter(|_| !force) {
+            return dirs.clone();
+        }
+        cache.generation
+    };
+    let _loading = LOADING.lock().unwrap_or_else(PoisonError::into_inner);
+    {
+        let cache = login_path_cache()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(dirs) = cache.dirs.as_ref().filter(|_| cache.generation != seen) {
+            return dirs.clone();
+        }
     }
+    let dirs = load_login_path_dirs();
+    let mut cache = login_path_cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    cache.dirs = Some(dirs.clone());
+    cache.generation += 1;
+    dirs
 }
 
 /// 与 VS Code `shellEnv.ts` 一致：用标记包住 PATH，避免 oh-my-zsh 等往 stdout 打横幅污染首行。
@@ -1094,14 +1181,13 @@ fn dump_login_path(shell: &str, args: &[&str]) -> Option<String> {
     extract_marked_path(&text)
 }
 
-#[cfg(unix)]
 fn wait_with_timeout(child: &mut std::process::Child, timeout: Duration) -> bool {
     let started = Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(_)) => return true,
             Ok(None) if started.elapsed() >= timeout => return false,
-            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) => std::thread::sleep(CHILD_POLL_INTERVAL),
             Err(_) => return false,
         }
     }

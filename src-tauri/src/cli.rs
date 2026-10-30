@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    env, fs, io,
+    env, fs,
+    io::{self, Read},
     path::{Path, PathBuf},
     process,
 };
@@ -78,7 +79,8 @@ pub fn run_args(
     mut stdout: impl io::Write,
     mut stderr: impl io::Write,
 ) -> Result<(), i32> {
-    if args.is_empty() || args.iter().any(|arg| arg == "--help" || arg == "-h") {
+    // `-h` 只在开头才算求助，否则恰好等于 `-h` 的描述或评论会被吞掉。
+    if args.is_empty() || args[0] == "-h" || args.iter().any(|arg| arg == "--help") {
         let _ = writeln!(stderr, "{HELP}");
         return Ok(());
     }
@@ -434,29 +436,71 @@ fn create_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String,
         .flag(&["enabled"])
         .map(|value| value != "false")
         .unwrap_or(true);
-    let trigger_type = if parsed.flag(&["schedule"]).is_some() {
-        "interval"
-    } else {
-        "manual"
-    };
-    db.execute(
-        "INSERT INTO automations
-         (id, name, project_id, target_type, target_id, prompt, trigger_type,
-          interval_minutes, event_name, enabled, last_run_at, created_at)
-         VALUES (?1, ?2, ?3, 'agent', ?4, ?5, ?6, NULL, NULL, ?7, NULL, ?8)",
-        rusqlite::params![
-            id,
-            name,
-            project_id,
-            agent_id,
-            prompt,
-            trigger_type,
-            enabled,
-            now
-        ],
-    )
-    .map_err(|error| error.to_string())?;
+    let schedule = parsed
+        .flag(&["schedule"])
+        .map(|expression| {
+            let timezone = parsed.flag(&["timezone"]).unwrap_or(DEFAULT_TIMEZONE);
+            next_schedule_run(expression, timezone)
+                .map(|next_run_at| (expression, timezone, next_run_at))
+        })
+        .transpose()?;
+    // 与界面保存的计划自动化一致：automations 记 interval，真正的计划在触发器行里。
+    let trigger_type = if schedule.is_some() { "interval" } else { "manual" };
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO automations
+             (id, name, project_id, target_type, target_id, prompt, trigger_type,
+              interval_minutes, event_name, enabled, last_run_at, created_at)
+             VALUES (?1, ?2, ?3, 'agent', ?4, ?5, ?6, NULL, NULL, ?7, NULL, ?8)",
+            rusqlite::params![
+                id,
+                name,
+                project_id,
+                agent_id,
+                prompt,
+                trigger_type,
+                enabled,
+                now
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    if let Some((expression, timezone, next_run_at)) = schedule {
+        transaction
+            .execute(
+                "INSERT INTO automation_triggers
+                 (id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, created_at)
+                 VALUES (?1, ?2, 'schedule', ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    uuid::Uuid::new_v4().to_string(),
+                    id,
+                    enabled,
+                    expression.trim(),
+                    timezone,
+                    next_run_at,
+                    now
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
     ops::json(&ops::automation::get(db, &id)?)
+}
+
+const DEFAULT_TIMEZONE: &str = "UTC";
+
+/// `--schedule` 是 5 字段 Cron（分 时 日 月 周），按 `--timezone`（IANA，默认 UTC）推算首次运行。
+fn next_schedule_run(expression: &str, timezone: &str) -> Result<String, String> {
+    use std::str::FromStr;
+    let timezone =
+        chrono_tz::Tz::from_str(timezone).map_err(|_| "--timezone 需要 IANA 时区".to_string())?;
+    let schedule = cron::Schedule::from_str(&format!("0 {}", expression.trim()))
+        .map_err(|error| format!("--schedule 需要 5 字段 Cron 表达式：{error}"))?;
+    schedule
+        .after(&chrono::Utc::now().with_timezone(&timezone))
+        .next()
+        .map(|next| next.with_timezone(&chrono::Utc).to_rfc3339())
+        .ok_or_else(|| "Cron 无法计算下一次运行时间".to_string())
 }
 
 fn description_from(parsed: &ParsedArgs) -> Result<String, String> {
@@ -470,12 +514,24 @@ fn description_file(parsed: &ParsedArgs) -> Result<String, String> {
     let path = parsed
         .flag(&["description-file"])
         .ok_or_else(|| "缺少 --description 或 --description-file".to_string())?;
-    fs::read_to_string(path).map_err(|error| format!("读取 description-file 失败：{error}"))
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .and_then(|file| file.take(MAX_DESCRIPTION_FILE_BYTES + 1).read_to_end(&mut bytes))
+        .map_err(|error| format!("读取 description-file 失败：{error}"))?;
+    if bytes.len() as u64 > MAX_DESCRIPTION_FILE_BYTES {
+        return Err(format!(
+            "description-file 超过 {} KB",
+            MAX_DESCRIPTION_FILE_BYTES / 1024
+        ));
+    }
+    String::from_utf8(bytes).map_err(|error| format!("读取 description-file 失败：{error}"))
 }
+
+const MAX_DESCRIPTION_FILE_BYTES: u64 = 1024 * 1024;
 
 fn open_db() -> Result<Connection, String> {
     let path = db_path()?;
-    database::open_file(&path)
+    database::open_file_light(&path)
 }
 
 fn parse_line(value: &str, name: &str) -> Result<usize, String> {
@@ -564,9 +620,17 @@ fn install_cli_binary(source: &std::path::Path, dest: &std::path::Path) {
     if dest.is_file() && fs::read_to_string(&stamp).ok().as_deref() == Some(key.as_str()) {
         return;
     }
-    if fs::copy(source, dest).is_ok() {
-        let _ = fs::write(stamp, key);
+    // 先写同目录临时文件再改名：正在执行的旧 CLI 保留原 inode，并发 exec 不会撞上半截文件。
+    let staging = dest.with_extension(format!("{}.tmp", process::id()));
+    if fs::copy(source, &staging).is_err() {
+        let _ = fs::remove_file(&staging);
+        return;
     }
+    if fs::rename(&staging, dest).is_err() {
+        let _ = fs::remove_file(&staging);
+        return;
+    }
+    let _ = fs::write(stamp, key);
 }
 
 pub fn sidecar_path() -> Option<PathBuf> {
@@ -628,8 +692,8 @@ fn parse_args(args: &[String]) -> ParsedArgs {
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
-        if let Some(name) = arg.strip_prefix("--") {
-            if let Some(value) = args.get(index + 1).filter(|item| !item.starts_with('-')) {
+        if let Some(name) = arg.strip_prefix("--").filter(|_| is_flag(arg)) {
+            if let Some(value) = args.get(index + 1).filter(|item| !is_flag(item)) {
                 flags.insert(name.to_string(), value.clone());
                 index += 2;
                 continue;
@@ -642,6 +706,13 @@ fn parse_args(args: &[String]) -> ParsedArgs {
         index += 1;
     }
     ParsedArgs { positional, flags }
+}
+
+/// 只有 `--名字` 才是标志；`-x`、`- 列表项`、`---` 这类都是值。
+fn is_flag(arg: &str) -> bool {
+    arg.strip_prefix("--")
+        .and_then(|name| name.chars().next())
+        .is_some_and(|first| first.is_ascii_alphabetic())
 }
 
 fn channel_json(installation: &crate::channel::Installation) -> serde_json::Value {
@@ -782,6 +853,67 @@ mod tests {
                 .as_deref(),
             Some("chat-old")
         );
+    }
+
+    #[test]
+    fn flag_values_may_start_with_a_dash() {
+        let parsed = super::parse_args(&[
+            "task".into(),
+            "create".into(),
+            "--description".into(),
+            "- 第一项".into(),
+            "--title".into(),
+            "-h".into(),
+            "--prompt".into(),
+            "---".into(),
+            "--enabled".into(),
+            "--name".into(),
+            "x".into(),
+        ]);
+        assert_eq!(parsed.flag(&["description"]), Some("- 第一项"));
+        assert_eq!(parsed.flag(&["title"]), Some("-h"));
+        assert_eq!(parsed.flag(&["prompt"]), Some("---"));
+        assert_eq!(parsed.flag(&["enabled"]), Some("true"));
+        assert_eq!(parsed.flag(&["name"]), Some("x"));
+        assert_eq!(parsed.positional, ["task", "create"]);
+    }
+
+    #[test]
+    fn short_help_only_counts_as_the_first_argument() {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        super::run_args(&["-h".into()], &mut stdout, &mut stderr).unwrap();
+        assert!(String::from_utf8_lossy(&stderr).contains("用法"));
+        assert!(stdout.is_empty());
+    }
+
+    #[test]
+    fn automation_schedule_creates_a_due_trigger() {
+        let mut db = db();
+        db.execute(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES ('p', 'P', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+        let args = |schedule: &str| -> Vec<String> {
+            [
+                "automation", "create", "--name", "日报", "--agent-id", "miku", "--prompt",
+                "写日报", "--project-id", "p", "--schedule", schedule,
+            ]
+            .map(String::from)
+            .to_vec()
+        };
+        execute(&args("0 9 * * *"), &mut db).unwrap();
+        let (cron, next): (String, String) = db
+            .query_row(
+                "SELECT cron_expression, next_run_at FROM automation_triggers WHERE kind='schedule'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cron, "0 9 * * *");
+        assert!(chrono::DateTime::parse_from_rfc3339(&next).is_ok());
+        assert!(execute(&args("每天"), &mut db).is_err());
     }
 
     #[test]

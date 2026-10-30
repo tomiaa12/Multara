@@ -12,6 +12,7 @@ use crate::database::AppState;
 use crate::models::MessageAttachmentInput;
 
 use super::feishu::api_for;
+use super::pairing;
 use super::store::{self, Binding};
 use super::{CardAction, ChatType, InboundEvent, InboundMessage, Installation, MediaRef};
 
@@ -71,12 +72,14 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
         if try_pair(app, installation, &message) {
             return;
         }
-        send_notice(
-            app,
-            installation,
-            &message,
-            "你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。",
-        );
+        if pairing::allow_notice(&installation.id, &message.sender_id) {
+            send_notice(
+                app,
+                installation,
+                &message,
+                "你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。",
+            );
+        }
         return;
     }
 
@@ -116,14 +119,28 @@ fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessa
     if code.is_empty() {
         return false;
     }
+    let sender = message.sender_id.as_str();
+    if pairing::is_locked(&installation.id, sender) {
+        if pairing::allow_notice(&installation.id, sender) {
+            send_notice(app, installation, message, &pairing::locked_notice());
+        }
+        return true;
+    }
     let text = message.text.trim();
     let candidate = text
         .strip_prefix("/pair ")
         .map(str::trim)
         .unwrap_or(text);
     if candidate != code {
+        // 只把看起来像在输配对码的消息记为失败，正常聊天不会把人锁住
+        let attempted = text.starts_with("/pair ") || candidate.chars().count() == code.chars().count();
+        if attempted && pairing::record_failure(&installation.id, sender) {
+            send_notice(app, installation, message, &pairing::locked_notice());
+            return true;
+        }
         return false;
     }
+    pairing::clear(&installation.id, sender);
     let state = app.state::<AppState>();
     let Ok(db) = state.lock_db() else {
         return false;
@@ -664,9 +681,9 @@ fn handle_card_action(app: &AppHandle, installation: &Installation, action: Card
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
         if !request_id.is_empty() && !option_id.is_empty() {
-            let _ = crate::executor::resolve_permission(app, request_id, option_id);
+            let run = (!run_id.is_empty()).then_some(run_id);
+            let _ = crate::executor::resolve_run_permission(app, run, request_id, option_id);
         }
-        let _ = run_id;
     } else if kind == "question" {
         answer_question(app, installation, &action);
     }

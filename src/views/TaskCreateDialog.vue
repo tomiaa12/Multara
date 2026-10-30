@@ -5,6 +5,7 @@ import type { EditorSelectionContext, MessageAttachmentInput, TaskStatus } from 
 import { isMiku } from "../domain/types";
 import { useAppStore } from "../stores/app";
 import * as backend from "../services/backend";
+import { fileToBase64 } from "../utils/file-base64";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
@@ -22,16 +23,17 @@ import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import {
   addRequirementCategory,
-  loadRequirementCategories,
   recolorRequirementCategory,
   removeRequirementCategory,
   renameRequirementCategory,
   saveRequirementCategories,
+  sharedRequirementCategories,
   type RequirementCategoryState,
 } from "./dashboard/requirement-categories";
 import { TASK_COLUMNS } from "./task-board";
 import { writeTaskMeta } from "./task-meta";
 import { requirementIds, syncRequirementChips } from "./task-project-links";
+import { escapeClosesDialog } from "./dialog-escape";
 import { t } from "../i18n";
 
 const props = defineProps<{
@@ -48,7 +50,7 @@ const error = ref("");
 const expanded = ref(false);
 const keepOpen = ref(false);
 const showTagManage = ref(false);
-const categories = ref<RequirementCategoryState>(loadRequirementCategories(localStorage));
+const categories = sharedRequirementCategories();
 const contexts = ref<EditorSelectionContext[]>([]);
 const pastes = ref<Array<MessageAttachmentInput & { previewUrl: string }>>([]);
 const composer = ref<{
@@ -150,8 +152,20 @@ watch(
   },
 );
 
+function hasInput() {
+  return Boolean(
+    form.title.trim()
+    || form.labels.length
+    || form.projectIds.length
+    || pastes.value.length
+    || composer.value?.serialize().empty === false,
+  );
+}
+
 function onKey(event: KeyboardEvent) {
-  if (event.key === "Escape") emit("close");
+  if (!escapeClosesDialog(event)) return;
+  if (hasInput() && !window.confirm(t("common.discardUnsavedConfirm"))) return;
+  emit("close");
 }
 
 function clearPastes() {
@@ -176,12 +190,11 @@ async function pasteImages(files: File[]) {
   const room = Math.max(0, PASTE_LIMIT - pastes.value.length);
   for (const file of files.slice(0, room)) {
     try {
-      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      if (bytes.length > PASTE_MAX_BYTES) {
+      if (file.size > PASTE_MAX_BYTES) {
         error.value = t("chat.pasteTooLarge");
         continue;
       }
-      const saved = await backend.savePastedAttachment(bytes, file.type || "image/png", file.name || undefined);
+      const saved = await backend.savePastedAttachment(await fileToBase64(file), file.type || "image/png", file.name || undefined);
       pastes.value.push({ ...saved, previewUrl: URL.createObjectURL(file) });
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : t("chat.pasteFailed");

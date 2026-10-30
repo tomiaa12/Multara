@@ -72,7 +72,25 @@ pub fn linked_project_ids(db: &Connection, session_id: &str) -> Result<Vec<Strin
     Ok(project_id(db, session_id)?.into_iter().collect())
 }
 
+/// 调用方可能已经在事务里，所以用保存点而不是 BEGIN；失败时不会只删不插。
 pub fn replace_linked_projects(
+    db: &Connection,
+    session_id: &str,
+    project_ids: &[String],
+) -> Result<(), String> {
+    db.execute_batch("SAVEPOINT replace_linked_projects")
+        .map_err(|error| error.to_string())?;
+    let replaced = write_linked_projects(db, session_id, project_ids);
+    let finish = if replaced.is_ok() {
+        "RELEASE replace_linked_projects"
+    } else {
+        "ROLLBACK TO replace_linked_projects; RELEASE replace_linked_projects"
+    };
+    let finished = db.execute_batch(finish).map_err(|error| error.to_string());
+    replaced.and(finished)
+}
+
+fn write_linked_projects(
     db: &Connection,
     session_id: &str,
     project_ids: &[String],

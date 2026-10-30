@@ -1,10 +1,20 @@
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::sync::{
-    mpsc::{self, Receiver, Sender},
+    mpsc::{self, Receiver, RecvTimeoutError, Sender},
     Arc, Mutex,
 };
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
+
+const PERMISSION_TIMEOUT: Duration = Duration::from_secs(300);
+/// `initialize` / `session/new` 的应答期限；npx 首次拉包会慢，给足余量。
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
+/// 读线程最多攒这么多行；等权限确认时智能体输出会在这里积压，满了就反压。
+const LINE_QUEUE_CAPACITY: usize = 1024;
+const INITIALIZE_REQUEST_ID: u64 = 1;
+const SESSION_NEW_REQUEST_ID: u64 = 2;
+const PROMPT_REQUEST_ID: u64 = 3;
 
 pub struct ByteSender(pub Sender<Vec<u8>>);
 
@@ -50,9 +60,8 @@ pub struct PermissionGate {
 
 impl PermissionGate {
     pub fn decide(&self, request_id: &str, params: Option<&Value>) -> String {
-        let fallback = permission_option(params);
         if !self.prompt {
-            return fallback;
+            return permission_option(params);
         }
         if let Some(notify) = &self.notify {
             notify(request_id, params);
@@ -61,12 +70,18 @@ impl PermissionGate {
         if let Ok(mut pending) = self.pending.lock() {
             pending.insert(request_id.to_string(), tx);
         }
-        rx.recv_timeout(Duration::from_secs(300)).unwrap_or(fallback)
+        // 超时或通道断开时没人确认过，不能当成允许。
+        rx.recv_timeout(PERMISSION_TIMEOUT).unwrap_or_else(|_| {
+            if let Ok(mut pending) = self.pending.lock() {
+                pending.remove(request_id);
+            }
+            reject_option(params)
+        })
     }
 }
 
 /// Speaks ACP or the DSH stdio protocol and writes one normalized JSON event per line.
-pub fn drive<R: Read, W: Write, E: Write>(
+pub fn drive<R: Read + Send + 'static, W: Write, E: Write>(
     kind: &str,
     stdout: R,
     stdin: &mut W,
@@ -75,16 +90,23 @@ pub fn drive<R: Read, W: Write, E: Write>(
     events: &mut E,
     gate: Option<PermissionGate>,
 ) {
-    let mut reader = BufReader::new(stdout);
+    let (line_tx, lines) = mpsc::sync_channel::<String>(LINE_QUEUE_CAPACITY);
+    thread::spawn(move || {
+        for line in crate::process::BoundedLines(BufReader::new(stdout)) {
+            if line_tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
     if kind == "dsh" {
-        drive_dsh(&mut reader, stdin, prompt, cwd, events);
+        drive_dsh(&lines, stdin, prompt, cwd, events);
     } else {
-        drive_acp(&mut reader, stdin, prompt, cwd, events, gate.as_ref());
+        drive_acp(&lines, stdin, prompt, cwd, events, gate.as_ref());
     }
 }
 
-fn drive_acp<R: BufRead, W: Write, E: Write>(
-    reader: &mut R,
+fn drive_acp<W: Write, E: Write>(
+    lines: &Receiver<String>,
     stdin: &mut W,
     prompt: &str,
     cwd: &str,
@@ -92,9 +114,9 @@ fn drive_acp<R: BufRead, W: Write, E: Write>(
     gate: Option<&PermissionGate>,
 ) {
     if call(
-        reader,
+        lines,
         stdin,
-        1,
+        INITIALIZE_REQUEST_ID,
         "initialize",
         json!({
             "protocolVersion": 1,
@@ -109,9 +131,9 @@ fn drive_acp<R: BufRead, W: Write, E: Write>(
         return;
     }
     let Some(created) = call(
-        reader,
+        lines,
         stdin,
-        2,
+        SESSION_NEW_REQUEST_ID,
         "session/new",
         json!({ "cwd": cwd, "mcpServers": [] }),
         events,
@@ -127,7 +149,7 @@ fn drive_acp<R: BufRead, W: Write, E: Write>(
         .to_string();
     if write_rpc(
         stdin,
-        Some(3),
+        Some(PROMPT_REQUEST_ID),
         "session/prompt",
         json!({
             "sessionId": session_id,
@@ -138,20 +160,24 @@ fn drive_acp<R: BufRead, W: Write, E: Write>(
     {
         return;
     }
-    let mut line = String::new();
-    while reader.read_line(&mut line).ok().filter(|n| *n > 0).is_some() {
-        if let Ok(value) = serde_json::from_str::<Value>(line.trim()) {
+    for line in lines.iter() {
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        // 智能体发来的请求（如权限确认）也可能恰好用 id 3，只有不带 method 的才是本轮应答。
+        if value.get("method").is_some() {
             let _ = handle_agent_message(&value, stdin, events, gate);
-            if value.get("id").and_then(Value::as_u64) == Some(3) {
-                break;
-            }
+            continue;
         }
-        line.clear();
+        if id_matches(&value, PROMPT_REQUEST_ID) {
+            emit_rpc_error(&value, "session/prompt", events);
+            break;
+        }
     }
 }
 
-fn drive_dsh<R: BufRead, W: Write, E: Write>(
-    reader: &mut R,
+fn drive_dsh<W: Write, E: Write>(
+    lines: &Receiver<String>,
     stdin: &mut W,
     prompt: &str,
     cwd: &str,
@@ -169,15 +195,13 @@ fn drive_dsh<R: BufRead, W: Write, E: Write>(
         return;
     }
     let _ = stdin.flush();
-    let mut line = String::new();
-    while reader.read_line(&mut line).ok().filter(|n| *n > 0).is_some() {
+    for line in lines.iter() {
         if let Ok(value) = serde_json::from_str::<Value>(line.trim()) {
             emit_dsh(&value, events);
             if value.get("type").and_then(Value::as_str) == Some("result") {
                 break;
             }
         }
-        line.clear();
     }
 }
 
@@ -210,8 +234,8 @@ fn emit<E: Write>(events: &mut E, value: Value) {
     }
 }
 
-fn call<R: BufRead, W: Write, E: Write>(
-    reader: &mut R,
+fn call<W: Write, E: Write>(
+    lines: &Receiver<String>,
     stdin: &mut W,
     id: u64,
     method: &str,
@@ -222,12 +246,16 @@ fn call<R: BufRead, W: Write, E: Write>(
     if write_rpc(stdin, Some(id), method, params).is_err() {
         return None;
     }
-    let mut line = String::new();
+    let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
     loop {
-        line.clear();
-        if reader.read_line(&mut line).ok().filter(|n| *n > 0).is_none() {
-            return None;
-        }
+        let line = match lines.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) => {
+                emit(events, json!({"type":"error","error": format!("{method} 超时：运行时没有应答")}));
+                return None;
+            }
+            Err(RecvTimeoutError::Disconnected) => return None,
+        };
         let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
             continue;
         };
@@ -235,15 +263,37 @@ fn call<R: BufRead, W: Write, E: Write>(
             let _ = handle_agent_message(&value, stdin, events, gate);
             continue;
         }
-        if value.get("id").and_then(Value::as_u64) == Some(id)
-            || value.get("id").and_then(Value::as_i64) == Some(id as i64)
-        {
-            if value.get("error").is_some() {
-                return None;
-            }
-            return Some(value.get("result").cloned().unwrap_or(Value::Null));
+        if !id_matches(&value, id) {
+            continue;
         }
+        if emit_rpc_error(&value, method, events) {
+            return None;
+        }
+        return Some(value.get("result").cloned().unwrap_or(Value::Null));
     }
+}
+
+/// 应答的 id 可能被回显成数字或字符串。
+fn id_matches(value: &Value, id: u64) -> bool {
+    match value.get("id") {
+        Some(Value::Number(number)) => number.as_u64() == Some(id),
+        Some(Value::String(text)) => text.trim().parse::<u64>().ok() == Some(id),
+        _ => false,
+    }
+}
+
+/// 应答带 `error` 时发出一条错误事件，返回是否出错。
+fn emit_rpc_error<E: Write>(value: &Value, method: &str, events: &mut E) -> bool {
+    let Some(error) = value.get("error") else {
+        return false;
+    };
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| error.to_string());
+    emit(events, json!({"type":"error","error": format!("{method} 失败：{message}")}));
+    true
 }
 
 fn handle_agent_message<W: Write, E: Write>(
@@ -315,8 +365,15 @@ fn permission_option(params: Option<&Value>) -> String {
     }) {
         return id.to_string();
     }
-    options
-        .iter()
+    reject_option(params)
+}
+
+fn reject_option(params: Option<&Value>) -> String {
+    params
+        .and_then(|params| params.get("options"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
         .find_map(|option| {
             let kind = option.get("kind").and_then(Value::as_str).unwrap_or("");
             kind.eq_ignore_ascii_case("reject_once")
@@ -371,19 +428,15 @@ fn emit_acp_update<E: Write>(params: Option<&Value>, events: &mut E) {
                 .or_else(|| update.pointer("/content/0/content/text").and_then(Value::as_str))
                 .or_else(|| update.pointer("/content/0/text").and_then(Value::as_str))
                 .unwrap_or("");
-            if status.eq_ignore_ascii_case("completed")
-                || status.eq_ignore_ascii_case("failed")
-                || !output.is_empty()
-            {
+            let failed = status.eq_ignore_ascii_case("failed") || status.eq_ignore_ascii_case("error");
+            let finished = failed || status.eq_ignore_ascii_case("completed");
+            // in_progress 带着中间输出时不能当成结果，否则会反复发出 ok 的 tool_result。
+            if finished || (status.is_empty() && !output.is_empty()) {
                 emit(events, json!({
                     "type": "tool_result",
                     "call_id": call_id,
                     "output": output,
-                    "status": if status.eq_ignore_ascii_case("failed") || status.eq_ignore_ascii_case("error") {
-                        "error"
-                    } else {
-                        "ok"
-                    }
+                    "status": if failed { "error" } else { "ok" }
                 }));
             } else if !status.is_empty() {
                 emit(events, json!({
@@ -428,4 +481,72 @@ fn write_rpc_error<W: Write>(stdin: &mut W, id: &Value, code: i32, message: &str
     let body = json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } });
     writeln!(stdin, "{body}")?;
     stdin.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{drive, id_matches, reject_option};
+    use serde_json::json;
+    use std::io::Cursor;
+
+    fn run_acp(lines: &[&str]) -> String {
+        let stdout = Cursor::new(lines.join("\n").into_bytes());
+        let mut stdin = Vec::new();
+        let mut events = Vec::new();
+        drive("acp", stdout, &mut stdin, "hi", "/tmp", &mut events, None);
+        String::from_utf8(events).unwrap()
+    }
+
+    #[test]
+    fn matches_numeric_and_string_ids() {
+        assert!(id_matches(&json!({"id": 3}), 3));
+        assert!(id_matches(&json!({"id": "3"}), 3));
+        assert!(!id_matches(&json!({"id": "x3"}), 3));
+        assert!(!id_matches(&json!({"method": "a"}), 3));
+    }
+
+    #[test]
+    fn agent_request_with_id_three_does_not_end_the_turn() {
+        let events = run_acp(&[
+            r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":"2","result":{"sessionId":"s1"}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"session/request_permission","params":{"options":[{"optionId":"ok","kind":"allow_once"}],"toolCall":{"title":"Edit"}}}"#,
+            r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"text":"still running"}}}}"#,
+            r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"in_progress","content":[{"text":"partial"}]}}}"#,
+            r#"{"jsonrpc":"2.0","id":"3","error":{"message":"prompt too long"}}"#,
+            r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"text":"after end"}}}}"#,
+        ]);
+        assert!(events.contains("still running"));
+        assert!(!events.contains("after end"));
+        assert!(events.contains("session/prompt 失败：prompt too long"));
+        assert!(!events.contains("tool_result"));
+    }
+
+    #[test]
+    fn handshake_error_is_reported() {
+        let events = run_acp(&[r#"{"jsonrpc":"2.0","id":1,"error":{"message":"unsupported"}}"#]);
+        assert!(events.contains("initialize 失败：unsupported"));
+    }
+
+    #[test]
+    fn completed_tool_update_becomes_result() {
+        let events = run_acp(&[
+            r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s1"}}"#,
+            r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"failed","content":[{"text":"boom"}]}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}"#,
+        ]);
+        assert!(events.contains(r#""type":"tool_result""#));
+        assert!(events.contains(r#""status":"error""#));
+    }
+
+    #[test]
+    fn fallback_after_timeout_rejects() {
+        let params = json!({"options":[
+            {"optionId":"yes","kind":"allow_once"},
+            {"optionId":"no","kind":"reject_once"}
+        ]});
+        assert_eq!(reject_option(Some(&params)), "no");
+        assert_eq!(reject_option(None), "reject_once");
+    }
 }

@@ -27,8 +27,13 @@ import { applyLanguageSetting, locale, t } from "../i18n";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
 import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
 import SettingsAiGenBlock from "./SettingsAiGenBlock.vue";
+import { integerSettingEntry } from "./settings-number";
 
 const SAVE_DEBOUNCE_MS = 300;
+const RUN_TIMEOUT_MIN_MINUTES = 0;
+const RUN_TIMEOUT_MAX_MINUTES = 1440;
+const WEBHOOK_PORT_MIN = 1024;
+const WEBHOOK_PORT_MAX = 65535;
 const defaultBranch = computed(() => defaultBranchPrompt());
 const defaultCommit = computed(() => defaultCommitPrompt());
 
@@ -87,6 +92,7 @@ const message = ref("");
 const version = ref("");
 let hydrating = true;
 let saveTimer = 0;
+let lastSentSettings: Record<string, string> | null = null;
 
 const section = computed<SectionId>(() => {
   const value = route.query.section;
@@ -153,6 +159,8 @@ watch(
   () => store.data?.settings,
   (settings) => {
     if (!settings) return;
+    // 自己保存后的回显：表单已是最新（可能还在继续输入），不要用裁剪后的值回填
+    if (lastSentSettings && Object.entries(lastSentSettings).every(([key, value]) => settings[key] === value)) return;
     hydrating = true;
     form.language = settings.language ?? "system";
     form.theme = settings.theme ?? "dark";
@@ -254,9 +262,9 @@ function settingsPayload() {
     updateProxy: form.updateProxy.trim(),
     formatOnSave: String(form.formatOnSave),
     stickyScroll: String(form.stickyScroll),
-    runTimeoutMinutes: String(form.runTimeoutMinutes),
+    ...integerSettingEntry("runTimeoutMinutes", form.runTimeoutMinutes, RUN_TIMEOUT_MIN_MINUTES, RUN_TIMEOUT_MAX_MINUTES),
     permissionMode: form.permissionMode,
-    webhookPort: String(form.webhookPort),
+    ...integerSettingEntry("webhookPort", form.webhookPort, WEBHOOK_PORT_MIN, WEBHOOK_PORT_MAX),
     branchGenMode: normalizeGenMode(form.branchGenMode),
     branchAgentId: form.branchAgentId.trim(),
     branchPrompt: persistPrompt(form.branchPrompt, defaultBranch.value),
@@ -276,8 +284,10 @@ function settingsPayload() {
 
 async function persist() {
   message.value = "";
+  saveTimer = 0;
   try {
-    await store.saveSettings(settingsPayload());
+    lastSentSettings = settingsPayload();
+    await store.saveSettings(lastSentSettings);
     applyTheme();
   } catch (cause) {
     message.value = t("settings.saveError", {
@@ -380,7 +390,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (!saveTimer) return;
   window.clearTimeout(saveTimer);
+  void persist();
 });
 </script>
 
@@ -426,7 +438,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.runTimeout") }}</strong><p>{{ t("settings.runTimeoutHint") }}</p></div>
-            <UiInput v-model.number="form.runTimeoutMinutes" type="number" min="0" max="1440" />
+            <UiInput v-model.number="form.runTimeoutMinutes" type="number" :min="RUN_TIMEOUT_MIN_MINUTES" :max="RUN_TIMEOUT_MAX_MINUTES" />
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.permission") }}</strong><p>{{ t("settings.permissionHint") }}</p></div>
@@ -578,7 +590,7 @@ onBeforeUnmount(() => {
               <strong>{{ t("settings.automation.port") }}</strong>
               <p>{{ t("settings.automation.portHint") }}</p>
             </div>
-            <UiInput v-model.number="form.webhookPort" type="number" min="1024" max="65535" />
+            <UiInput v-model.number="form.webhookPort" type="number" :min="WEBHOOK_PORT_MIN" :max="WEBHOOK_PORT_MAX" />
           </div>
         </section>
 

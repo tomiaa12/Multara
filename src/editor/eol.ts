@@ -13,8 +13,10 @@ export function indentLabel(insertSpaces: boolean, tabSize: number): string {
   return insertSpaces ? `空格: ${tabSize}` : `Tab 大小: ${tabSize}`;
 }
 
+const INDENT_SAMPLE_LINES = 80;
+
 export function detectIndent(content: string): { insertSpaces: boolean; tabSize: number } {
-  const lines = content.split(/\r?\n/).slice(0, 80);
+  const lines = content.split(/\r?\n/, INDENT_SAMPLE_LINES);
   let tabs = 0;
   let spaces2 = 0;
   let spaces4 = 0;

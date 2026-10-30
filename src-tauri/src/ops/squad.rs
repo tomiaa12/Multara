@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
@@ -22,26 +24,28 @@ pub fn list(db: &Connection) -> Result<Vec<Squad>, String> {
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    rows.into_iter()
-        .map(|(id, name, description, instructions, leader_agent_id)| {
-            let mut members = db
-                .prepare("SELECT agent_id FROM squad_members WHERE squad_id = ?1 ORDER BY agent_id")
-                .map_err(|error| error.to_string())?;
-            let member_agent_ids = members
-                .query_map([&id], |row| row.get(0))
-                .map_err(|error| error.to_string())?
-                .collect::<rusqlite::Result<Vec<String>>>()
-                .map_err(|error| error.to_string())?;
-            Ok(Squad {
-                id,
-                name,
-                description,
-                instructions,
-                leader_agent_id,
-                member_agent_ids,
-            })
+    let mut members: HashMap<String, Vec<String>> = HashMap::new();
+    db.prepare("SELECT squad_id, agent_id FROM squad_members ORDER BY agent_id")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|error| error.to_string())?
+        .try_for_each(|row| {
+            let (squad_id, agent_id) = row?;
+            members.entry(squad_id).or_default().push(agent_id);
+            Ok::<_, rusqlite::Error>(())
         })
-        .collect()
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, description, instructions, leader_agent_id)| Squad {
+            member_agent_ids: members.remove(&id).unwrap_or_default(),
+            id,
+            name,
+            description,
+            instructions,
+            leader_agent_id,
+        })
+        .collect())
 }
 
 pub fn get(db: &Connection, squad_id: &str) -> Result<Squad, String> {

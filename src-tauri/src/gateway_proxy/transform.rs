@@ -104,22 +104,29 @@ pub(super) fn rewrite_request(
     Ok((rendered, wants_stream))
 }
 
+pub(super) fn canonical_response(
+    body: Value,
+    upstream: ApiFormat,
+    model: &str,
+) -> Result<CanonicalResponse, String> {
+    let mut response = parse_response(body, upstream)?;
+    if response.model.is_empty() {
+        response.model = model.to_string();
+    }
+    Ok(response)
+}
+
+/// 同格式直通时原样返回上游 JSON，不解析也不克隆。
 pub(super) fn rewrite_response(
     body: Value,
     upstream: ApiFormat,
     client: ApiFormat,
     model: &str,
-) -> Result<(Value, CanonicalResponse), String> {
-    let mut response = parse_response(body.clone(), upstream)?;
-    if response.model.is_empty() {
-        response.model = model.to_string();
+) -> Result<Value, String> {
+    if upstream == client {
+        return Ok(body);
     }
-    let rendered = if upstream == client {
-        body
-    } else {
-        render_response(&response, client)
-    };
-    Ok((rendered, response))
+    canonical_response(body, upstream, model).map(|response| render_response(&response, client))
 }
 
 #[allow(dead_code)]
@@ -2349,7 +2356,7 @@ mod tests {
             "output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],
             "usage":{"input_tokens":4,"output_tokens":1}
         });
-        let (mapped, _) = rewrite_response(
+        let mapped = rewrite_response(
             body,
             ApiFormat::Responses,
             ApiFormat::Anthropic,
@@ -2428,7 +2435,7 @@ mod tests {
             "candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}],
             "usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":6,"candidatesTokenCount":2}
         });
-        let (mapped, _) =
+        let mapped =
             rewrite_response(response, ApiFormat::Gemini, ApiFormat::Anthropic, "gemini").unwrap();
         assert_eq!(mapped["usage"]["input_tokens"], 4);
         assert_eq!(mapped["usage"]["cache_read_input_tokens"], 6);

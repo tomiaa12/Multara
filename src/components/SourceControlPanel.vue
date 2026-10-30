@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, shallowRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import type { GitRepositoryStatus, Workspace } from "../domain/types";
 import UiButton from "./ui/UiButton.vue";
@@ -46,7 +46,8 @@ const discardAsk = ref<{
   files: Array<{ path: string; worktreeStatus: string }>;
   message: string;
 } | null>(null);
-const repositories = ref<GitRepositoryStatus[]>([]);
+// 只整体替换、从不原地修改，变更列表可能有几千条，不做深响应式。
+const repositories = shallowRef<GitRepositoryStatus[]>([]);
 /** 正在打开「合并到其他分支」弹窗的工作区 */
 const mergeDialogWorkspaceId = ref("");
 const mergeDialogItem = computed(() =>

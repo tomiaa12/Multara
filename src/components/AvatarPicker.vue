@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { ImagePlus, Sparkles } from "@lucide/vue";
 import AgentAvatar from "./AgentAvatar.vue";
-import { generateAgentAvatar } from "../utils/generate-agent-avatar";
 
 const props = withDefaults(defineProps<{
   modelValue?: string;
@@ -21,9 +20,11 @@ const emit = defineEmits<{
 const fileInput = ref<HTMLInputElement | null>(null);
 const preview = computed(() => props.modelValue || "🤖");
 
-function generate() {
+// DiceBear 全部风格很大，点生成时才加载，不进入口 chunk
+async function generate() {
   if (props.locked) return;
   const base = props.name.trim() || "agent";
+  const { generateAgentAvatar } = await import("../utils/generate-agent-avatar");
   emit("update:modelValue", generateAgentAvatar(`${base}-${crypto.randomUUID().slice(0, 8)}`));
 }
 

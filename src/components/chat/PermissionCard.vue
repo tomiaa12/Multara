@@ -3,7 +3,7 @@ import type { TimelineItem } from "../../domain/types";
 import { useAppStore } from "../../stores/app";
 import { inferToolName, permissionOptions } from "./timeline-display";
 
-const props = defineProps<{ item: TimelineItem }>();
+const props = defineProps<{ item: TimelineItem; runId?: string | null }>();
 const store = useAppStore();
 const options = permissionOptions(props.item);
 const name = inferToolName(props.item) || props.item.tool || "工具";
@@ -11,7 +11,7 @@ const name = inferToolName(props.item) || props.item.tool || "工具";
 function pick(optionId: string) {
   const id = props.item.callId;
   if (!id) return;
-  void store.resolvePermission(id, optionId);
+  void store.resolvePermission(id, optionId, props.runId);
 }
 </script>
 

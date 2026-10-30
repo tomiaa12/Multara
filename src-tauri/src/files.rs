@@ -104,15 +104,16 @@ fn walk_files(
     if depth > MAX_TREE_DEPTH || output.len() >= MAX_QUICK_OPEN_FILES {
         return Ok(());
     }
-    let children = fs::read_dir(directory)
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-    for child in children {
+    let Ok(children) = fs::read_dir(directory) else {
+        return Ok(());
+    };
+    for child in children.flatten() {
         if output.len() >= MAX_QUICK_OPEN_FILES {
             break;
         }
-        let file_type = child.file_type().map_err(|error| error.to_string())?;
+        let Ok(file_type) = child.file_type() else {
+            continue;
+        };
         let name = child.file_name().to_string_lossy().to_string();
         if is_worktree_git_pointer(&child.path(), &name) || hidden_in_search(&name) {
             continue;
@@ -143,9 +144,6 @@ pub fn list_tree(workspace_id: &str, root: &str) -> Result<Vec<FileEntry>, Strin
     let root = canonical_root(root)?;
     let mut entries = Vec::new();
     walk(&root, &root, 0, &mut entries)?;
-    if entries.len() >= MAX_TREE_ENTRIES {
-        return Err(format!("文件数量超过 {MAX_TREE_ENTRIES}，请缩小工作区范围"));
-    }
     let _ = workspace_id;
     Ok(entries)
 }
@@ -200,7 +198,11 @@ pub fn list_directory(
 
 pub fn read(workspace_id: &str, root: &str, relative_path: &str) -> Result<FileContent, String> {
     let root = canonical_root(root)?;
-    let path = resolve_existing(&root, relative_path)?;
+    // 经符号链接读到根目录外的文件仍可查看，但只读：写入会被 `write_or_create` 拒绝。
+    let path = root
+        .join(normalize_relative(relative_path)?)
+        .canonicalize()
+        .map_err(|error| format!("文件不存在：{error}"))?;
     let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
         return Err("只能打开文件".to_string());
@@ -215,7 +217,7 @@ pub fn read(workspace_id: &str, root: &str, relative_path: &str) -> Result<FileC
         &path,
         &bytes,
         metadata.len(),
-        metadata.len() > MAX_EDITABLE_BYTES,
+        metadata.len() > MAX_EDITABLE_BYTES || !path.starts_with(&root),
     )
 }
 
@@ -331,11 +333,9 @@ pub fn write_or_create(root: &str, relative_path: &str, content: &str) -> Result
     if relative.is_empty() {
         return Err("无效路径".to_string());
     }
-    let target = root.join(Path::new(&relative));
-    let parent = target.parent().ok_or_else(|| "无效文件路径".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let canonical_parent = parent.canonicalize().map_err(|error| error.to_string())?;
-    let name = target.file_name().ok_or_else(|| "无效路径".to_string())?;
+    let relative = Path::new(&relative);
+    let canonical_parent = create_parents_inside(&root, relative.parent().unwrap_or(Path::new("")))?;
+    let name = relative.file_name().ok_or_else(|| "无效路径".to_string())?;
     write_atomic(&canonical_parent.join(name), content)
 }
 
@@ -364,17 +364,22 @@ pub fn create_file(root: &str, relative_path: &str, content: &str) -> Result<(),
     }
     let root = canonical_root(root)?;
     let target = resolve_inside(&root, relative_path)?;
-    if target.exists() {
-        return Err("文件已存在".to_string());
-    }
-    fs::write(&target, content).map_err(|error| error.to_string())?;
-    Ok(())
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::AlreadyExists => "文件已存在".to_string(),
+            _ => error.to_string(),
+        })?;
+    file.write_all(content.as_bytes())
+        .map_err(|error| error.to_string())
 }
 
 pub fn create_directory(root: &str, relative_path: &str) -> Result<(), String> {
     let root = canonical_root(root)?;
     let target = resolve_inside(&root, relative_path)?;
-    if target.exists() {
+    if fs::symlink_metadata(&target).is_ok() {
         return Err("文件夹已存在".to_string());
     }
     fs::create_dir(&target).map_err(|error| error.to_string())?;
@@ -383,12 +388,13 @@ pub fn create_directory(root: &str, relative_path: &str) -> Result<(), String> {
 
 pub fn rename_entry(root: &str, from: &str, to: &str) -> Result<(), String> {
     let root = canonical_root(root)?;
-    let source = resolve_existing(&root, from)?;
-    if source == root {
+    if normalize_relative(from)?.is_empty() {
         return Err("不能重命名工作区根目录".to_string());
     }
+    let source = resolve_inside(&root, from)?;
+    fs::symlink_metadata(&source).map_err(|error| format!("文件不存在：{error}"))?;
     let dest = resolve_inside(&root, to)?;
-    if dest.exists() {
+    if fs::symlink_metadata(&dest).is_ok() {
         return Err("目标已存在".to_string());
     }
     fs::rename(source, dest).map_err(|error| error.to_string())?;
@@ -397,16 +403,25 @@ pub fn rename_entry(root: &str, from: &str, to: &str) -> Result<(), String> {
 
 pub fn delete_entry(root: &str, relative_path: &str) -> Result<(), String> {
     let root = canonical_root(root)?;
-    let target = resolve_existing(&root, relative_path)?;
-    if target == root {
+    if normalize_relative(relative_path)?.is_empty() {
         return Err("不能删除工作区根目录".to_string());
     }
-    if target.is_dir() {
-        fs::remove_dir_all(target).map_err(|error| error.to_string())?;
-    } else {
-        fs::remove_file(target).map_err(|error| error.to_string())?;
+    remove_path(&resolve_inside(&root, relative_path)?)
+}
+
+/// 符号链接只删链接本身，不跟随到目标。
+pub(crate) fn remove_path(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return fs::remove_file(path)
+            .or_else(|_| fs::remove_dir(path))
+            .map_err(|error| error.to_string());
     }
-    Ok(())
+    if metadata.is_dir() {
+        fs::remove_dir_all(path).map_err(|error| error.to_string())
+    } else {
+        fs::remove_file(path).map_err(|error| error.to_string())
+    }
 }
 
 pub fn reveal(root: &str, relative_path: &str) -> Result<(), String> {
@@ -419,6 +434,8 @@ pub fn reveal(root: &str, relative_path: &str) -> Result<(), String> {
     reveal_path(&target)
 }
 
+/// 工作区内的条目路径：父目录解析后必须仍在根目录内；最后一段不跟随符号链接，
+/// 所以删除、重命名、覆盖都作用在链接本身。
 pub(crate) fn resolve_inside(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     let relative = normalize_relative(relative_path)?;
     if relative.is_empty() {
@@ -429,12 +446,43 @@ pub(crate) fn resolve_inside(root: &Path, relative_path: &str) -> Result<PathBuf
     let canonical_parent = if parent == root {
         root.to_path_buf()
     } else {
-        parent
-            .canonicalize()
-            .map_err(|_| "父目录不存在".to_string())?
+        ensure_inside(root, parent).map_err(|error| {
+            if parent.exists() {
+                error
+            } else {
+                "父目录不存在".to_string()
+            }
+        })?
     };
     let name = target.file_name().ok_or_else(|| "无效路径".to_string())?;
     Ok(canonical_parent.join(name))
+}
+
+/// `root` 必须已经 canonicalize。
+pub(crate) fn ensure_inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|error| format!("文件不存在：{error}"))?;
+    if !canonical.starts_with(root) {
+        return Err("路径指向工作区之外".to_string());
+    }
+    Ok(canonical)
+}
+
+/// 逐级创建缺失的父目录，每一级都校验没有经符号链接跳出根目录，返回 canonical 的父目录。
+pub(crate) fn create_parents_inside(root: &Path, relative_parent: &Path) -> Result<PathBuf, String> {
+    let mut current = root.to_path_buf();
+    for component in relative_parent.components() {
+        let next = current.join(component);
+        if fs::symlink_metadata(&next).is_err() {
+            fs::create_dir(&next).map_err(|error| error.to_string())?;
+        }
+        current = ensure_inside(root, &next)?;
+        if !current.is_dir() {
+            return Err(format!("{} 不是文件夹", relative_parent.display()));
+        }
+    }
+    Ok(current)
 }
 
 pub(crate) fn reveal_path(path: &Path) -> Result<(), String> {
@@ -554,12 +602,7 @@ fn listing_directory(root: &Path, relative_path: &str) -> Result<PathBuf, String
 }
 
 pub(crate) fn resolve_existing(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
-    let relative = normalize_relative(relative_path)?;
-    let target = root
-        .join(relative)
-        .canonicalize()
-        .map_err(|error| format!("文件不存在：{error}"))?;
-    Ok(target)
+    ensure_inside(root, &root.join(normalize_relative(relative_path)?))
 }
 
 pub fn normalize_relative(path: &str) -> Result<String, String> {
@@ -813,11 +856,10 @@ mod tests {
         fs::remove_file(temp.path().join(".git")).unwrap();
         fs::create_dir(temp.path().join(".git")).unwrap();
         fs::write(temp.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        // `.git` 在 EXPLORER_EXCLUDE 里，目录形态也不出现在列表中。
         let with_directory =
             list_directory("workspace", temp.path().to_str().unwrap(), None).unwrap();
-        assert!(with_directory
-            .iter()
-            .any(|entry| entry.name == ".git" && entry.is_directory));
+        assert!(!with_directory.iter().any(|entry| entry.name == ".git"));
     }
 
     fn symlink_to(source: &Path, dest: &Path, directory: bool) {
@@ -852,6 +894,30 @@ mod tests {
         delete_entry(root, "docs/readme.txt").unwrap();
         delete_entry(root, "docs").unwrap();
         assert!(!temp.path().join("docs").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_pointing_outside_cannot_be_used_to_escape_the_root() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("keep.txt"), "keep").unwrap();
+        symlink_to(outside.path(), &workspace.path().join("link"), true);
+        let root = workspace.path().to_str().unwrap();
+
+        assert!(write(root, "link/keep.txt", "overwritten").is_err());
+        assert!(write(root, "link/new/file.txt", "x").is_err());
+        assert!(create_file(root, "link/created.txt", "x").is_err());
+        assert!(create_directory(root, "link/dir").is_err());
+        assert!(rename_entry(root, "link/keep.txt", "moved.txt").is_err());
+        assert!(!outside.path().join("new").exists());
+        assert!(!outside.path().join("created.txt").exists());
+        let linked = read("workspace", root, "link/keep.txt").unwrap();
+        assert!(linked.read_only);
+
+        delete_entry(root, "link").unwrap();
+        assert!(fs::symlink_metadata(workspace.path().join("link")).is_err());
+        assert_eq!(fs::read_to_string(outside.path().join("keep.txt")).unwrap(), "keep");
     }
 
     #[test]

@@ -10,18 +10,11 @@ SELECT i.id, i.session_id, i.project_id, i.task_id, i.title, i.preview, i.status
        CASE WHEN i.read != 0 THEN 0 ELSE (
          SELECT COUNT(*) FROM messages m
          WHERE m.session_id = i.session_id
-           AND (
-             i.read_message_id IS NULL
-             OR NOT EXISTS (SELECT 1 FROM messages anchor WHERE anchor.id = i.read_message_id)
-             OR (m.created_at, m.id) > (
-               SELECT anchor.created_at, anchor.id
-               FROM messages anchor
-               WHERE anchor.id = i.read_message_id
-             )
-           )
+           AND (anchor.id IS NULL OR (m.created_at, m.id) > (anchor.created_at, anchor.id))
        ) END,
        i.archived_at
 FROM inbox_items i
+LEFT JOIN messages anchor ON anchor.id = i.read_message_id
 ";
 
 fn map_item(row: &Row) -> rusqlite::Result<InboxItem> {

@@ -12,6 +12,7 @@ const ACTIONS: Array<{ choice: MergeConflictChoice; label: string }> = [
   { choice: "incoming", label: "接受传入的更改" },
   { choice: "both", label: "接受双方更改" },
 ];
+const CONFLICT_HEADER_SEARCH = "^<<<<<<<";
 
 /** 冲突操作交给 Monaco 的 content widget 定位，不监听布局，避免滚动和粘性滚动互相触发。 */
 export class MergeConflictEditor {
@@ -61,7 +62,8 @@ export class MergeConflictEditor {
   private paint() {
     const model = this.editor.getModel();
     this.clearWidgets();
-    if (!model) {
+    // 每次编辑都会走到这里，没有冲突头时不取全文。
+    if (!model?.findNextMatch(CONFLICT_HEADER_SEARCH, { lineNumber: 1, column: 1 }, true, true, null, false)) {
       this.decorationIds = this.editor.deltaDecorations(this.decorationIds, []);
       return;
     }

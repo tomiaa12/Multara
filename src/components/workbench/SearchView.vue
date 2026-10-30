@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { Workspace } from "../../domain/types";
 import { t } from "../../i18n";
 import FileTypeIcon from "../FileTypeIcon.vue";
@@ -35,12 +35,18 @@ const error = ref("");
 const truncated = ref(false);
 const status = ref("");
 const input = ref<HTMLInputElement | null>(null);
-const matches = ref<Array<TextSearchMatch & { workspaceId: string; workspaceName: string }>>([]);
+const matches = shallowRef<Array<TextSearchMatch & { workspaceId: string; workspaceName: string }>>([]);
 const collapsed = ref(new Set<string>());
 const selectedKey = ref("");
 const viewAsTree = ref(true);
 const TREE_INDENT = 12;
+const SEARCH_DEBOUNCE_MS = 250;
+/** 同一个键的新搜索会让后端放弃上一次还在遍历的搜索。 */
+const SEARCH_CANCEL_KEY = "search-view";
+/** 这几项是边打字边改的输入框，防抖后再搜；勾选类选项改了立即搜。 */
+const TYPED_OPTIONS = ["query", "include", "exclude"] as const;
 let request = 0;
+let searchTimer = 0;
 
 const groups = computed(() => {
   const byFile = new Map<string, {
@@ -93,9 +99,16 @@ watch(() => props.active, (active) => {
   if (active) focusSearch();
 });
 
-watch(options, () => {
-  void runSearch();
-}, { deep: true });
+watch(() => ({ ...options.value }), (next, prev) => {
+  if (!TYPED_OPTIONS.some((key) => next[key] !== prev[key])) {
+    void runSearch();
+    return;
+  }
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => void runSearch(), SEARCH_DEBOUNCE_MS);
+});
+
+onBeforeUnmount(() => window.clearTimeout(searchTimer));
 
 function fileKey(workspaceId: string, path: string) {
   return `${workspaceId}\n${path}`;
@@ -137,7 +150,8 @@ function resultRows(files: ResultFile[], prefix = "", depth = 0, scope = ""): Re
     if (slash < 0) here.push(file);
     else {
       const name = rest.slice(0, slash);
-      dirs.set(name, [...(dirs.get(name) ?? []), file]);
+      if (!dirs.has(name)) dirs.set(name, []);
+      dirs.get(name)?.push(file);
     }
   }
   const rows: ResultRow[] = [];
@@ -152,6 +166,10 @@ function resultRows(files: ResultFile[], prefix = "", depth = 0, scope = ""): Re
   for (const file of here) rows.push({ kind: "file", file, depth });
   return rows;
 }
+
+const folderRows = computed(() => new Map(
+  groups.value.map((folder) => [folder.id, resultRows(folder.files, "", 0, folder.id)]),
+));
 
 function rowPad(depth: number) {
   return `${8 + depth * TREE_INDENT}px`;
@@ -198,6 +216,7 @@ function clearSearch() {
 }
 
 function cancelSearch() {
+  window.clearTimeout(searchTimer);
   request += 1;
   searching.value = false;
 }
@@ -213,6 +232,7 @@ function parts(match: TextSearchMatch) {
 }
 
 async function runSearch() {
+  window.clearTimeout(searchTimer);
   const current = ++request;
   const query = options.value;
   error.value = "";
@@ -243,7 +263,7 @@ async function runSearch() {
           if (next.length >= 2000) break;
         }
       } else {
-        const found = await backend.searchWorkspace(workspace.id, query);
+        const found = await backend.searchWorkspace(workspace.id, query, SEARCH_CANCEL_KEY);
         if (current !== request) return;
         if (found.error) message = found.error;
         hitLimit = hitLimit || found.truncated;
@@ -430,7 +450,7 @@ async function readFile(workspaceId: string, path: string) {
           <em>{{ folder.matchCount }}</em>
         </button>
         <template v-if="!collapsed.has(folder.id)">
-          <template v-for="row in resultRows(folder.files, '', 0, folder.id)" :key="row.kind === 'dir' ? row.key : row.file.key">
+          <template v-for="row in folderRows.get(folder.id)" :key="row.kind === 'dir' ? row.key : row.file.key">
             <button
               v-if="row.kind === 'dir'"
               type="button"

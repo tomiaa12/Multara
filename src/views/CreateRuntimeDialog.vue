@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowLeft, Plug, X } from "@lucide/vue";
 import type { CustomRuntimeForm, Runtime } from "../domain/types";
 import ProviderLogo from "../components/ProviderLogo.vue";
@@ -17,6 +17,7 @@ import {
 } from "./runtime-catalog";
 import RuntimeGatewayForm from "./RuntimeGatewayForm.vue";
 import RuntimeProfileForm from "./RuntimeProfileForm.vue";
+import { escapeClosesDialog } from "./dialog-escape";
 
 const props = defineProps<{ runtime?: Runtime | null }>();
 const emit = defineEmits<{ close: [] }>();
@@ -49,8 +50,20 @@ const gatewayOptions = computed(() => ({
 
 const title = computed(() => (editingId.value ? t("runtime.editTitle") : t("runtime.createTitle")));
 
+// 表单字段在子组件里各自维护，这里只记“进入当前步骤后用户是否输入过”
+let edited = false;
+watch(step, () => {
+  edited = false;
+});
+
+function markEdited() {
+  edited = true;
+}
+
 function onKey(event: KeyboardEvent) {
-  if (event.key === "Escape" && !busy.value) emit("close");
+  if (busy.value || !escapeClosesDialog(event)) return;
+  if (edited && !window.confirm(t("common.discardUnsavedConfirm"))) return;
+  emit("close");
 }
 
 onMounted(async () => {
@@ -242,7 +255,7 @@ async function save(payload: {
 
 <template>
   <UiModal @click.self="!busy && emit('close')">
-    <form class="modal domain-modal runtime-create-dialog" @submit.prevent>
+    <form class="modal domain-modal runtime-create-dialog" @submit.prevent @input="markEdited">
       <header class="modal-heading">
         <div class="skill-create-title">
           <UiButton v-if="step !== 'kind' && !editingId" class="icon-button" type="button" :disabled="busy" @click="goBack">

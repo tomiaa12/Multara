@@ -5,7 +5,6 @@ import { useDiffStore } from "../../stores/diff";
 import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
-import * as backend from "../../services/backend";
 import { t } from "../../i18n";
 
 const props = defineProps<{
@@ -66,18 +65,23 @@ const totals = computed(() =>
   ),
 );
 
+let readEpoch = -1;
+
+// diskEpoch 不变时只补读新出现的文件；变了才全部重读，并走 diff store 的共享缓存，和编辑卡共用同一次读盘。
 async function refreshContents() {
   const listed = diffStore.listSnapshotFiles(props.workspaceIds);
+  const epoch = diffStore.diskEpoch;
+  const previous = epoch === readEpoch ? contents.value : new Map<string, string>();
   const next = new Map<string, string>();
   await Promise.all(listed.map(async (file) => {
     const key = fileKey(file.workspaceId, file.filePath);
-    try {
-      next.set(key, (await backend.readWorkspaceFile(file.workspaceId, file.filePath)).content);
-    } catch {
-      next.set(key, "");
-    }
+    next.set(key, previous.get(key) ?? await diffStore.readLiveContent(file.workspaceId, file.filePath));
   }));
-  contents.value = next;
+  if (epoch !== diffStore.diskEpoch) return;
+  readEpoch = epoch;
+  const unchanged = next.size === contents.value.size
+    && [...next].every(([key, value]) => contents.value.get(key) === value);
+  if (!unchanged) contents.value = next;
 }
 
 watch(

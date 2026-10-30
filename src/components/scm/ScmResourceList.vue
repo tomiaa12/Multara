@@ -82,6 +82,22 @@ type Row =
   | { kind: "dir"; path: string; name: string; depth: number; count: number }
   | { kind: "file"; file: GitFileStatus; depth: number };
 
+const rowsByGroup = computed(
+  () =>
+    new Map(
+      props.groups
+        .filter((group) => isGroupOpen(group.id))
+        .map((group) => [group.id, rowsFor(group.id, group.files)]),
+    ),
+);
+
+const filesByGroup = computed(
+  () =>
+    new Map(
+      props.groups.map((group) => [group.id, new Map(group.files.map((file) => [file.path, file]))]),
+    ),
+);
+
 function rowsFor(group: ScmGroupId, files: GitFileStatus[]): Row[] {
   if (props.viewMode === "list") {
     return [...files]
@@ -144,11 +160,8 @@ function openMenu(group: ScmGroupId, path: string, event: MouseEvent) {
 }
 
 function filesFor(group: ScmGroupId, paths: string[]) {
-  const files = props.groups.find((item) => item.id === group)?.files ?? [];
-  return paths.map((path) => {
-    const file = files.find((item) => item.path === path);
-    return { path, worktreeStatus: file?.worktreeStatus ?? "M" };
-  });
+  const files = filesByGroup.value.get(group);
+  return paths.map((path) => ({ path, worktreeStatus: files?.get(path)?.worktreeStatus ?? "M" }));
 }
 
 function onMenuSelect(id: string) {
@@ -223,7 +236,7 @@ function guideLeft(level: number) {
       </div>
     </header>
     <template v-if="isGroupOpen(group.id)">
-      <template v-for="row in rowsFor(group.id, group.files)" :key="row.kind === 'dir' ? `d:${row.path}` : `f:${row.file.path}`">
+      <template v-for="row in rowsByGroup.get(group.id) ?? []" :key="row.kind === 'dir' ? `d:${row.path}` : `f:${row.file.path}`">
         <button
           v-if="row.kind === 'dir'"
           type="button"

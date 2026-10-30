@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
@@ -45,20 +47,27 @@ pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
+    let mut resources = db
+        .prepare("SELECT agent_id, resource_id, kind FROM agent_resources ORDER BY resource_id")
+        .map_err(|error| error.to_string())?;
+    let mut assigned: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    resources
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .try_for_each(|row| {
+            let (agent_id, resource_id, kind) = row?;
+            assigned.entry(agent_id).or_default().push((resource_id, kind));
+            Ok::<_, rusqlite::Error>(())
+        })
+        .map_err(|error| error.to_string())?;
     for agent in &mut agents {
-        let mut resources = db
-            .prepare(
-                "SELECT resource_id, kind FROM agent_resources WHERE agent_id = ?1 ORDER BY resource_id",
-            )
-            .map_err(|error| error.to_string())?;
-        let assigned = resources
-            .query_map([&agent.id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|error| error.to_string())?;
-        for (resource_id, kind) in assigned {
+        for (resource_id, kind) in assigned.remove(&agent.id).unwrap_or_default() {
             if kind == "skill" {
                 agent.skill_ids.push(resource_id);
             } else {
@@ -393,11 +402,11 @@ mod tests {
         let agent = get(&db, "miku").unwrap();
         assert_eq!(agent.system_key.as_deref(), Some("miku"));
         assert_eq!(agent.name, "Jarvis");
-        assert!(agent
-            .system_instructions
-            .as_deref()
-            .unwrap()
-            .starts_with("你是 Jarvis，"));
+        let system = agent.system_instructions.as_deref().unwrap();
+        assert!(
+            system.starts_with("你是 Jarvis，") || system.starts_with("You are Jarvis,"),
+            "unexpected system instructions: {system}"
+        );
         assert_eq!(agent.instructions, "主仓库是 acme。");
     }
 }

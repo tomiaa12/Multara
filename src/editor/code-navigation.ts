@@ -34,6 +34,8 @@ const SCRIPT_LANGUAGES = new Set(["typescript", "javascript"]);
 
 let installed = false;
 const fileLists = new Map<string, Promise<Set<string>>>();
+const fileNameIndexes = new WeakMap<Set<string>, Map<string, string[]>>();
+const peekModels = new Map<monaco.editor.ITextModel, number>();
 
 /** 全局注册一次：定义提供器对所有语言生效，TS/JS 只补充它自己解析不了的 import（.vue/.css 等）。 */
 export function installCodeNavigation() {
@@ -123,8 +125,7 @@ async function heuristicDefinition(
 
   const components = componentFileNames(word);
   if (components.length) {
-    const files = await fileList(target.workspaceId);
-    const matches = [...files].filter((path) => components.includes(path.split("/").pop() ?? ""));
+    const matches = filesNamed(await fileList(target.workspaceId), components);
     if (matches.length) {
       return matches.slice(0, MAX_SEARCH_RESULTS).map((path) => lineOne({ workspaceId: target.workspaceId, path }));
     }
@@ -187,6 +188,37 @@ function fileList(workspaceId: string): Promise<Set<string>> {
   return list;
 }
 
+/** 按文件名建索引，跟着文件列表一起失效（refreshNavigationIndex 会换掉 Set）。 */
+function filesNamed(files: Set<string>, names: string[]) {
+  let index = fileNameIndexes.get(files);
+  if (!index) {
+    index = new Map<string, string[]>();
+    for (const path of files) {
+      const name = path.split("/").pop() ?? "";
+      if (!index.has(name)) index.set(name, []);
+      index.get(name)?.push(path);
+    }
+    fileNameIndexes.set(files, index);
+  }
+  return names.flatMap((name) => index.get(name) ?? []);
+}
+
+/**
+ * 新的 Peek 会替换旧的，这时释放旧 Peek 临时建的模型。新结果还要用的、正挂在编辑器上的留到下一次；
+ * 被改过的说明已经当标签页打开在编辑，不再归这里管。
+ */
+function releasePeekModels(keep: Set<string>) {
+  for (const [model, version] of peekModels) {
+    if (model.isDisposed() || model.getAlternativeVersionId() !== version) {
+      peekModels.delete(model);
+      continue;
+    }
+    if (keep.has(model.uri.toString()) || model.isAttachedToEditor()) continue;
+    model.dispose();
+    peekModels.delete(model);
+  }
+}
+
 function lineOne(file: LocatedFile): monaco.languages.Location {
   return { uri: workspaceModelUri(file.workspaceId, file.path), range: new monaco.Range(1, 1, 1, 1) };
 }
@@ -198,7 +230,9 @@ function wordLocation(uri: monaco.Uri, line: number, column: number, word: strin
 /** 多个结果时 Monaco 用 Peek 展示，需要目标文件已有模型；单个结果直接交给 opener。 */
 async function finish(locations: monaco.languages.Location[]): Promise<monaco.languages.Location[]> {
   if (locations.length < 2) return locations;
-  const missing = [...new Set(locations.map((item) => item.uri.toString()))]
+  const keys = new Set(locations.map((item) => item.uri.toString()));
+  releasePeekModels(keys);
+  const missing = [...keys]
     .map((key) => locations.find((item) => item.uri.toString() === key)!.uri)
     .filter((uri) => !monaco.editor.getModel(uri))
     .slice(0, MAX_PEEK_MODELS);
@@ -208,7 +242,9 @@ async function finish(locations: monaco.languages.Location[]): Promise<monaco.la
       if (!located) return;
       try {
         const file = await backend.readWorkspaceFile(located.workspaceId, located.path);
-        if (!monaco.editor.getModel(uri)) monaco.editor.createModel(file.content, undefined, uri);
+        if (monaco.editor.getModel(uri)) return;
+        const model = monaco.editor.createModel(file.content, undefined, uri);
+        peekModels.set(model, model.getAlternativeVersionId());
       } catch {
         // 文件读不到就让 Peek 显示空
       }

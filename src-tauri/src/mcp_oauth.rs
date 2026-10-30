@@ -2,8 +2,8 @@
 //! 流程对齐常见 MCP OAuth（受保护资源元数据 + PKCE），浏览器走系统默认（macOS 的 `open`）。
 
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 const DISCOVERY_TIMEOUT_SECS: &str = "20";
 const CALLBACK_WAIT: Duration = Duration::from_secs(180);
 const MAX_RESPONSE_BYTES: usize = 1_000_000;
+const MAX_RESPONSE_BYTES_ARG: &str = "1000000";
+/// 距离过期不足这么多秒就先刷新。
+const REFRESH_MARGIN_SECS: u64 = 60;
+static REFRESH_LOCK: Mutex<()> = Mutex::new(());
 const CLIENT_NAME: &str = "Multara";
 const PROTOCOL_VERSION: &str = "2025-03-26";
 
@@ -27,24 +31,40 @@ pub fn sign_out(name: &str) -> Result<(), String> {
     };
     if path.is_file() {
         fs::remove_file(path).map_err(|error| format!("删除授权失败：{error}"))?;
+        crate::resources::invalidate_scan_cache();
     }
     Ok(())
 }
 
 /// 读取已保存的 access token；快过期且有 refresh token 时先刷新再返回。
+/// 刷新串行进行：刷新令牌可能是一次性轮换的，并发刷新会让其中一方拿到 `invalid_grant`。
 pub fn access_token(name: &str) -> Option<String> {
     let path = token_path(name)?;
-    let stored: Value = serde_json::from_str(&fs::read_to_string(&path).ok()?).ok()?;
+    let stored = read_token(&path)?;
+    if !needs_refresh(&stored) {
+        return stored.get("access_token").and_then(Value::as_str).map(str::to_string);
+    }
+    let _guard = REFRESH_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    // 等锁期间别的线程可能已经刷新过
+    let stored = read_token(&path)?;
     let token = stored.get("access_token").and_then(Value::as_str)?.to_string();
-    let obtained = stored.get("obtained_at").and_then(Value::as_u64).unwrap_or(0);
-    let Some(expires_in) = stored.get("expires_in").and_then(Value::as_u64) else {
-        return Some(token);
-    };
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0);
-    if obtained + expires_in > now + 60 {
+    if !needs_refresh(&stored) {
         return Some(token);
     }
     refresh(&path, &stored).ok().or(Some(token))
+}
+
+fn read_token(path: &PathBuf) -> Option<Value> {
+    serde_json::from_str(&fs::read_to_string(path).ok()?).ok()
+}
+
+fn needs_refresh(stored: &Value) -> bool {
+    let obtained = stored.get("obtained_at").and_then(Value::as_u64).unwrap_or(0);
+    let Some(expires_in) = stored.get("expires_in").and_then(Value::as_u64) else {
+        return false;
+    };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0);
+    obtained + expires_in <= now + REFRESH_MARGIN_SECS
 }
 
 fn refresh(path: &PathBuf, stored: &Value) -> Result<String, String> {
@@ -81,8 +101,10 @@ fn refresh(path: &PathBuf, stored: &Value) -> Result<String, String> {
             json!(SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0)),
         );
     }
-    fs::write(path, serde_json::to_string(&next).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
+    crate::mcp_vars::write_private_atomic(
+        path,
+        serde_json::to_string(&next).map_err(|error| error.to_string())?.as_bytes(),
+    )?;
     Ok(token.access_token)
 }
 
@@ -310,9 +332,6 @@ fn write_token(
     token: &TokenResponse,
 ) -> Result<(), String> {
     let path = token_path(name).ok_or_else(|| "无法定位授权文件".to_string())?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
     let payload = json!({
         "access_token": token.access_token,
         "refresh_token": token.refresh_token,
@@ -323,14 +342,12 @@ fn write_token(
         "resource": metadata.resource,
         "obtained_at": SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0),
     });
-    let mut file = fs::File::create(&path).map_err(|error| error.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
-    }
-    file.write_all(serde_json::to_string(&payload).map_err(|error| error.to_string())?.as_bytes())
-        .map_err(|error| error.to_string())
+    crate::mcp_vars::write_private_atomic(
+        &path,
+        serde_json::to_string(&payload).map_err(|error| error.to_string())?.as_bytes(),
+    )?;
+    crate::resources::invalidate_scan_cache();
+    Ok(())
 }
 
 fn token_path(name: &str) -> Option<PathBuf> {
@@ -400,6 +417,8 @@ fn http_exchange(
         "=https",
         "--max-redirs",
         "0",
+        "--max-filesize",
+        MAX_RESPONSE_BYTES_ARG,
         "--dump-header",
     ]);
     command.arg(header_file.path());
@@ -545,17 +564,17 @@ fn form_item(value: &str) -> String {
     out
 }
 
+/// 按字节解析 `%XX`，非十六进制或截断的序列原样保留；回调端口任何本机进程都能访问，这里不能 panic。
 fn form_decode(value: &str) -> String {
     let mut bytes = Vec::new();
     let raw = value.as_bytes();
+    let hex = |index: usize| raw.get(index).and_then(|byte| (*byte as char).to_digit(16));
     let mut index = 0;
     while index < raw.len() {
-        if raw[index] == b'%' && index + 2 < raw.len() {
-            if let Ok(byte) = u8::from_str_radix(&value[index + 1..index + 3], 16) {
-                bytes.push(byte);
-                index += 3;
-                continue;
-            }
+        if let (b'%', Some(high), Some(low)) = (raw[index], hex(index + 1), hex(index + 2)) {
+            bytes.push((high * 16 + low) as u8);
+            index += 3;
+            continue;
         }
         bytes.push(if raw[index] == b'+' { b' ' } else { raw[index] });
         index += 1;
@@ -595,6 +614,14 @@ mod tests {
             resource_metadata_url(&headers).as_deref(),
             Some("https://project.feishu.cn/.well-known/oauth-protected-resource")
         );
+    }
+
+    #[test]
+    fn form_decode_handles_malformed_percent_sequences() {
+        assert_eq!(form_decode("a%20b+c"), "a b c");
+        assert_eq!(form_decode("%é"), "%é");
+        assert_eq!(form_decode("%4"), "%4");
+        assert_eq!(form_decode("x%41"), "xA");
     }
 
     #[test]

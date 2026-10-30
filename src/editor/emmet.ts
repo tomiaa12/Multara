@@ -30,6 +30,11 @@ const CSS_VALUES: Record<string, string> = {
   "0": "0",
 };
 
+/** `li*N` 的上限，`*` 是补全触发字符，不限的话输入 `li*99999999` 会卡死主线程。 */
+export const EMMET_MAX_REPEAT = 100;
+/** 只看光标前这么多字符找缩写，压缩过的超长单行不会被整行正则回溯。 */
+export const EMMET_SCAN_LIMIT = 256;
+
 export function expandEmmet(abbreviation: string, language: string): string | null {
   const abbr = abbreviation.trim();
   if (!abbr) return null;
@@ -43,7 +48,10 @@ export function expandEmmet(abbreviation: string, language: string): string | nu
 }
 
 export function emmetTrigger(textUntilPosition: string): string | null {
-  const match = textUntilPosition.match(/[\w.#*\->+[\]=]+$/);
+  const tail = textUntilPosition.slice(-EMMET_SCAN_LIMIT);
+  const match = tail.match(/[\w.#*\->+[\]=]+$/);
+  // 缩写占满了整个扫描窗口，说明它比窗口还长，截出来的只是半截。
+  if (match?.index === 0 && textUntilPosition.length > EMMET_SCAN_LIMIT) return null;
   return match?.[0] ?? null;
 }
 
@@ -67,6 +75,7 @@ function expandHtml(abbr: string): string | null {
   if (!/^[a-zA-Z.#[]/.test(abbr) || /\s/.test(abbr)) return null;
   const countMatch = abbr.match(/^(.*?)\*(\d+)$/);
   const count = countMatch ? Number(countMatch[2]) : 1;
+  if (count > EMMET_MAX_REPEAT) return null;
   const body = countMatch ? countMatch[1] : abbr;
   const chain = body.split(">").filter(Boolean);
   if (!chain.length || chain.length > 6) return null;

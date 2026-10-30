@@ -172,6 +172,16 @@ pub fn ensure_review_baseline(
     file_path: &str,
     content: &str,
 ) -> Result<bool, String> {
+    ensure_review_baseline_compressed(db, workspace_id, file_path, &compress_utf8(content)?)
+}
+
+/// 同 [`ensure_review_baseline`]，但内容已经在锁外压缩好。
+pub fn ensure_review_baseline_compressed(
+    db: &Connection,
+    workspace_id: &str,
+    file_path: &str,
+    compressed: &[u8],
+) -> Result<bool, String> {
     let existing: Option<i64> = db
         .query_row(
             "SELECT updated_at FROM file_review_baselines
@@ -184,7 +194,7 @@ pub fn ensure_review_baseline(
     if existing.is_some() {
         return Ok(false);
     }
-    save_review_baseline(db, workspace_id, file_path, content)?;
+    save_compressed_baseline(db, workspace_id, file_path, compressed)?;
     Ok(true)
 }
 
@@ -194,7 +204,15 @@ pub fn save_review_baseline(
     file_path: &str,
     content: &str,
 ) -> Result<(), String> {
-    let compressed = compress_utf8(content)?;
+    save_compressed_baseline(db, workspace_id, file_path, &compress_utf8(content)?)
+}
+
+fn save_compressed_baseline(
+    db: &Connection,
+    workspace_id: &str,
+    file_path: &str,
+    compressed: &[u8],
+) -> Result<(), String> {
     db.execute(
         "INSERT INTO file_review_baselines (workspace_id, file_path, content, updated_at)
          VALUES (?1, ?2, ?3, ?4)
@@ -306,38 +324,42 @@ pub fn load_session_snapshots(
     Ok(out)
 }
 
+/// 快照 `tfs` 还有待 Accept/Undo：消息还在，且没有块状态（还没审阅过）或仍有 pending 块。
+/// 两个子查询都走 diff_chunk_states 的唯一索引 (message_id, workspace_id, file_path, chunk_key)。
+const UNRESOLVED_SNAPSHOT: &str = "tfs.file_path != ''
+    AND EXISTS (SELECT 1 FROM messages m WHERE m.id = tfs.message_id)
+    AND (
+      NOT EXISTS (
+        SELECT 1 FROM diff_chunk_states d
+        WHERE d.message_id = tfs.message_id AND d.workspace_id = tfs.workspace_id
+          AND d.file_path = tfs.file_path
+      )
+      OR EXISTS (
+        SELECT 1 FROM diff_chunk_states d
+        WHERE d.message_id = tfs.message_id AND d.workspace_id = tfs.workspace_id
+          AND d.file_path = tfs.file_path AND d.status = 'pending'
+      )
+    )";
+
 /// 每个仍有 Accept/Undo 的文件只取最早一版未处理完的快照。历史轮次留给 rollback 现查。
 pub fn load_active_snapshots(db: &Connection) -> Result<Vec<ActiveSnapshotRow>, String> {
+    // 先只按元数据排名，最后再按 id 取 content，不把 BLOB 带进排序。
     let mut statement = db
-        .prepare(
-            "WITH resolved AS (
-                SELECT message_id, workspace_id, file_path
-                FROM diff_chunk_states
-                GROUP BY message_id, workspace_id, file_path
-                HAVING SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) = 0
-             ),
-             candidates AS (
-                SELECT id, session_id, message_id, workspace_id, file_path, content, snapshot_at
+        .prepare(&format!(
+            "WITH ranked AS (
+                SELECT tfs.id,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY tfs.workspace_id, tfs.file_path
+                         ORDER BY tfs.snapshot_at, tfs.id
+                       ) AS position
                 FROM turn_file_snapshots tfs
-                WHERE file_path != ''
-                  AND EXISTS (SELECT 1 FROM messages m WHERE m.id = tfs.message_id)
-                  AND NOT EXISTS (
-                    SELECT 1 FROM resolved
-                    WHERE resolved.message_id = tfs.message_id
-                      AND resolved.workspace_id = tfs.workspace_id
-                      AND resolved.file_path = tfs.file_path
-                  )
+                WHERE {UNRESOLVED_SNAPSHOT}
              )
-             SELECT session_id, message_id, workspace_id, file_path, content
-             FROM candidates
-             WHERE id = (
-                SELECT id FROM candidates later
-                WHERE later.workspace_id = candidates.workspace_id
-                  AND later.file_path = candidates.file_path
-                ORDER BY later.snapshot_at, later.id
-                LIMIT 1
-             )",
-        )
+             SELECT s.session_id, s.message_id, s.workspace_id, s.file_path, s.content
+             FROM ranked
+             JOIN turn_file_snapshots s ON s.id = ranked.id
+             WHERE ranked.position = 1"
+        ))
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -443,35 +465,33 @@ pub fn get_turn_snapshots(
             )
         })
         .map_err(|_| "没有该轮快照".to_string())?;
-    let later_ids = message_ids_from(db, message_id, &session_id)?;
+    let later_ids = serde_json::to_string(&message_ids_from(db, message_id, &session_id)?)
+        .map_err(|error| error.to_string())?;
+    // 一次查询拿到所有后续轮次；每个文件取最早的一版（ROW_NUMBER 只排元数据，再回表取 content）。
     let mut statement = db
         .prepare(
-            "SELECT file_path, content, snapshot_at FROM turn_file_snapshots
-             WHERE session_id=?1 AND workspace_id=?2 AND file_path != '' AND message_id=?3
-             ORDER BY snapshot_at, id",
+            "WITH ranked AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (PARTITION BY file_path ORDER BY snapshot_at, id) AS position
+                FROM turn_file_snapshots
+                WHERE session_id=?1 AND workspace_id=?2 AND file_path != ''
+                  AND message_id IN (SELECT value FROM json_each(?3))
+             )
+             SELECT s.file_path, s.content
+             FROM ranked JOIN turn_file_snapshots s ON s.id = ranked.id
+             WHERE ranked.position = 1
+             ORDER BY s.file_path",
         )
         .map_err(|error| error.to_string())?;
-    let mut earliest: std::collections::BTreeMap<String, (i64, Vec<u8>)> =
-        std::collections::BTreeMap::new();
-    for later_id in &later_ids {
-        let rows = statement
-            .query_map(params![session_id, workspace_id, later_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Vec<u8>>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|error| error.to_string())?;
-        for (file_path, content, snapshot_at) in rows {
-            earliest.entry(file_path).or_insert((snapshot_at, content));
-        }
-    }
-    earliest
-        .into_iter()
-        .map(|(file_path, (_, content))| {
+    let rows = statement
+        .query_map(params![session_id, workspace_id, later_ids], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    rows.into_iter()
+        .map(|(file_path, content)| {
             Ok(SnapshotEntry {
                 file_path,
                 content: decompress_utf8(&content)?,
@@ -508,69 +528,64 @@ pub fn delete_snapshots_from(
     Ok(())
 }
 
+/// 超出最近 `KEEP_SESSIONS` 个会话或总量超过上限时删旧快照；还有待 Accept/Undo 的会话不删，
+/// 否则用户还没审阅的修改会悄悄失去撤销能力。
 pub fn cleanup_old_snapshots(db: &Connection) -> Result<(), String> {
     let mut sessions_stmt = db
-        .prepare(
-            "SELECT session_id, MAX(snapshot_at) FROM turn_file_snapshots
+        .prepare(&format!(
+            "SELECT session_id, MAX(snapshot_at), COALESCE(SUM(LENGTH(content)), 0),
+                    session_id IN (
+                      SELECT DISTINCT tfs.session_id FROM turn_file_snapshots tfs
+                      WHERE {UNRESOLVED_SNAPSHOT}
+                    )
+             FROM turn_file_snapshots
              GROUP BY session_id
-             ORDER BY MAX(snapshot_at) DESC",
-        )
+             ORDER BY MAX(snapshot_at) DESC"
+        ))
         .map_err(|error| error.to_string())?;
     let mut sessions = sessions_stmt
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, bool>(3)?,
+            ))
         })
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    if sessions.len() > KEEP_SESSIONS {
-        for (session_id, _) in sessions.iter().skip(KEEP_SESSIONS) {
-            db.execute(
-                "DELETE FROM turn_file_snapshots WHERE session_id=?1",
-                [session_id],
-            )
-            .map_err(|error| error.to_string())?;
-            db.execute(
-                "DELETE FROM diff_chunk_states WHERE session_id=?1",
-                [session_id],
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        sessions.truncate(KEEP_SESSIONS);
+    let mut total: i64 = sessions.iter().map(|item| item.2).sum();
+    let overflow = sessions.split_off(sessions.len().min(KEEP_SESSIONS));
+    for (session_id, _, size, _) in overflow.into_iter().filter(|item| !item.3) {
+        delete_session_snapshots(db, &session_id)?;
+        total -= size;
     }
-    let total: i64 = db
-        .query_row(
-            "SELECT COALESCE(SUM(LENGTH(content)), 0) FROM turn_file_snapshots",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
     if total <= MAX_SNAPSHOT_BYTES {
         return Ok(());
     }
     sessions.sort_by_key(|item| item.1);
-    for (session_id, _) in sessions {
-        let current: i64 = db
-            .query_row(
-                "SELECT COALESCE(SUM(LENGTH(content)), 0) FROM turn_file_snapshots",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-        if current <= MAX_SNAPSHOT_BYTES {
+    for (session_id, _, size, _) in sessions.into_iter().filter(|item| !item.3) {
+        if total <= MAX_SNAPSHOT_BYTES {
             break;
         }
-        db.execute(
-            "DELETE FROM turn_file_snapshots WHERE session_id=?1",
-            [&session_id],
-        )
-        .map_err(|error| error.to_string())?;
-        db.execute(
-            "DELETE FROM diff_chunk_states WHERE session_id=?1",
-            [&session_id],
-        )
-        .map_err(|error| error.to_string())?;
+        delete_session_snapshots(db, &session_id)?;
+        total -= size;
     }
+    Ok(())
+}
+
+fn delete_session_snapshots(db: &Connection, session_id: &str) -> Result<(), String> {
+    db.execute(
+        "DELETE FROM turn_file_snapshots WHERE session_id=?1",
+        [session_id],
+    )
+    .map_err(|error| error.to_string())?;
+    db.execute(
+        "DELETE FROM diff_chunk_states WHERE session_id=?1",
+        [session_id],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -759,6 +774,49 @@ mod tests {
         assert_eq!(by_file.remove("b.ts").as_deref(), Some("B0"));
         assert_eq!(by_file.remove("c.ts").as_deref(), Some("C0"));
         assert!(by_file.is_empty());
+    }
+
+    #[test]
+    fn cleanup_keeps_old_sessions_with_pending_review() {
+        let db = test_db();
+        for index in 0..(super::KEEP_SESSIONS as i64 + 2) {
+            insert_turn_snapshot(
+                &db,
+                &TurnFileSnapshot {
+                    id: format!("snap-{index}"),
+                    message_id: format!("msg-{index}"),
+                    session_id: format!("s{index}"),
+                    workspace_id: "ws".into(),
+                    file_path: "a.ts".into(),
+                    content: vec![1, 2, 3],
+                    content_hash: String::new(),
+                    snapshot_at: index,
+                },
+            )
+            .unwrap();
+        }
+        insert_message(&db, "msg-0", "t0");
+        insert_message(&db, "msg-1", "t1");
+        diff_state_db::upsert_chunk_state(&db, "msg-1", "s1", "ws", "a.ts", "0", "accepted")
+            .unwrap();
+
+        super::cleanup_old_snapshots(&db).unwrap();
+
+        let sessions: Vec<String> = {
+            let mut statement = db
+                .prepare("SELECT session_id FROM turn_file_snapshots WHERE session_id IN ('s0','s1')")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+        };
+        assert_eq!(sessions, vec!["s0".to_string()]);
+        let total: i64 = db
+            .query_row("SELECT COUNT(*) FROM turn_file_snapshots", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, super::KEEP_SESSIONS as i64 + 1);
     }
 
     #[test]

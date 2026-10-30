@@ -1,4 +1,5 @@
 import { t } from "../../i18n";
+import { readStorage, writeStorage } from "../../utils/safe-storage";
 
 export interface LocalHistoryEntry {
   id: string;
@@ -21,21 +22,47 @@ const STORAGE_KEY = "multara.localHistory";
 const MAX_PER_FILE = 20;
 const MAX_ENTRIES = 200;
 const MAX_CONTENT = 200_000;
+/** 配额超限时每次重试淘汰的最旧条目比例。 */
+const EVICT_RATIO = 0.25;
+/** 明显的密钥 / 凭据文件，内容不写进 localStorage。 */
+const SECRET_FILE_NAMES = [".env", ".npmrc", ".pypirc", ".netrc", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"];
+const SECRET_FILE_PREFIXES = [".env."];
+const SECRET_FILE_EXTENSIONS = [".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"];
 
 const extras: LocalHistoryEntry[] = [];
 const listeners = new Set<() => void>();
+let storedCache: LocalHistoryEntry[] | null = null;
 
-function readStored(): LocalHistoryEntry[] {
+export function isSecretHistoryPath(path: string) {
+  const name = (path.split(/[\\/]/).pop() ?? "").toLowerCase();
+  return SECRET_FILE_NAMES.includes(name)
+    || SECRET_FILE_PREFIXES.some((prefix) => name.startsWith(prefix))
+    || SECRET_FILE_EXTENSIONS.some((extension) => name.endsWith(extension));
+}
+
+function parseStored(): LocalHistoryEntry[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const parsed = JSON.parse(readStorage(STORAGE_KEY) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
+/** 只有本模块写 STORAGE_KEY，所以缓存只在 writeStored 时更新。返回值不要原地修改。 */
+function readStored(): LocalHistoryEntry[] {
+  storedCache ??= parseStored();
+  return storedCache;
+}
+
+/** 条目按新到旧排列；配额超限时从末尾淘汰最旧的再试，只剩最新一条仍失败就放弃写入（不清空已有历史）。 */
 function writeStored(entries: LocalHistoryEntry[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  let kept = [...entries].sort((a, b) => b.savedAt - a.savedAt);
+  while (!writeStorage(STORAGE_KEY, JSON.stringify(kept))) {
+    if (kept.length <= 1) return;
+    kept = kept.slice(0, Math.max(1, Math.floor(kept.length * (1 - EVICT_RATIO))));
+  }
+  storedCache = kept;
 }
 
 function notify() {
@@ -72,7 +99,7 @@ export function recordLocalHistory(input: {
   content: string;
   savedAt?: number;
 }) {
-  if (!input.path || input.content.length > MAX_CONTENT) return;
+  if (!input.path || input.content.length > MAX_CONTENT || isSecretHistoryPath(input.path)) return;
   const all = readStored();
   const mine = all
     .filter((item) => item.workspaceId === input.workspaceId && item.path === input.path)
@@ -175,8 +202,7 @@ export function renameLocalHistorySource(id: string, source: string) {
   const stored = readStored();
   const index = stored.findIndex((item) => item.id === id);
   if (index >= 0) {
-    stored[index] = { ...stored[index], source: trimmed };
-    writeStored(stored);
+    writeStored(stored.map((item, at) => (at === index ? { ...item, source: trimmed } : item)));
     notify();
     return;
   }

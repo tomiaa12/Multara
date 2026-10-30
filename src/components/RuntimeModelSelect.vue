@@ -5,7 +5,8 @@
  */
 import { computed, ref, watch } from "vue";
 import { RefreshCw } from "@lucide/vue";
-import { listRuntimeModels, type RuntimeModels } from "../services/backend";
+import type { RuntimeModels } from "../services/backend";
+import { requestRuntimeModels } from "./runtime-models-request";
 import type { SelectOption } from "./ui/select-types";
 import { t } from "../i18n";
 
@@ -32,7 +33,7 @@ async function load(refresh = false) {
   }
   loading.value = true;
   try {
-    const result = await listRuntimeModels(runtimeId, refresh);
+    const result = await requestRuntimeModels(runtimeId, refresh);
     if (current === requestId) info.value = result;
   } catch (cause) {
     if (current === requestId) {

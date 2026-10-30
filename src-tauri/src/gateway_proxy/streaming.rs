@@ -395,12 +395,19 @@ impl<R: Read> Read for BridgeReader<R> {
     }
 }
 
+/// 单个事件（含多行 data 拼接）的上限，上游不换行地一直写也不会把内存吃光。
+const MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
+
 fn read_event<R: BufRead>(reader: &mut R) -> std::io::Result<Option<(String, String)>> {
     let mut event = String::new();
     let mut data = String::new();
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 {
+        let read = Read::take(&mut *reader, (MAX_EVENT_BYTES + 1) as u64).read_line(&mut line)?;
+        if line.len() + data.len() > MAX_EVENT_BYTES {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "上游事件过大"));
+        }
+        if read == 0 {
             return if data.is_empty() {
                 Ok(None)
             } else {

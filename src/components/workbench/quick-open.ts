@@ -40,13 +40,32 @@ function scoreToken(path: string, name: string, token: string): number | null {
   return directory ? 80 - Math.min(inPath, 40) : 40 - Math.min(inPath, 30);
 }
 
-export function scoreQuickOpenPath(path: string, filter: string): number | null {
+/** 文件列表变化时算一次的小写路径与文件名，按键时不再对每个文件重复 replaceAll / toLowerCase / split。 */
+export interface QuickOpenCandidate {
+  file: QuickOpenFile;
+  hay: string;
+  name: string;
+}
+
+const pathCollator = new Intl.Collator();
+
+function candidateOf(file: QuickOpenFile): QuickOpenCandidate {
+  const hay = file.path.replaceAll("\\", "/").toLowerCase();
+  return { file, hay, name: hay.slice(hay.lastIndexOf("/") + 1) };
+}
+
+export function prepareQuickOpenFiles(files: QuickOpenFile[]): QuickOpenCandidate[] {
+  return files.map(candidateOf);
+}
+
+function queryTokens(filter: string) {
   const query = filter.trim().toLowerCase();
-  if (!query) return 0;
-  const hay = path.replaceAll("\\", "/").toLowerCase();
-  const name = hay.split("/").pop() ?? hay;
+  return query ? query.split(/\s+/) : [];
+}
+
+function scoreTokens(hay: string, name: string, tokens: string[]): number | null {
   let score = 0;
-  for (const token of query.split(/\s+/)) {
+  for (const token of tokens) {
     const part = scoreToken(hay, name, token);
     if (part === null) return null;
     score += part;
@@ -54,10 +73,22 @@ export function scoreQuickOpenPath(path: string, filter: string): number | null 
   return score;
 }
 
-export function rankQuickOpenFiles(files: QuickOpenFile[], filter: string): QuickOpenFile[] {
-  const ranked = files
-    .map((file) => ({ file, score: scoreQuickOpenPath(file.path, filter) }))
-    .filter((item): item is { file: QuickOpenFile; score: number } => item.score !== null)
-    .sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path));
+export function scoreQuickOpenPath(path: string, filter: string): number | null {
+  const { hay, name } = candidateOf({ workspaceId: "", path, label: "", detail: "" });
+  return scoreTokens(hay, name, queryTokens(filter));
+}
+
+export function rankPreparedQuickOpenFiles(candidates: QuickOpenCandidate[], filter: string): QuickOpenFile[] {
+  const tokens = queryTokens(filter);
+  const ranked: Array<{ file: QuickOpenFile; score: number }> = [];
+  for (const candidate of candidates) {
+    const score = scoreTokens(candidate.hay, candidate.name, tokens);
+    if (score !== null) ranked.push({ file: candidate.file, score });
+  }
+  ranked.sort((a, b) => b.score - a.score || pathCollator.compare(a.file.path, b.file.path));
   return ranked.slice(0, MAX_RESULTS).map((item) => item.file);
+}
+
+export function rankQuickOpenFiles(files: QuickOpenFile[], filter: string): QuickOpenFile[] {
+  return rankPreparedQuickOpenFiles(prepareQuickOpenFiles(files), filter);
 }

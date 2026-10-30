@@ -66,22 +66,22 @@ function isAlreadyBound(path: string) {
 async function addPaths(sourcePaths: string[]) {
   if (!sourcePaths.length) return;
   error.value = "";
+  const scanned: Awaited<ReturnType<typeof backend.scanWorkspaceCandidates>> = [];
+  for (const sourcePath of sourcePaths) scanned.push(...await backend.scanWorkspaceCandidates(sourcePath));
+  // 扫描期间可能有并发的选择 / 拖放已经加了条目，基于最新列表合并
   const existing = new Set(items.value.map((item) => item.path));
   const next = [...items.value];
-  for (const sourcePath of sourcePaths) {
-    const scanned = await backend.scanWorkspaceCandidates(sourcePath);
-    for (const candidate of scanned) {
-      if (existing.has(candidate.path)) continue;
-      existing.add(candidate.path);
-      next.push(
-        createPickerItem(
-          candidate,
-          props.requirementName,
-          props.knownBranches,
-          props.branchPrefix,
-        ),
-      );
-    }
+  for (const candidate of scanned) {
+    if (existing.has(candidate.path)) continue;
+    existing.add(candidate.path);
+    next.push(
+      createPickerItem(
+        candidate,
+        props.requirementName,
+        props.knownBranches,
+        props.branchPrefix,
+      ),
+    );
   }
   items.value = next;
 }

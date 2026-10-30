@@ -1,7 +1,11 @@
 //! MCP 配置里的变量：`${input:id}` 取已保存的输入，`${env:NAME}` 取环境变量，
 //! `${userHome}` 取用户目录。下发给运行时和探测前都要先解析，运行时自己不认识这些占位符。
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use serde_json::{Map, Value};
 
@@ -177,27 +181,50 @@ fn store_path() -> Option<PathBuf> {
     Some(home()?.join(".multara/mcp-inputs.json"))
 }
 
+/// 文件损坏时先改名成 `.corrupt` 留底，再当作空继续，避免下一次保存把它覆盖掉。
 fn read_store() -> Map<String, Value> {
-    store_path()
-        .and_then(|path| fs::read_to_string(path).ok())
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    let Some(path) = store_path() else {
+        return Map::new();
+    };
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Map::new();
+    };
+    if let Some(store) = serde_json::from_str::<Value>(&text)
+        .ok()
         .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default()
+    {
+        return store;
+    }
+    let backup = path.with_extension("json.corrupt");
+    match fs::rename(&path, &backup) {
+        Ok(()) => eprintln!("[mcp] 输入存储已损坏，已备份到 {}", backup.display()),
+        Err(error) => eprintln!("[mcp] 输入存储已损坏，备份失败：{error}"),
+    }
+    Map::new()
 }
 
 fn write_store(store: &Map<String, Value>) -> Result<(), String> {
     let path = store_path().ok_or_else(|| "无法定位用户目录".to_string())?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    fs::write(&path, serde_json::to_string_pretty(store).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-    }
+    write_private_atomic(
+        &path,
+        serde_json::to_string_pretty(store).map_err(|error| error.to_string())?.as_bytes(),
+    )?;
+    crate::resources::invalidate_scan_cache();
     Ok(())
+}
+
+/// 存密钥的文件：同目录临时文件（tempfile 在 Unix 上创建即 0600）写入、fsync 后一次 rename 覆盖，
+/// 没有“先建 0644 再 chmod”的窗口，崩溃也不会留下截断的文件。
+pub(crate) fn write_private_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "文件路径无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    temporary.write_all(content).map_err(|error| error.to_string())?;
+    temporary.as_file().sync_all().map_err(|error| error.to_string())?;
+    temporary
+        .persist(path)
+        .map(|_| ())
+        .map_err(|error| error.error.to_string())
 }
 
 fn home() -> Option<PathBuf> {

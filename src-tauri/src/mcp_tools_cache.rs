@@ -4,6 +4,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs,
+    panic::{self, AssertUnwindSafe},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -21,6 +22,8 @@ use crate::resources;
 const EVENT_UPDATED: &str = "mcp-tools-cache-updated";
 /// 未强制刷新时，成功缓存的复用窗口（与 Cursor「复用工具列表」接近）。
 const FRESH_SECS: u64 = 30 * 60;
+/// 失败或需要授权的探测，未强制刷新时这段时间内不重新排队，避免反复起 `npx`。
+const FAILURE_BACKOFF_SECS: u64 = 10 * 60;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +44,7 @@ struct Inner {
 
 pub struct McpToolsCache {
     inner: Mutex<Inner>,
+    persist: Mutex<()>,
     path: PathBuf,
     running: AtomicBool,
 }
@@ -60,6 +64,7 @@ impl McpToolsCache {
                 queue: VecDeque::new(),
                 queued: HashSet::new(),
             }),
+            persist: Mutex::new(()),
             path,
             running: AtomicBool::new(false),
         })
@@ -78,21 +83,21 @@ impl McpToolsCache {
         self.inner.lock().ok()?.entries.get(id).cloned()
     }
 
-    fn persist_locked(&self, guard: &Inner) {
-        let rows: Vec<_> = guard.entries.values().cloned().collect();
-        let Ok(text) = serde_json::to_string_pretty(&rows) else {
+    /// 在 `inner` 锁里只做插入和克隆快照，序列化与写盘放到锁外，`list()` / `get()` 不被 IO 挡住；
+    /// `persist` 锁保证并发 `put` 按顺序落盘，旧快照不会覆盖新快照。
+    fn put(&self, entry: McpToolsCacheEntry) {
+        let Ok(_persist) = self.persist.lock() else {
             return;
         };
-        if let Some(parent) = self.path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let _ = fs::write(&self.path, text);
-    }
-
-    fn put(&self, entry: McpToolsCacheEntry) {
-        if let Ok(mut guard) = self.inner.lock() {
+        let rows: Vec<_> = {
+            let Ok(mut guard) = self.inner.lock() else {
+                return;
+            };
             guard.entries.insert(entry.id.clone(), entry);
-            self.persist_locked(&guard);
+            guard.entries.values().cloned().collect()
+        };
+        if let Ok(text) = serde_json::to_string_pretty(&rows) {
+            let _ = crate::mcp_vars::write_private_atomic(&self.path, text.as_bytes());
         }
     }
 
@@ -112,8 +117,9 @@ impl McpToolsCache {
                 };
                 if !force {
                     if let Some(entry) = guard.entries.get(&id) {
-                        let fresh = now.saturating_sub(entry.updated_at_ms) < FRESH_SECS * 1000;
-                        if fresh && (entry.probe.ok || !entry.probe.tools.is_empty()) {
+                        let succeeded = entry.probe.ok || !entry.probe.tools.is_empty();
+                        let window = if succeeded { FRESH_SECS } else { FAILURE_BACKOFF_SECS };
+                        if now.saturating_sub(entry.updated_at_ms) < window * 1000 {
                             continue;
                         }
                     }
@@ -176,12 +182,15 @@ fn worker_loop(app: AppHandle) {
         let Some((owner, name)) = split_mcp_id(&id) else {
             continue;
         };
-        if !resources::mcp_is_enabled(&owner, &name) {
-            continue;
-        }
-        match resources::probe_mcp(&owner, &name) {
-            Ok(probe) => McpToolsCache::store_probe(&app, &owner, &name, probe),
-            Err(error) => {
+        // 探测 panic 不能让 `running` 永远停在 true，否则缓存再也不会探测
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
+            resources::mcp_is_enabled(&owner, &name).then(|| resources::probe_mcp(&owner, &name))
+        }))
+        .unwrap_or_else(|_| Some(Err("探测时发生内部错误".to_string())));
+        match outcome {
+            None => {}
+            Some(Ok(probe)) => McpToolsCache::store_probe(&app, &owner, &name, probe),
+            Some(Err(error)) => {
                 let mut probe = McpProbe::default();
                 probe.status = "error".into();
                 probe.error = error;

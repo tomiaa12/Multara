@@ -41,6 +41,7 @@ const savedText = ref("");
 const fileError = ref("");
 const saving = ref(false);
 const treeError = ref("");
+let openToken = 0;
 
 const resourceId = computed(() => String(route.params.resourceId ?? ""));
 const skill = computed(() => store.data?.resources.find((item) => item.id === resourceId.value && item.kind === "skill") ?? null);
@@ -110,38 +111,57 @@ async function loadRoot() {
   }
 }
 
-async function openEntry(entry: FileEntry) {
-  if (!skill.value) return;
-  if (entry.isDirectory) {
-    if (expanded.value.has(entry.path)) {
-      expanded.value.delete(entry.path);
-      expanded.value = new Set(expanded.value);
-      return;
-    }
+async function toggleDirectory(skillId: string, entry: FileEntry) {
+  if (expanded.value.has(entry.path)) {
+    expanded.value.delete(entry.path);
+    expanded.value = new Set(expanded.value);
+    return;
+  }
+  try {
     if (!children.value[entry.path]) {
       children.value = {
         ...children.value,
-        [entry.path]: await backend.listSkillDirectory(skill.value.id, entry.path),
+        [entry.path]: await backend.listSkillDirectory(skillId, entry.path),
       };
     }
     expanded.value = new Set(expanded.value).add(entry.path);
+  } catch (cause) {
+    treeError.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
+async function openEntry(entry: FileEntry) {
+  if (!skill.value) return;
+  if (entry.isDirectory) {
+    await toggleDirectory(skill.value.id, entry);
     return;
   }
-  selectedPath.value = entry.path;
+  if (dirty.value) {
+    if (entry.path === selectedPath.value) return;
+    if (!window.confirm(t("common.discardUnsavedConfirm"))) return;
+  }
+  const token = ++openToken;
   fileError.value = "";
-  const content = await backend.readSkillFile(skill.value.id, entry.path);
-  openFile.value = content;
-  draft.value = content.content;
-  savedText.value = content.content;
+  try {
+    const content = await backend.readSkillFile(skill.value.id, entry.path);
+    if (token !== openToken) return;
+    selectedPath.value = entry.path;
+    openFile.value = content;
+    draft.value = content.content;
+    savedText.value = content.content;
+  } catch (cause) {
+    if (token === openToken) fileError.value = cause instanceof Error ? cause.message : String(cause);
+  }
 }
 
 async function saveFile() {
   if (!skill.value || !openFile.value || !dirty.value || saving.value || openFile.value.readOnly) return;
   saving.value = true;
   fileError.value = "";
+  const text = draft.value;
   try {
-    await backend.writeSkillFile(skill.value.id, openFile.value.path, draft.value);
-    savedText.value = draft.value;
+    await backend.writeSkillFile(skill.value.id, openFile.value.path, text);
+    savedText.value = text;
     if (openFile.value.path === "SKILL.md") await store.refreshResources();
   } catch (cause) {
     fileError.value = cause instanceof Error ? cause.message : String(cause);
@@ -158,7 +178,9 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-watch(skill, () => {
+// 按 id 监听：保存 SKILL.md 后的资源刷新会换出新对象，不能因此关掉编辑器丢掉草稿
+watch(() => skill.value?.id, () => {
+  openToken += 1;
   roots.value = [];
   children.value = {};
   expanded.value = new Set();

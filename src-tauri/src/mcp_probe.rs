@@ -280,6 +280,12 @@ impl StdioConnection {
             command.current_dir(cwd);
         }
         command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        // `npx` / `uvx` / `sh -c` 包装的真实服务器是孙进程，放进独立进程组才能一起清理
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         append_log(&log, &format!("启动：{program}"));
         let mut child = command.spawn().map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
@@ -344,6 +350,12 @@ impl Connection for StdioConnection {
 
 impl Drop for StdioConnection {
     fn drop(&mut self) {
+        #[cfg(unix)]
+        let _ = crate::process::command("kill")
+            .args(["-KILL", &format!("-{}", self.child.id())])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -447,6 +459,7 @@ struct SseConnection {
     headers: Vec<(String, String)>,
     events: Receiver<(String, String)>,
     log: Arc<Mutex<String>>,
+    _header_file: tempfile::NamedTempFile,
 }
 
 impl SseConnection {
@@ -454,12 +467,12 @@ impl SseConnection {
         let parsed = url::Url::parse(url).map_err(|_| format!("地址无效：{url}"))?;
         let mut command = crate::process::command("curl");
         command.args(["--silent", "--show-error", "-N", "--proto", "=http,https", "--write-out", "\n__HTTP_STATUS__%{http_code}\n"]);
-        command.args(["-H", "Accept: text/event-stream"]);
-        for (key, value) in &headers {
-            command.args(["-H", &format!("{key}: {value}")]);
-        }
+        let mut stream_headers = headers.clone();
+        stream_headers.push(("Accept".into(), "text/event-stream".into()));
+        let header_file = http_client::curl_header_file(&stream_headers)?;
+        command.arg("-H").arg(format!("@{}", header_file.path().display()));
         command.arg(parsed.as_str());
-        command.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
+        command.stdout(Stdio::piped()).stderr(Stdio::null()).stdin(Stdio::null());
         let mut child = command.spawn().map_err(|error| format!("无法调用 curl：{error}"))?;
         let mut stdout = child.stdout.take().ok_or_else(|| "无法读取 SSE 流".to_string())?;
         let (sender, events) = mpsc::channel();
@@ -492,10 +505,11 @@ impl SseConnection {
                 Ok((event, data)) if event == "endpoint" => {
                     let endpoint = parsed.join(data.trim()).map_err(|_| format!("服务器返回的端点无效：{data}"))?;
                     append_log(&log, &format!("SSE 端点：{endpoint}"));
-                    return Ok(Self { child, endpoint: endpoint.to_string(), headers, events, log });
+                    return Ok(Self { child, endpoint: endpoint.to_string(), headers, events, log, _header_file: header_file });
                 }
                 Ok((event, status)) if event == "__status" => {
                     let _ = child.kill();
+                    let _ = child.wait();
                     return Err(match status.as_str() {
                         "401" | "403" => ProbeError::Auth(format!("服务器要求授权（HTTP {status}）")),
                         _ => ProbeError::Other(format!("SSE 连接失败（HTTP {status}）")),
@@ -504,6 +518,7 @@ impl SseConnection {
                 Ok(_) => {}
                 Err(_) => {
                     let _ = child.kill();
+                    let _ = child.wait();
                     return Err(ProbeError::Other("等待 SSE 端点超时".into()));
                 }
             }

@@ -247,6 +247,10 @@ pub fn maybe_resume_parent(
     let Some(parent_id) = parent_id.filter(|id| !id.is_empty()) else {
         return Ok(None);
     };
+    // 旧数据里可能已有 A→B→A 的环，不拦的话两边会互相排恢复运行，永不停止。
+    if parent_chain_contains(db, &parent_id, &child_id)? {
+        return Ok(None);
+    }
 
     let open_children: u32 = db
         .query_row(
@@ -388,50 +392,83 @@ pub fn attach_existing_session(
 }
 
 pub fn get(db: &Connection, task_id: &str) -> Result<Task, String> {
-    list(db, None, None, None)?
-        .into_iter()
-        .find(|task| task.id == task_id)
-        .ok_or_else(|| "任务不存在".to_string())
+    db.query_row(
+        &format!(
+            "SELECT {TASK_COLUMNS}
+             FROM tasks t
+             JOIN chat_sessions s ON s.id = t.session_id
+             WHERE t.id = ?1"
+        ),
+        [task_id],
+        map_task,
+    )
+    .optional()
+    .map_err(|error| error.to_string())?
+    .ok_or_else(|| "任务不存在".to_string())
 }
+
+const IDLE_IN_PROGRESS: &str = "status='in_progress'
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_runs r
+    WHERE r.session_id = tasks.session_id AND r.status IN ('queued', 'running')
+  )";
+
+const LAST_RUN_STATUS: &str = "(
+    SELECT r.status FROM agent_runs r
+    WHERE r.session_id = tasks.session_id
+    ORDER BY COALESCE(r.completed_at, r.created_at) DESC
+    LIMIT 1
+  )";
 
 /// 回答已经结束、没有还在排队或运行的记录，却停在进行中时收口。
 /// 最后一次成功进审核；最后一次失败回待办。用户手动停掉的不挪。
 /// 只在打开看板时调用，避免刚拖进进行中又被立刻弹走。
 pub(crate) fn settle_finished(db: &Connection) -> Result<(), String> {
+    // 绝大多数时候没有可收口的任务，先只读判断，免得每次打开看板都开写事务。
+    let settleable: bool = db
+        .query_row(
+            &format!(
+                "SELECT EXISTS(
+                   SELECT 1 FROM tasks
+                   WHERE {IDLE_IN_PROGRESS} AND {LAST_RUN_STATUS} IN ('completed', 'failed')
+                 )"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !settleable {
+        return Ok(());
+    }
     let now = Utc::now().to_rfc3339();
-    db.execute(
-        "UPDATE tasks SET status='in_review', updated_at=?1
-         WHERE status='in_progress'
-           AND NOT EXISTS (
-             SELECT 1 FROM agent_runs r
-             WHERE r.session_id = tasks.session_id AND r.status IN ('queued', 'running')
-           )
-           AND (
-             SELECT r.status FROM agent_runs r
-             WHERE r.session_id = tasks.session_id
-             ORDER BY COALESCE(r.completed_at, r.created_at) DESC
-             LIMIT 1
-           ) = 'completed'",
-        [&now],
-    )
-    .map_err(|error| error.to_string())?;
-    db.execute(
-        "UPDATE tasks SET status='todo', updated_at=?1
-         WHERE status='in_progress'
-           AND NOT EXISTS (
-             SELECT 1 FROM agent_runs r
-             WHERE r.session_id = tasks.session_id AND r.status IN ('queued', 'running')
-           )
-           AND (
-             SELECT r.status FROM agent_runs r
-             WHERE r.session_id = tasks.session_id
-             ORDER BY COALESCE(r.completed_at, r.created_at) DESC
-             LIMIT 1
-           ) = 'failed'",
-        [&now],
-    )
-    .map_err(|error| error.to_string())?;
+    for (next, last_run) in [("in_review", "completed"), ("todo", "failed")] {
+        db.execute(
+            &format!(
+                "UPDATE tasks SET status=?1, updated_at=?2
+                 WHERE {IDLE_IN_PROGRESS} AND {LAST_RUN_STATUS} = ?3"
+            ),
+            params![next, now, last_run],
+        )
+        .map_err(|error| error.to_string())?;
+    }
     Ok(())
+}
+
+/// `ancestor_id` 沿 `parent_task_id` 往上能不能走到 `task_id`（包括两者相同）。
+/// `UNION` 去重，库里已有环时也会终止。
+fn parent_chain_contains(db: &Connection, ancestor_id: &str, task_id: &str) -> Result<bool, String> {
+    db.query_row(
+        "WITH RECURSIVE chain(id) AS (
+           SELECT ?1
+           UNION
+           SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id
+           WHERE t.parent_task_id IS NOT NULL AND t.parent_task_id != ''
+         )
+         SELECT EXISTS(SELECT 1 FROM chain WHERE id = ?2)",
+        params![ancestor_id, task_id],
+        |row| row.get(0),
+    )
+    .map_err(|error| error.to_string())
 }
 
 pub fn list(
@@ -700,6 +737,11 @@ pub fn update_meta(
         if parent == Some(task_id) {
             return Err("任务不能作为自己的子任务".to_string());
         }
+        if let Some(parent_id) = parent {
+            if parent_chain_contains(db, parent_id, task_id)? {
+                return Err("不能把任务挂到它自己的子任务下".to_string());
+            }
+        }
         db.execute(
             "UPDATE tasks SET parent_task_id=?1, updated_at=?2 WHERE id=?3",
             params![parent, now, task_id],
@@ -838,5 +880,49 @@ mod tests {
         assert_eq!(linked, ["p1", "p2"]);
         assert_eq!(list(&db, None, None, Some("p1")).unwrap().len(), 1);
         assert_eq!(list(&db, None, None, Some("p2")).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rejects_parent_cycles_and_settles_only_when_needed() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('a1', '智能体', '', '', '', 'cursor', 'auto', 1);",
+        )
+        .unwrap();
+        let input = |title| CreateTaskInput {
+            title,
+            description: "",
+            agent_id: "a1",
+            project_id: None,
+            project_ids: &[],
+            source_session_id: None,
+            status: Some("backlog"),
+            parent_task_id: None,
+        };
+        let a = create(&mut db, input("A")).unwrap().task;
+        let b = create(&mut db, input("B")).unwrap().task;
+        super::update_meta(&db, &b.id, None, None, None, None, Some(Some(&a.id))).unwrap();
+        let cycle = super::update_meta(&db, &a.id, None, None, None, None, Some(Some(&b.id)));
+        assert!(cycle.is_err());
+        assert_eq!(super::get(&db, &b.id).unwrap().parent_task_id.as_deref(), Some(a.id.as_str()));
+        assert!(super::get(&db, "missing").is_err());
+
+        super::settle_finished(&db).unwrap();
+        db.execute(
+            "UPDATE tasks SET status='in_progress' WHERE id=?1",
+            [&a.id],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('r1', ?1, 'a1', 'cursor', 'A', 'completed', 'now')",
+            [&a.session_id],
+        )
+        .unwrap();
+        super::settle_finished(&db).unwrap();
+        assert_eq!(super::get(&db, &a.id).unwrap().status, "in_review");
     }
 }

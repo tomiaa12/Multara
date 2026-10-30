@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
-import { parseQuickOpenQuery, rankQuickOpenFiles, scoreQuickOpenPath } from "./quick-open";
+import {
+  parseQuickOpenQuery,
+  prepareQuickOpenFiles,
+  rankPreparedQuickOpenFiles,
+  rankQuickOpenFiles,
+  scoreQuickOpenPath,
+} from "./quick-open";
 
 describe("parseQuickOpenQuery", () => {
   test("keeps a line suffix out of the file filter", () => {
@@ -38,6 +44,12 @@ describe("rankQuickOpenFiles", () => {
     expect(rankQuickOpenFiles(files, "views index").map((file) => file.path)).toEqual([
       "src/views/index.vue",
     ]);
+  });
+
+  test("ranks prepared candidates the same as raw files", () => {
+    const candidates = prepareQuickOpenFiles(files);
+    expect(rankPreparedQuickOpenFiles(candidates, "INDEX")).toEqual(rankQuickOpenFiles(files, "index"));
+    expect(candidates[0]).toMatchObject({ hay: "src/views/index.vue", name: "index.vue" });
   });
 
   test("scores a file-name hit above a directory-only hit", () => {

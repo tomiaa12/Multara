@@ -5,6 +5,7 @@ import {
   fsPathFromFileUri,
   normalizeDefinitionResult,
   replyToServerRequest,
+  supportsIncrementalSync,
 } from "./protocol";
 
 const range = { start: { line: 1, character: 2 }, end: { line: 1, character: 5 } };
@@ -38,5 +39,13 @@ describe("lsp protocol", () => {
       result: [null, null],
     });
     expect(replyToServerRequest("custom/x", undefined, [])).toHaveProperty("error");
+    expect(replyToServerRequest("workspace/applyEdit", {}, [])).toEqual({ result: { applied: false } });
+  });
+
+  test("reads the incremental sync capability in both shapes", () => {
+    expect(supportsIncrementalSync({ capabilities: { textDocumentSync: 2 } })).toBe(true);
+    expect(supportsIncrementalSync({ capabilities: { textDocumentSync: { change: 2 } } })).toBe(true);
+    expect(supportsIncrementalSync({ capabilities: { textDocumentSync: 1 } })).toBe(false);
+    expect(supportsIncrementalSync(null)).toBe(false);
   });
 });

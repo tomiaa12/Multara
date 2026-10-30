@@ -57,10 +57,10 @@ import { collectDroppedItems } from "./workbench/explorer/explorer-import";
 import { explorerItemKey, useExplorer, type ExplorerItem } from "./workbench/explorer/use-explorer";
 import * as explorerBackend from "../services/explorer-backend";
 import {
+  activateUnsavedEditor,
   askUnsaved,
-  registerDirtyEditorPaths,
-  registerUnsavedDirtyChecker,
-  registerUnsavedLeaveHandler,
+  registerUnsavedEditor,
+  type UnsavedEditorOwner,
 } from "./workbench/unsaved-editor";
 import {
   fileNameOf,
@@ -76,7 +76,8 @@ import {
   mergeFetchedRecordEntry,
   recordFromFetchedKeys,
 } from "./workbench/async-record";
-import { folderGitStatus, gitStatusClass, gitStatusLetter, gitStatusTitle } from "./workbench/tree-git-status";
+import { gitStatusClass, gitStatusTitle } from "./workbench/tree-git-status";
+import { buildTreeGitIndex } from "./workbench/tree-git-index";
 import {
   filePathMatchesReference,
   isAbsoluteFsPath,
@@ -112,7 +113,7 @@ import {
   parseEditorConfig,
   type EditorConfigSection,
 } from "../editor/editorconfig";
-import { enclosingOutline, fileBreadcrumbs, outlineFromContent } from "../editor/outline";
+import { enclosingOutline, fileBreadcrumbs, outlineFromContent, type OutlineItem } from "../editor/outline";
 import {
   compilerOptionsFromTsconfig,
   parseTsconfigJson,
@@ -269,6 +270,10 @@ let tabChordTimer = 0;
 const loading = ref(false);
 const saving = ref(false);
 const error = ref("");
+const OUTLINE_DEBOUNCE_MS = 300;
+const PENDING_DIFF_DEBOUNCE_MS = 300;
+/** 缩进检测只采样文件开头这些行。 */
+const INDENT_SAMPLE_LINES = 80;
 const AGENT_DISK_CHANGE = () => t("workbench.agentDiskChange");
 const GIT_DISK_CHANGE = () => t("workbench.gitDiskChange");
 const externalChangePending = ref(false);
@@ -310,7 +315,8 @@ const editorConfigByWorkspace = ref<Record<string, EditorConfigSection[]>>({});
 const indentOverrides = ref<Record<string, { insertSpaces: boolean; tabSize: number }>>({});
 const eolOverrides = ref<Record<string, EditorEol>>({});
 const editorTheme = ref(monacoThemeName(currentDocumentTheme()));
-const gitRepositories = ref<GitRepositoryStatus[]>([]);
+// 只整体替换、从不原地修改，用 shallowRef 避免把成千上万条变更都包成深响应式。
+const gitRepositories = shallowRef<GitRepositoryStatus[]>([]);
 const gitEpoch = ref(0);
 const gitChangeCount = computed(() =>
   gitRepositories.value.reduce((sum, repository) => sum + repository.changes.length, 0),
@@ -453,6 +459,22 @@ const workspaceSummary = computed(() => {
   if (gitCount) return `${gitCount} Git`;
   return t("workbench.foldersOnly", { n: folderCount });
 });
+// keep-alive 缓存的工作台不卸载；停用期间不处理全局快捷键，runStates 相关 watcher 也冻结在停用前的值。
+const workbenchActive = ref(true);
+onActivated(() => {
+  workbenchActive.value = true;
+});
+onDeactivated(() => {
+  workbenchActive.value = false;
+});
+/** 停用时返回停用前的值且不追踪其它依赖；重新激活后再算一次，变化了才触发 watcher。 */
+function whileWorkbenchActive<T>(getter: () => T): () => T {
+  let last: T;
+  return () => {
+    if (workbenchActive.value) last = getter();
+    return last;
+  };
+}
 // 需求名与项目数写到顶部标题栏。工作台被 keep-alive 缓存时不会卸载，
 // 离开需求菜单只是 deactivated，必须在停用时清掉，避免标题残留到其他页面。
 const titlebarActive = ref(!props.preview);
@@ -712,18 +734,34 @@ const activeEditorOptions = computed(() => {
   const fromConfig = editorOptionsFromConfig(
     matchEditorConfig(file.path, editorConfigByWorkspace.value[file.workspaceId] ?? []),
   );
-  const detected = detectIndent(file.content);
+  const detected = detectIndent(file.content.split(/\r?\n/, INDENT_SAMPLE_LINES).join("\n"));
   return {
     insertSpaces: indentOverrides.value[key]?.insertSpaces ?? fromConfig.insertSpaces ?? detected.insertSpaces,
     tabSize: indentOverrides.value[key]?.tabSize ?? fromConfig.tabSize ?? detected.tabSize,
     eol: eolOverrides.value[key] ?? fromConfig.eol ?? detectEol(file.content),
   };
 });
-const activeOutline = computed(() => {
+// 大纲对全文逐行跑正则；打字时防抖，切换文件时立即算。
+const activeOutline = shallowRef<OutlineItem[]>([]);
+let outlineTimer = 0;
+function updateActiveOutline() {
+  window.clearTimeout(outlineTimer);
   const file = activeFile.value;
-  if (!file) return [];
-  return outlineFromContent(file.language, file.content);
-});
+  activeOutline.value = file ? outlineFromContent(file.language, file.content) : [];
+  syncEditorDocument();
+}
+watch(
+  () => activeFile.value?.content,
+  () => {
+    window.clearTimeout(outlineTimer);
+    outlineTimer = window.setTimeout(updateActiveOutline, OUTLINE_DEBOUNCE_MS);
+  },
+);
+watch(
+  () => [activeFile.value?.workspaceId, activeFile.value?.path, activeFile.value?.language] as const,
+  updateActiveOutline,
+);
+onBeforeUnmount(() => window.clearTimeout(outlineTimer));
 const activeBreadcrumbs = computed(() =>
   activeFile.value ? fileBreadcrumbs(activeFile.value.path) : [],
 );
@@ -782,12 +820,11 @@ function diffFileKey(workspaceId: string, filePath: string) {
 }
 
 const pendingFileContents = ref(new Map<string, string>());
-const pendingDiffFiles = computed(() => {
-  void diffStore.diskEpoch;
-  void diffStore.chunkStates;
-  void diffStore.baselines;
-  void diffStore.snapshots;
-  void diffStore.turnOrder;
+// listPendingDiffFiles 会对每个候选文件算一次 diff；打字时只防抖更新内容快照，换标签、换文件时立即更新。
+const pendingDiffContents = shallowRef(new Map<string, string>());
+let pendingDiffTimer = 0;
+function rebuildPendingDiffContents() {
+  window.clearTimeout(pendingDiffTimer);
   const contents = new Map(pendingFileContents.value);
   for (const tab of editorTabs.value) {
     contents.set(diffFileKey(tab.workspaceId, tab.path), tab.file.content);
@@ -798,9 +835,30 @@ const pendingDiffFiles = computed(() => {
       activeFile.value.content,
     );
   }
+  pendingDiffContents.value = contents;
+}
+watch(
+  () => [pendingFileContents.value, editorTabs.value.map((tab) => tab.file), activeFile.value] as const,
+  rebuildPendingDiffContents,
+  { immediate: true },
+);
+watch(
+  () => activeFile.value?.content,
+  () => {
+    window.clearTimeout(pendingDiffTimer);
+    pendingDiffTimer = window.setTimeout(rebuildPendingDiffContents, PENDING_DIFF_DEBOUNCE_MS);
+  },
+);
+onBeforeUnmount(() => window.clearTimeout(pendingDiffTimer));
+const pendingDiffFiles = computed(() => {
+  void diffStore.diskEpoch;
+  void diffStore.chunkStates;
+  void diffStore.baselines;
+  void diffStore.snapshots;
+  void diffStore.turnOrder;
   return diffStore.listPendingDiffFiles(
     workspaces.value.map((workspace) => workspace.id),
-    contents,
+    pendingDiffContents.value,
   );
 });
 const pendingDiffIndex = computed(() => {
@@ -821,6 +879,16 @@ const gitRepositoryByWorkspace = computed(
       gitRepositories.value.map((repository) => [
         repository.workspaceId,
         repository,
+      ]),
+    ),
+);
+
+const treeGitIndexByWorkspace = computed(
+  () =>
+    new Map(
+      gitRepositories.value.map((repository) => [
+        repository.workspaceId,
+        buildTreeGitIndex(repository.changes ?? []),
       ]),
     ),
 );
@@ -1555,29 +1623,16 @@ function treeGitStatus(workspaceId: string, entry: FileEntry) {
     return "D";
   }
   if (workspaceById(workspaceId)?.kind !== "git") return "";
-  const statuses =
-    gitRepositoryByWorkspace.value.get(workspaceId)?.changes ?? [];
-  if (entry.isDirectory) {
-    const prefix = `${entry.path}/`;
-    return folderGitStatus(
-      statuses
-        .filter((change) => change.path === entry.path || change.path.startsWith(prefix))
-        .map(gitStatusLetter),
-    );
-  }
-  const status = statuses.find((item) => item.path === entry.path);
-  return status ? gitStatusLetter(status) : "";
+  const index = treeGitIndexByWorkspace.value.get(workspaceId);
+  if (entry.isDirectory) return index?.folders.get(entry.path)?.letter ?? "";
+  return index?.files.get(entry.path) ?? "";
 }
 
 function treeGitBadgeTitle(workspaceId: string, entry: FileEntry) {
   const letter = treeGitStatus(workspaceId, entry);
   if (!letter) return "";
   if (!entry.isDirectory) return gitStatusTitle(letter);
-  const statuses = gitRepositoryByWorkspace.value.get(workspaceId)?.changes ?? [];
-  const prefix = `${entry.path}/`;
-  const count = statuses.filter(
-    (change) => change.path === entry.path || change.path.startsWith(prefix),
-  ).length;
+  const count = treeGitIndexByWorkspace.value.get(workspaceId)?.folders.get(entry.path)?.count ?? 0;
   return count > 0 ? t("git.folderDirty", { count }) : gitStatusTitle(letter);
 }
 
@@ -2385,11 +2440,23 @@ function isWriteTimelineItem(item: ChatMessage["timeline"][number]) {
 
 // 写入工具迟迟没有结果时不能一直把文件锁成只读（光标会消失、无法输入）；超过这个时间就放行。
 const WRITE_LOCK_STALE_MS = 90_000;
+const WRITE_LOCK_TICK_MS = 10_000;
 const writeLockClock = ref(Date.now());
-const writeLockTimer = window.setInterval(() => {
+let writeLockTimer = 0;
+function startWriteLockClock() {
+  window.clearInterval(writeLockTimer);
   writeLockClock.value = Date.now();
-}, 10_000);
-onBeforeUnmount(() => window.clearInterval(writeLockTimer));
+  writeLockTimer = window.setInterval(() => {
+    writeLockClock.value = Date.now();
+  }, WRITE_LOCK_TICK_MS);
+}
+function stopWriteLockClock() {
+  window.clearInterval(writeLockTimer);
+}
+startWriteLockClock();
+onActivated(startWriteLockClock);
+onDeactivated(stopWriteLockClock);
+onBeforeUnmount(stopWriteLockClock);
 
 const filesBeingWritten = computed(() => {
   const now = writeLockClock.value;
@@ -2715,6 +2782,10 @@ async function confirmLeaveDirtyEditors() {
   if (terminalTabs.value.some((item) => item.busy)) {
     if (!window.confirm(t("workbench.terminalBusyLeave"))) return false;
   }
+  return confirmDirtyEditorTabs();
+}
+
+async function confirmDirtyEditorTabs() {
   const dirtyTabs = dirtyEditorTabs();
   if (!dirtyTabs.length) return true;
   if (dirtyTabs.length === 1) return confirmCloseTab(dirtyTabs[0]);
@@ -3005,7 +3076,7 @@ function toggleOutlineFollow() {
 }
 
 const quickOpenVisible = ref(false);
-const quickOpenFiles = ref<QuickOpenFile[]>([]);
+const quickOpenFiles = shallowRef<QuickOpenFile[]>([]);
 const quickOpenLoading = ref(false);
 const quickOpenSeed = ref("");
 
@@ -3265,9 +3336,15 @@ async function splitTerminal() {
 }
 
 function patchTerminal(id: string, patch: Partial<TerminalTab>) {
-  terminalTabs.value = terminalTabs.value.map((item) => (item.id === id ? { ...item, ...patch } : item));
-  const tab = terminalTabs.value.find((item) => item.id === id);
-  if (!tab?.live) return;
+  const index = terminalTabs.value.findIndex((item) => item.id === id);
+  const current = terminalTabs.value[index];
+  if (!current) return;
+  const keys = Object.keys(patch) as Array<keyof TerminalTab>;
+  if (keys.every((key) => current[key] === patch[key])) return;
+  // 每个终端数据块都会来一次 busy 补丁，只替换这一项，不重建整个数组。
+  const tab = { ...current, ...patch };
+  terminalTabs.value[index] = tab;
+  if (!tab.live) return;
   const running = runningTerminals.value.find((item) => item.id === id);
   if (running) running.title = tab.customTitle || tab.processTitle || tab.title;
 }
@@ -3725,34 +3802,41 @@ async function saveTab(tab: EditorTab) {
   const isActive = tabKey(tab) === activeEditorKey.value;
   const file = isActive && activeFile.value ? activeFile.value : tab.file;
   if (file.readOnly) return true;
+  // 写盘期间用户还会原地修改 file.content，基线必须用写入的那份文本。
+  const content = file.content;
+  const previous = tab.original;
   saving.value = true;
   error.value = "";
   try {
     if (!props.preview) {
-      await backend.writeWorkspaceFile(tab.workspaceId, tab.path, file.content);
+      await backend.writeWorkspaceFile(tab.workspaceId, tab.path, content);
       refreshNavigationIndex();
     }
-    if (tab.original !== file.content) {
-      recordLocalHistory({
-        workspaceId: tab.workspaceId,
-        path: tab.path,
-        source: t("workbench.historySaveSource"),
-        content: file.content,
-      });
-    }
     tab.file = file;
-    tab.original = file.content;
-    tab.userEdited = false;
+    tab.original = content;
+    tab.userEdited = file.content !== content;
     pinEditorTab(tab);
-    if (isActive) originalContent.value = file.content;
+    if (isActive) originalContent.value = content;
     refreshGitViews();
-    return true;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
     return false;
   } finally {
     saving.value = false;
   }
+  if (previous !== content) {
+    try {
+      recordLocalHistory({
+        workspaceId: tab.workspaceId,
+        path: tab.path,
+        source: t("workbench.historySaveSource"),
+        content,
+      });
+    } catch {
+      // 本地历史只是附带记录，失败不影响已经写盘成功的保存结果。
+    }
+  }
+  return true;
 }
 
 async function saveFile() {
@@ -3779,6 +3863,10 @@ async function applyDiskToOpenTab(tab: EditorTab) {
     const message = cause instanceof Error ? cause.message : String(cause);
     if (!message.includes("文件不存在")) return;
     missing = true;
+  }
+  if (missing && isEditorTabDirty(tab)) {
+    noteDiskChange(tab.workspaceId, tab.path, GIT_DISK_CHANGE());
+    return;
   }
   if (missing) {
     // 撤回未跟踪文件后磁盘已删除；关掉标签，避免编辑器里的旧内容再被保存回去。
@@ -4700,19 +4788,43 @@ function startCodeNavigation() {
   };
 }
 
+const unsavedEditorOwner: UnsavedEditorOwner = {
+  leave: confirmLeaveDirtyEditors,
+  dirty: () => dirtyEditorTabs().length > 0,
+  paths: () => dirtyEditorTabs().map((tab) => tab.path),
+};
+let stopUnsavedEditor: (() => void) | undefined;
+
+function bindGlobalKeys() {
+  window.addEventListener("keydown", handleEditorTabKeys);
+  window.addEventListener("keydown", handleWorkbenchShortcuts, true);
+  window.addEventListener("keydown", handleAddToChatKey, true);
+}
+
+function unbindGlobalKeys() {
+  window.removeEventListener("keydown", handleEditorTabKeys);
+  window.removeEventListener("keydown", handleWorkbenchShortcuts, true);
+  window.removeEventListener("keydown", handleAddToChatKey, true);
+}
+
+onActivated(() => {
+  // 首次挂载也会触发 onActivated，先移除再注册，保证同一处理器只挂一次。
+  unbindGlobalKeys();
+  bindGlobalKeys();
+  activateUnsavedEditor(unsavedEditorOwner);
+  codeIndex.setPaused(projectRunning.value);
+});
+onDeactivated(unbindGlobalKeys);
+
 onMounted(() => {
   startCodeNavigation();
   editorStatus.setLanguages(listSelectableLanguages(monaco.languages.getLanguages()));
   stopThemeWatch = watchDocumentTheme((theme) => {
     editorTheme.value = monacoThemeName(theme);
   });
-  registerUnsavedLeaveHandler(confirmLeaveDirtyEditors);
-  registerUnsavedDirtyChecker(() => dirtyEditorTabs().length > 0);
-  registerDirtyEditorPaths(() => dirtyEditorTabs().map((tab) => tab.path));
+  stopUnsavedEditor = registerUnsavedEditor(unsavedEditorOwner);
   window.addEventListener("resize", layoutEditor);
-  window.addEventListener("keydown", handleEditorTabKeys);
-  window.addEventListener("keydown", handleWorkbenchShortcuts, true);
-  window.addEventListener("keydown", handleAddToChatKey, true);
+  bindGlobalKeys();
   resizePanel("left", 0);
   resizePanel("right", 0);
   void nextTick(() => {
@@ -4734,17 +4846,13 @@ onBeforeUnmount(() => {
   gitChangeRefreshScheduler.dispose();
   diskChangeRefreshScheduler.dispose();
   window.removeEventListener("pointerdown", onTerminalPickOutside, true);
-  registerUnsavedLeaveHandler(null);
-  registerUnsavedDirtyChecker(null);
-  registerDirtyEditorPaths(null);
+  stopUnsavedEditor?.();
   window.clearTimeout(tabChordTimer);
   stopResizing?.();
   editorTabsEl.value?.removeEventListener("wheel", onEditorTabsWheel);
   sidebarTabsEl.value?.removeEventListener("wheel", onSidebarTabsWheel);
   window.removeEventListener("resize", layoutEditor);
-  window.removeEventListener("keydown", handleEditorTabKeys);
-  window.removeEventListener("keydown", handleWorkbenchShortcuts, true);
-  window.removeEventListener("keydown", handleAddToChatKey, true);
+  unbindGlobalKeys();
   sidebarTabsObserver?.disconnect();
   sidebarTabsObserver = null;
   stickyTreeObserver?.disconnect();
@@ -4876,8 +4984,10 @@ watch(dirty, (isDirty) => {
   if (tab) tab.pinned = true;
 });
 
-watch(projectId, (id, previous) => {
+watch(projectId, async (id, previous) => {
   if (!previous || previous === id) return;
+  // 项目已经切换无法撤回；用户取消时保留标签，避免丢掉未保存修改。
+  if (!(await confirmDirtyEditorTabs())) return;
   clearEditorTabs();
   externalChangePending.value = false;
 });
@@ -4936,31 +5046,32 @@ watch(
   },
 );
 
+const sessionProjectIds = computed(
+  () => new Map((store.data?.sessions ?? []).map((session) => [session.id, session.projectId])),
+);
+
+function projectRunEvents() {
+  return Object.values(store.runStates).filter(
+    (event) => sessionProjectIds.value.get(event.sessionId) === projectId.value,
+  );
+}
+
+const projectRunning = computed(() =>
+  projectRunEvents().some((event) => event.status === "running"),
+);
+
 watch(
-  () =>
-    Object.values(store.runStates)
-      .filter((event) => {
-        const session = store.data?.sessions.find(
-          (item) => item.id === event.sessionId,
-        );
-        return (
-          session?.projectId === projectId.value &&
-          event.status === "running" &&
-          isAgentWriteResult(event)
-        );
-      })
+  whileWorkbenchActive(() =>
+    projectRunEvents()
+      .filter((event) => event.status === "running" && isAgentWriteResult(event))
       .map((event) => `${event.runId}:${event.timelineItem?.seq ?? 0}`)
       .sort()
       .join("|"),
+  ),
   async (current, previous) => {
     if (props.preview || !current || current === previous) return;
     diffStore.notifyDiskChanged();
-    const events = Object.values(store.runStates).filter((event) => {
-      const session = store.data?.sessions.find(
-        (item) => item.id === event.sessionId,
-      );
-      return session?.projectId === projectId.value && isAgentWriteResult(event);
-    });
+    const events = projectRunEvents().filter(isAgentWriteResult);
     const groups: LocatedFile[][] = [];
     for (const event of events) {
       const path = resolveAgentWritePath(event);
@@ -4982,33 +5093,24 @@ watch(
   },
 );
 
+// 索引暂停是全局状态，只由当前激活的工作台控制；激活时在 onActivated 里同步一次。
 watch(
-  () =>
-    Object.values(store.runStates).some((event) => {
-      if (event.status !== "running") return false;
-      const session = store.data?.sessions.find((item) => item.id === event.sessionId);
-      return session?.projectId === projectId.value;
-    }),
+  whileWorkbenchActive(() => projectRunning.value),
   (running) => codeIndex.setPaused(running),
   { immediate: true },
 );
-onBeforeUnmount(() => codeIndex.setPaused(false));
+onBeforeUnmount(() => {
+  if (workbenchActive.value) codeIndex.setPaused(false);
+});
 
 watch(
-  () =>
-    Object.values(store.runStates)
-      .filter((event) => {
-        const session = store.data?.sessions.find(
-          (item) => item.id === event.sessionId,
-        );
-        return (
-          session?.projectId === projectId.value &&
-          ["completed", "failed", "stopped"].includes(event.status)
-        );
-      })
+  whileWorkbenchActive(() =>
+    projectRunEvents()
+      .filter((event) => ["completed", "failed", "stopped"].includes(event.status))
       .map((event) => `${event.runId}:${event.status}`)
       .sort()
       .join("|"),
+  ),
   (current, previous) => {
     if (props.preview || !current || current === previous) return;
     diskChangeRefreshScheduler.request();

@@ -118,28 +118,41 @@ function emptyMessage() {
   return "";
 }
 
+let loadTicket = 0;
+
 async function load(reset = true) {
+  // 切文件后旧请求晚返回时丢弃，避免显示另一个文件的历史。
+  const ticket = ++loadTicket;
   if (reset) {
     gitItems.value = [];
     hasMore.value = false;
   }
-  if (!activePath.value || !gitSource.value) return;
+  if (!activePath.value || !gitSource.value) {
+    loading.value = false;
+    return;
+  }
   if (props.preview) {
     gitItems.value = activePath.value === "src/App.vue" ? previewGit : [];
     hasMore.value = false;
+    loading.value = false;
     return;
   }
-  if (!props.git || !activeWorkspaceId.value) return;
+  if (!props.git || !activeWorkspaceId.value) {
+    loading.value = false;
+    return;
+  }
   loading.value = true;
   try {
     const page = await backend.gitLog(activeWorkspaceId.value, reset ? 0 : gitItems.value.length, PAGE, activePath.value);
+    if (ticket !== loadTicket) return;
     gitItems.value = reset ? page.items : [...gitItems.value, ...page.items];
     hasMore.value = page.hasMore;
   } catch {
+    if (ticket !== loadTicket) return;
     if (reset) gitItems.value = [];
     hasMore.value = false;
   } finally {
-    loading.value = false;
+    if (ticket === loadTicket) loading.value = false;
   }
 }
 

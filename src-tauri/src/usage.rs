@@ -48,8 +48,15 @@ impl UsageAccumulator {
         }
     }
 
+    #[cfg(test)]
     pub fn ingest(&mut self, line: &str) -> bool {
-        let Some(parsed) = parse_line(line) else {
+        mentions_usage(line)
+            && serde_json::from_str::<Value>(line).is_ok_and(|value| self.ingest_value(&value))
+    }
+
+    /// 调用方已经解析好的行。先用 [`mentions_usage`] 过滤，避免每行都走一遍字段查找。
+    pub fn ingest_value(&mut self, value: &Value) -> bool {
+        let Some(parsed) = parse_value(value) else {
             return false;
         };
         let mut usage = parsed.usage;
@@ -88,11 +95,15 @@ struct ParsedUsage {
     usage: TokenUsage,
 }
 
-fn parse_line(line: &str) -> Option<ParsedUsage> {
-    let value = serde_json::from_str::<Value>(line).ok()?;
-    let usage = extract_usage(&value)?;
+/// 廉价预过滤：用量字段名里总带 `usage` 或 `token`，不含的行不必看。
+pub fn mentions_usage(line: &str) -> bool {
+    line.contains("usage") || line.contains("token") || line.contains("Token")
+}
+
+fn parse_value(value: &Value) -> Option<ParsedUsage> {
+    let usage = extract_usage(value)?;
     Some(ParsedUsage {
-        kind: usage_kind(&value),
+        kind: usage_kind(value),
         usage,
     })
 }
@@ -421,6 +432,15 @@ mod tests {
         assert_eq!(usage.cache_read_tokens, 400);
         assert!((usage.cost_usd - 0.012).abs() < 1e-9);
         assert!(usage.has_authoritative_cost);
+    }
+
+    #[test]
+    fn prefilter_skips_lines_without_usage_keywords() {
+        assert!(!mentions_usage(r#"{"type":"assistant","message":{"content":"hi"}}"#));
+        assert!(mentions_usage(r#"{"usage":{"input_tokens":1}}"#));
+        assert!(mentions_usage(r#"{"inputTokens":1}"#));
+        let mut acc = UsageAccumulator::new("gpt-5", "codex");
+        assert!(!acc.ingest(r#"{"type":"text","text":"no numbers here"}"#));
     }
 
     #[test]

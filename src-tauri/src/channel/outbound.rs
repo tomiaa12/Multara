@@ -1,5 +1,7 @@
 //! 运行结束后把结果发回渠道。
 
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -35,11 +37,63 @@ pub fn on_run_finished(app: &AppHandle, session_id: &str) {
     thread::spawn(move || deliver(&app, &session_id));
 }
 
+/// 同一会话同时只有一个投递在跑（`on_run_finished`、`recover_pending` 和并发运行都会触发），
+/// 否则会对同一条待投递记录重复回复。值为 true 表示认领期间又有人要求投递，持有者要再跑一轮。
+static DELIVERING: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+
+/// 投递线程 panic 时释放认领，否则这个会话再也不会投递。
+struct DeliveryClaim {
+    session_id: String,
+    held: bool,
+}
+
+impl Drop for DeliveryClaim {
+    fn drop(&mut self) {
+        if self.held {
+            delivering().remove(&self.session_id);
+        }
+    }
+}
+
+fn delivering() -> MutexGuard<'static, HashMap<String, bool>> {
+    DELIVERING
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
 fn deliver(app: &AppHandle, session_id: &str) {
+    {
+        let mut claims = delivering();
+        if let Some(rerun) = claims.get_mut(session_id) {
+            *rerun = true;
+            return;
+        }
+        claims.insert(session_id.to_string(), false);
+    }
+    let mut claim = DeliveryClaim {
+        session_id: session_id.to_string(),
+        held: true,
+    };
+    loop {
+        while deliver_pending(app, session_id) {}
+        let mut claims = delivering();
+        if claims.get(session_id).copied().unwrap_or(false) {
+            claims.insert(session_id.to_string(), false);
+            continue;
+        }
+        claims.remove(session_id);
+        claim.held = false;
+        break;
+    }
+}
+
+/// 投递当前所有待发记录；没有可投递的（或会话还在运行）时返回 false。
+fn deliver_pending(app: &AppHandle, session_id: &str) -> bool {
     let (deliveries, content) = {
         let state = app.state::<AppState>();
         let Ok(db) = state.lock_db() else {
-            return;
+            return false;
         };
         let active: i64 = db
             .query_row(
@@ -50,14 +104,14 @@ fn deliver(app: &AppHandle, session_id: &str) {
             )
             .unwrap_or(0);
         if active > 0 {
-            return;
+            return false;
         }
         let deliveries = match store::pending_deliveries(&db, session_id) {
             Ok(deliveries) => deliveries,
-            Err(_) => return,
+            Err(_) => return false,
         };
         if deliveries.is_empty() {
-            return;
+            return false;
         }
         let content: Option<String> = db
             .query_row(
@@ -71,20 +125,18 @@ fn deliver(app: &AppHandle, session_id: &str) {
         (deliveries, content)
     };
 
+    // 有记录没能标记成功就不再进下一轮，否则会对同一条记录反复发送
+    let mut all_marked = true;
     for delivery in deliveries {
         let result = send_one(app, &delivery, content.as_deref());
         let state = app.state::<AppState>();
-        if let Ok(db) = state.lock_db() {
-            match &result {
-                Ok(()) => {
-                    let _ = store::mark_delivery(&db, &delivery.run_id, "sent", None);
-                }
-                Err(error) => {
-                    let _ = store::mark_delivery(&db, &delivery.run_id, "failed", Some(error));
-                }
-            }
-        };
+        let marked = state.lock_db().is_ok_and(|db| match &result {
+            Ok(()) => store::mark_delivery(&db, &delivery.run_id, "sent", None).is_ok(),
+            Err(error) => store::mark_delivery(&db, &delivery.run_id, "failed", Some(error)).is_ok(),
+        });
+        all_marked &= marked;
     }
+    all_marked
 }
 
 fn send_one(
@@ -223,18 +275,33 @@ pub fn format_outbound(
     text
 }
 
+/// 按行拆分，单行超过上限时再按字符硬切；长度累计计数，整体 O(n)。
 fn split_message(text: &str, limit: usize) -> Vec<String> {
     if text.chars().count() <= limit {
         return vec![text.to_string()];
     }
+    let piece_limit = limit.saturating_sub(1).max(1);
     let mut chunks = Vec::new();
     let mut current = String::new();
+    let mut current_len = 0;
     for line in text.lines() {
-        if current.chars().count() + line.chars().count() + 1 > limit && !current.is_empty() {
-            chunks.push(std::mem::take(&mut current));
+        let mut rest = line;
+        loop {
+            let cut = rest.char_indices().nth(piece_limit).map_or(rest.len(), |(index, _)| index);
+            let (piece, tail) = rest.split_at(cut);
+            let piece_len = piece.chars().count();
+            if current_len + piece_len + 1 > limit && !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+                current_len = 0;
+            }
+            current.push_str(piece);
+            current.push('\n');
+            current_len += piece_len + 1;
+            rest = tail;
+            if rest.is_empty() {
+                break;
+            }
         }
-        current.push_str(line);
-        current.push('\n');
     }
     if !current.trim().is_empty() {
         chunks.push(current);
@@ -389,5 +456,15 @@ mod tests {
         let chunks = split_message(&text, 60);
         assert!(chunks.len() > 1);
         assert!(chunks.last().unwrap().contains("内容较长"));
+    }
+
+    #[test]
+    fn splits_single_overlong_line() {
+        let text = "字".repeat(250);
+        let chunks = split_message(&text, 100);
+        assert_eq!(chunks.len(), 3);
+        assert!(chunks[..2].iter().all(|chunk| chunk.chars().count() <= 100));
+        let joined: String = chunks.iter().map(|chunk| chunk.split('\n').next().unwrap()).collect();
+        assert_eq!(joined, text);
     }
 }

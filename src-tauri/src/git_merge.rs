@@ -7,7 +7,7 @@
 
 use std::{fs, path::Path, time::Duration};
 
-use crate::git::{git_cmd, output, remotes, run_strings, run_with_timeout, validate_branch};
+use crate::git::{exec, output, remotes, run_strings, run_with_timeout, validate_branch};
 
 /// 合并目标：本地分支名 + 用于推送/对比的远程名。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -118,12 +118,8 @@ pub fn head_label(git: &str, root: &str) -> String {
 }
 
 pub fn is_ancestor(git: &str, root: &str, ancestor: &str, descendant: &str) -> bool {
-    git_cmd(git)
-        .arg("-C")
-        .arg(root)
-        .args(["merge-base", "--is-ancestor", ancestor, descendant])
-        .status()
-        .is_ok_and(|status| status.success())
+    exec(git, root, &["merge-base", "--is-ancestor", ancestor, descendant])
+        .is_ok_and(|result| result.status.success())
 }
 
 /// 只拉取目标分支，避免大仓库 fetch 全部远程分支太慢。
@@ -174,17 +170,12 @@ pub fn plan_merge(
     if is_ancestor(git, root, base, source) {
         return Ok(MergePlan::FastForward(source.to_string()));
     }
-    let result = git_cmd(git)
-        .arg("-C")
-        .arg(root)
-        .args(["merge-tree", "--write-tree", "--name-only", "--no-messages", base, source])
-        .output()
-        .map_err(|error| format!("无法启动 Git：{error}"))?;
+    let result = merge_tree(git, root, base, source)?;
     let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-    let mut lines = stdout.lines().map(str::trim).filter(|line| !line.is_empty());
+    let mut records = stdout.split('\0').filter(|record| !record.is_empty());
     match result.status.code() {
         Some(0) => {
-            let tree = lines.next().ok_or("Git 没有返回合并结果")?.to_string();
+            let tree = records.next().ok_or("Git 没有返回合并结果")?.trim().to_string();
             let commit = output(
                 git,
                 root,
@@ -194,7 +185,7 @@ pub fn plan_merge(
         }
         Some(1) => Ok(MergePlan::Conflict(conflict_names(&stdout))),
         _ => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
+            let stderr = &result.stderr;
             if stderr.contains("unknown option") || stderr.contains("usage:") {
                 return Err("当前 Git 版本过低（需要 2.38 及以上）才能在后台预合并".to_string());
             }
@@ -229,12 +220,7 @@ pub fn outlook(git: &str, root: &str, base: &str, source: &str) -> Result<MergeO
             conflict_files: Vec::new(),
         });
     }
-    let result = git_cmd(git)
-        .arg("-C")
-        .arg(root)
-        .args(["merge-tree", "--write-tree", "--name-only", "--no-messages", base, source])
-        .output()
-        .map_err(|error| format!("无法启动 Git：{error}"))?;
+    let result = merge_tree(git, root, base, source)?;
     let stdout = String::from_utf8_lossy(&result.stdout).to_string();
     match result.status.code() {
         Some(0) => Ok(MergeOutlook {
@@ -248,7 +234,7 @@ pub fn outlook(git: &str, root: &str, base: &str, source: &str) -> Result<MergeO
             conflict_files: conflict_names(&stdout),
         }),
         _ => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
+            let stderr = &result.stderr;
             if stderr.contains("unknown option") || stderr.contains("usage:") {
                 return Err("当前 Git 版本过低（需要 2.38 及以上）才能在后台预合并".to_string());
             }
@@ -257,11 +243,19 @@ pub fn outlook(git: &str, root: &str, base: &str, source: &str) -> Result<MergeO
     }
 }
 
+/// `-z`：树 id 与冲突文件名各占一条记录，文件名不加引号，中文路径原样返回。
+fn merge_tree(git: &str, root: &str, base: &str, source: &str) -> Result<crate::git::Captured, String> {
+    exec(
+        git,
+        root,
+        &["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", base, source],
+    )
+}
+
 fn conflict_names(stdout: &str) -> Vec<String> {
     let mut files = stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .split('\0')
+        .filter(|record| !record.is_empty())
         .skip(1)
         .map(str::to_string)
         .collect::<Vec<_>>();
@@ -360,16 +354,11 @@ pub fn start_conflict_worktree(
         .map_err(|detail| format!("创建合并工作区失败：{detail}"))?;
     crate::hook_runtime::link_worktree_runtime(Path::new(repository), dir);
     // 有冲突时 git merge 以非零退出，这是预期的，之后用 MERGE_HEAD 判断是否真的进入了合并状态。
-    let merged = git_cmd(git)
-        .arg("-C")
-        .arg(dir)
-        .args(["merge", "--no-ff", "--no-commit", "-m", message, source])
-        .output()
-        .map_err(|error| format!("无法启动 Git：{error}"));
+    let merged = exec(git, dir, &["merge", "--no-ff", "--no-commit", "-m", message, source]);
     let in_merge = rev(git, &dir_text, "MERGE_HEAD").is_some();
     if !in_merge {
         let detail = merged
-            .map(|result| String::from_utf8_lossy(&result.stderr).trim().to_string())
+            .map(|result| result.stderr.trim().to_string())
             .unwrap_or_else(|error| error);
         remove_worktree(git, repository, &dir_text);
         return Err(format!("在合并工作区里执行合并失败：{detail}"));
@@ -377,12 +366,12 @@ pub fn start_conflict_worktree(
     Ok(conflict_files(git, &dir_text))
 }
 
+/// `-z` 输出不加引号，否则默认 core.quotepath 下中文文件名会被转义，后面按路径读不到文件。
 pub fn conflict_files(git: &str, dir: &str) -> Vec<String> {
-    output(git, dir, &["diff", "--name-only", "--diff-filter=U"])
+    output(git, dir, &["diff", "--name-only", "--diff-filter=U", "-z"])
         .unwrap_or_default()
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .split('\0')
+        .filter(|record| !record.is_empty())
         .map(str::to_string)
         .collect()
 }
@@ -400,10 +389,10 @@ pub fn has_conflict_markers(text: &str) -> bool {
 pub fn files_with_markers(dir: &str, files: &[String]) -> Vec<String> {
     files
         .iter()
-        .filter(|file| {
-            fs::read(Path::new(dir).join(file))
-                .map(|bytes| has_conflict_markers(&String::from_utf8_lossy(&bytes)))
-                .unwrap_or(false)
+        // 读不到的文件按“仍有冲突”处理，避免把带冲突标记的内容提交；文件已被删除算作已解决。
+        .filter(|file| match fs::read(Path::new(dir).join(file)) {
+            Ok(bytes) => has_conflict_markers(&String::from_utf8_lossy(&bytes)),
+            Err(error) => error.kind() != std::io::ErrorKind::NotFound,
         })
         .cloned()
         .collect()
@@ -442,19 +431,14 @@ pub fn incorporate_remote(
     if is_ancestor(git, dir, &remote, "HEAD") {
         return Ok(RemoteUpdate::UpToDate);
     }
-    let result = git_cmd(git)
-        .arg("-C")
-        .arg(dir)
-        .args(["merge", "--no-edit", &remote])
-        .output()
-        .map_err(|error| format!("无法启动 Git：{error}"))?;
+    let result = exec(git, dir, &["merge", "--no-edit", &remote])?;
     if rev(git, dir, "MERGE_HEAD").is_some() {
         return Ok(RemoteUpdate::Conflict(conflict_files(git, dir)));
     }
     if result.status.success() {
         return Ok(RemoteUpdate::Updated);
     }
-    Err(String::from_utf8_lossy(&result.stderr).trim().to_string())
+    Err(result.stderr.trim().to_string())
 }
 
 /// 暂存全部解决结果并提交合并；之前已经提交过（例如上次推送失败）时直接返回当前提交。

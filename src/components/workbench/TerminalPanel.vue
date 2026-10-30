@@ -18,7 +18,14 @@ import TerminalFind from "./TerminalFind.vue";
 import { isMacPlatform, terminalKeyCommand, terminalSendSequence } from "./terminal-keys";
 import { detectFileLinks } from "./terminal-links";
 import { detectQuickFixes, type TerminalQuickFix } from "./terminal-quick-fix";
-import { placeTerminalAddButton, selectionLines, snapshotLines, terminalBlock } from "./terminal-selection";
+import {
+  placeTerminalAddButton,
+  selectionLines,
+  snapshotLines,
+  terminalBlock,
+  TERMINAL_SNAPSHOT_LINE_CAP,
+} from "./terminal-selection";
+import { decodeTerminalChunk } from "../../utils/terminal-decode";
 import { ShellIntegration } from "./terminal-shell-integration";
 import {
   rankTerminalSuggestions,
@@ -135,6 +142,9 @@ let pointerSelecting = false;
 let pointerStart: { x: number; y: number } | null = null;
 let overlayTimer = 0;
 let bellTimer = 0;
+let fitFrame = 0;
+let fitFocus = false;
+const sentSizes = new Map<string, string>();
 
 const themeObserver = new MutationObserver(() => {
   const theme = terminalTheme();
@@ -520,7 +530,9 @@ async function mount(session: TerminalTab) {
     /* 旧版 xterm 没有 unicode 11 */
   }
   try {
-    term.loadAddon(new WebglAddon());
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
   } catch {
     /* 没有 GPU 时退回 canvas */
   }
@@ -577,13 +589,15 @@ async function mount(session: TerminalTab) {
     });
     term.onScroll(() => updateSticky(session.id));
     const links = registerFileLinks(term, () => props.sessions.find((item) => item.id === session.id)?.cwd ?? session.cwd);
-    void backend.terminalResize(session.id, term.cols, term.rows);
+    resizeBackend(session.id, term);
     const data = await listen<{ id: string; data: string }>("terminal-data", (event) => {
       if (event.payload.id !== session.id) return;
-      const binary = Uint8Array.from(atob(event.payload.data), (char) => char.charCodeAt(0));
-      term.write(binary, () => {
+      term.write(decodeTerminalChunk(event.payload.data), () => {
         schedulePublish(session.id);
-        emit("patch", session.id, { busy: integration.isExecuting() });
+        const busy = integration.isExecuting();
+        if ((props.sessions.find((item) => item.id === session.id)?.busy ?? false) !== busy) {
+          emit("patch", session.id, { busy });
+        }
         if (session.id === props.activeId) scheduleSuggest(session.id);
         updateSticky(session.id);
       });
@@ -679,6 +693,7 @@ function unmount(id: string) {
   const timer = publishTimers.get(id);
   if (timer) window.clearTimeout(timer);
   publishTimers.delete(id);
+  sentSizes.delete(id);
   hosts.get(id)?.stop();
   hosts.delete(id);
 }
@@ -919,8 +934,9 @@ function publishTerminal(id: string) {
   const session = props.sessions.find((item) => item.id === id);
   if (!mounted || !session?.live) return;
   const buffer = mounted.term.buffer.active;
+  const start = Math.max(0, buffer.length - TERMINAL_SNAPSHOT_LINE_CAP);
   const lines: string[] = [];
-  for (let index = 0; index < buffer.length; index += 1) {
+  for (let index = start; index < buffer.length; index += 1) {
     lines.push(buffer.getLine(index)?.translateToString(true) ?? "");
   }
   const snapshot = snapshotLines(lines);
@@ -928,7 +944,7 @@ function publishTerminal(id: string) {
     id,
     title: tabLabel(session),
     cwd: session.cwd,
-    lineOffset: snapshot.lineOffset,
+    lineOffset: start + snapshot.lineOffset,
     text: snapshot.text,
     active: id === props.activeId,
   }).catch(() => undefined);
@@ -1187,7 +1203,7 @@ function beginPaneResize(leftId: string, rightId: string, event: PointerEvent) {
       [leftId]: Math.max(0.2, startLeft + delta),
       [rightId]: Math.max(0.2, startRight - delta),
     };
-    fitVisible(false);
+    scheduleFit(false);
   };
   const up = () => {
     window.removeEventListener("pointermove", move);
@@ -1204,10 +1220,29 @@ function fitVisible(shouldFocus = true) {
     if (!active || !element?.clientWidth || !element.clientHeight) continue;
     if (sized.has(session.id)) continue;
     active.fit.fit();
-    if (session.live) void backend.terminalResize(session.id, active.term.cols, active.term.rows);
+    if (session.live) resizeBackend(session.id, active.term);
     if (shouldFocus && session.id === props.activeId) active.term.focus();
     if (session.id === props.activeId) showOverlay(`${active.term.cols} × ${active.term.rows}`);
   }
+}
+
+/** 拖动面板高度或分隔条时每次 pointermove 都会触发，合并到一帧只 fit 一次。 */
+function scheduleFit(shouldFocus: boolean) {
+  fitFocus ||= shouldFocus;
+  if (fitFrame) return;
+  fitFrame = requestAnimationFrame(() => {
+    fitFrame = 0;
+    const focus = fitFocus;
+    fitFocus = false;
+    fitVisible(focus);
+  });
+}
+
+function resizeBackend(id: string, term: Terminal) {
+  const size = `${term.cols}x${term.rows}`;
+  if (sentSizes.get(id) === size) return;
+  sentSizes.set(id, size);
+  void backend.terminalResize(id, term.cols, term.rows);
 }
 
 async function syncSessions() {
@@ -1252,7 +1287,7 @@ watch(() => props.sessions.map((item) => item.id).join("\n"), () => {
 
 watch(() => [props.activeId, props.height, visibleSessions.value.map((item) => item.id).join()], async () => {
   await nextTick();
-  fitVisible();
+  scheduleFit(true);
   addChat.value = null;
   updateSticky(props.activeId);
   if (props.activeId) schedulePublish(props.activeId);
@@ -1263,7 +1298,7 @@ watch(() => props.open, (value) => {
 });
 
 function onWindowResize() {
-  fitVisible(false);
+  scheduleFit(false);
 }
 
 onMounted(() => {
@@ -1293,6 +1328,7 @@ onBeforeUnmount(() => {
   document.body.classList.remove("is-dragging-terminal-tab");
   window.clearTimeout(overlayTimer);
   window.clearTimeout(bellTimer);
+  cancelAnimationFrame(fitFrame);
   for (const id of [...hosts.keys()]) unmount(id);
 });
 

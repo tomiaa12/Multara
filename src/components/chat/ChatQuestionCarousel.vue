@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Check, ChevronDown, ChevronUp, MessageCircleQuestion } from "@lucide/vue";
 import {
   formatAnswers,
@@ -7,6 +7,7 @@ import {
   type ChatQuestion,
   type ChatQuestionAnswer,
 } from "./question-block";
+import { createComposerIme } from "./composer-ime";
 import { t } from "../../i18n";
 
 const props = defineProps<{
@@ -27,6 +28,8 @@ const index = ref(0);
 const answers = ref<Record<string, ChatQuestionAnswer>>({});
 const focused = ref(0);
 const collapsed = ref(false);
+const ime = createComposerIme();
+onBeforeUnmount(() => ime.dispose());
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 const agentFallback = computed(() => props.agentName ?? t("chat.role.agent"));
 const submitMod = computed(() => (isMac ? "⌘" : "Ctrl"));
@@ -39,7 +42,8 @@ const answeredCount = computed(() =>
   props.questions.filter((question) => isAnswered(answers.value[question.id])).length,
 );
 
-watch(() => props.questions, () => {
+// 流式时父组件会反复传入新数组，只有题目本身变了才清空答案
+watch(() => props.questions.map((question) => question.id).join("\u0000"), () => {
   index.value = 0;
   answers.value = {};
   focused.value = 0;
@@ -135,7 +139,7 @@ function submit() {
 
 function onKeydown(event: KeyboardEvent) {
   const typing = event.target instanceof HTMLTextAreaElement;
-  if (event.key === "Escape") {
+  if (event.key === "Escape" && !typing) {
     event.preventDefault();
     emit("skip");
     return;
@@ -146,10 +150,11 @@ function onKeydown(event: KeyboardEvent) {
     return;
   }
   if (typing) {
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      event.preventDefault();
-      confirmCurrent();
-    }
+    if (event.key !== "Enter" || event.shiftKey) return;
+    const action = ime.classifyEnter(event);
+    if (action === "ime") return;
+    event.preventDefault();
+    if (action === "submit") confirmCurrent();
     return;
   }
   const options = current.value?.options ?? [];
@@ -301,6 +306,8 @@ defineExpose({ focus: () => root.value?.focus() });
           :value="answers[question.id]?.custom ?? ''"
           :placeholder="question.options.length ? t('chat.question.customWithOptions') : t('chat.question.customOnly')"
           @input="onCustomInput(question, $event)"
+          @compositionstart="ime.compositionStart"
+          @compositionend="ime.compositionEnd"
           @focus="index = questionIndex; focused = question.options.length"
         />
       </div>

@@ -1,8 +1,6 @@
 use std::{
     collections::HashMap,
-    process::Stdio,
-    sync::{mpsc, Mutex, OnceLock},
-    thread,
+    sync::{Mutex, OnceLock, PoisonError},
     time::{Duration, Instant},
 };
 
@@ -28,11 +26,26 @@ pub struct RuntimeModels {
 
 /// CLI 查询较慢（cursor 约 3 秒），结果按运行时缓存一段时间
 const CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+/// 没登录或查询失败也短暂记住，免得每次挂载选择器都再起一次 CLI。
+const FAILURE_CACHE_TTL: Duration = Duration::from_secs(30);
 const LIST_TIMEOUT: Duration = Duration::from_secs(20);
 
-fn cache() -> &'static Mutex<HashMap<String, (Instant, Vec<RuntimeModel>)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<RuntimeModel>)>>> = OnceLock::new();
+fn cache() -> &'static Mutex<HashMap<String, (Instant, RuntimeModels)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, RuntimeModels)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// `since` 为 `Some` 时只要这之后写入的结果（刷新时等到的别人刚查完的那份）。
+fn cached(runtime_id: &str, since: Option<Instant>) -> Option<RuntimeModels> {
+    let cache = cache().lock().unwrap_or_else(PoisonError::into_inner);
+    let (at, models) = cache.get(runtime_id)?;
+    let ttl = if models.models.is_empty() {
+        FAILURE_CACHE_TTL
+    } else {
+        CACHE_TTL
+    };
+    let fresh = at.elapsed() < ttl && since.map_or(true, |since| *at >= since);
+    fresh.then(|| models.clone())
 }
 
 /// 这些运行时会把模型透传给 CLI；不能可靠枚举时允许手动填写。
@@ -72,35 +85,35 @@ pub fn list(runtime_id: &str, refresh: bool) -> RuntimeModels {
 }
 
 fn cursor_models(refresh: bool) -> RuntimeModels {
-    if !refresh {
-        if let Ok(cache) = cache().lock() {
-            if let Some((at, models)) = cache.get("cursor") {
-                if at.elapsed() < CACHE_TTL {
-                    return RuntimeModels {
-                        supported: true,
-                        source: "cli",
-                        models: models.clone(),
-                        error: None,
-                    };
-                }
-            }
-        }
+    // 同一时间只起一个 `--list-models`；排队的调用者直接用前一个的结果。
+    static LISTING: Mutex<()> = Mutex::new(());
+    let requested = Instant::now();
+    if let Some(hit) = cached("cursor", None).filter(|_| !refresh) {
+        return hit;
     }
+    let _listing = LISTING.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(hit) = cached("cursor", refresh.then_some(requested)) {
+        return hit;
+    }
+    let models = query_cursor_models();
+    cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert("cursor".into(), (Instant::now(), models.clone()));
+    models
+}
+
+fn query_cursor_models() -> RuntimeModels {
     let result = crate::runtime::execution("cursor", "")
         .and_then(|(path, _, _)| run_with_timeout(path, &["--list-models"]))
         .map(|text| parse_cursor_models(&text));
     match result {
-        Ok(models) if !models.is_empty() => {
-            if let Ok(mut cache) = cache().lock() {
-                cache.insert("cursor".into(), (Instant::now(), models.clone()));
-            }
-            RuntimeModels {
-                supported: true,
-                source: "cli",
-                models,
-                error: None,
-            }
-        }
+        Ok(models) if !models.is_empty() => RuntimeModels {
+            supported: true,
+            source: "cli",
+            models,
+            error: None,
+        },
         Ok(_) => RuntimeModels {
             supported: true,
             source: "manual",
@@ -118,20 +131,10 @@ fn cursor_models(refresh: bool) -> RuntimeModels {
 
 fn run_with_timeout(path: std::path::PathBuf, args: &[&str]) -> Result<String, String> {
     let mut command = crate::process::command(path);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let (sender, receiver) = mpsc::channel();
-    // output() 会边读边等，避免输出较多时管道写满卡死；超时后丢弃结果，子进程随后自行退出
-    thread::spawn(move || {
-        let _ = sender.send(command.output());
-    });
-    let output = receiver
-        .recv_timeout(LIST_TIMEOUT)
-        .map_err(|_| "查询模型列表超时".to_string())?
-        .map_err(|error| error.to_string())?;
+    command.args(args);
+    let output = crate::runtime::output_with_timeout(&mut command, LIST_TIMEOUT)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "查询模型列表超时".to_string())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if stderr.is_empty() {

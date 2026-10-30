@@ -45,6 +45,25 @@ describe("parseUserPromptNodes", () => {
     expect(visiblePromptText(content)).toContain("App.vue (1-2)");
   });
 
+  test("uses a longer fence when chip text contains backtick fences", () => {
+    const text = "```ts\nconst a = 1;\n```\n再来 ```` 四个";
+    const nodes: ComposerNode[] = [
+      { ...chip, text },
+      { type: "text", value: " 看看" },
+    ];
+    const content = formatAgentPrompt(nodes);
+    expect(content).toContain("\n`````\n");
+    const parsed = parseUserPromptNodes(content);
+    expect(parsed).toEqual([{ ...chip, text }, { type: "text", value: " 看看" }]);
+  });
+
+  test("round-trips folder and whole-file chips containing fences", () => {
+    const folder: ComposerNode = { type: "chip", id: "docs:folder", path: "docs", startLine: 0, endLine: 0, text: "a.md\n```", isDirectory: true };
+    const file: ComposerNode = { type: "chip", id: "README.md:file", path: "README.md", startLine: 0, endLine: 0, text: "# t\n```sh\nls\n```" };
+    const parsed = parseUserPromptNodes(formatAgentPrompt([folder, file]));
+    expect(parsed).toEqual([folder, file]);
+  });
+
   test("round-trips structured references with stable ids", () => {
     const nodes: ComposerNode[] = [
       { type: "text", value: "请让 " },

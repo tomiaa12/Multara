@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectedNeedsAuth, jsonToMcpInputs, mcpInputToJson } from "./mcp-json";
+import { detectedNeedsAuth, jsonToMcpInputs, mcpInputToJson, parseArgsText } from "./mcp-json";
 import type { McpInput } from "../domain/types";
 
 const stdio: McpInput = {
@@ -96,5 +96,11 @@ describe("mcp-json", () => {
       headersText: "Authorization: Bearer static-token",
       envText: "",
     })).toBe(false);
+  });
+
+  it("splits single-line args like a shell without leaving stray quotes", () => {
+    expect(parseArgsText(`-y --flag="a b" "quoted arg" plain`)).toEqual(["-y", "--flag=a b", "quoted arg", "plain"]);
+    expect(parseArgsText(`--root=/tmp`)).toEqual(["--root=/tmp"]);
+    expect(parseArgsText("")).toEqual([]);
   });
 });

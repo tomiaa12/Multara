@@ -14,11 +14,10 @@ export const useMcpToolsStore = defineStore("mcp-tools", () => {
 
   const loading = computed(() => loadingIds.value);
 
+  /** 每个服务器一条事件，原地更新这一项，不克隆整张映射（含日志）。 */
   function applyEntry(entry: McpToolsCacheEntry) {
-    probes.value = { ...probes.value, [entry.id]: entry.probe };
-    const next = { ...loadingIds.value };
-    delete next[entry.id];
-    loadingIds.value = next;
+    probes.value[entry.id] = entry.probe;
+    delete loadingIds.value[entry.id];
   }
 
   async function ensureListener() {

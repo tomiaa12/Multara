@@ -26,6 +26,7 @@ import { useAppStore } from "../stores/app";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
+import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { decodeTextBytes } from "./workbench/text-encoding";
@@ -373,7 +374,8 @@ watch(sessionProcessing, (active) => {
   if (liveAnchorFallback.value == null) liveAnchorFallback.value = Date.now();
   liveClock.value = Date.now();
   liveTimer = window.setInterval(() => {
-    liveClock.value = Date.now();
+    // 窗口不可见时不推进，避免依赖它的计算属性每秒白算；回到前台下一秒自然追上
+    if (!document.hidden) liveClock.value = Date.now();
   }, 1000);
 }, { immediate: true });
 
@@ -907,8 +909,7 @@ async function pasteImages(files: File[]) {
   noteAttachmentOverflow(files.length - accepted.length);
   for (const file of accepted) {
     try {
-      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      if (bytes.length > 25 * 1024 * 1024) {
+      if (file.size > PASTED_IMAGE_MAX_BYTES) {
         composerError.value = t("chat.pasteTooLarge");
         continue;
       }
@@ -923,7 +924,7 @@ async function pasteImages(files: File[]) {
         continue;
       }
       const attachment = await backend.savePastedAttachment(
-        bytes,
+        await fileToBase64(file),
         file.type || "image/png",
         file.name || undefined,
       );

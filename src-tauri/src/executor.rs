@@ -1,16 +1,17 @@
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
-    process::{Child, Command, Stdio},
+    io::{BufReader, Read, Write},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc, Mutex, OnceLock,
     },
     thread,
     time::{Duration, Instant},
 };
 
 use chrono::Utc;
+use regex::Regex;
 use rusqlite::params;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -92,7 +93,7 @@ fn reap_orphaned_runs(app: &AppHandle) {
             .and_then(|mut process| match process.try_wait() {
                 Ok(Some(status)) => status.code(),
                 Ok(None) => {
-                    let _ = process.kill();
+                    kill_process(&mut process);
                     process.wait().ok().and_then(|status| status.code())
                 }
                 Err(_) => None,
@@ -428,7 +429,8 @@ fn generate_text(
     );
     // 保留运行时的免确认参数。去掉之后 CLI 会弹出权限确认，提交信息就生成不出来。
     let prompt_via_stdin = runtime::prompt_via_stdin(&provider);
-    let mut child = crate::process::command(program)
+    let mut command = crate::process::command(program);
+    command
         .args(final_args)
         .current_dir(std::env::temp_dir())
         .env("CI", "1")
@@ -438,33 +440,29 @@ fn generate_text(
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
         .spawn()
         .map_err(|error| format!("启动{label}生成器失败：{error}"))?;
-    if prompt_via_stdin {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "运行时标准输入不可用".to_string())?;
-        stdin
-            .write_all(&runtime::stdin_prompt(&provider, prompt).unwrap_or_default())
-            .map_err(|error| format!("发送{label}提示失败：{error}"))?;
-    }
+    // 先起读线程再写 stdin：大提示词时子进程边读边写，先写后读会互相卡死。
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    let stdout_reader = thread::spawn(move || {
-        let mut value = String::new();
-        if let Some(mut stdout) = stdout {
-            let _ = stdout.read_to_string(&mut value);
-        }
-        value
-    });
-    let stderr_reader = thread::spawn(move || {
-        let mut value = String::new();
-        if let Some(mut stderr) = stderr {
-            let _ = stderr.read_to_string(&mut value);
-        }
-        value
+    let stdout_reader = thread::spawn(move || read_capped(stdout));
+    let stderr_reader = thread::spawn(move || read_capped(stderr));
+    let stdin_writer = prompt_via_stdin.then(|| {
+        let stdin = child.stdin.take();
+        let payload = runtime::stdin_prompt(&provider, prompt).unwrap_or_default();
+        thread::spawn(move || {
+            stdin
+                .ok_or_else(|| "运行时标准输入不可用".to_string())?
+                .write_all(&payload)
+                .map_err(|error| error.to_string())
+        })
     });
     let started = Instant::now();
     let mut timed_out = false;
@@ -473,16 +471,32 @@ fn generate_text(
             break status;
         }
         if started.elapsed() > timeout {
-            let _ = child.kill();
+            kill_process(&mut child);
             timed_out = true;
             break child.wait().map_err(|error| error.to_string())?;
         }
-        thread::sleep(Duration::from_millis(80));
+        thread::sleep(GENERATE_POLL_INTERVAL);
     };
-    let stdout = stdout_reader.join().unwrap_or_default();
-    let stderr = stderr_reader.join().unwrap_or_default();
+    let deadline = Instant::now() + READER_JOIN_TIMEOUT;
+    let drained = wait_until_finished(&stdout_reader, deadline)
+        && wait_until_finished(&stderr_reader, deadline);
+    // 进程组里残留的孙进程（握着管道、或单纯没退出）一并清掉。
+    kill_process_group(child.id());
+    if !drained {
+        crate::diag::write(&format!("GENERATE {label} readers stuck, process group killed"));
+    }
+    let grace = Instant::now() + READER_KILL_GRACE;
+    let stdout = finish_reader(stdout_reader, grace);
+    let stderr = finish_reader(stderr_reader, grace);
     if timed_out {
         return Err(format!("生成{label}超时"));
+    }
+    let stdin_error = stdin_writer
+        .filter(|writer| writer.is_finished())
+        .and_then(|writer| writer.join().ok())
+        .and_then(Result::err);
+    if let Some(error) = stdin_error {
+        return Err(format!("发送{label}提示失败：{error}"));
     }
     if !status.success() {
         return Err(format!(
@@ -511,6 +525,20 @@ fn generate_text(
     Ok(message.to_string())
 }
 
+/// 读到 EOF，最多保留 `MAX_LINE_BYTES`，其余丢弃但继续排空管道；非法 UTF-8 按 lossy 转换。
+fn read_capped<R: Read>(stream: Option<R>) -> String {
+    let Some(mut stream) = stream else {
+        return String::new();
+    };
+    let mut bytes = Vec::new();
+    let _ = stream
+        .by_ref()
+        .take(crate::process::MAX_LINE_BYTES as u64)
+        .read_to_end(&mut bytes);
+    let _ = std::io::copy(&mut stream, &mut std::io::sink());
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 pub fn notify_run(
     app: &AppHandle,
     run_id: &str,
@@ -536,33 +564,43 @@ fn permission_prompt(app: &AppHandle) -> bool {
     matches!(value.trim(), "prompt" | "ask")
 }
 
-pub fn can_steer(app: &AppHandle, session_id: &str) -> bool {
+type StdinSlot = Arc<Mutex<Option<ChildStdin>>>;
+
+/// 只在 `active_runs` 锁里拿出 stdin 槽位，写入和判断都在锁外做，慢 stdin 不会卡住整个执行器。
+fn session_stdin_slots(app: &AppHandle, session_id: &str) -> Vec<(StdinSlot, String)> {
     let state = app.state::<AppState>();
     let Ok(active) = state.active_runs.lock() else {
-        return false;
+        return Vec::new();
     };
-    active.values().any(|run| {
-        run.session_id == session_id && run.stdin.lock().ok().is_some_and(|stdin| stdin.is_some())
-    })
+    active
+        .values()
+        .filter(|run| run.session_id == session_id)
+        .map(|run| (run.stdin.clone(), run.provider.clone()))
+        .collect()
+}
+
+pub fn can_steer(app: &AppHandle, session_id: &str) -> bool {
+    session_stdin_slots(app, session_id)
+        .iter()
+        .any(|(slot, _)| match slot.try_lock() {
+            Ok(stdin) => stdin.is_some(),
+            // 别的线程正在往里写，说明 stdin 还开着。
+            Err(std::sync::TryLockError::WouldBlock) => true,
+            Err(std::sync::TryLockError::Poisoned(_)) => false,
+        })
 }
 
 pub fn steer(app: &AppHandle, session_id: &str, text: &str) -> Result<bool, String> {
-    let state = app.state::<AppState>();
-    let active = state
-        .active_runs
-        .lock()
-        .map_err(|_| "无法访问运行中的任务".to_string())?;
-    let Some(run) = active.values().find(|item| item.session_id == session_id) else {
+    let Some((slot, provider)) = session_stdin_slots(app, session_id).into_iter().next() else {
         return Ok(false);
     };
-    let mut stdin = run
-        .stdin
+    let mut stdin = slot
         .lock()
         .map_err(|_| "无法写入运行中的任务".to_string())?;
     let Some(stdin) = stdin.as_mut() else {
         return Ok(false);
     };
-    let payload = runtime::stdin_prompt(&run.provider, text).unwrap_or_else(|| {
+    let payload = runtime::stdin_prompt(&provider, text).unwrap_or_else(|| {
         let mut bytes = text.as_bytes().to_vec();
         bytes.push(b'\n');
         bytes
@@ -574,25 +612,47 @@ pub fn steer(app: &AppHandle, session_id: &str, text: &str) -> Result<bool, Stri
     Ok(true)
 }
 
+/// 兼容旧调用方：不知道 run_id 时跨所有运行按 request_id 找。
 pub fn resolve_permission(
     app: &AppHandle,
     request_id: &str,
     option_id: &str,
 ) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let active = state
-        .active_runs
-        .lock()
-        .map_err(|_| "无法访问运行中的任务".to_string())?;
-    for run in active.values() {
-        if let Ok(mut pending) = run.permissions.lock() {
-            if let Some(sender) = pending.remove(request_id) {
-                let _ = sender.send(option_id.to_string());
-                return Ok(());
-            }
+    resolve_run_permission(app, None, request_id, option_id)
+}
+
+/// ACP 的 request_id 是每个运行从小整数开始的，并发运行会撞号；有 run_id 时只在那个运行里找。
+pub fn resolve_run_permission(
+    app: &AppHandle,
+    run_id: Option<&str>,
+    request_id: &str,
+    option_id: &str,
+) -> Result<(), String> {
+    let permissions: Vec<_> = {
+        let state = app.state::<AppState>();
+        let active = state
+            .active_runs
+            .lock()
+            .map_err(|_| "无法访问运行中的任务".to_string())?;
+        active
+            .iter()
+            .filter(|(id, _)| run_id.is_none_or(|run_id| run_id == id.as_str()))
+            .map(|(_, run)| run.permissions.clone())
+            .collect()
+    };
+    let sender = permissions.iter().find_map(|pending| {
+        pending
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(request_id))
+    });
+    match sender {
+        Some(sender) => {
+            let _ = sender.send(option_id.to_string());
+            Ok(())
         }
+        None => Err("没有等待确认的权限请求".to_string()),
     }
-    Err("没有等待确认的权限请求".to_string())
 }
 
 pub fn compact_session(app: &AppHandle, session_id: &str) -> Result<String, String> {
@@ -633,7 +693,8 @@ pub fn stop(app: &AppHandle, run_id: &str) -> Result<(), String> {
             .and_then(|mut active| active.remove(run_id))
     };
     if let Some(active) = &child {
-        if let Ok(mut stdin) = active.stdin.lock() {
+        // steer 正卡在写 stdin 时拿不到锁：跳过中断消息直接杀进程，写入随之失败返回。
+        if let Ok(mut stdin) = active.stdin.try_lock() {
             if let Some(stdin) = stdin.as_mut() {
                 let _ = writeln!(
                     stdin,
@@ -685,6 +746,22 @@ fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String
 }
 
 const STOP_CHECK_INTERVAL: Duration = Duration::from_millis(500);
+/// supervisor 轮询子进程很密，但查库确认停止不用这么勤；`stop()` 自己会直接杀进程。
+const SUPERVISOR_STOP_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const SUPERVISOR_POLL_INTERVAL: Duration = Duration::from_millis(120);
+const READER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+/// 杀掉进程组之后再给读线程一点时间把最后的输出落库。
+const READER_KILL_GRACE: Duration = Duration::from_secs(1);
+const READER_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const GENERATE_POLL_INTERVAL: Duration = Duration::from_millis(80);
+/// 用量写库至少间隔这么久；结束时总会再写一次最终值。
+const USAGE_PERSIST_INTERVAL: Duration = Duration::from_secs(2);
+/// stderr 的 error 事件按时间窗口或行数合并成一条。
+const STDERR_BATCH_INTERVAL: Duration = Duration::from_millis(200);
+const STDERR_BATCH_MAX_LINES: usize = 50;
+/// 失败详情只用 stderr 末尾一段（`truncate_error` 取最后 4000 字），缓冲留够余量即可。
+const STDERR_TAIL_BYTES: usize = 64 * 1024;
+const STDERR_LINE_CHARS: usize = 32_000;
 /// 模型连续收到这么多次工具报错还不改正，基本是在死循环，直接停掉，避免事件无限增长。
 const MAX_CONSECUTIVE_TOOL_ERRORS: usize = 25;
 
@@ -747,27 +824,56 @@ fn is_stopped(app: &AppHandle, run_id: &str) -> bool {
     )
 }
 
+/// 子进程用 `process_group(0)` 起在独立进程组里，组 id 就是它的 pid。Windows 上没有进程组，什么都不做。
+#[cfg_attr(not(unix), allow(unused_variables))]
+fn kill_process_group(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+fn kill_process(process: &mut Child) {
+    let pid = process.id();
+    kill_process_group(pid);
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = process.kill();
+}
+
 fn kill_child(child: &Arc<Mutex<Child>>) {
     if let Ok(mut process) = child.lock() {
-        let pid = process.id();
-        #[cfg(unix)]
-        {
-            let _ = Command::new("kill")
-                .args(["-KILL", &format!("-{pid}")])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-        #[cfg(windows)]
-        {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-        let _ = process.kill();
+        kill_process(&mut process);
         let _ = process.try_wait();
+    }
+}
+
+/// 子进程退出后等读线程收尾。孙进程继承了管道时 EOF 永远不来，到截止时间就不再等。
+fn wait_until_finished<T>(handle: &thread::JoinHandle<T>, deadline: Instant) -> bool {
+    while !handle.is_finished() {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(READER_POLL_INTERVAL);
+    }
+    true
+}
+
+fn finish_reader<T: Default>(handle: thread::JoinHandle<T>, deadline: Instant) -> T {
+    if wait_until_finished(&handle, deadline) {
+        handle.join().unwrap_or_default()
+    } else {
+        T::default()
     }
 }
 
@@ -1158,7 +1264,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
         } else {
             None
         };
-        let stdin_writer = stdin_payload.map(|payload| {
+        let mut stdin_writer = stdin_payload.map(|payload| {
             let keep_open = matches!(launch_provider.as_str(), "claude" | "codebuddy");
             let stdin = child
                 .stdin
@@ -1215,76 +1321,48 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 stream,
                 output.clone(),
                 event_seq.clone(),
-                false,
                 run.user_message_id.clone(),
-                Some(usage.clone()),
+                usage.clone(),
             )
         });
         let stderr_reader = stderr.map(|stream| {
-            read_stream(
+            read_error_stream(
                 app.clone(),
                 run.id.clone(),
                 run.session_id.clone(),
                 run.agent_id.clone(),
-                run.runtime_id.clone(),
-                launch_provider.clone(),
                 stream,
                 stderr_output.clone(),
                 event_seq,
-                true,
-                run.user_message_id.clone(),
-                None,
             )
         });
-        let stdin_guard = match stdin_writer {
-            Some(writer) => match writer.join() {
-                Ok(Ok(stdin)) => stdin,
-                Ok(Err(error)) => {
-                    kill_child(&child);
-                    forget_child(&app, &run.id);
-                    let text = output.lock().map(|value| value.clone()).unwrap_or_default();
-                    if is_stopped(&app, &run.id) {
-                        finish(&app, &run, "stopped", &text, None);
-                    } else {
-                        finish(&app, &run, "failed", &text, Some(error));
-                    }
-                    return;
-                }
-                Err(_) => {
-                    kill_child(&child);
-                    forget_child(&app, &run.id);
-                    let text = output.lock().map(|value| value.clone()).unwrap_or_default();
-                    if is_stopped(&app, &run.id) {
-                        finish(&app, &run, "stopped", &text, None);
-                    } else {
-                        finish(
-                            &app,
-                            &run,
-                            "failed",
-                            &text,
-                            Some("发送任务到运行时的线程异常退出".to_string()),
-                        );
-                    }
-                    return;
-                }
-            },
-            None => None,
-        };
-        if let Some(stdin) = stdin_guard {
-            if let Ok(mut slot) = stdin_slot.lock() {
-                *slot = Some(stdin);
-            }
-        }
 
         let timeout = run_timeout(&app);
         let started = Instant::now();
         let mut timed_out = false;
+        // kill 只发一次，之后等 try_wait 回收，不要每个 tick 都 fork 一个 kill。
+        let mut killed = false;
+        let mut stdin_error: Option<String> = None;
+        let mut last_stop_check = Instant::now();
+        let pid = child.lock().map(|process| process.id()).ok();
         let status = loop {
-            // 用户点停止或 Claude result 关 stdin 后：杀进程，等 try_wait，带着已有正文 finish。
-            if is_stopped(&app, &run.id) {
-                if let Ok(mut slot) = stdin_slot.lock() {
-                    *slot = None;
-                }
+            // stdin 写线程不在循环外 join：子进程不读大载荷时写会一直阻塞，超时和停止都得照常生效。
+            if stdin_writer.as_ref().is_some_and(thread::JoinHandle::is_finished) {
+                stdin_error = stdin_writer
+                    .take()
+                    .and_then(|writer| settle_stdin_writer(writer, &stdin_slot));
+            }
+            let stop_due = !killed && last_stop_check.elapsed() >= SUPERVISOR_STOP_CHECK_INTERVAL;
+            if stop_due {
+                last_stop_check = Instant::now();
+            }
+            let timeout_due = !killed && timeout.is_some_and(|limit| started.elapsed() >= limit);
+            timed_out |= timeout_due;
+            // 用户点停止、超时或发送任务失败：杀进程，等 try_wait，带着已有正文 finish。
+            if !killed
+                && (stdin_error.is_some() || timeout_due || (stop_due && is_stopped(&app, &run.id)))
+            {
+                killed = true;
                 kill_child(&child);
             }
             let result = child
@@ -1295,20 +1373,24 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             if let Some(status) = result {
                 break status;
             }
-            if timeout.is_some_and(|limit| started.elapsed() >= limit) {
-                timed_out = true;
-                kill_child(&child);
-            }
-            thread::sleep(Duration::from_millis(120));
+            thread::sleep(SUPERVISOR_POLL_INTERVAL);
         };
+        let readers: Vec<_> = [stdout_reader, stderr_reader].into_iter().flatten().collect();
+        let deadline = Instant::now() + READER_JOIN_TIMEOUT;
+        if !readers.iter().all(|reader| wait_until_finished(reader, deadline)) {
+            crate::diag::write(&format!("RUN readers stuck {}, killing process group", run.id));
+            kill_child(&child);
+        }
+        // 正常退出也清一遍进程组：CLI 退出后它起的 MCP 服务器、后台进程不该留下来。
+        if let Some(pid) = pid {
+            kill_process_group(pid);
+        }
+        let grace = Instant::now() + READER_KILL_GRACE;
+        for reader in readers {
+            finish_reader(reader, grace);
+        }
         if let Ok(mut slot) = stdin_slot.lock() {
             *slot = None;
-        }
-        if let Some(reader) = stdout_reader {
-            let _ = reader.join();
-        }
-        if let Some(reader) = stderr_reader {
-            let _ = reader.join();
         }
         if let Ok(mut active) = app.state::<AppState>().active_runs.lock() {
             active.remove(&run.id);
@@ -1330,6 +1412,8 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             );
         } else if stopped {
             finish(&app, &run, "stopped", &text, None);
+        } else if let Some(error) = stdin_error {
+            finish(&app, &run, "failed", &text, Some(error));
         } else if status.success() {
             finish(&app, &run, "completed", &text, None);
         } else {
@@ -1348,20 +1432,31 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
     });
 }
 
+type StdinWriter = thread::JoinHandle<Result<Option<ChildStdin>, String>>;
+
+/// 写线程结束后，需要保持打开的 stdin（Claude / CodeBuddy）交给槽位；返回发送失败的原因。
+fn settle_stdin_writer(writer: StdinWriter, slot: &Mutex<Option<ChildStdin>>) -> Option<String> {
+    match writer.join() {
+        Ok(Ok(stdin)) => {
+            if let (Some(stdin), Ok(mut slot)) = (stdin, slot.lock()) {
+                *slot = Some(stdin);
+            }
+            None
+        }
+        Ok(Err(error)) => Some(error),
+        Err(_) => Some("发送任务到运行时的线程异常退出".to_string()),
+    }
+}
+
 #[cfg(test)]
 fn runtime_stdin_payload(runtime_id: &str, prompt: &str) -> Vec<u8> {
     runtime::stdin_prompt(runtime_id, prompt).unwrap_or_else(|| prompt.as_bytes().to_vec())
 }
 
 /// Claude / CodeBuddy 一轮结束时的 `{"type":"result",...}`。关掉 stdin 后进程才会退出。
-fn is_stream_turn_result(parser_id: &str, line: &str) -> bool {
-    if !matches!(parser_id, "claude" | "codebuddy") {
-        return false;
-    }
-    let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
-        return false;
-    };
-    value.get("type").and_then(Value::as_str) == Some("result")
+fn is_stream_turn_result(parser_id: &str, value: &Value) -> bool {
+    matches!(parser_id, "claude" | "codebuddy")
+        && value.get("type").and_then(Value::as_str) == Some("result")
 }
 
 fn close_active_stdin(app: &AppHandle, run_id: &str) {
@@ -1424,18 +1519,23 @@ fn read_stream<R: Read + Send + 'static>(
     stream: R,
     output: Arc<Mutex<String>>,
     event_seq: Arc<AtomicU32>,
-    is_error: bool,
     message_id: Option<String>,
-    usage: Option<Arc<Mutex<UsageAccumulator>>>,
+    usage: Arc<Mutex<UsageAccumulator>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut previous: Option<TimelineItem> = None;
         let mut tool_files: HashMap<String, String> = HashMap::new();
         let mut consecutive_tool_errors = 0usize;
+        let mut tool_error_loop = false;
+        let mut last_conversation_id: Option<String> = None;
+        let mut usage_dirty = false;
+        let mut last_usage_persist = Instant::now();
         // 正文/思考是逐 token 到达的：先攒着，约 STREAM_FLUSH_INTERVAL 才落库并发一次事件，
         // 否则每个 token 都整段 upsert + 整段 IPC。
         let pending = Arc::new(Mutex::new(PendingStream::new()));
         let stream_done = Arc::new(AtomicBool::new(false));
+        // 读线程 panic 时也要让 flusher 退出。
+        let done_guard = StreamDone(Arc::clone(&stream_done));
         let flusher = {
             let (app, run_id, session_id, agent_id) =
                 (app.clone(), run_id.clone(), session_id.clone(), agent_id.clone());
@@ -1452,7 +1552,7 @@ fn read_stream<R: Read + Send + 'static>(
             })
         };
         let mut last_stop_check = Instant::now();
-        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        'lines: for line in crate::process::BoundedLines(BufReader::new(stream)) {
             // 每行都查一次数据库会和写事件抢全局锁；停止信号半秒内到达即可。
             if last_stop_check.elapsed() >= STOP_CHECK_INTERVAL {
                 last_stop_check = Instant::now();
@@ -1460,21 +1560,30 @@ fn read_stream<R: Read + Send + 'static>(
                     break;
                 }
             }
-            if !is_error {
-                conversation::persist_from_line(&app, &session_id, &agent_id, &runtime_id, &line);
-                if let Some(usage) = &usage {
+            let parsed = serde_json::from_str::<Value>(&line).ok();
+            if let Some(value) = &parsed {
+                if let Some(id) = conversation::id_from_value(value)
+                    .filter(|id| last_conversation_id.as_ref() != Some(id))
+                {
+                    conversation::persist_id(&app, &session_id, &agent_id, &runtime_id, &id);
+                    last_conversation_id = Some(id);
+                }
+                if crate::usage::mentions_usage(&line) {
                     if let Ok(mut acc) = usage.lock() {
-                        if acc.ingest(&line) {
+                        usage_dirty |= acc.ingest_value(value);
+                        if usage_dirty && last_usage_persist.elapsed() >= USAGE_PERSIST_INTERVAL {
                             persist_run_usage(&app, &run_id, &acc.finalize());
+                            usage_dirty = false;
+                            last_usage_persist = Instant::now();
                         }
                     }
                 }
                 // Claude/CodeBuddy 在 stream-json 下会等 stdin；收到 result 后关掉，否则一直「输入中」。
-                if is_stream_turn_result(&parser_id, &line) {
+                if is_stream_turn_result(&parser_id, value) {
                     close_active_stdin(&app, &run_id);
                 }
             }
-            for event in normalize_runtime_line(&parser_id, &line, is_error) {
+            for event in normalize_runtime_value(&parser_id, &line, parsed) {
                 if is_garbage_tool_use(&event) {
                     continue;
                 }
@@ -1485,12 +1594,8 @@ fn read_stream<R: Read + Send + 'static>(
                         consecutive_tool_errors = 0;
                     }
                     if consecutive_tool_errors >= MAX_CONSECUTIVE_TOOL_ERRORS {
-                        stream_done.store(true, Ordering::Relaxed);
-                        if let Ok(mut pending) = pending.lock() {
-                            pending.flush(&app, &run_id, &session_id, &agent_id);
-                        }
-                        abort_tool_error_loop(&app, &run_id, &session_id, &agent_id, &event_seq);
-                        return;
+                        tool_error_loop = true;
+                        break 'lines;
                     }
                 }
                 if event.event_type == "tool_use" {
@@ -1504,12 +1609,7 @@ fn read_stream<R: Read + Send + 'static>(
                         &mut tool_files,
                     );
                 }
-                let visible_text = event
-                    .content
-                    .as_deref()
-                    .filter(|_| event.event_type == "text")
-                    .map(str::to_string);
-                if let Some(chunk) = &visible_text {
+                if let Some(chunk) = event.content.as_deref().filter(|_| event.event_type == "text") {
                     if let Ok(mut full) = output.lock() {
                         if event.replaces_final_text {
                             full.clear();
@@ -1520,35 +1620,43 @@ fn read_stream<R: Read + Send + 'static>(
                 let merge = previous
                     .as_ref()
                     .is_some_and(|item| should_merge_timeline(item, &event));
-                let seq = if merge {
-                    previous.as_ref().map(|item| item.seq).unwrap_or(0)
-                } else {
-                    event_seq.fetch_add(1, Ordering::SeqCst) + 1
-                };
-                let mut item = timeline_item(seq, event);
-                if merge {
-                    if let Some(old) = &previous {
-                        item = merge_timeline_item(old, item);
+                if matches!(event.event_type, "text" | "thinking") {
+                    let Ok(mut pending) = pending.lock() else {
+                        continue;
+                    };
+                    // 同一段正文/思考原地追加，不再每个 token 复制整段内容。
+                    if merge && pending.item.is_some() {
+                        pending.append(event);
+                    } else {
+                        pending.flush(&app, &run_id, &session_id, &agent_id);
+                        let seq = event_seq.fetch_add(1, Ordering::SeqCst) + 1;
+                        pending.start(timeline_item(seq, event));
+                        previous = pending.item.as_ref().map(timeline_shell);
                     }
-                }
-                if matches!(item.event_type, "text" | "thinking") {
-                    previous = Some(item.clone());
-                    if let Ok(mut pending) = pending.lock() {
-                        if pending.item.as_ref().is_some_and(|held| held.seq != item.seq) {
-                            pending.flush(&app, &run_id, &session_id, &agent_id);
-                        }
-                        pending.push(item, visible_text);
-                        if pending.due() {
-                            pending.flush(&app, &run_id, &session_id, &agent_id);
-                        }
+                    if pending.due() {
+                        pending.flush(&app, &run_id, &session_id, &agent_id);
                     }
                     continue;
                 }
+                let seq = match previous.as_ref().filter(|_| merge) {
+                    Some(old) => old.seq,
+                    None => event_seq.fetch_add(1, Ordering::SeqCst) + 1,
+                };
+                let mut item = timeline_item(seq, event);
+                if let Some(old) = previous.as_ref().filter(|_| merge) {
+                    item = merge_timeline_item(old, item);
+                }
                 if let Ok(mut pending) = pending.lock() {
                     pending.flush(&app, &run_id, &session_id, &agent_id);
+                    pending.clear();
                 }
                 persist_timeline_item(&app, &run_id, &session_id, &item);
-                previous = Some(item.clone());
+                // 只有 tool_use 的参数会继续拼接，需要完整保留；其余只留合并判断用的骨架。
+                previous = Some(if item.event_type == "tool_use" {
+                    item.clone()
+                } else {
+                    timeline_shell(&item)
+                });
                 let affected_file = (item.event_type == "tool_result")
                     .then(|| {
                         item.call_id
@@ -1558,7 +1666,6 @@ fn read_stream<R: Read + Send + 'static>(
                     .flatten();
                 let mut outgoing = run_event(&run_id, &session_id, &agent_id, "running");
                 outgoing.replaces_final_text = item.replaces_final_text;
-                outgoing.chunk = visible_text;
                 outgoing.error =
                     (item.event_type == "error").then(|| item.content.clone().unwrap_or_default());
                 outgoing.timeline_item = Some(item);
@@ -1566,25 +1673,128 @@ fn read_stream<R: Read + Send + 'static>(
                 let _ = app.emit("run-event", outgoing);
             }
         }
-        stream_done.store(true, Ordering::Relaxed);
+        drop(done_guard);
         let _ = flusher.join();
         if let Ok(mut pending) = pending.lock() {
             pending.flush(&app, &run_id, &session_id, &agent_id);
         }
-        if let Some(usage) = usage {
-            if let Ok(acc) = usage.lock() {
-                persist_run_usage(&app, &run_id, &acc.finalize());
-            }
+        if let Ok(acc) = usage.lock() {
+            persist_run_usage(&app, &run_id, &acc.finalize());
+        }
+        if tool_error_loop {
+            abort_tool_error_loop(&app, &run_id, &session_id, &agent_id, &event_seq);
         }
     })
 }
 
+/// stderr 不逐 token 合并，不需要 flusher；逐行归入批次，按时间或行数合并成一条 error 事件。
+fn read_error_stream<R: Read + Send + 'static>(
+    app: AppHandle,
+    run_id: String,
+    session_id: String,
+    agent_id: String,
+    stream: R,
+    output: Arc<Mutex<String>>,
+    event_seq: Arc<AtomicU32>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut batch = String::new();
+        let mut batch_lines = 0usize;
+        let mut last_emit: Option<Instant> = None;
+        let mut last_stop_check = Instant::now();
+        for line in crate::process::BoundedLines(BufReader::new(stream)) {
+            if last_stop_check.elapsed() >= STOP_CHECK_INTERVAL {
+                last_stop_check = Instant::now();
+                if is_stopped(&app, &run_id) {
+                    break;
+                }
+            }
+            if line.trim().is_empty() {
+                continue;
+            }
+            let line = truncate_and_redact(&line, STDERR_LINE_CHARS);
+            push_tail(&output, &line, STDERR_TAIL_BYTES);
+            if !batch.is_empty() {
+                batch.push('\n');
+            }
+            batch.push_str(&line);
+            batch_lines += 1;
+            // 首行立即发出；之后的刷屏行攒到间隔或行数上限再合并发送。
+            if batch_lines >= STDERR_BATCH_MAX_LINES
+                || last_emit.is_none_or(|at| at.elapsed() >= STDERR_BATCH_INTERVAL)
+            {
+                emit_error_batch(&app, &run_id, &session_id, &agent_id, &event_seq, &mut batch);
+                batch_lines = 0;
+                last_emit = Some(Instant::now());
+            }
+        }
+        emit_error_batch(&app, &run_id, &session_id, &agent_id, &event_seq, &mut batch);
+    })
+}
+
+fn emit_error_batch(
+    app: &AppHandle,
+    run_id: &str,
+    session_id: &str,
+    agent_id: &str,
+    event_seq: &AtomicU32,
+    batch: &mut String,
+) {
+    if batch.is_empty() {
+        return;
+    }
+    let seq = event_seq.fetch_add(1, Ordering::SeqCst) + 1;
+    let item = timeline_item(seq, normalized("error", Some(std::mem::take(batch))));
+    persist_timeline_item(app, run_id, session_id, &item);
+    let mut outgoing = run_event(run_id, session_id, agent_id, "running");
+    outgoing.error = item.content.clone();
+    outgoing.timeline_item = Some(item);
+    let _ = app.emit("run-event", outgoing);
+}
+
+/// 只保留末尾 `max_bytes` 字节（按字符边界），供失败时拼进错误详情。
+fn push_tail(output: &Mutex<String>, line: &str, max_bytes: usize) {
+    let Ok(mut text) = output.lock() else {
+        return;
+    };
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    text.push_str(line);
+    if text.len() <= max_bytes {
+        return;
+    }
+    let cut = (text.len() - max_bytes..text.len())
+        .find(|index| text.is_char_boundary(*index))
+        .unwrap_or(text.len());
+    text.drain(..cut);
+}
+
 const STREAM_FLUSH_INTERVAL: Duration = Duration::from_millis(80);
 
-/// 逐 token 到达的正文/思考：合并后的最新 item + 自上次发送以来新增的正文片段。
+struct StreamDone(Arc<AtomicBool>);
+
+impl Drop for StreamDone {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+/// 只保留合并判断要用的字段，正文/参数/输出不复制。
+fn timeline_shell(item: &TimelineItem) -> TimelineItem {
+    TimelineItem {
+        content: None,
+        input: None,
+        output: None,
+        ..item.clone()
+    }
+}
+
+/// 逐 token 到达的正文/思考：正在累积的 item（原地追加）+ 自上次发送以来新增的正文片段。
 struct PendingStream {
     item: Option<TimelineItem>,
     chunk: String,
+    dirty: bool,
     last_flush: Instant,
 }
 
@@ -1593,31 +1803,64 @@ impl PendingStream {
         Self {
             item: None,
             chunk: String::new(),
+            dirty: false,
             last_flush: Instant::now(),
         }
     }
 
-    fn push(&mut self, item: TimelineItem, chunk: Option<String>) {
-        self.item = Some(item);
-        if let Some(chunk) = chunk {
-            self.chunk.push_str(&chunk);
+    fn start(&mut self, item: TimelineItem) {
+        if item.event_type == "text" {
+            self.chunk.push_str(item.content.as_deref().unwrap_or_default());
         }
+        self.item = Some(item);
+        self.dirty = true;
+    }
+
+    fn append(&mut self, event: NormalizedEvent) {
+        let Some(item) = self.item.as_mut() else {
+            return;
+        };
+        if let Some(content) = event.content.as_deref() {
+            item.content.get_or_insert_with(String::new).push_str(content);
+            if item.event_type == "text" {
+                self.chunk.push_str(content);
+            }
+        }
+        item.replaces_final_text |= event.replaces_final_text;
+        item.tool = event.tool.or(item.tool.take());
+        item.call_id = event.call_id.or(item.call_id.take());
+        item.input = event.input.or(item.input.take());
+        item.output = event.output.or(item.output.take());
+        item.parent_call_id = event.parent_call_id.or(item.parent_call_id.take());
+        item.status = event.status.or(item.status.take());
+        self.dirty = true;
     }
 
     fn due(&self) -> bool {
-        self.item.is_some() && self.last_flush.elapsed() >= STREAM_FLUSH_INTERVAL
+        self.dirty && self.last_flush.elapsed() >= STREAM_FLUSH_INTERVAL
+    }
+
+    fn clear(&mut self) {
+        self.item = None;
+        self.chunk.clear();
+        self.dirty = false;
     }
 
     fn flush(&mut self, app: &AppHandle, run_id: &str, session_id: &str, agent_id: &str) {
         self.last_flush = Instant::now();
-        let Some(item) = self.item.take() else {
+        let Some(item) = self.item.as_ref().filter(|_| self.dirty) else {
             return;
         };
-        persist_timeline_item(app, run_id, session_id, &item);
+        self.dirty = false;
+        persist_timeline_item(app, run_id, session_id, item);
         let mut outgoing = run_event(run_id, session_id, agent_id, "running");
         outgoing.replaces_final_text = item.replaces_final_text;
+        // 前端遇到 replacesFinalText 会用 chunk 整段替换正文，只发增量会把前面的内容截掉。
         outgoing.chunk = (!self.chunk.is_empty()).then(|| std::mem::take(&mut self.chunk));
-        outgoing.timeline_item = Some(item);
+        if item.replaces_final_text && outgoing.chunk.is_some() {
+            outgoing.chunk = item.content.clone();
+        }
+        outgoing.timeline_item = Some(item.clone());
         let _ = app.emit("run-event", outgoing);
     }
 }
@@ -2133,14 +2376,28 @@ fn maybe_capture_file_snapshot(
     };
     let captured = (|| {
         let state = app.state::<AppState>();
+        // 读文件、sha256、zstd 都在全局 DB 锁外做，改大文件时不卡住其它写库操作。
+        let (workspace, rel) = {
+            let db = state.lock_db()?;
+            let workspaces = session::session_workspaces(&db, session_id)?;
+            let (workspace, rel) = snapshot::resolve_workspace_file(&workspaces, &raw_path)
+                .ok_or_else(|| "没有可快照的工作区".to_string())?;
+            if let Some(call_id) = event.call_id.as_deref() {
+                tool_files.insert(call_id.to_string(), rel.clone());
+            }
+            let rel = snapshot::snapshot_rel_path(&rel)?;
+            if rel.is_empty()
+                || crate::snapshot_db::snapshot_exists(&db, message_id, &workspace.id, &rel)?
+            {
+                return Ok(None);
+            }
+            (workspace.clone(), rel)
+        };
+        let Some(prepared) = snapshot::prepare_snapshot(&workspace, &rel)? else {
+            return Ok(None);
+        };
         let db = state.lock_db()?;
-        let workspaces = session::session_workspaces(&db, session_id)?;
-        let (workspace, rel) = snapshot::resolve_workspace_file(&workspaces, &raw_path)
-            .ok_or_else(|| "没有可快照的工作区".to_string())?;
-        if let Some(call_id) = event.call_id.as_deref() {
-            tool_files.insert(call_id.to_string(), rel.clone());
-        }
-        snapshot::capture_file_before_edit(&db, message_id, session_id, workspace, &rel)
+        snapshot::save_prepared_snapshot(&db, message_id, session_id, &workspace.id, prepared)
     })();
     if let Ok(Some(snap)) = captured {
         let mut outgoing = run_event(run_id, session_id, agent_id, "running");
@@ -2429,10 +2686,8 @@ fn resource_context(
 }
 
 fn replace_assignment(mut args: Vec<String>, assignment: &str, prompt: &str) -> Vec<String> {
-    for arg in &mut args {
-        if arg == assignment {
-            *arg = prompt.to_string();
-        }
+    if let Some(arg) = args.iter_mut().find(|arg| *arg == assignment) {
+        *arg = prompt.to_string();
     }
     args
 }
@@ -2639,12 +2894,17 @@ fn normalize_runtime_line(runtime_id: &str, line: &str, is_error: bool) -> Vec<N
             .into_iter()
             .collect();
     }
+    normalize_runtime_value(runtime_id, line, serde_json::from_str(line).ok())
+}
+
+/// `parsed` 是调用方已经解析好的 `line`，避免同一行重复 `from_str`。
+fn normalize_runtime_value(runtime_id: &str, line: &str, parsed: Option<Value>) -> Vec<NormalizedEvent> {
     // Codex 在非 TTY 下（Multara 把 stdin 接到 /dev/null）会往 stdout 打这行进度，
     // 不是模型回复；当成 text 会冒充成「报错后再出一堆身份说明」。
     if runtime_id == "codex" && is_codex_cli_noise(line) {
         return Vec::new();
     }
-    let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+    let Some(mut value) = parsed else {
         return (!line.trim().is_empty())
             .then(|| normalized("text", Some(truncate_and_redact(line, 64_000))))
             .into_iter()
@@ -3356,54 +3616,86 @@ fn text_at(value: &Value, pointers: &[&str]) -> Option<String> {
     })
 }
 
+const REDACTED: &str = "[已隐藏敏感信息]";
+
+/// 先截断再脱敏：只对保留下来的那段跑正则。脱敏只替换已知的密钥形态，不整行抹掉正文。
 fn truncate_and_redact(value: &str, max_chars: usize) -> String {
-    let redacted = value
-        .lines()
-        .map(|line| {
-            let lower = line.to_ascii_lowercase();
-            if [
-                "authorization:",
-                "api_key=",
-                "apikey=",
-                "token=",
-                "password=",
-            ]
-            .iter()
-            .any(|needle| lower.contains(needle))
-            {
-                "[已隐藏敏感信息]".to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let mut chars = redacted.chars();
-    let truncated = chars.by_ref().take(max_chars).collect::<String>();
-    if chars.next().is_some() {
-        format!("{truncated}\n…（内容已截断）")
-    } else {
-        truncated
+    match value.char_indices().nth(max_chars) {
+        Some((end, _)) => format!("{}\n…（内容已截断）", redact_secrets(&value[..end])),
+        None => redact_secrets(value),
     }
+}
+
+fn redact_secrets(value: &str) -> String {
+    static PATTERNS: OnceLock<Vec<(Regex, String)>> = OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        [
+            (r"\bsk-[A-Za-z0-9_\-]{16,}", REDACTED.to_string()),
+            (r"\bgh[pousr]_[A-Za-z0-9]{20,}", REDACTED.to_string()),
+            (r"\bgithub_pat_[A-Za-z0-9_]{20,}", REDACTED.to_string()),
+            (r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=\-]{8,}", format!("$1 {REDACTED}")),
+            (
+                r#"(?i)("(?:api_?key|apikey|password|passwd|secret|client_secret|token|access_token|refresh_token|authorization)"\s*:\s*)"[^"]*""#,
+                format!("$1\"{REDACTED}\""),
+            ),
+            (
+                r#"(?i)\b(password|passwd|token|api_?key|apikey|secret|client_secret|access_token)=[^\s&"']+"#,
+                format!("$1={REDACTED}"),
+            ),
+            (
+                r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\z)",
+                REDACTED.to_string(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(pattern, replacement)| Some((Regex::new(pattern).ok()?, replacement)))
+        .collect()
+    });
+    let mut text = value.to_string();
+    for (pattern, replacement) in patterns {
+        if pattern.is_match(&text) {
+            text = pattern.replace_all(&text, replacement.as_str()).into_owned();
+        }
+    }
+    text
+}
+
+/// 归一化（小写、去 `_`/`-`）后整键匹配：`max_tokens`、`token_count` 这类计数字段不算敏感。
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|c| !matches!(c, '_' | '-'))
+        .collect::<String>()
+        .to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "token"
+            | "accesstoken"
+            | "refreshtoken"
+            | "idtoken"
+            | "authtoken"
+            | "sessiontoken"
+            | "bearertoken"
+            | "apikey"
+            | "xapikey"
+            | "secret"
+            | "clientsecret"
+            | "secretkey"
+            | "secretaccesskey"
+            | "awssecretaccesskey"
+            | "password"
+            | "passwd"
+            | "authorization"
+            | "privatekey"
+    )
 }
 
 fn sanitize_value(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                let lower = key.to_ascii_lowercase();
-                if [
-                    "token",
-                    "secret",
-                    "password",
-                    "authorization",
-                    "api_key",
-                    "apikey",
-                ]
-                .iter()
-                .any(|part| lower.contains(part))
-                {
-                    *child = Value::String("[已隐藏敏感信息]".to_string());
+                if is_sensitive_key(key) {
+                    *child = Value::String(REDACTED.to_string());
                 } else {
                     sanitize_value(child);
                 }
@@ -3455,20 +3747,17 @@ fn merge_timeline_item(previous: &TimelineItem, mut item: TimelineItem) -> Timel
     if item.call_id.is_none() {
         item.call_id = previous.call_id.clone();
     }
-    let combined = format!(
-        "{}{}",
-        previous.content.as_deref().unwrap_or_default(),
-        item.content.as_deref().unwrap_or_default()
-    );
+    let mut combined = previous.content.clone().unwrap_or_default();
+    combined.push_str(item.content.as_deref().unwrap_or_default());
+    // 流式工具参数是半截 JSON，没闭合的不必尝试解析。
+    let parsed = combined
+        .trim_end()
+        .ends_with(['}', ']'])
+        .then(|| serde_json::from_str::<Value>(&combined).ok())
+        .flatten();
+    item.input = parsed.or(item.input).or_else(|| previous.input.clone());
     if !combined.is_empty() {
-        item.content = Some(combined.clone());
-        if let Ok(value) = serde_json::from_str::<Value>(&combined) {
-            item.input = Some(value);
-        } else if item.input.is_none() {
-            item.input = previous.input.clone();
-        }
-    } else if item.input.is_none() {
-        item.input = previous.input.clone();
+        item.content = Some(combined);
     }
     if item.output.is_none() {
         item.output = previous.output.clone();
@@ -3489,9 +3778,10 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
         .and_then(|value| serde_json::to_string(value).ok());
     let state = app.state::<AppState>();
     let Ok(db) = state.lock_db() else {
+        crate::diag::write(&format!("RUN_EVENT persist {run_id}:{} skipped: db lock failed", item.seq));
         return;
     };
-    let _ = db.execute(
+    let result = db.execute(
         "INSERT INTO run_events
              (id, run_id, session_id, seq, event_type, call_id, tool, content, input_json, output, created_at,
               parent_call_id, status)
@@ -3516,14 +3806,17 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
             item.status
         ],
     );
+    if let Err(error) = result {
+        crate::diag::write(&format!("RUN_EVENT persist {run_id}:{} failed: {error}", item.seq));
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        merge_timeline_item, normalize_runtime_line, replace_assignment, runtime_stdin_payload,
-        sanitize_value, should_merge_timeline, timeline_item, tool_use_event, truncate_and_redact,
-        NormalizedEvent,
+        merge_timeline_item, normalize_runtime_line, push_tail, replace_assignment,
+        runtime_stdin_payload, sanitize_value, should_merge_timeline, timeline_item,
+        tool_use_event, truncate_and_redact, NormalizedEvent, PendingStream,
     };
 
     fn text_event(text: &str, replaces: bool) -> NormalizedEvent {
@@ -3546,6 +3839,25 @@ mod tests {
             replace_assignment(vec!["-p".into(), "task".into()], "task", "full prompt"),
             vec!["-p", "full prompt"]
         );
+        assert_eq!(
+            replace_assignment(
+                vec!["task".into(), "--note".into(), "task".into()],
+                "task",
+                "full prompt"
+            ),
+            vec!["full prompt", "--note", "task"]
+        );
+    }
+
+    #[test]
+    fn pending_stream_appends_in_place() {
+        let mut pending = PendingStream::new();
+        pending.start(timeline_item(1, text_event("你好", true)));
+        pending.append(text_event("，世界", false));
+        let item = pending.item.as_ref().unwrap();
+        assert_eq!(item.content.as_deref(), Some("你好，世界"));
+        assert!(item.replaces_final_text);
+        assert_eq!(pending.chunk, "你好，世界");
     }
 
     #[test]
@@ -3719,14 +4031,69 @@ mod tests {
     #[test]
     fn redacts_and_truncates_provider_data() {
         assert_eq!(
-            truncate_and_redact("Authorization: Bearer secret\nsafe", 100),
-            "[已隐藏敏感信息]\nsafe"
+            truncate_and_redact("Authorization: Bearer abcdefgh12345678\nsafe", 100),
+            "Authorization: Bearer [已隐藏敏感信息]\nsafe"
         );
         let mut value = serde_json::json!({"input": {"api_key": "secret", "path": "ok"}});
         sanitize_value(&mut value);
         assert_eq!(value["input"]["api_key"], "[已隐藏敏感信息]");
         assert_eq!(value["input"]["path"], "ok");
-        assert!(truncate_and_redact("abcdef", 3).contains("内容已截断"));
+        assert_eq!(truncate_and_redact("abcdef", 3), "abc\n…（内容已截断）");
+        assert_eq!(truncate_and_redact("末尾换行\n", 100), "末尾换行\n");
+    }
+
+    #[test]
+    fn redacts_only_secret_shapes() {
+        let prose = "如何设置 token= 参数？password 字段要加密";
+        assert_eq!(truncate_and_redact(prose, 1000), prose);
+        assert_eq!(
+            truncate_and_redact("key sk-abcdefghijklmnopqrstuv end", 1000),
+            "key [已隐藏敏感信息] end"
+        );
+        assert_eq!(
+            truncate_and_redact("url?token=abc123&x=1", 1000),
+            "url?token=[已隐藏敏感信息]&x=1"
+        );
+        assert_eq!(
+            truncate_and_redact(r#"{"api_key": "abc", "path": "a"}"#, 1000),
+            r#"{"api_key": "[已隐藏敏感信息]", "path": "a"}"#
+        );
+        assert_eq!(
+            truncate_and_redact(
+                "a\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\nb",
+                1000
+            ),
+            "a\n[已隐藏敏感信息]\nb"
+        );
+        assert_eq!(
+            truncate_and_redact("ghp_abcdefghijklmnopqrstuvwxyz", 1000),
+            "[已隐藏敏感信息]"
+        );
+    }
+
+    #[test]
+    fn sanitize_keeps_token_counters() {
+        let mut value = serde_json::json!({
+            "max_tokens": 1024,
+            "token_count": 3,
+            "access_token": "abc",
+            "X-Api-Key": "abc",
+        });
+        sanitize_value(&mut value);
+        assert_eq!(value["max_tokens"], 1024);
+        assert_eq!(value["token_count"], 3);
+        assert_eq!(value["access_token"], "[已隐藏敏感信息]");
+        assert_eq!(value["X-Api-Key"], "[已隐藏敏感信息]");
+    }
+
+    #[test]
+    fn push_tail_keeps_last_bytes_on_char_boundary() {
+        let output = std::sync::Mutex::new(String::new());
+        push_tail(&output, "第一行", 8);
+        push_tail(&output, "第二行", 8);
+        let text = output.lock().unwrap().clone();
+        assert!(text.len() <= 8);
+        assert!(text.ends_with("二行"));
     }
 
     #[test]

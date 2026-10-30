@@ -88,14 +88,18 @@ function statusLabel(status: string) {
   return status;
 }
 
+const sessionsById = computed(() => new Map((store.data?.sessions ?? []).map((entry) => [entry.id, entry])));
+const squadsById = computed(() => new Map((store.data?.squads ?? []).map((entry) => [entry.id, entry])));
+const agentsById = computed(() => new Map((store.data?.agents ?? []).map((entry) => [entry.id, entry])));
+
 function agentFor(item: InboxItem) {
-  const session = store.data?.sessions.find((entry) => entry.id === item.sessionId);
+  const session = sessionsById.value.get(item.sessionId);
   if (!session) return { avatar: "M", name: t("inbox.agentFallback") };
   if (session.targetType === "squad") {
-    const squad = store.data?.squads.find((entry) => entry.id === session.targetId);
+    const squad = squadsById.value.get(session.targetId);
     return { avatar: "队", name: squad?.name ?? t("inbox.squadFallback") };
   }
-  const agent = store.data?.agents.find((entry) => entry.id === session.targetId);
+  const agent = agentsById.value.get(session.targetId);
   return { avatar: agent?.avatar ?? "M", name: agent?.name ?? t("inbox.agentFallback") };
 }
 

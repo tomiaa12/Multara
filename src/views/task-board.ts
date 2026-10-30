@@ -32,10 +32,19 @@ export const TASK_COLUMNS: Array<{ id: TaskStatus; label: string; optional?: boo
   },
 }));
 
+function byCreation(a: Task, b: Task) {
+  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+}
+
 export function taskCode(task: Task, tasks: Task[]) {
-  const ordered = [...tasks].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const ordered = [...tasks].sort(byCreation);
   const index = ordered.findIndex((item) => item.id === task.id);
   return `TASK-${Math.max(index, 0) + 1}`;
+}
+
+/** 一次排序得出所有任务的编号，供列表按 id 查表。 */
+export function taskCodeMap(tasks: Task[]) {
+  return new Map([...tasks].sort(byCreation).map((task, index) => [task.id, `TASK-${index + 1}`]));
 }
 
 export { formatRelativeTime as relativeTime } from "../components/ui/relative-time";

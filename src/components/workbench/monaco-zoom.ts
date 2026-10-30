@@ -1,6 +1,7 @@
 import type * as Monaco from "monaco-editor";
 import { monaco } from "../../monaco";
 import { computed, ref } from "vue";
+import { readStorage, writeStorage } from "../../utils/safe-storage";
 
 const STORAGE_KEY = "multara.editor.zoom";
 const MIN_ZOOM = -5;
@@ -34,13 +35,13 @@ function clampZoom(level: number) {
 }
 
 function readStoredZoom() {
-  const saved = Number(localStorage.getItem(STORAGE_KEY));
+  const saved = Number(readStorage(STORAGE_KEY));
   return Number.isFinite(saved) ? clampZoom(saved) : 0;
 }
 
 function persistLevel(level: number) {
   editorZoomLevel.value = clampZoom(level);
-  localStorage.setItem(STORAGE_KEY, String(editorZoomLevel.value));
+  writeStorage(STORAGE_KEY, String(editorZoomLevel.value));
 }
 
 function revealZoomHud() {

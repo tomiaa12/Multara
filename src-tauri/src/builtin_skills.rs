@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
 
 #[derive(Clone, Copy)]
 pub struct BuiltinSkill {
@@ -91,12 +91,21 @@ pub fn names() -> Vec<&'static str> {
     ALL.iter().map(|skill| skill.name).collect()
 }
 
+/// 每次启动运行都会调；内容没变就不写。写入走同目录临时文件 + rename，
+/// 并发运行或 CLI 正在读时不会看到写了一半的文件。
 pub fn materialize(root: &Path, locale: &str) -> Result<(), String> {
     for skill in ALL {
         let dir = root.join(skill.name);
+        let path = dir.join("SKILL.md");
+        let markdown = skill.markdown_for(locale);
+        if fs::read(&path).is_ok_and(|current| current == markdown.as_bytes()) {
+            continue;
+        }
         fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-        fs::write(dir.join("SKILL.md"), skill.markdown_for(locale))
+        let mut file = tempfile::NamedTempFile::new_in(&dir).map_err(|error| error.to_string())?;
+        file.write_all(markdown.as_bytes())
             .map_err(|error| error.to_string())?;
+        file.persist(&path).map_err(|error| error.error.to_string())?;
     }
     Ok(())
 }
@@ -117,6 +126,21 @@ fn frontmatter_description(markdown: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn materialize_rewrites_only_changed_files() {
+        let root = tempfile::tempdir().unwrap();
+        materialize(root.path(), "en").unwrap();
+        let path = root.path().join(ALL[0].name).join("SKILL.md");
+        assert_eq!(fs::read_to_string(&path).unwrap(), ALL[0].en);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        materialize(root.path(), "en").unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+        materialize(root.path(), "zh-CN").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), ALL[0].zh_cn);
+        let leftovers = fs::read_dir(path.parent().unwrap()).unwrap().count();
+        assert_eq!(leftovers, 1);
+    }
 
     #[test]
     fn embeds_every_product_skill() {
