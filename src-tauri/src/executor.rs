@@ -684,6 +684,62 @@ fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String
     .map_err(|_| "任务不存在".to_string())
 }
 
+const STOP_CHECK_INTERVAL: Duration = Duration::from_millis(500);
+/// 模型连续收到这么多次工具报错还不改正，基本是在死循环，直接停掉，避免事件无限增长。
+const MAX_CONSECUTIVE_TOOL_ERRORS: usize = 25;
+
+/// 上游把工具参数切碎后，CLI 会产出没有工具名、input 只有 `__unparsedToolInput` 的残片。
+fn is_garbage_tool_use(event: &NormalizedEvent) -> bool {
+    if event.event_type != "tool_use" || event.tool.as_deref().is_some_and(|t| !t.trim().is_empty()) {
+        return false;
+    }
+    match &event.input {
+        Some(Value::Object(map)) => {
+            !map.is_empty() && map.keys().all(|key| key == "__unparsedToolInput")
+        }
+        _ => false,
+    }
+}
+
+fn is_tool_use_error(event: &NormalizedEvent) -> bool {
+    event
+        .output
+        .as_deref()
+        .or(event.content.as_deref())
+        .is_some_and(|text| text.contains("<tool_use_error>"))
+}
+
+fn abort_tool_error_loop(
+    app: &AppHandle,
+    run_id: &str,
+    session_id: &str,
+    agent_id: &str,
+    event_seq: &AtomicU32,
+) {
+    let message = format!("工具调用连续失败 {MAX_CONSECUTIVE_TOOL_ERRORS} 次，已自动停止。请检查模型或网关对工具参数的流式输出。");
+    let seq = event_seq.fetch_add(1, Ordering::SeqCst) + 1;
+    let item = timeline_item(
+        seq,
+        NormalizedEvent {
+            event_type: "error",
+            call_id: None,
+            tool: None,
+            content: Some(message.clone()),
+            input: None,
+            output: None,
+            replaces_final_text: false,
+            parent_call_id: None,
+            status: None,
+        },
+    );
+    persist_timeline_item(app, run_id, session_id, &item);
+    let mut outgoing = run_event(run_id, session_id, agent_id, "running");
+    outgoing.error = Some(message);
+    outgoing.timeline_item = Some(item);
+    let _ = app.emit("run-event", outgoing);
+    let _ = stop(app, run_id);
+}
+
 fn is_stopped(app: &AppHandle, run_id: &str) -> bool {
     matches!(
         current_status(app, run_id).as_deref(),
@@ -1375,9 +1431,34 @@ fn read_stream<R: Read + Send + 'static>(
     thread::spawn(move || {
         let mut previous: Option<TimelineItem> = None;
         let mut tool_files: HashMap<String, String> = HashMap::new();
+        let mut consecutive_tool_errors = 0usize;
+        // 正文/思考是逐 token 到达的：先攒着，约 STREAM_FLUSH_INTERVAL 才落库并发一次事件，
+        // 否则每个 token 都整段 upsert + 整段 IPC。
+        let pending = Arc::new(Mutex::new(PendingStream::new()));
+        let stream_done = Arc::new(AtomicBool::new(false));
+        let flusher = {
+            let (app, run_id, session_id, agent_id) =
+                (app.clone(), run_id.clone(), session_id.clone(), agent_id.clone());
+            let (pending, stream_done) = (Arc::clone(&pending), Arc::clone(&stream_done));
+            thread::spawn(move || {
+                while !stream_done.load(Ordering::Relaxed) {
+                    thread::sleep(STREAM_FLUSH_INTERVAL);
+                    if let Ok(mut pending) = pending.lock() {
+                        if pending.due() {
+                            pending.flush(&app, &run_id, &session_id, &agent_id);
+                        }
+                    }
+                }
+            })
+        };
+        let mut last_stop_check = Instant::now();
         for line in BufReader::new(stream).lines().map_while(Result::ok) {
-            if is_stopped(&app, &run_id) {
-                break;
+            // 每行都查一次数据库会和写事件抢全局锁；停止信号半秒内到达即可。
+            if last_stop_check.elapsed() >= STOP_CHECK_INTERVAL {
+                last_stop_check = Instant::now();
+                if is_stopped(&app, &run_id) {
+                    break;
+                }
             }
             if !is_error {
                 conversation::persist_from_line(&app, &session_id, &agent_id, &runtime_id, &line);
@@ -1394,6 +1475,24 @@ fn read_stream<R: Read + Send + 'static>(
                 }
             }
             for event in normalize_runtime_line(&parser_id, &line, is_error) {
+                if is_garbage_tool_use(&event) {
+                    continue;
+                }
+                if event.event_type == "tool_result" {
+                    if is_tool_use_error(&event) {
+                        consecutive_tool_errors += 1;
+                    } else {
+                        consecutive_tool_errors = 0;
+                    }
+                    if consecutive_tool_errors >= MAX_CONSECUTIVE_TOOL_ERRORS {
+                        stream_done.store(true, Ordering::Relaxed);
+                        if let Ok(mut pending) = pending.lock() {
+                            pending.flush(&app, &run_id, &session_id, &agent_id);
+                        }
+                        abort_tool_error_loop(&app, &run_id, &session_id, &agent_id, &event_seq);
+                        return;
+                    }
+                }
                 if event.event_type == "tool_use" {
                     maybe_capture_file_snapshot(
                         &app,
@@ -1432,6 +1531,22 @@ fn read_stream<R: Read + Send + 'static>(
                         item = merge_timeline_item(old, item);
                     }
                 }
+                if matches!(item.event_type, "text" | "thinking") {
+                    previous = Some(item.clone());
+                    if let Ok(mut pending) = pending.lock() {
+                        if pending.item.as_ref().is_some_and(|held| held.seq != item.seq) {
+                            pending.flush(&app, &run_id, &session_id, &agent_id);
+                        }
+                        pending.push(item, visible_text);
+                        if pending.due() {
+                            pending.flush(&app, &run_id, &session_id, &agent_id);
+                        }
+                    }
+                    continue;
+                }
+                if let Ok(mut pending) = pending.lock() {
+                    pending.flush(&app, &run_id, &session_id, &agent_id);
+                }
                 persist_timeline_item(&app, &run_id, &session_id, &item);
                 previous = Some(item.clone());
                 let affected_file = (item.event_type == "tool_result")
@@ -1451,12 +1566,60 @@ fn read_stream<R: Read + Send + 'static>(
                 let _ = app.emit("run-event", outgoing);
             }
         }
+        stream_done.store(true, Ordering::Relaxed);
+        let _ = flusher.join();
+        if let Ok(mut pending) = pending.lock() {
+            pending.flush(&app, &run_id, &session_id, &agent_id);
+        }
         if let Some(usage) = usage {
             if let Ok(acc) = usage.lock() {
                 persist_run_usage(&app, &run_id, &acc.finalize());
             }
         }
     })
+}
+
+const STREAM_FLUSH_INTERVAL: Duration = Duration::from_millis(80);
+
+/// 逐 token 到达的正文/思考：合并后的最新 item + 自上次发送以来新增的正文片段。
+struct PendingStream {
+    item: Option<TimelineItem>,
+    chunk: String,
+    last_flush: Instant,
+}
+
+impl PendingStream {
+    fn new() -> Self {
+        Self {
+            item: None,
+            chunk: String::new(),
+            last_flush: Instant::now(),
+        }
+    }
+
+    fn push(&mut self, item: TimelineItem, chunk: Option<String>) {
+        self.item = Some(item);
+        if let Some(chunk) = chunk {
+            self.chunk.push_str(&chunk);
+        }
+    }
+
+    fn due(&self) -> bool {
+        self.item.is_some() && self.last_flush.elapsed() >= STREAM_FLUSH_INTERVAL
+    }
+
+    fn flush(&mut self, app: &AppHandle, run_id: &str, session_id: &str, agent_id: &str) {
+        self.last_flush = Instant::now();
+        let Some(item) = self.item.take() else {
+            return;
+        };
+        persist_timeline_item(app, run_id, session_id, &item);
+        let mut outgoing = run_event(run_id, session_id, agent_id, "running");
+        outgoing.replaces_final_text = item.replaces_final_text;
+        outgoing.chunk = (!self.chunk.is_empty()).then(|| std::mem::take(&mut self.chunk));
+        outgoing.timeline_item = Some(item);
+        let _ = app.emit("run-event", outgoing);
+    }
 }
 
 fn persist_run_usage(app: &AppHandle, run_id: &str, usage: &TokenUsage) {
@@ -1994,39 +2157,34 @@ fn emit_deleted_snapshots(app: &AppHandle, run: &QueuedRun) {
     let Some(message_id) = run.user_message_id.as_deref() else {
         return;
     };
+    // 一次拿锁查出 (workspace_id, file_path, work_path)，不要在循环里逐行抢全局数据库锁。
     let rows = {
         let state = app.state::<AppState>();
         let Ok(db) = state.lock_db() else {
             return;
         };
         let mut statement = match db.prepare(
-            "SELECT workspace_id, file_path FROM turn_file_snapshots
-             WHERE message_id=?1 AND file_path != ''",
+            "SELECT s.workspace_id, s.file_path, COALESCE(w.work_path, '')
+             FROM turn_file_snapshots s
+             LEFT JOIN workspaces w ON w.id = s.workspace_id
+             WHERE s.message_id=?1 AND s.file_path != ''",
         ) {
             Ok(statement) => statement,
             Err(_) => return,
         };
         statement
             .query_map([message_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })
             .ok()
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>().ok())
             .unwrap_or_default()
     };
-    for (workspace_id, file_path) in rows {
-        let work_path = {
-            let state = app.state::<AppState>();
-            let Ok(db) = state.lock_db() else {
-                continue;
-            };
-            db.query_row(
-                "SELECT work_path FROM workspaces WHERE id=?1",
-                [&workspace_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap_or_default()
-        };
+    for (workspace_id, file_path, work_path) in rows {
         if work_path.is_empty() {
             continue;
         }

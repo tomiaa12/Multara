@@ -169,10 +169,10 @@ const sessionMessages = computed(() =>
 const afterCount = computed(() =>
   reaskTarget.value ? countMessagesFrom(sessionMessages.value, reaskTarget.value.messageId) : 0,
 );
-const displayMessages = computed(() => {
-  const result: Array<ChatMessage & { duplicateCount: number }> = [];
+const duplicateCounts = computed(() => {
+  const counts = new Map<string, number>();
+  let previous: ChatMessage | undefined;
   for (const message of sessionMessages.value) {
-    const previous = result.at(-1);
     if (
       previous &&
       message.failureReason &&
@@ -180,10 +180,30 @@ const displayMessages = computed(() => {
       previous.content === message.content
       && (previous.agentId ?? "") === (message.agentId ?? "")
     ) {
-      previous.duplicateCount += 1;
+      counts.set(previous.id, (counts.get(previous.id) ?? 1) + 1);
     } else {
-      result.push({ ...message, duplicateCount: 1 });
+      previous = message;
     }
+  }
+  return counts;
+});
+// 直接返回 store 里的响应式消息对象：流式更新只会让正在变化的那一条重新渲染，
+// 不要再 `{ ...message }` 复制，否则每个片段都会让整段历史重绘。
+const displayMessages = computed(() => {
+  const result: ChatMessage[] = [];
+  let previous: ChatMessage | undefined;
+  for (const message of sessionMessages.value) {
+    if (
+      previous &&
+      message.failureReason &&
+      previous.failureReason &&
+      previous.content === message.content
+      && (previous.agentId ?? "") === (message.agentId ?? "")
+    ) {
+      continue;
+    }
+    result.push(message);
+    previous = message;
   }
   return result;
 });
@@ -201,6 +221,29 @@ const messageGroups = computed(() => {
   }
   return groups;
 });
+// 长对话只渲染最近若干轮，向上滚到顶再分批展开，避免上千个节点常驻 DOM。
+const GROUP_WINDOW = 30;
+const visibleGroupCount = ref(GROUP_WINDOW);
+const visibleGroups = computed(() =>
+  messageGroups.value.length > visibleGroupCount.value
+    ? messageGroups.value.slice(-visibleGroupCount.value)
+    : messageGroups.value,
+);
+const hiddenGroupCount = computed(() => messageGroups.value.length - visibleGroups.value.length);
+const lastGroupId = computed(() => messageGroups.value.at(-1)?.id ?? "");
+let expandingEarlier = false;
+async function showEarlierGroups() {
+  const element = messageList.value;
+  if (!element || expandingEarlier || hiddenGroupCount.value <= 0) return;
+  expandingEarlier = true;
+  const before = element.scrollHeight;
+  const top = element.scrollTop;
+  visibleGroupCount.value += GROUP_WINDOW;
+  await nextTick();
+  // 保持用户正在看的那一行不动，新内容只出现在上方。
+  element.scrollTop = top + (element.scrollHeight - before);
+  expandingEarlier = false;
+}
 const attachments = computed(() =>
   session.value ? pendingAttachments.value[session.value.id] ?? [] : [],
 );
@@ -936,6 +979,7 @@ function handleScroll() {
   const element = messageList.value;
   if (!element) return;
   followBottom.value = listIsAtBottom(element);
+  if (element.scrollTop < 160 && hiddenGroupCount.value > 0) void showEarlierGroups();
 }
 
 function rememberSessionScroll(sessionId: string | undefined) {
@@ -959,6 +1003,11 @@ function applySessionScroll(sessionId: string | undefined) {
 }
 
 function revealTranscript(sessionId: string | undefined) {
+  if (props.unreadMessageId && hiddenGroupCount.value > 0) {
+    // 目标消息可能在被折叠的早期轮次里，先全部展开再定位。
+    visibleGroupCount.value = messageGroups.value.length;
+    void nextTick(() => scrollListToMessage(messageList.value, props.unreadMessageId ?? null));
+  }
   if (props.unreadMessageId && scrollListToMessage(messageList.value, props.unreadMessageId)) {
     followBottom.value = false;
     return;
@@ -1120,13 +1169,15 @@ watch(
       applySessionScroll(typeof current[0] === "string" ? current[0] : undefined);
       return;
     }
-    scrollToBottom("smooth");
+    // 流式输出时每个片段都会走到这里，smooth 动画会被反复重启并连带强制布局。
+    scrollToBottom(sessionProcessing.value ? "auto" : "smooth");
   },
 );
 watch(
   () => session.value?.id,
   (sessionId, previousId) => {
     if (previousId && previousId !== sessionId) rememberSessionScroll(previousId);
+    visibleGroupCount.value = GROUP_WINDOW;
     reaskTarget.value = null;
     reshuffleOpen.value = false;
     seenChipIds.value = new Set(
@@ -1358,8 +1409,14 @@ defineExpose({
           <h2>{{ t("chat.welcomeTitle") }}</h2>
           <p>{{ t("chat.welcomeHint") }}</p>
         </div>
+        <button
+          v-if="hiddenGroupCount > 0"
+          type="button"
+          class="chat-show-earlier"
+          @click="showEarlierGroups"
+        >{{ t("chat.showEarlier", { count: hiddenGroupCount }) }}</button>
         <section
-          v-for="(group, groupIndex) in messageGroups"
+          v-for="group in visibleGroups"
           :key="group.id"
           class="message-exchange"
         >
@@ -1375,7 +1432,7 @@ defineExpose({
             <ChatMessageItem
               :data-message-id="message.id"
               :message="message"
-              :duplicate-count="message.duplicateCount"
+              :duplicate-count="duplicateCounts.get(message.id) ?? 1"
               :running="messageRunning(message)"
               :target-label="targetLabel"
               :target-avatar="targetAvatar"
@@ -1396,7 +1453,7 @@ defineExpose({
             />
           </template>
           <div
-            v-if="showWorking && groupIndex === messageGroups.length - 1"
+            v-if="showWorking && group.id === lastGroupId"
             class="assistant-working"
             aria-live="polite"
           >

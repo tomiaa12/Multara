@@ -55,6 +55,7 @@ export class DiffOverlayManager {
   private lastChunks: DiffChunk[] = [];
   private disposables: Array<{ dispose: () => void }> = [];
   private refreshingMetrics = false;
+  private appliedSignature = "";
 
   constructor(
     private editor: MonacoNS.editor.IStandaloneCodeEditor,
@@ -67,7 +68,16 @@ export class DiffOverlayManager {
 
   applyChunks(chunks: DiffChunk[]): void {
     this.lastChunks = chunks;
+    // chunk 没变就不要拆装 view zone / overlay widget：每次重建都会让 Monaco 重新布局。
+    const signature = `${this.isRunning() ? 1 : 0}|${chunks.map((chunk) =>
+      `${chunk.chunkId}:${chunk.hunk.newStart}:${chunk.hunk.oldLines.length}:${chunk.hunk.newLines.length}`,
+    ).join(";")}`;
+    if (signature === this.appliedSignature && this.decorationIds.length + this.viewZoneIds.length + this.overlayWidgets.length > 0) {
+      this.repositionControls();
+      return;
+    }
     this.clearAll();
+    this.appliedSignature = signature;
 
     const newDecorations: MonacoNS.editor.IModelDeltaDecoration[] = [];
     const disabled = this.isRunning();
@@ -178,6 +188,7 @@ export class DiffOverlayManager {
   private refreshMetrics() {
     if (this.refreshingMetrics || this.lastChunks.length === 0) return;
     this.refreshingMetrics = true;
+    this.appliedSignature = "";
     try {
       this.applyChunks(this.lastChunks);
     } finally {
@@ -357,6 +368,7 @@ export class DiffOverlayManager {
   }
 
   clearAll(): void {
+    this.appliedSignature = "";
     this.decorationIds = this.editor.deltaDecorations(this.decorationIds, []);
     this.editor.changeViewZones((accessor) => {
       this.viewZoneIds.forEach((id) => accessor.removeZone(id));

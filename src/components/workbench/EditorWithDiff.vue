@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, shallowRef, watch } from "vue";
+import { computed, nextTick, onUnmounted, shallowRef, watch } from "vue";
 import { loader, VueMonacoEditor } from "@guolao/vue-monaco-editor";
 import type * as MonacoNS from "monaco-editor";
 import { monaco, monacoLanguageId } from "../../monaco";
@@ -50,8 +50,11 @@ let applyingExternal = false;
 function replaceEditorValue(editor: MonacoNS.editor.IStandaloneCodeEditor, next: string) {
   if (editor.getValue() === next) return;
   applyingExternal = true;
+  // setValue 会把光标和滚动位置重置到文件开头；外部刷新（磁盘变化、AI 写文件）后要原地保留。
+  const viewState = editor.saveViewState();
   try {
     editor.setValue(next);
+    if (viewState) editor.restoreViewState(viewState);
   } finally {
     applyingExternal = false;
   }
@@ -94,7 +97,12 @@ function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
     () => `${props.workspaceId}\0${props.filePath}\0${props.gitEpoch ?? 0}`,
     locate,
   );
-  blameRef.value = new GitBlame(editor, locate, (label, title) => editorStatus.setBlame(label, title));
+  blameRef.value = new GitBlame(
+    editor,
+    locate,
+    (label, title) => editorStatus.setBlame(label, title),
+    () => String(props.gitEpoch ?? 0),
+  );
   conflictRef.value = new MergeConflictEditor(editor, () => Boolean(props.readOnly || props.writing));
   gutterRef.value.schedule(true);
 
@@ -103,7 +111,7 @@ function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
       if (applyingExternal) return;
       const current = editor.getValue();
       if (current !== props.content) emit("change", current, !event.isFlush);
-      refreshDiff(current);
+      scheduleRefreshDiff();
       gutterRef.value?.schedule();
     }),
     editor.onDidChangeModel(() => {
@@ -114,6 +122,12 @@ function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
 
   refreshDiff(props.content);
   emit("mount", editor);
+  // VueMonacoEditor 在容器 display:none 时创建编辑器，首次布局是 0×0，要等 ResizeObserver 才补；
+  // 这期间会先看到一行再展开。容器显示出来之后立刻手动布局一次。
+  void nextTick(() => {
+    editor.layout();
+    requestAnimationFrame(() => editor.layout());
+  });
 }
 
 watch(
@@ -140,7 +154,18 @@ watch(
   },
 );
 
+// 按键、store 深监听都会请求刷新 diff；整文件 diff + 重建覆盖层不能每次都同步做。
+let diffTimer = 0;
+function scheduleRefreshDiff() {
+  window.clearTimeout(diffTimer);
+  diffTimer = window.setTimeout(() => {
+    const editor = editorRef.value;
+    if (editor) refreshDiff(editor.getValue());
+  }, 150);
+}
+
 function refreshDiff(currentContent: string) {
+  window.clearTimeout(diffTimer);
   const chunks = diffStore.getChunksForFile(
     props.workspaceId,
     props.filePath,
@@ -179,10 +204,7 @@ async function undoAll() {
 
 watch(
   () => [diffStore.chunkStates, diffStore.baselines],
-  () => {
-    const editor = editorRef.value;
-    if (editor) refreshDiff(editor.getValue());
-  },
+  () => scheduleRefreshDiff(),
   { deep: true },
 );
 
@@ -197,8 +219,17 @@ watch(
 );
 
 watch(
+  () => [props.filePath, props.workspaceId] as const,
+  () => void nextTick(() => editorRef.value?.layout()),
+  { flush: "post" },
+);
+
+watch(
   () => [props.filePath, props.workspaceId, props.gitEpoch] as const,
-  () => gutterRef.value?.schedule(true),
+  () => {
+    gutterRef.value?.schedule(true);
+    blameRef.value?.refreshSoon();
+  },
 );
 
 watch(isRunning, () => {
@@ -228,6 +259,7 @@ watch(
 );
 
 onUnmounted(() => {
+  window.clearTimeout(diffTimer);
   editorDisposables.splice(0).forEach((item) => item.dispose());
   overlayRef.value?.dispose();
   gutterRef.value?.dispose();

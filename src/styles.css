@@ -1613,7 +1613,8 @@ button.chat-editing-overview-open:hover {
 .chat-editor-overlay-widget .diff-hunk-nav {
   margin-left: 4px;
 }
-textarea {
+/* Monaco 的隐藏输入框（.inputarea）跟着光标走，不能吃到这里的 width/color/background。 */
+textarea:not(.inputarea) {
   width: 100%;
   resize: none;
   border: 0;
@@ -12220,4 +12221,32 @@ vite-error-overlay {
   inset: 0;
   z-index: 2147483647;
   background: #181818;
+}
+.monaco-editor .git-blame-inline {
+  color: var(--color-text-secondary);
+  margin-left: 50px;
+  font-style: normal;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chat-show-earlier {
+  display: block;
+  margin: 8px auto;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm, 12px);
+  cursor: pointer;
+}
+.chat-show-earlier:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover, transparent);
+}
+/* 屏幕外的历史轮次不参与布局和绘制；`auto` 会记住渲染过的真实高度，减少滚动条跳动。 */
+.message-exchange:not(:last-child) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
 }

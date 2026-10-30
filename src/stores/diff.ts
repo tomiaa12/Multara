@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import * as backend from "../services/backend";
 import { chunkKeyFor, parseChunkId } from "../domain/diff";
 import {
@@ -39,6 +39,30 @@ export const useDiffStore = defineStore("diff", () => {
   const diskEpoch = ref(0);
   const missingFiles = ref(new Set<string>());
   const dismissedMissing = ref(new Set<string>());
+
+  /** filePath → 第一个有待审基线的 workspaceId。聊天里每张编辑卡都要查，建一次索引而不是每张卡遍历全部基线。 */
+  const baselineWorkspaceByPath = computed(() => {
+    const index = new Map<string, string>();
+    for (const key of baselines.value.keys()) {
+      const parsed = parseFileKey(key);
+      if (parsed && !index.has(parsed.filePath)) index.set(parsed.filePath, parsed.workspaceId);
+    }
+    return index;
+  });
+
+  // 同一文件在同一个 diskEpoch 下只读一次磁盘，所有编辑卡共用结果。
+  const liveReads = new Map<string, { epoch: number; promise: Promise<string> }>();
+  function readLiveContent(workspaceId: string, filePath: string): Promise<string> {
+    const key = fileKey(workspaceId, filePath);
+    const cached = liveReads.get(key);
+    if (cached && cached.epoch === diskEpoch.value) return cached.promise;
+    const promise = backend.readWorkspaceFile(workspaceId, filePath).then(
+      (file) => file.content,
+      () => "",
+    );
+    liveReads.set(key, { epoch: diskEpoch.value, promise });
+    return promise;
+  }
 
   function applySessionData(
     sessionId: string,
@@ -514,6 +538,8 @@ export const useDiffStore = defineStore("diff", () => {
   }
 
   return {
+    baselineWorkspaceByPath,
+    readLiveContent,
     snapshots,
     baselines,
     chunkStates,

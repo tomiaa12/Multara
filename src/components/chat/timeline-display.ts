@@ -571,7 +571,13 @@ function isExploreKind(kind: ToolKind): boolean {
   return kind === "read" || kind === "search" || kind === "browser";
 }
 
+function isUnparsedFragment(item: TimelineItem): boolean {
+  const keys = Object.keys(asRecord(item.input));
+  return keys.length > 0 && keys.every((key) => key === "__unparsedToolInput");
+}
+
 function isBlankTool(item: TimelineItem): boolean {
+  if (!item.tool?.trim() && isUnparsedFragment(item)) return true;
   return !inferToolName(item) && !toolPath(item) && !toolCommand(item) && Object.keys(resolvedInput(item)).length === 0;
 }
 
@@ -646,8 +652,13 @@ export function groupTimeline(items: TimelineItem[]): TimelineBlock[] {
       top.push(item);
     }
   }
-  const results = top.filter((item) => item.eventType === "tool_result");
-  const used = new Set<number>();
+  const resultsByCall = new Map<string, TimelineItem[]>();
+  for (const item of top) {
+    if (item.eventType !== "tool_result" || !item.callId) continue;
+    const list = resultsByCall.get(item.callId);
+    if (list) list.push(item);
+    else resultsByCall.set(item.callId, [item]);
+  }
   const paired: TimelineBlock[] = [];
 
   for (const item of top) {
@@ -678,12 +689,7 @@ export function groupTimeline(items: TimelineItem[]): TimelineBlock[] {
       if (todos.length) paired.push({ type: "plan", todos });
       continue;
     }
-    const result = results.find((candidate) => {
-      if (used.has(candidate.seq)) return false;
-      if (item.callId && candidate.callId) return candidate.callId === item.callId;
-      return false;
-    });
-    if (result) used.add(result.seq);
+    const result = item.callId ? resultsByCall.get(item.callId)?.shift() : undefined;
     const pair = withChildren({ use: item, result }, nested);
     const kind = itemKind(item);
     if (isExploreKind(kind)) paired.push({ type: "explore", items: [{ kind: "tool", item: pair }] });

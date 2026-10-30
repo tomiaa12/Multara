@@ -9,33 +9,22 @@ import {
   type GitBlameInfo,
 } from "./git-blame";
 
-let blameStyleSerial = 0;
-
-function blameAfterRule(className: string, content: string): string {
-  const text = content
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/[\r\n]/g, " ")
-    .replace(/</g, "\\3c ");
-  return `.monaco-editor .${className}::after{content:"${text}"}`;
-}
-
 export class GitBlame {
   private collection: Monaco.editor.IEditorDecorationsCollection | null = null;
   private timer = 0;
   private generation = 0;
   private shown: { line: number; content: string; hover: string } | null = null;
-  private readonly styleClass = `git-blame-text-${++blameStyleSerial}`;
-  private readonly style = document.createElement("style");
+  /** 整文件 blame 缓存：移动光标只查表，不再每换一行起一次 git 子进程。 */
+  private cache: { key: string; versionId: number; lines: GitBlameInfo[] | null } | null = null;
+  private loading: Promise<void> | null = null;
   private readonly listeners: Array<{ dispose: () => void }> = [];
 
   constructor(
     private readonly editor: Monaco.editor.IStandaloneCodeEditor,
     private readonly locate: () => { workspaceId: string; filePath: string },
     private readonly publish: (label: string, title: string) => void,
+    private readonly cacheKey: () => string = () => "",
   ) {
-    this.style.dataset.gitBlame = this.styleClass;
-    document.head.appendChild(this.style);
     this.listeners.push(
       editor.onDidChangeCursorPosition(() => this.schedule()),
       editor.onDidChangeModelContent(() => this.schedule()),
@@ -51,15 +40,42 @@ export class GitBlame {
     this.collection?.clear();
     this.collection = null;
     this.shown = null;
-    this.style.remove();
+    this.cache = null;
     this.publish("", "");
+  }
+
+  /** git 视图刷新（保存、提交等）后重新取缓存。 */
+  refreshSoon() {
+    this.schedule();
   }
 
   private schedule() {
     window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => {
       void this.refresh();
-    }, 180);
+    }, 200);
+  }
+
+  private async ensureCache(model: Monaco.editor.ITextModel) {
+    const { workspaceId, filePath } = this.locate();
+    const key = `${workspaceId}\0${filePath}\0${this.cacheKey()}`;
+    if (this.cache?.key === key) return;
+    if (this.loading) {
+      await this.loading;
+      if (this.cache?.key === key) return;
+    }
+    this.loading = (async () => {
+      let lines: GitBlameInfo[] | null = null;
+      try {
+        lines = await backend.gitBlameFile(workspaceId, filePath);
+      } catch {
+        lines = null;
+      }
+      this.cache = { key, versionId: model.getAlternativeVersionId(), lines };
+    })().finally(() => {
+      this.loading = null;
+    });
+    await this.loading;
   }
 
   private async refresh() {
@@ -70,24 +86,30 @@ export class GitBlame {
       this.clear();
       return;
     }
-    const { workspaceId, filePath } = this.locate();
-    let blame: GitBlameInfo | null = null;
-    try {
-      blame = await backend.gitBlameLine(workspaceId, filePath, position.lineNumber);
-    } catch {
-      blame = null;
-    }
+    await this.ensureCache(model);
     if (generation !== this.generation) return;
-    if (!blame || position.lineNumber > model.getLineCount()) {
+    const cache = this.cache;
+    // blame 是按磁盘内容算的；缓冲区改过之后行号对不上，宁可不显示，保存后（git 视图刷新）再出现。
+    if (!cache?.lines || model.getAlternativeVersionId() !== cache.versionId) {
       this.clear();
       return;
     }
-    this.paint(position.lineNumber, blame);
+    const line = position.lineNumber;
+    if (line > model.getLineCount()) {
+      this.clear();
+      return;
+    }
+    const blame = cache.lines.length === 0
+      ? { committed: false } as GitBlameInfo
+      : cache.lines[line - 1];
+    if (!blame) {
+      this.clear();
+      return;
+    }
+    this.paint(line, blame);
   }
 
   private paint(line: number, blame: GitBlameInfo) {
-    const model = this.editor.getModel();
-    if (!model) return;
     if (!blame.committed) {
       this.decorate(line, BLAME_UNCOMMITTED, "这一行还没有提交");
       this.publish(BLAME_UNCOMMITTED, "这一行还没有提交");
@@ -102,11 +124,15 @@ export class GitBlame {
   private decorate(line: number, content: string, hover: string) {
     if (this.shown?.line === line && this.shown.content === content && this.shown.hover === hover) return;
     this.shown = { line, content, hover };
-    this.style.textContent = blameAfterRule(this.styleClass, content);
+    // 用 Monaco 的 injected text，不再为每一行改写全局 <style>。
     const decorations = [{
       range: new monaco.Range(line, Number.MAX_SAFE_INTEGER, line, Number.MAX_SAFE_INTEGER),
       options: {
-        afterContentClassName: `git-blame-after ${this.styleClass}`,
+        after: {
+          content,
+          inlineClassName: "git-blame-inline",
+          cursorStops: monaco.editor.InjectedTextCursorStops.None,
+        },
         hoverMessage: { value: hover },
       },
     }];
@@ -116,7 +142,6 @@ export class GitBlame {
 
   private clear() {
     this.shown = null;
-    this.style.textContent = "";
     this.collection?.clear();
     this.publish("", "");
   }

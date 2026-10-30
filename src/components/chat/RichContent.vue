@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import hljs from "highlight.js";
@@ -27,8 +27,29 @@ const languageAlias: Record<string, string> = {
   rs: "rust",
 };
 
+// 流式输出时正文每几毫秒变一次，整段 marked + DOMPurify + innerHTML + hljs 跟不上；
+// 把渲染内容限制在每 RENDER_INTERVAL_MS 一次，结束后的最后一次内容一定会渲染。
+const RENDER_INTERVAL_MS = 120;
+const shown = ref(props.content);
+let lastRender = 0;
+let renderTimer = 0;
+watch(() => props.content, (content) => {
+  const wait = RENDER_INTERVAL_MS - (Date.now() - lastRender);
+  window.clearTimeout(renderTimer);
+  if (wait <= 0) {
+    lastRender = Date.now();
+    shown.value = content;
+    return;
+  }
+  renderTimer = window.setTimeout(() => {
+    lastRender = Date.now();
+    shown.value = props.content;
+  }, wait);
+});
+onBeforeUnmount(() => window.clearTimeout(renderTimer));
+
 const html = computed(() =>
-  DOMPurify.sanitize(marked.parse(props.content || "", { async: false }) as string, {
+  DOMPurify.sanitize(marked.parse(shown.value || "", { async: false }) as string, {
     USE_PROFILES: { html: true },
   }),
 );

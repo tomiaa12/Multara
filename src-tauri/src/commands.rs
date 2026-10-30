@@ -381,6 +381,22 @@ pub async fn git_blame_line(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+pub async fn git_blame_file(
+    workspace_id: String,
+    path: String,
+    app: AppHandle,
+) -> Result<Option<Vec<GitLineBlame>>, String> {
+    let _span = crate::diag::span("git_blame_file");
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (git_command, root) = workspace_git_root(&state, &workspace_id)?;
+        git_manager::blame_file(&root, &git_command, &path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// Git 命令会拉起子进程（pull/push 最长等 180 秒）。同步 Tauri 命令跑在主线程上，
 /// 会把整个窗口卡住、鼠标变成转圈，所以统一挪到阻塞线程池里执行。
 pub(crate) async fn off_main<T, F>(app: AppHandle, work: F) -> Result<T, String>
@@ -3393,9 +3409,22 @@ pub fn update_chat_session_target(
 }
 
 #[tauri::command]
-pub fn list_chat_messages(
+pub async fn list_chat_messages(
     session_id: String,
-    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Vec<ChatMessage>, String> {
+    // 同步命令会跑在主线程，整段会话 + 全部时间线的查询会直接卡住界面。
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        list_chat_messages_blocking(&state, session_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn list_chat_messages_blocking(
+    state: &AppState,
+    session_id: String,
 ) -> Result<Vec<ChatMessage>, String> {
     let _span = crate::diag::span("list_chat_messages");
     let db = state.lock_db()?;
@@ -3486,11 +3515,14 @@ pub fn list_chat_messages(
             .cmp(&right.created_at)
             .then_with(|| left.id.cmp(&right.id))
     });
+    // 一次查出整个会话的时间线和附件，不要每条消息各查一次（N+1）。
+    let mut timelines = load_session_timelines(&db, &session_id)?;
+    let mut attachments = load_session_attachments(&db, &session_id)?;
     for message in &mut messages {
         if let Some(run_id) = &message.run_id {
-            message.timeline = load_run_timeline(&db, run_id)?;
+            message.timeline = timelines.remove(run_id).unwrap_or_default();
         }
-        message.attachments = load_message_attachments(&db, &message.id)?;
+        message.attachments = attachments.remove(&message.id).unwrap_or_default();
     }
     Ok(messages)
 }
@@ -4284,70 +4316,105 @@ fn parse_quick_actions(value: &str) -> Vec<QuickAction> {
         .collect()
 }
 
-fn load_run_timeline(db: &Connection, run_id: &str) -> Result<Vec<TimelineItem>, String> {
+/// 每个 run 最多带给界面的时间线条数；更早的明细仍在数据库里，只是不一次性塞进渲染进程。
+const MAX_TIMELINE_ITEMS_PER_RUN: usize = 3000;
+
+fn load_session_timelines(
+    db: &Connection,
+    session_id: &str,
+) -> Result<std::collections::HashMap<String, Vec<TimelineItem>>, String> {
+    // 过滤掉网关把参数切碎时留下的残片及其配套报错（见 gateway_proxy 的修复），旧数据里可能有成千上万条。
     let mut statement = db
         .prepare(
-            "SELECT seq, event_type, call_id, tool, content, input_json, output, created_at,
+            "SELECT run_id, seq, event_type, call_id, tool, content, input_json, output, created_at,
                     parent_call_id, status
-             FROM run_events WHERE run_id=?1 ORDER BY seq",
+             FROM run_events
+             WHERE session_id=?1
+               AND NOT (event_type='tool_use' AND COALESCE(tool,'')=''
+                        AND input_json LIKE '{\"__unparsedToolInput\"%')
+               AND NOT (event_type='tool_result'
+                        AND output LIKE '<tool_use_error>Error: No such tool available:%')
+             ORDER BY run_id, seq",
         )
         .map_err(|error| error.to_string())?;
-    let items = statement
-        .query_map([run_id], |row| {
-            let event_type: String = row.get(1)?;
-            let input_json: Option<String> = row.get(5)?;
-            Ok(TimelineItem {
-                seq: row.get::<_, i64>(0)?.max(0) as u32,
-                event_type: match event_type.as_str() {
-                    "thinking" => "thinking",
-                    "tool_use" => "tool_use",
-                    "tool_result" => "tool_result",
-                    "error" => "error",
-                    "plan" => "plan",
-                    "permission" => "permission",
-                    _ => "text",
+    let rows = statement
+        .query_map([session_id], |row| {
+            let event_type: String = row.get(2)?;
+            let input_json: Option<String> = row.get(6)?;
+            Ok((
+                row.get::<_, String>(0)?,
+                TimelineItem {
+                    seq: row.get::<_, i64>(1)?.max(0) as u32,
+                    event_type: match event_type.as_str() {
+                        "thinking" => "thinking",
+                        "tool_use" => "tool_use",
+                        "tool_result" => "tool_result",
+                        "error" => "error",
+                        "plan" => "plan",
+                        "permission" => "permission",
+                        _ => "text",
+                    },
+                    call_id: row.get(3)?,
+                    tool: row.get(4)?,
+                    content: row.get(5)?,
+                    input: input_json.and_then(|value| serde_json::from_str(&value).ok()),
+                    output: row.get(7)?,
+                    created_at: row.get(8)?,
+                    replaces_final_text: false,
+                    parent_call_id: row.get(9)?,
+                    status: row.get(10)?,
                 },
-                call_id: row.get(2)?,
-                tool: row.get(3)?,
-                content: row.get(4)?,
-                input: input_json.and_then(|value| serde_json::from_str(&value).ok()),
-                output: row.get(6)?,
-                created_at: row.get(7)?,
-                replaces_final_text: false,
-                parent_call_id: row.get(8)?,
-                status: row.get(9)?,
-            })
+            ))
         })
-        .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    Ok(items)
+    let mut by_run: std::collections::HashMap<String, Vec<TimelineItem>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let (run_id, item) = row.map_err(|error| error.to_string())?;
+        by_run.entry(run_id).or_default().push(item);
+    }
+    for items in by_run.values_mut() {
+        if items.len() > MAX_TIMELINE_ITEMS_PER_RUN {
+            let excess = items.len() - MAX_TIMELINE_ITEMS_PER_RUN;
+            items.drain(..excess);
+        }
+    }
+    Ok(by_run)
 }
 
-fn load_message_attachments(
+fn load_session_attachments(
     db: &Connection,
-    message_id: &str,
-) -> Result<Vec<MessageAttachment>, String> {
+    session_id: &str,
+) -> Result<std::collections::HashMap<String, Vec<MessageAttachment>>, String> {
     let mut statement = db
         .prepare(
-            "SELECT id, name, path, mime_type, size
-             FROM message_attachments WHERE message_id=?1 ORDER BY created_at",
+            "SELECT a.message_id, a.id, a.name, a.path, a.mime_type, a.size
+             FROM message_attachments a
+             JOIN messages m ON m.id = a.message_id
+             WHERE m.session_id=?1 ORDER BY a.created_at",
         )
         .map_err(|error| error.to_string())?;
-    let items = statement
-        .query_map([message_id], |row| {
-            Ok(MessageAttachment {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                mime_type: row.get(3)?,
-                size: row.get::<_, i64>(4)?.max(0) as u64,
-            })
+    let rows = statement
+        .query_map([session_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                MessageAttachment {
+                    id: row.get(1)?,
+                    name: row.get(2)?,
+                    path: row.get(3)?,
+                    mime_type: row.get(4)?,
+                    size: row.get::<_, i64>(5)?.max(0) as u64,
+                },
+            ))
         })
-        .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    Ok(items)
+    let mut by_message: std::collections::HashMap<String, Vec<MessageAttachment>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let (message_id, attachment) = row.map_err(|error| error.to_string())?;
+        by_message.entry(message_id).or_default().push(attachment);
+    }
+    Ok(by_message)
 }
 
 #[tauri::command]

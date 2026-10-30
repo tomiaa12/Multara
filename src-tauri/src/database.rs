@@ -199,6 +199,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           UNIQUE(run_id, seq)
         );
         CREATE INDEX IF NOT EXISTS idx_run_events_run_seq ON run_events(run_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_run_events_session ON run_events(session_id, run_id, seq);
         CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
         CREATE TABLE IF NOT EXISTS automations (
           id TEXT PRIMARY KEY,
