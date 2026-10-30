@@ -59,6 +59,16 @@ describe("groupTimeline", () => {
     expect(blocks.map((block) => block.type)).toEqual(["explore", "error"]);
   });
 
+  test("drops unparsed tool-input fragments instead of rendering empty Tool rows", () => {
+    const fragment = (seq: number) => ({
+      ...item("tool_use", null, { __unparsedToolInput: { len: 3, raw: "pwd" } }),
+      seq,
+      callId: "call_1",
+    });
+    const blocks = groupTimeline([fragment(1), fragment(2), fragment(3)]);
+    expect(blocks).toEqual([]);
+  });
+
   test("keeps thinking inside the surrounding explore group", () => {
     const blocks = groupTimeline([
       { ...item("thinking"), seq: 1, content: "先看代码" },

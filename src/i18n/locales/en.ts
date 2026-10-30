@@ -1306,6 +1306,7 @@ Who is this for? Any constraints?
   "chat.newMessagesDivider": "New messages",
   "chat.sendNotDelivered": "Not sent",
   "chat.restoreToComposer": "Restore to input",
+  "chat.showEarlier": "Show {count} earlier turns",
   "chat.scrollToBottom": "Back to bottom",
   "chat.queueCount": "{n} queued messages",
   "chat.queueHeldHint": "Send after you answer the question",

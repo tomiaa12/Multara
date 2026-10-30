@@ -21,6 +21,7 @@ import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox
 import { t, translate } from "../i18n";
 
 // 跳过的提问按消息 id 记在本地，刷新后卡片不会再弹出来；只留最近 200 条
+const RUN_STATE_HISTORY_LIMIT = 30;
 const DISMISSED_QUESTIONS_KEY = "multara.dismissedQuestions";
 function readDismissedQuestions(): string[] {
   try {
@@ -242,10 +243,22 @@ export const useAppStore = defineStore("app", () => {
         sessionMessages.push(existing);
       }
       if (existing && payload.timelineItem) {
-        const index = existing.timeline.findIndex((item) => item.seq === payload.timelineItem?.seq);
-        if (index >= 0) existing.timeline[index] = payload.timelineItem;
-        else existing.timeline.push(payload.timelineItem);
-        existing.timeline.sort((a, b) => a.seq - b.seq);
+        // seq 单调递增：流式更新的几乎都是最后一项，从尾部找，避免整条时间线 O(n) 扫描和排序。
+        const timeline = existing.timeline;
+        const incoming = payload.timelineItem;
+        const last = timeline[timeline.length - 1];
+        if (!last || incoming.seq > last.seq) {
+          timeline.push(incoming);
+        } else if (incoming.seq === last.seq) {
+          timeline[timeline.length - 1] = incoming;
+        } else {
+          const index = timeline.findIndex((item) => item.seq === incoming.seq);
+          if (index >= 0) timeline[index] = incoming;
+          else {
+            timeline.push(incoming);
+            timeline.sort((a, b) => a.seq - b.seq);
+          }
+        }
         if (payload.timelineItem.eventType === "permission" && payload.timelineItem.status !== "resolved") {
           void captureInboxNotice(payload);
         }
@@ -273,7 +286,11 @@ export const useAppStore = defineStore("app", () => {
       if (existing && payload.elapsedMs != null) {
         existing.elapsedMs = payload.elapsedMs;
       }
-      messages.value[payload.sessionId] = [...sessionMessages];
+      // 数组已在 store 里时，push 本身会触发响应；只有首次才需要挂进去，避免每个片段都换新数组。
+      if (messages.value[payload.sessionId] !== sessionMessages
+        && !(payload.sessionId in messages.value)) {
+        messages.value[payload.sessionId] = sessionMessages;
+      }
       if (["completed", "failed", "stopped"].includes(payload.status)) {
         await surfacesRefresh;
         const persisted = await backend.listChatMessages(payload.sessionId);
@@ -286,6 +303,7 @@ export const useAppStore = defineStore("app", () => {
           return status === "queued" || status === "running";
         });
         messages.value[payload.sessionId] = [...persisted, ...live];
+        pruneRunStates();
         if (previous?.status === "running") {
           await captureInboxNotice(payload);
         }
@@ -299,6 +317,16 @@ export const useAppStore = defineStore("app", () => {
         });
       }
     });
+  }
+
+  /** runStates 只增不减，会拖慢所有遍历它的计算属性；只保留进行中的和最近一批已结束的。 */
+  function pruneRunStates() {
+    const finished = Object.entries(runStates.value).filter(([, event]) =>
+      event.status !== "queued" && event.status !== "running",
+    );
+    const excess = finished.length - RUN_STATE_HISTORY_LIMIT;
+    if (excess <= 0) return;
+    for (const [runId] of finished.slice(0, excess)) delete runStates.value[runId];
   }
 
   async function refreshRuntimes() {
