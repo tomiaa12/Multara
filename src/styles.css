@@ -4606,7 +4606,8 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   overflow: hidden;
   padding-bottom: var(--spacing-2);
 }
-.scm-history.is-head .scm-history-subject {
+.scm-history.is-head .scm-history-subject,
+.scm-history-row.is-current .scm-history-subject {
   font-weight: var(--font-weight-semibold);
 }
 .scm-history {
@@ -4622,7 +4623,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: var(--spacing-1);
+  gap: 0;
   width: 100%;
   max-width: 100%;
   height: 22px;
@@ -4639,6 +4640,14 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 .scm-history-row:hover {
   background: var(--color-surface-active);
+}
+.scm-history-row.is-selected {
+  background: var(--color-selection);
+}
+.scm-history-graph {
+  display: flex;
+  flex-shrink: 0;
+  height: 22px;
 }
 .scm-history-lane {
   flex: 0 0 auto;
@@ -4657,66 +4666,106 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .scm-graph-dot.is-hole {
   fill: var(--color-bg);
 }
-.scm-history-row:hover .scm-graph-dot {
+/* 悬停：外圈描边透明，内圈/空心跟随 hover 底色（对齐 VS Code scm history） */
+.scm-history-row:hover .scm-graph-dot:first-of-type {
+  stroke: transparent;
+}
+.scm-history-row:hover .scm-graph-dot:nth-of-type(2),
+.scm-history-row:hover .scm-graph-dot.is-hole {
   stroke: var(--color-surface-active);
 }
 .scm-history-row:hover .scm-graph-dot.is-hole {
   fill: var(--color-surface-active);
 }
-.scm-lane-0 { color: var(--color-primary); }
-.scm-lane-1 { color: var(--color-success); }
-.scm-lane-2 { color: var(--color-warning); }
-.scm-lane-3 { color: var(--color-error); }
-.scm-lane-4 { color: var(--color-warning); }
-.scm-history-subject {
+.scm-history-graph.is-current .scm-graph-dot.is-hole {
+  fill: var(--color-bg);
+}
+.scm-history-row:hover .scm-history-graph.is-current .scm-graph-dot.is-hole {
+  fill: var(--color-surface-active);
+}
+.scm-history-row.is-selected .scm-graph-dot:first-of-type,
+.scm-history-row.is-selected:hover .scm-graph-dot:first-of-type {
+  stroke: transparent;
+}
+.scm-history-row.is-selected .scm-graph-dot:nth-of-type(2),
+.scm-history-row.is-selected .scm-graph-dot.is-hole,
+.scm-history-row.is-selected:hover .scm-graph-dot:nth-of-type(2),
+.scm-history-row.is-selected:hover .scm-graph-dot.is-hole {
+  stroke: var(--color-selection);
+}
+.scm-history-row.is-selected .scm-graph-dot.is-hole,
+.scm-history-row.is-selected:hover .scm-graph-dot.is-hole {
+  fill: var(--color-selection);
+}
+/* VS Code scmGraph.foreground1–5 + historyItemRef/Remote/Base */
+.scm-lane-0 { color: #FFB000; }
+.scm-lane-1 { color: #DC267F; }
+.scm-lane-2 { color: #994F00; }
+.scm-lane-3 { color: #40B0A6; }
+.scm-lane-4 { color: #B66DFF; }
+.scm-lane-5 { color: #59a4f9; } /* historyItemRefColor / charts.blue */
+.scm-lane-6 { color: #B180D7; } /* historyItemRemoteRefColor */
+.scm-lane-7 { color: #EA5C00; } /* historyItemBaseRefColor */
+.scm-history-copy {
+  display: flex;
   flex: 1;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-width: 0;
+  overflow: hidden;
+}
+.scm-history-subject {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   font-weight: var(--font-weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.scm-history-author {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .scm-history-refs {
   display: flex;
   flex: 0 0 auto;
-  gap: var(--spacing-0-5);
+  gap: var(--spacing-1);
   align-items: center;
+  margin-left: var(--spacing-1);
 }
 .scm-ref {
   display: flex;
   align-items: center;
   min-width: 0;
-  border-radius: var(--radius-full);
+  padding: 0 var(--spacing-1);
+  border-radius: 10px;
+  background: currentColor;
   font-size: var(--font-size-sm);
   font-style: normal;
   line-height: 18px;
   white-space: nowrap;
+}
+/* 实心色底上用主题前景色（相对页面底色反相），保证黑白主题都可读 */
+.scm-ref-count,
+.scm-ref .codicon,
+.scm-ref-name {
+  color: var(--color-text);
 }
 .scm-ref-count {
   padding-left: var(--spacing-0-5);
 }
 .scm-ref .codicon {
   padding: 1px;
-  color: inherit;
 }
 .scm-ref-name {
   max-width: 100px;
-  padding-right: var(--spacing-0-5);
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.scm-ref-head,
-.scm-ref-branch {
-  background: color-mix(in srgb, var(--color-primary) 24%, transparent);
-  color: var(--color-primary-hover);
-}
-.scm-ref-remote {
-  background: color-mix(in srgb, var(--color-warning) 28%, transparent);
-  color: var(--color-warning);
-}
-.scm-ref-tag {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
 }
 .scm-history-files {
   display: grid;
