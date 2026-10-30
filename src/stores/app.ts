@@ -840,14 +840,6 @@ export const useAppStore = defineStore("app", () => {
     return backend.compactChatSession(sessionId);
   }
 
-  async function setMessageFeedback(messageId: string, feedback: "up" | "down" | null) {
-    for (const list of Object.values(messages.value)) {
-      const message = list.find((item) => item.id === messageId);
-      if (message) message.feedback = feedback;
-    }
-    await backend.setMessageFeedback(messageId, feedback);
-  }
-
   async function resolvePermission(requestId: string, optionId: string, runId?: string | null) {
     await backend.resolvePermission(requestId, optionId, runId);
   }
@@ -1621,7 +1613,6 @@ export const useAppStore = defineStore("app", () => {
     deleteInboxItem,
     forkSession,
     compactSession,
-    setMessageFeedback,
     resolvePermission,
     selectSession,
     openSessionTabs,

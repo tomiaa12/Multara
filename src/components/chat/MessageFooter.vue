@@ -1,19 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Check, Copy, ThumbsDown, ThumbsUp } from "@lucide/vue";
+import { Check, Copy } from "@lucide/vue";
 import { formatAbsoluteTime, formatRelativeTime } from "./message-time";
 import { useSharedNow } from "./shared-clock";
-import { useAppStore } from "../../stores/app";
 import { t } from "../../i18n";
 
 const props = defineProps<{
   content: string;
   createdAt?: string | null;
   elapsedMs?: number | null;
-  messageId?: string | null;
-  feedback?: "up" | "down" | null;
 }>();
-const store = useAppStore();
 const copied = ref(false);
 const now = useSharedNow();
 
@@ -34,28 +30,6 @@ async function copyMessage() {
 <template>
   <footer class="assistant-message-footer">
     <span v-if="elapsedMs != null" class="message-elapsed">{{ t('chat.elapsedSeconds', { seconds: (elapsedMs / 1000).toFixed(1) }) }}</span>
-    <UiButton
-      v-if="messageId"
-      class="message-copy"
-      variant="ghost"
-      size="icon"
-      :tip="t('chat.feedbackHelpful')"
-      :aria-pressed="feedback === 'up'"
-      @click="store.setMessageFeedback(messageId, feedback === 'up' ? null : 'up')"
-    >
-      <ThumbsUp :size="13" />
-    </UiButton>
-    <UiButton
-      v-if="messageId"
-      class="message-copy"
-      variant="ghost"
-      size="icon"
-      :tip="t('chat.feedbackUnhelpful')"
-      :aria-pressed="feedback === 'down'"
-      @click="store.setMessageFeedback(messageId, feedback === 'down' ? null : 'down')"
-    >
-      <ThumbsDown :size="13" />
-    </UiButton>
     <UiButton
       class="message-copy"
       variant="ghost"

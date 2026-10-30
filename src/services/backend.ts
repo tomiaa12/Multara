@@ -952,11 +952,6 @@ export async function forkChatSession(sessionId: string): Promise<ChatSession> {
   return invoke<ChatSession>("fork_chat_session", { sessionId });
 }
 
-export async function setMessageFeedback(messageId: string, feedback: "up" | "down" | null): Promise<void> {
-  if (!inTauri()) return;
-  await invoke("set_message_feedback", { messageId, feedback });
-}
-
 export async function compactChatSession(sessionId: string): Promise<string> {
   if (!inTauri()) return "本地预览不会压缩对话。";
   return invoke<string>("compact_chat_session", { sessionId });
