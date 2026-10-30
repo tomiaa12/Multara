@@ -1,15 +1,20 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
 import {
+  historyCircleColor,
   historyCircleIndex,
+  historyColorMap,
   historyGraph,
   historyGraphWidth,
   historyRefBadges,
   historyRefs,
+  historyRowGraphWidth,
   isHistoryHead,
   layoutHistory,
   layoutHistoryGraph,
   parseHistoryRef,
+  SCM_COLOR_REF,
+  SCM_LANE_WIDTH,
 } from "./scm-history";
 
 describe("parseHistoryRef", () => {
@@ -136,8 +141,19 @@ describe("layoutHistoryGraph", () => {
     const graph = historyGraph(rows[0]);
     expect(graph.paths.some((path) => path.d.includes("A 11 11"))).toBe(true);
     expect(graph.paths.some((path) => path.d.includes("V 22"))).toBe(true);
+    // HEAD 优先于 merge 圆点样式：外 7 / 内 2
     expect(graph.dots[0].hole).toBe(false);
+    expect(graph.dots[0].r).toBe(7);
+    expect(graph.dots.at(-1)?.r).toBe(2);
     expect(graph.dots.at(-1)?.hole).toBe(true);
     expect(historyGraphWidth(rows)).toBeGreaterThan(11);
+    expect(historyRowGraphWidth(rows[0])).toBe(SCM_LANE_WIDTH * 3);
+    const mergeOnly = historyGraph({ ...rows[0], kind: "node" });
+    expect(mergeOnly.dots.map((dot) => dot.r)).toEqual([6, 3]);
+    // HEAD 泳道用 historyItemRefColor（蓝），侧枝走轮转色
+    expect(historyCircleColor(rows[0])).toBe(SCM_COLOR_REF);
+    expect(rows[0].output.map((lane) => lane.color)).toEqual([SCM_COLOR_REF, 0]);
+    const mapped = layoutHistoryGraph(rows.map((row) => row.commit), historyColorMap("main", "origin/main"));
+    expect(historyCircleColor(mapped[0])).toBe(SCM_COLOR_REF);
   });
 });

@@ -512,6 +512,8 @@ defineExpose({ refresh });
       :workspace-id="selectedWorkspaceId"
       :epoch="historyEpoch"
       :live="projectId !== PREVIEW_PROJECT_ID"
+      :branch="repositories.find((item) => item.workspaceId === selectedWorkspaceId)?.branch"
+      :upstream="repositories.find((item) => item.workspaceId === selectedWorkspaceId)?.upstream"
       @open="emit('openChange', $event)"
       @error="error = $event"
       @updated="refresh()"

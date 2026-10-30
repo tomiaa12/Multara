@@ -35,7 +35,47 @@ export type HistoryRowLayout = {
 };
 
 export const SCM_LANE_WIDTH = 11;
+/** 轮转泳道色数量（scmGraph.foreground1–5） */
 export const SCM_LANE_COLORS = 5;
+/** 对齐 VS Code：当前分支 / 远端跟踪 / merge-base */
+export const SCM_COLOR_REF = 5;
+export const SCM_COLOR_REMOTE = 6;
+export const SCM_COLOR_BASE = 7;
+
+export type HistoryColorMap = Map<string, number | undefined>;
+
+/** 当前分支→蓝、上游→紫；其余 ref 占位，徽章跟泳道色。 */
+export function historyColorMap(branch?: string, upstream?: string | null): HistoryColorMap {
+  const map: HistoryColorMap = new Map();
+  const head = branch?.trim();
+  if (head) map.set(head, SCM_COLOR_REF);
+  const remote = upstream?.trim();
+  if (remote) map.set(remote, SCM_COLOR_REMOTE);
+  return map;
+}
+
+function labelColorOf(commit: HistoryCommit, colorMap: HistoryColorMap): number | undefined {
+  for (const ref of historyRefs(commit)) {
+    if (!colorMap.has(ref.name)) continue;
+    const color = colorMap.get(ref.name);
+    if (color !== undefined) return color;
+  }
+  if (isHistoryHead(commit) && ![...colorMap.values()].includes(SCM_COLOR_REF)) {
+    return SCM_COLOR_REF;
+  }
+  return undefined;
+}
+
+function badgeColorOf(ref: HistoryRef, circleColor: number, colorMap: HistoryColorMap): number {
+  if (colorMap.has(ref.name)) {
+    const mapped = colorMap.get(ref.name);
+    if (mapped !== undefined) return mapped;
+    return circleColor;
+  }
+  if (ref.kind === "head") return SCM_COLOR_REF;
+  if (ref.kind === "tag") return SCM_COLOR_BASE;
+  return circleColor;
+}
 
 export function parseHistoryRef(raw: string): HistoryRef {
   if (raw.startsWith("HEAD -> ")) return { name: raw.slice("HEAD -> ".length), kind: "head" };
@@ -62,10 +102,15 @@ export type HistoryRefBadge = {
   name: string;
   count: number;
   title: string;
+  color: number;
 };
 
 /** First ref shows its name. The rest collapse by kind into an icon, with a count when several share it. */
-export function historyRefBadges(commit: HistoryCommit): HistoryRefBadge[] {
+export function historyRefBadges(
+  commit: HistoryCommit,
+  circleColor = SCM_COLOR_REF,
+  colorMap: HistoryColorMap = new Map(),
+): HistoryRefBadge[] {
   const refs = historyRefs(commit);
   const first = refs[0];
   if (!first) return [];
@@ -75,6 +120,7 @@ export function historyRefBadges(commit: HistoryCommit): HistoryRefBadge[] {
     name: first.name,
     count: 0,
     title: first.name,
+    color: badgeColorOf(first, circleColor, colorMap),
   }];
   const grouped = new Map<HistoryRefKind, HistoryRef[]>();
   for (const item of refs.slice(1)) {
@@ -89,6 +135,7 @@ export function historyRefBadges(commit: HistoryCommit): HistoryRefBadge[] {
       name: "",
       count: items.length > 1 ? items.length : 0,
       title: items.map((item) => item.name).join("\n"),
+      color: badgeColorOf(items[0], circleColor, colorMap),
     });
   }
   return badges;
@@ -219,8 +266,23 @@ function findLastLane(lanes: HistoryLane[], id: string) {
   return -1;
 }
 
-export function layoutHistoryGraph(commits: HistoryCommit[]): HistoryGraphRow[] {
+export function layoutHistoryGraph(
+  commits: HistoryCommit[],
+  colorMap: HistoryColorMap = new Map(),
+): HistoryGraphRow[] {
   let colorIndex = -1;
+  const nextLaneColor = () => {
+    colorIndex = (colorIndex + 1) % SCM_LANE_COLORS;
+    return colorIndex;
+  };
+  const byHash = new Map(commits.map((item) => [item.hash, item]));
+  const map: HistoryColorMap = new Map(colorMap);
+  // 未映射的 ref 占位为 undefined，徽章回落到该 commit 泳道色（对齐 VS Code）
+  for (const commit of commits) {
+    for (const ref of historyRefs(commit)) {
+      if (!map.has(ref.name)) map.set(ref.name, undefined);
+    }
+  }
   const rows: HistoryGraphRow[] = [];
   for (const commit of commits) {
     const input = (rows.at(-1)?.output ?? []).map((lane) => ({ ...lane }));
@@ -231,7 +293,10 @@ export function layoutHistoryGraph(commits: HistoryCommit[]): HistoryGraphRow[] 
       for (const lane of input) {
         if (lane.id === commit.hash) {
           if (!firstParentAdded) {
-            output.push({ id: parents[0], color: lane.color });
+            output.push({
+              id: parents[0],
+              color: labelColorOf(commit, map) ?? lane.color,
+            });
             firstParentAdded = true;
           }
           continue;
@@ -240,8 +305,13 @@ export function layoutHistoryGraph(commits: HistoryCommit[]): HistoryGraphRow[] 
       }
     }
     for (let index = firstParentAdded ? 1 : 0; index < parents.length; index += 1) {
-      colorIndex = (colorIndex + 1) % SCM_LANE_COLORS;
-      output.push({ id: parents[index], color: colorIndex });
+      let labeled: number | undefined;
+      if (index === 0) labeled = labelColorOf(commit, map);
+      else {
+        const parent = byHash.get(parents[index]);
+        if (parent) labeled = labelColorOf(parent, map);
+      }
+      output.push({ id: parents[index], color: labeled ?? nextLaneColor() });
     }
     rows.push({
       commit,
@@ -253,17 +323,29 @@ export function layoutHistoryGraph(commits: HistoryCommit[]): HistoryGraphRow[] 
   return rows;
 }
 
+export function historyCircleColor(row: HistoryGraphRow) {
+  const index = historyCircleIndex(row);
+  if (index < row.output.length) return row.output[index].color;
+  if (index < row.input.length) return row.input[index].color;
+  return SCM_COLOR_REF;
+}
+
 export function historyCircleIndex(row: HistoryGraphRow) {
   const inputIndex = row.input.findIndex((lane) => lane.id === row.commit.hash);
   return inputIndex === -1 ? row.input.length : inputIndex;
 }
 
+/** 单行图宽：跟 VS Code 一样按本行泳道数算，文字从圆点右侧起排，不跟全表最大宽度对齐。 */
+export function historyRowGraphWidth(row: HistoryGraphRow) {
+  return SCM_LANE_WIDTH * (Math.max(row.input.length, row.output.length, 1) + 1);
+}
+
 export function historyGraphWidth(rows: HistoryGraphRow[]) {
-  let lanes = 1;
+  let width = SCM_LANE_WIDTH * 2;
   for (const row of rows) {
-    lanes = Math.max(lanes, row.input.length, row.output.length, historyCircleIndex(row) + 1);
+    width = Math.max(width, historyRowGraphWidth(row));
   }
-  return SCM_LANE_WIDTH * (lanes + 1);
+  return width;
 }
 
 export function historyGraph(row: HistoryGraphRow, expanded = false): { paths: HistoryGraphPath[]; dots: HistoryGraphDot[] } {
@@ -335,15 +417,16 @@ export function historyGraph(row: HistoryGraphRow, expanded = false): { paths: H
     });
   }
 
+  // 圆点半径对齐 VS Code：HEAD 外圈 7 / 内圈 2；多父提交外 6 / 内 3；普通 5。
   const dots: HistoryGraphDot[] = row.kind === "head"
     ? [
         { index: circleIndex, r: CIRCLE_RADIUS + 3, color: circleColor, hole: false },
-        { index: circleIndex, r: CIRCLE_RADIUS - 2, color: circleColor, hole: true },
+        { index: circleIndex, r: 2, color: circleColor, hole: true },
       ]
     : parents.length > 1
       ? [
           { index: circleIndex, r: CIRCLE_RADIUS + 2, color: circleColor, hole: false },
-          { index: circleIndex, r: CIRCLE_RADIUS - 1, color: circleColor, hole: true },
+          { index: circleIndex, r: CIRCLE_RADIUS - 1, color: circleColor, hole: false },
         ]
       : [{ index: circleIndex, r: CIRCLE_RADIUS + 1, color: circleColor, hole: false }];
 

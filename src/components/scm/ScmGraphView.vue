@@ -9,11 +9,13 @@ import UiPane from "../ui/UiPane.vue";
 import * as backend from "../../services/backend";
 import { fileNameOf } from "../workbench/workspace-mode";
 import {
+  historyCircleColor,
   historyCircleIndex,
+  historyColorMap,
   historyGraph,
   historyGraphRails,
-  historyGraphWidth,
   historyRefBadges,
+  historyRowGraphWidth,
   HISTORY_REF_ICON,
   isHistoryHead,
   layoutHistoryGraph,
@@ -30,6 +32,8 @@ const props = defineProps<{
   workspaceId: string;
   epoch: number;
   live?: boolean;
+  branch?: string;
+  upstream?: string | null;
 }>();
 const emit = defineEmits<{
   open: [target: ScmOpenTarget];
@@ -83,11 +87,15 @@ const openHash = ref("");
 const filesByHash = ref<Record<string, GitCommitFile[]>>({});
 const filesLoading = ref("");
 
-const rows = computed(() => layoutHistoryGraph(items.value));
-const graphWidth = computed(() => historyGraphWidth(rows.value));
+const colorMap = computed(() => historyColorMap(props.branch, props.upstream));
+const rows = computed(() => layoutHistoryGraph(items.value, colorMap.value));
 const workspaceName = computed(
   () => props.workspaces.find((item) => item.id === props.workspaceId)?.name ?? "",
 );
+
+function rowBadges(row: HistoryGraphRow) {
+  return historyRefBadges(row.commit, historyCircleColor(row), colorMap.value);
+}
 
 watch([() => props.workspaceId, () => props.epoch, () => props.live], () => {
   items.value = [];
@@ -191,6 +199,10 @@ function dotX(index: number) {
   return SCM_LANE_WIDTH * (index + 1);
 }
 
+function rowGraphWidth(row: HistoryGraphRow) {
+  return historyRowGraphWidth(row);
+}
+
 function dotClass(hole: boolean, color: number) {
   return hole ? `scm-graph-dot is-hole scm-lane-${color}` : `scm-graph-dot scm-lane-${color}`;
 }
@@ -240,31 +252,37 @@ function letter(status: string) {
           <button
             type="button"
             class="scm-history-row"
+            :class="{ 'is-current': isHistoryHead(row.commit), 'is-selected': openHash === row.commit.hash }"
             @click="toggleCommit(row.commit.hash)"
             @contextmenu="openMenu($event, row)"
           >
-            <svg class="scm-history-lane" :width="graphWidth" :height="SCM_LANE_HEIGHT" aria-hidden="true">
-              <path
-                v-for="(path, index) in historyGraph(row, openHash === row.commit.hash).paths"
-                :key="`p-${index}`"
-                :class="`scm-lane scm-lane-${path.color}`"
-                :d="path.d"
-                :stroke-width="path.width"
-              />
-              <circle
-                v-for="(dot, index) in historyGraph(row, openHash === row.commit.hash).dots"
-                :key="`d-${index}`"
-                :class="dotClass(dot.hole, dot.color)"
-                :cx="dotX(dot.index)"
-                cy="11"
-                :r="dot.r"
-              />
-            </svg>
-            <span class="scm-history-subject">{{ row.commit.subject || row.commit.hash.slice(0, 7) }}</span>
+            <span class="scm-history-graph" :class="{ 'is-current': isHistoryHead(row.commit) }">
+              <svg class="scm-history-lane" :width="rowGraphWidth(row)" :height="SCM_LANE_HEIGHT" aria-hidden="true">
+                <path
+                  v-for="(path, index) in historyGraph(row, openHash === row.commit.hash).paths"
+                  :key="`p-${index}`"
+                  :class="`scm-lane scm-lane-${path.color}`"
+                  :d="path.d"
+                  :stroke-width="path.width"
+                />
+                <circle
+                  v-for="(dot, index) in historyGraph(row, openHash === row.commit.hash).dots"
+                  :key="`d-${index}`"
+                  :class="dotClass(dot.hole, dot.color)"
+                  :cx="dotX(dot.index)"
+                  :cy="SCM_LANE_WIDTH"
+                  :r="dot.r"
+                />
+              </svg>
+            </span>
+            <span class="scm-history-copy">
+              <span class="scm-history-subject">{{ row.commit.subject || row.commit.hash.slice(0, 7) }}</span>
+              <span v-if="row.commit.author" class="scm-history-author">{{ row.commit.author }}</span>
+            </span>
             <span class="scm-history-refs">
-              <template v-for="badge in historyRefBadges(row.commit)" :key="badge.key">
+              <template v-for="badge in rowBadges(row)" :key="badge.key">
                 <UiTooltip :content="badge.title">
-                  <em :class="`scm-ref scm-ref-${badge.kind}`">
+                  <em :class="`scm-ref scm-lane-${badge.color}`">
                     <span v-if="badge.count" class="scm-ref-count">{{ badge.count }}</span>
                     <Codicon :name="HISTORY_REF_ICON[badge.kind]" :size="12" />
                     <span v-if="badge.name" class="scm-ref-name">{{ badge.name }}</span>
@@ -281,15 +299,17 @@ function letter(status: string) {
             :key="file.path"
             class="scm-history-file"
           >
-            <svg class="scm-history-lane" :width="graphWidth" :height="SCM_LANE_HEIGHT" aria-hidden="true">
-              <path
-                v-for="(path, index) in historyGraphRails(row.output, historyCircleIndex(row))"
-                :key="`r-${index}`"
-                :class="`scm-lane scm-lane-${path.color}`"
-                :d="path.d"
-                :stroke-width="path.width"
-              />
-            </svg>
+            <span class="scm-history-graph">
+              <svg class="scm-history-lane" :width="rowGraphWidth(row)" :height="SCM_LANE_HEIGHT" aria-hidden="true">
+                <path
+                  v-for="(path, index) in historyGraphRails(row.output, historyCircleIndex(row))"
+                  :key="`r-${index}`"
+                  :class="`scm-lane scm-lane-${path.color}`"
+                  :d="path.d"
+                  :stroke-width="path.width"
+                />
+              </svg>
+            </span>
             <button
               type="button"
               class="scm-file"
