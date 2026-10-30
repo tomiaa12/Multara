@@ -412,6 +412,13 @@ pub async fn git_merge_into_branch(
                 );
             }
         };
+        if input.push {
+            // 推送会跑 pre-push：worktree 里缺 husky.sh / node_modules 时和普通推送一样先补链接。
+            crate::hook_runtime::link_worktree_runtime(
+                std::path::Path::new(&workspace.source_path),
+                std::path::Path::new(&root),
+            );
+        }
         let outcome = git_merge::apply(&git, &root, &target, &commit, input.push)?;
         result.status = "merged";
         result.commit = Some(commit.chars().take(7).collect());

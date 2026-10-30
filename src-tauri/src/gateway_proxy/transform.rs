@@ -632,7 +632,8 @@ fn render_responses_request(request: &CanonicalRequest, model: &str) -> Value {
 
 fn flush_responses_content(input: &mut Vec<Value>, role: &str, content: &mut Vec<Value>) {
     if !content.is_empty() {
-        input.push(json!({ "role": role, "content": std::mem::take(content) }));
+        // OpenAI 允许省略 type，火山方舟等兼容实现会对助手的 output_text 消息报缺 `input[n].type`。
+        input.push(json!({ "type": "message", "role": role, "content": std::mem::take(content) }));
     }
 }
 
@@ -2402,6 +2403,29 @@ mod tests {
             .unwrap()
             .iter()
             .any(|part| part["type"] == "input_image"));
+    }
+
+    #[test]
+    fn every_responses_input_item_has_a_type_after_assistant_text() {
+        let body = json!({
+            "messages": [
+                {"role":"user","content":"hi"},
+                {"role":"assistant","content":[
+                    {"type":"text","text":"let me check"},
+                    {"type":"tool_use","id":"call-1","name":"Read","input":{"path":"a"}}
+                ]},
+                {"role":"user","content":[
+                    {"type":"tool_result","tool_use_id":"call-1","content":"done"}
+                ]}
+            ]
+        });
+        let (mapped, _) =
+            rewrite_request(body, ApiFormat::Anthropic, ApiFormat::Responses, "deepseek").unwrap();
+        let items = mapped["input"].as_array().unwrap();
+        assert!(items.iter().all(|item| item["type"].is_string()), "{items:?}");
+        assert_eq!(items[1]["type"], "message");
+        assert_eq!(items[1]["role"], "assistant");
+        assert_eq!(items[1]["content"][0]["type"], "output_text");
     }
 
     #[test]

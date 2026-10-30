@@ -324,7 +324,7 @@ onMounted(async () => {
 
           <div class="merge-body">
             <div class="merge-picker">
-              <UiInput v-model="query" type="search" :placeholder="t('workspace.searchBranch')" :aria-label="t('workspace.searchBranch')" />
+              <UiInput v-model="query" type="search" spellcheck="false" :placeholder="t('workspace.searchBranch')" :aria-label="t('workspace.searchBranch')" />
               <SegmentedTabs v-model="filter" :items="filterTabs" :label="t('scm.merge.branchFilter')" />
               <div class="merge-branch-list vs-scroll">
                 <p v-if="!groups.length" class="merge-empty">{{ t('scm.merge.noMatch') }}</p>
