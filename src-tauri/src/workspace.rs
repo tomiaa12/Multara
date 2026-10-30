@@ -326,7 +326,13 @@ fn create_worktree(
     let mut command = git_cmd(git_command);
     command.arg("-C").arg(source).args(["worktree", "add"]);
     if create_branch {
-        command.arg("-b").arg(branch).arg(target).arg(base_ref);
+        // 基于 origin/xxx 建分支时 git 默认会跟踪它，之后 `git push` 会因上游名不一致被拒。
+        command
+            .arg("--no-track")
+            .arg("-b")
+            .arg(branch)
+            .arg(target)
+            .arg(base_ref);
     } else {
         command.arg(target).arg(branch);
     }

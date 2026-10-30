@@ -350,6 +350,23 @@ fn current_upstream(git_command: &str, root: &str) -> Option<String> {
     .filter(|value| !value.is_empty())
 }
 
+/// 上游是同名远程分支才算已发布；跟踪着 origin/release 这类基准分支时直接 `git push` 会被拒。
+fn has_same_name_upstream(git_command: &str, root: &str) -> bool {
+    if current_upstream(git_command, root).is_none() {
+        return false;
+    }
+    let Ok(branch) = output(git_command, root, &["symbolic-ref", "--short", "HEAD"]) else {
+        return false;
+    };
+    let branch = branch.trim();
+    output(
+        git_command,
+        root,
+        &["config", "--get", &format!("branch.{branch}.merge")],
+    )
+    .is_ok_and(|merge| merge.trim() == format!("refs/heads/{branch}"))
+}
+
 fn ensure_not_merging(root: &str, git_command: &str) -> Result<(), String> {
     let git_path = output(
         git_command,
@@ -394,7 +411,7 @@ pub fn pull(root: &str, git_command: &str, skip_verify: bool) -> Result<(), Stri
 
 pub fn push(root: &str, git_command: &str, skip_verify: bool) -> Result<(), String> {
     ensure_not_merging(root, git_command)?;
-    let remote = if current_upstream(git_command, root).is_none() {
+    let remote = if !has_same_name_upstream(git_command, root) {
         Some(default_remote(git_command, root)?)
     } else {
         None
@@ -410,7 +427,7 @@ pub fn push(root: &str, git_command: &str, skip_verify: bool) -> Result<(), Stri
 }
 
 pub fn sync(root: &str, git_command: &str, skip_verify: bool) -> Result<(), String> {
-    if current_upstream(git_command, root).is_none() {
+    if !has_same_name_upstream(git_command, root) {
         return push(root, git_command, skip_verify);
     }
     pull(root, git_command, skip_verify)?;
@@ -1261,7 +1278,7 @@ mod tests {
     use std::{fs, process::Command};
 
     use super::{
-        blame_line, commit, commit_files, discard, history, index_file, parse_blame_porcelain,
+        blame_line, commit, commit_files, current_upstream, discard, history, index_file, parse_blame_porcelain,
         graph_commit_action, parse_branch_header, parse_status_records, pull, push, revision_file,
         stage, status, switch_branch,
     };
@@ -1564,6 +1581,40 @@ mod tests {
                 .replace("\r\n", "\n"),
             "two\n"
         );
+    }
+
+    #[test]
+    fn pushes_a_branch_tracking_a_differently_named_base_to_its_own_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let remote = temp.path().join("remote.git");
+        let repo = temp.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        fs::create_dir(&remote).unwrap();
+        let root = repo.to_str().unwrap();
+        command(remote.to_str().unwrap(), &["init", "--bare"]);
+        command(root, &["init"]);
+        command(root, &["config", "user.email", "test@multara.local"]);
+        command(root, &["config", "user.name", "Multara Test"]);
+        command(root, &["config", "push.default", "simple"]);
+        fs::write(repo.join("file.txt"), "one\n").unwrap();
+        command(root, &["add", "file.txt"]);
+        command(root, &["commit", "-m", "first"]);
+        command(root, &["branch", "-M", "release"]);
+        command(root, &["remote", "add", "origin", remote.to_str().unwrap()]);
+        command(root, &["push", "-u", "origin", "release"]);
+        command(root, &["checkout", "-b", "fix/esop", "--track", "origin/release"]);
+        fs::write(repo.join("file.txt"), "two\n").unwrap();
+        command(root, &["commit", "-am", "second"]);
+
+        push(root, "git", true).unwrap();
+
+        let upstream = current_upstream("git", root);
+        assert_eq!(upstream.as_deref(), Some("origin/fix/esop"));
+        let release = Command::new("git")
+            .args(["--git-dir", remote.to_str().unwrap(), "log", "-1", "--format=%s", "release"])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&release.stdout).trim(), "first");
     }
 
     #[test]
