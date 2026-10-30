@@ -48,7 +48,7 @@ import GitDiffEditor from "./scm/GitDiffEditor.vue";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { explorerKey, explorerShortcutLabels, type ExplorerKeyResult } from "./workbench/explorer-keys";
 import ExplorerDialog from "./workbench/explorer/ExplorerDialog.vue";
-import { applyFind, buildExplorerRows, type ExplorerRow, type ExplorerRowNode } from "./workbench/explorer/explorer-rows";
+import { applyFind, buildExplorerRows, soleCompressibleChild, type ExplorerRow, type ExplorerRowNode } from "./workbench/explorer/explorer-rows";
 import { isExcluded } from "./workbench/explorer/explorer-glob";
 import { explorerHoverTitle, highlightName } from "./workbench/explorer/explorer-format";
 import { renameSelection, validateFileName, wellFormedFileName } from "./workbench/explorer/explorer-names";
@@ -1504,6 +1504,48 @@ async function revealOpenedFile() {
     ?.scrollIntoView({ block: "nearest" });
 }
 
+async function loadTreeDirectory(workspaceId: string, path: string) {
+  const key = treeKey(workspaceId, path);
+  if (directoryChildren.value[key] || props.preview) return;
+  loadingDirectories.value = new Set([...loadingDirectories.value, key]);
+  try {
+    directoryChildren.value = await mergeFetchedRecordEntry(
+      () => directoryChildren.value,
+      key,
+      listTreeLevel(workspaceId, path),
+    );
+  } finally {
+    const next = new Set(loadingDirectories.value);
+    next.delete(key);
+    loadingDirectories.value = next;
+  }
+}
+
+/** 对齐 VS Code `autoExpandCompressedChildren`：展开后若会压成 `a/b`，继续展开链尾以露出子文件。 */
+async function autoExpandCompressedChildren(workspaceId: string, path: string) {
+  if (!explorer.settings.value.compactFolders) return;
+  let current = path;
+  while (!breakCompactAt(workspaceId, current)) {
+    const child = soleCompressibleChild(
+      directoryChildren.value[treeKey(workspaceId, current)],
+      (entry, siblings) => treeEntryHidden(workspaceId, entry, siblings),
+      (childPath) => openEditorTreeKeys.value.has(treeKey(workspaceId, childPath)),
+    );
+    if (!child) break;
+    try {
+      await loadTreeDirectory(workspaceId, child.path);
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause);
+      return;
+    }
+    expandedDirectories.value = new Set([
+      ...expandedDirectories.value,
+      treeKey(workspaceId, child.path),
+    ]);
+    current = child.path;
+  }
+}
+
 async function toggleDirectory(workspaceId: string, entry: FileEntry) {
   const key = treeKey(workspaceId, entry.path);
   const expanded = new Set(expandedDirectories.value);
@@ -1513,30 +1555,17 @@ async function toggleDirectory(workspaceId: string, entry: FileEntry) {
     revealCollapsedFolder(entry.path);
     return;
   }
-  if (!directoryChildren.value[key]) {
-    if (props.preview) {
-      expanded.add(key);
-      expandedDirectories.value = expanded;
-      return;
-    }
-    loadingDirectories.value = new Set([...loadingDirectories.value, key]);
+  if (!directoryChildren.value[key] && !props.preview) {
     try {
-      directoryChildren.value = await mergeFetchedRecordEntry(
-        () => directoryChildren.value,
-        key,
-        listTreeLevel(workspaceId, entry.path),
-      );
+      await loadTreeDirectory(workspaceId, entry.path);
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause);
       return;
-    } finally {
-      const next = new Set(loadingDirectories.value);
-      next.delete(key);
-      loadingDirectories.value = next;
     }
   }
   expanded.add(key);
   expandedDirectories.value = expanded;
+  await autoExpandCompressedChildren(workspaceId, entry.path);
 }
 
 async function toggleExpandable(workspaceId: string, entry: ExplorerRow, recursive: boolean) {
