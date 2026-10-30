@@ -14,6 +14,7 @@ import { agentSystemContext, getRunStatistics, listAgentRuns, type AgentSystemCo
 import { useAppStore } from "../stores/app";
 import { relativeTime, taskStatusLabel } from "./task-board";
 import { emptyUsageDay, formatDuration, formatTokens, formatUsd, totalTokens } from "./usage-format";
+import { syncDraft } from "./draft-sync";
 
 type DetailSection = "overview" | "tasks" | "stats" | "capabilities" | "settings";
 type CapabilityTab = "instructions" | "skills" | "mcp";
@@ -177,9 +178,12 @@ const draft = reactive<Omit<Agent, "id">>({
   mcpIds: [],
 });
 
-watch(agent, (value) => {
+const draftBaseline: Omit<Agent, "id"> = { ...draft, skillIds: [], mcpIds: [] };
+
+// 保存或后台刷新换出新对象时只同步用户没改过的字段；切换到另一个智能体才整份重置
+watch(agent, (value, previous) => {
   if (!value) return;
-  Object.assign(draft, {
+  syncDraft(draft, draftBaseline, {
     name: value.name,
     avatar: value.avatar,
     description: value.description,
@@ -187,9 +191,9 @@ watch(agent, (value) => {
     runtimeId: value.runtimeId,
     model: value.model,
     maxConcurrentTasks: value.maxConcurrentTasks,
-    skillIds: [...value.skillIds],
-    mcpIds: [...value.mcpIds],
-  });
+    skillIds: value.skillIds,
+    mcpIds: value.mcpIds,
+  }, value.id !== previous?.id);
 }, { immediate: true });
 
 watch(() => agent.value?.id, (id) => {

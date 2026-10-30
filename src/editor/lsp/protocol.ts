@@ -62,6 +62,16 @@ export function joinFsPath(root: string, relative: string): string {
   return `${normalizeDriveLetter(root).replace(/\/+$/, "")}/${relative}`;
 }
 
+/** LSP `TextDocumentSyncKind.Incremental`。 */
+export const TEXT_DOCUMENT_SYNC_INCREMENTAL = 2;
+
+/** `initialize` 结果里的 `textDocumentSync` 可以是数字，也可以是带 `change` 的对象。 */
+export function supportsIncrementalSync(initializeResult: unknown) {
+  const sync = (initializeResult as { capabilities?: { textDocumentSync?: number | { change?: number } } } | null)
+    ?.capabilities?.textDocumentSync;
+  return (typeof sync === "number" ? sync : sync?.change) === TEXT_DOCUMENT_SYNC_INCREMENTAL;
+}
+
 /** 服务器反向请求里不处理的方法也必须回复，否则有的服务器会一直等。 */
 export function replyToServerRequest(
   method: string,
@@ -80,8 +90,9 @@ export function replyToServerRequest(
     case "client/unregisterCapability":
     case "window/showMessageRequest":
     case "window/showDocument":
-    case "workspace/applyEdit":
       return { result: null };
+    case "workspace/applyEdit":
+      return { result: { applied: false } };
     default:
       return { error: { code: -32601, message: `Unhandled method ${method}` } };
   }

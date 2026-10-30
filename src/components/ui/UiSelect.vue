@@ -208,13 +208,18 @@ function bindTagFitObserver() {
 }
 
 watch(
+  () => props.multiple,
+  () => {
+    void nextTick(bindTagFitObserver);
+  },
+  { flush: "post" },
+);
+
+watch(
   () => [props.multiple, props.maxTagCount, props.size, selectedValues.value] as const,
   () => {
     if (!props.multiple) return;
-    void nextTick(() => {
-      bindTagFitObserver();
-      updateTagFit();
-    });
+    void nextTick(updateTagFit);
   },
   { flush: "post" },
 );
@@ -483,6 +488,9 @@ function onSearchInput(event: Event) {
       if (token !== loadToken || !open.value) return;
       remoteOptions.value = options;
       setActive(nextEnabled(-1, 1));
+    } catch (cause) {
+      if (token === loadToken) remoteOptions.value = [];
+      console.error("[UiSelect] load failed", cause);
     } finally {
       if (token === loadToken) loading.value = false;
     }

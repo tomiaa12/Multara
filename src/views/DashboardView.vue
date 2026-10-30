@@ -38,6 +38,7 @@ import {
   workspaceModeLabel,
 } from "../components/workbench/workspace-mode";
 import {
+  buildHomeIndex,
   buildHomeProject,
   matchesHomeFilter,
   workspaceKindLabel,
@@ -46,12 +47,12 @@ import {
 import {
   addRequirementCategory,
   assignRequirementTags,
-  loadRequirementCategories,
   projectMatchesTags,
   recolorRequirementCategory,
   removeRequirementCategory,
   renameRequirementCategory,
   saveRequirementCategories,
+  sharedRequirementCategories,
   type RequirementCategory,
   type RequirementCategoryState,
 } from "./dashboard/requirement-categories";
@@ -72,7 +73,7 @@ const showWorkspacePicker = ref(false);
 const expandedProjects = ref(new Set<string>());
 const filter = ref<HomeFilter>("all");
 const query = ref("");
-const categories = ref<RequirementCategoryState>(loadRequirementCategories(localStorage));
+const categories = sharedRequirementCategories();
 const categoryFilter = ref<string[]>([]);
 const draftTags = ref<string[]>([]);
 const editingId = ref("");
@@ -93,8 +94,9 @@ const workspaceMenuItems: ContextMenuItem[] = [
 const rows = computed(() => {
   const data = store.data;
   if (!data) return [];
+  const index = buildHomeIndex(data, store.runStates);
   return data.projects.map((project) =>
-    buildHomeProject(project, data, store.runStates),
+    buildHomeProject(project, data, store.runStates, Date.now(), index),
   );
 });
 

@@ -2115,18 +2115,26 @@ button.ds-stat.is-on {
   border-radius: 50%;
   animation: ds-spin 0.7s linear infinite;
 }
+/* 扫光放在伪元素上只动 transform，走合成层，不每帧重绘 */
 .ds-skeleton {
+  position: relative;
   display: block;
   height: 12px;
+  overflow: hidden;
   border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+}
+.ds-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    var(--color-bg-tertiary) 25%,
+    transparent 25%,
     var(--color-surface-active) 50%,
-    var(--color-bg-tertiary) 75%
+    transparent 75%
   );
-  background-size: 200% 100%;
-  animation: ds-shimmer 1.4s ease-in-out infinite;
+  animation: ds-skeleton-sweep 1.4s ease-in-out infinite;
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -2270,6 +2278,11 @@ button.ds-stat.is-on {
   animation: ds-text-rotate-out var(--motion-duration-normal) var(--motion-ease) both,
     ds-shimmer 1.6s linear infinite;
 }
+/* 扫光是 background-position 动画，无法合成；离屏时暂停，避免看不见也每帧重绘 */
+.ds-text-shimmer.is-offscreen,
+.is-offscreen .ds-text-shimmer {
+  animation-play-state: paused;
+}
 @media (prefers-reduced-motion: reduce) {
   .ds-text-shimmer {
     background: none;
@@ -2345,6 +2358,14 @@ button.ds-stat.is-on {
   }
   to {
     background-position: -100% 0;
+  }
+}
+@keyframes ds-skeleton-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
   }
 }
 

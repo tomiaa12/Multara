@@ -1,9 +1,12 @@
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, Stdio},
-    sync::{Arc, LazyLock, Mutex},
+    process::{Child, Stdio},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, LazyLock, Mutex,
+    },
     thread,
 };
 
@@ -64,17 +67,33 @@ struct LspExit {
     id: String,
 }
 
+/// 单条消息体上限；超过视为协议损坏，结束该服务器。
+const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_HEADER_LINE_BYTES: u64 = 8 * 1024;
+/// 服务器不读 stdin 时排队待写的总字节上限，超过就报错而不是无限堆积。
+const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024;
+
 struct Server {
     key: String,
     info: LspServerInfo,
-    stdin: Mutex<ChildStdin>,
+    /// 交给该服务器自己的写线程，`lsp_send` 只入队不阻塞；同步命令按调用顺序入队，消息不会乱序。
+    outbox: mpsc::Sender<String>,
+    pending: Arc<AtomicUsize>,
     child: Mutex<Child>,
 }
 
 static SERVERS: LazyLock<Mutex<HashMap<String, Arc<Server>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+/// 让“是否已在运行”的检查和插入成为一步，避免并发 `lsp_start` 各起一个进程。
+static START_LOCK: Mutex<()> = Mutex::new(());
 
 fn servers() -> std::sync::MutexGuard<'static, HashMap<String, Arc<Server>>> {
     SERVERS.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+fn reap(server: &Server) {
+    let mut child = server.child.lock().unwrap_or_else(|error| error.into_inner());
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// 同一工作区同一语言只起一个进程；没有安装对应语言服务器时返回 `None`。
@@ -99,19 +118,35 @@ pub fn lsp_send(id: String, message: String) -> Result<(), String> {
         .get(&id)
         .cloned()
         .ok_or_else(|| "语言服务器已退出".to_string())?;
-    let mut stdin = server.stdin.lock().unwrap_or_else(|error| error.into_inner());
-    write_message(&mut *stdin, &message).map_err(|error| format!("发送给语言服务器失败：{error}"))
+    let size = message.len();
+    if server.pending.fetch_add(size, Ordering::AcqRel) + size > MAX_PENDING_BYTES {
+        server.pending.fetch_sub(size, Ordering::AcqRel);
+        return Err("发送给语言服务器失败：服务器长时间没有读取输入".to_string());
+    }
+    server
+        .outbox
+        .send(message)
+        .map_err(|_| "语言服务器已退出".to_string())
 }
 
 #[tauri::command]
 pub fn lsp_stop(id: String) {
     let server = servers().remove(&id);
     if let Some(server) = server {
-        let _ = server.child.lock().unwrap_or_else(|error| error.into_inner()).kill();
+        thread::spawn(move || reap(&server));
+    }
+}
+
+/// 应用退出时停掉所有语言服务器；进程退出不会跑 static 析构。
+pub fn stop_all() {
+    let servers: Vec<_> = servers().drain().map(|(_, server)| server).collect();
+    for server in servers {
+        reap(&server);
     }
 }
 
 fn start(app: AppHandle, workspace_id: &str, root: &str, language: &str) -> Result<Option<LspServerInfo>, String> {
+    let _starting = START_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let key = format!("{workspace_id}\0{language}");
     if let Some(existing) = servers().values().find(|server| server.key == key) {
         return Ok(Some(existing.info.clone()));
@@ -131,9 +166,11 @@ fn start(app: AppHandle, workspace_id: &str, root: &str, language: &str) -> Resu
         let mut child = command
             .spawn()
             .map_err(|error| format!("启动 {} 失败：{error}", spec.command))?;
-        let (Some(stdin), Some(stdout), Some(stderr)) = (child.stdin.take(), child.stdout.take(), child.stderr.take())
+        let (Some(mut stdin), Some(stdout), Some(mut stderr)) =
+            (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {
             let _ = child.kill();
+            let _ = child.wait();
             return Err(format!("{} 没有可用的标准输入输出", spec.command));
         };
         let info = LspServerInfo {
@@ -142,22 +179,30 @@ fn start(app: AppHandle, workspace_id: &str, root: &str, language: &str) -> Resu
             root_path: root.to_string(),
             initialization_options: initialization_options(language, &root_path),
         };
+        let (outbox, inbox) = mpsc::channel::<String>();
+        let pending = Arc::new(AtomicUsize::new(0));
+        let writer_pending = Arc::clone(&pending);
         let server = Arc::new(Server {
             key,
             info: info.clone(),
-            stdin: Mutex::new(stdin),
+            outbox,
+            pending,
             child: Mutex::new(child),
         });
         servers().insert(info.id.clone(), server);
         let id = info.id.clone();
-        thread::spawn(move || read_loop(app, id, stdout));
         thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                if line.is_err() {
+            for message in inbox {
+                let written = write_message(&mut stdin, &message);
+                writer_pending.fetch_sub(message.len(), Ordering::AcqRel);
+                if written.is_err() {
                     break;
                 }
             }
+        });
+        thread::spawn(move || read_loop(app, id, stdout));
+        thread::spawn(move || {
+            let _ = io::copy(&mut stderr, &mut io::sink());
         });
         return Ok(Some(info));
     }
@@ -194,9 +239,10 @@ fn read_loop(app: AppHandle, id: String, stdout: impl Read) {
     while let Some(message) = read_message(&mut reader) {
         let _ = app.emit("lsp-message", LspMessage { id: id.clone(), message });
     }
+    // 读失败也可能是协议损坏而进程还活着，先 kill 再 wait，否则 wait 会永远阻塞。
     let removed = servers().remove(&id);
     if let Some(server) = removed {
-        let _ = server.child.lock().unwrap_or_else(|error| error.into_inner()).wait();
+        reap(&server);
     }
     let _ = app.emit("lsp-exit", LspExit { id });
 }
@@ -206,7 +252,8 @@ fn read_message(reader: &mut impl BufRead) -> Option<String> {
         let mut length = None;
         loop {
             let mut line = String::new();
-            if reader.read_line(&mut line).ok()? == 0 {
+            let read = reader.by_ref().take(MAX_HEADER_LINE_BYTES).read_line(&mut line).ok()?;
+            if read == 0 || (!line.ends_with('\n') && read as u64 >= MAX_HEADER_LINE_BYTES) {
                 return None;
             }
             let line = line.trim_end();
@@ -222,6 +269,9 @@ fn read_message(reader: &mut impl BufRead) -> Option<String> {
         let Some(length) = length else {
             continue;
         };
+        if length > MAX_MESSAGE_BYTES {
+            return None;
+        }
         let mut body = vec![0; length];
         reader.read_exact(&mut body).ok()?;
         return Some(String::from_utf8_lossy(&body).into_owned());
@@ -255,6 +305,14 @@ mod tests {
         let raw = "content-length: 2\r\nContent-Type: application/vscode-jsonrpc\r\n\r\n{}";
         let mut reader = Cursor::new(raw.as_bytes().to_vec());
         assert_eq!(read_message(&mut reader).as_deref(), Some("{}"));
+    }
+
+    #[test]
+    fn oversized_frames_and_header_lines_are_rejected() {
+        let huge = format!("Content-Length: {}\r\n\r\n{{}}", MAX_MESSAGE_BYTES + 1);
+        assert_eq!(read_message(&mut Cursor::new(huge.into_bytes())), None);
+        let long_header = format!("X-Junk: {}\r\n\r\n", "a".repeat(MAX_HEADER_LINE_BYTES as usize * 2));
+        assert_eq!(read_message(&mut Cursor::new(long_header.into_bytes())), None);
     }
 
     #[test]

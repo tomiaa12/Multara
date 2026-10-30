@@ -10,9 +10,14 @@ export interface UnsavedPrompt {
   message: string;
 }
 
-let leaveHandler: LeaveHandler | null = null;
-let dirtyChecker: DirtyChecker | null = null;
-let dirtyPathsGetter: DirtyPathsGetter | null = null;
+export interface UnsavedEditorOwner {
+  leave: LeaveHandler;
+  dirty: DirtyChecker;
+  paths: DirtyPathsGetter;
+}
+
+/** 每个工作台实例一项，末尾是最近激活的实例；keep-alive 下多个工作台并存，只有当前实例参与检查。 */
+const owners: UnsavedEditorOwner[] = [];
 let confirming = false;
 let pending: {
   prompt: UnsavedPrompt;
@@ -20,21 +25,30 @@ let pending: {
 } | null = null;
 const listeners = new Set<() => void>();
 
-export function registerUnsavedLeaveHandler(handler: LeaveHandler | null) {
-  leaveHandler = handler;
+function currentOwner(): UnsavedEditorOwner | undefined {
+  return owners.at(-1);
 }
 
-export function registerUnsavedDirtyChecker(checker: DirtyChecker | null) {
-  dirtyChecker = checker;
+function removeOwner(owner: UnsavedEditorOwner) {
+  const index = owners.indexOf(owner);
+  if (index >= 0) owners.splice(index, 1);
 }
 
-export function registerDirtyEditorPaths(getter: DirtyPathsGetter | null) {
-  dirtyPathsGetter = getter;
+/** 把该实例置为当前实例（挂载、激活时调用）。 */
+export function activateUnsavedEditor(owner: UnsavedEditorOwner) {
+  removeOwner(owner);
+  owners.push(owner);
+}
+
+/** 登记并置为当前实例；返回的函数只移除自己，不影响其它工作台。 */
+export function registerUnsavedEditor(owner: UnsavedEditorOwner): () => void {
+  activateUnsavedEditor(owner);
+  return () => removeOwner(owner);
 }
 
 export function listDirtyEditorPaths(): string[] {
   try {
-    return [...new Set(dirtyPathsGetter?.() ?? [])].filter(Boolean);
+    return [...new Set(currentOwner()?.paths() ?? [])].filter(Boolean);
   } catch {
     return [];
   }
@@ -54,7 +68,7 @@ export async function confirmRollbackIfDirty(
 
 export function hasUnsavedEditors() {
   try {
-    return dirtyChecker?.() ?? false;
+    return currentOwner()?.dirty() ?? false;
   } catch {
     return false;
   }
@@ -93,7 +107,8 @@ export async function confirmLeaveUnsavedEditors() {
   confirming = true;
   try {
     if (!hasUnsavedEditors()) return true;
-    if (leaveHandler) return await leaveHandler();
+    const owner = currentOwner();
+    if (owner) return await owner.leave();
     const action = await askUnsaved(
       t("unsavedEditor.closeLoseChanges"),
       t("unsavedEditor.unsavedChangesTitle"),

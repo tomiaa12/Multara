@@ -1,6 +1,11 @@
 use std::{
+    collections::HashMap,
     fs,
     path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, LazyLock, Mutex,
+    },
 };
 
 use regex::Regex;
@@ -9,6 +14,46 @@ use serde::Serialize;
 const MATCH_LIMIT: usize = 2000;
 const FILE_LIMIT: u64 = 1024 * 1024;
 const PREVIEW_LIMIT: usize = 500;
+/// 不跟随符号链接，再加深度上限兜底异常深的目录。
+const MAX_SEARCH_DEPTH: usize = 64;
+
+static ACTIVE_SEARCHES: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// 同一个 key 同时只保留最新一次搜索：开始新搜索时把旧搜索标记为取消。
+/// 守卫释放时只移除自己登记的那一项。
+pub struct SearchTicket {
+    key: String,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl SearchTicket {
+    pub fn begin(key: &str) -> Self {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let previous = active_searches().insert(key.to_string(), Arc::clone(&cancelled));
+        if let Some(previous) = previous {
+            previous.store(true, Ordering::Release);
+        }
+        Self { key: key.to_string(), cancelled }
+    }
+
+    pub fn flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.cancelled)
+    }
+}
+
+impl Drop for SearchTicket {
+    fn drop(&mut self) {
+        let mut active = active_searches();
+        if active.get(&self.key).is_some_and(|flag| Arc::ptr_eq(flag, &self.cancelled)) {
+            active.remove(&self.key);
+        }
+    }
+}
+
+fn active_searches() -> std::sync::MutexGuard<'static, HashMap<String, Arc<AtomicBool>>> {
+    ACTIVE_SEARCHES.lock().unwrap_or_else(|error| error.into_inner())
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +82,55 @@ pub struct SearchQuery {
     pub include: String,
     pub exclude: String,
     pub use_exclude_settings: bool,
+    /// 置位后遍历尽快返回已找到的部分结果。
+    pub cancelled: Option<Arc<AtomicBool>>,
+}
+
+struct GlobSet {
+    include: Vec<GlobPattern>,
+    exclude: Vec<GlobPattern>,
+}
+
+enum GlobPattern {
+    /// 没有通配符时按文件夹前缀匹配，对应「在文件夹中查找」填入的 ./src/components。
+    Folder(String),
+    Wildcard { regex: Regex, whole_path: bool },
+}
+
+impl GlobPattern {
+    fn compile(pattern: &str) -> Option<Self> {
+        let normalized = pattern
+            .trim()
+            .trim_start_matches("./")
+            .trim_matches('/');
+        if normalized.is_empty() {
+            return None;
+        }
+        if !normalized.contains('*') && !normalized.contains('?') {
+            return Some(Self::Folder(normalized.to_string()));
+        }
+        let regex = Regex::new(&format!("^{}$", glob_source(normalized))).ok()?;
+        Some(Self::Wildcard {
+            regex,
+            whole_path: normalized.contains('/'),
+        })
+    }
+
+    fn matches(&self, path: &str) -> bool {
+        match self {
+            Self::Folder(folder) => {
+                path == folder || path.strip_prefix(folder.as_str()).is_some_and(|rest| rest.starts_with('/'))
+            }
+            Self::Wildcard { regex, whole_path: true } => regex.is_match(path),
+            Self::Wildcard { regex, whole_path: false } => {
+                regex.is_match(path.rsplit('/').next().unwrap_or(path))
+            }
+        }
+    }
+}
+
+fn compile_patterns(raw: &str) -> Vec<GlobPattern> {
+    raw.split(',').filter_map(GlobPattern::compile).collect()
 }
 
 pub fn search_workspace(root: &str, query: &SearchQuery) -> Result<TextSearchResponse, String> {
@@ -60,9 +154,13 @@ pub fn search_workspace(root: &str, query: &SearchQuery) -> Result<TextSearchRes
     let root_path = Path::new(root)
         .canonicalize()
         .map_err(|error| format!("工作区不可用：{error}"))?;
+    let globs = GlobSet {
+        include: compile_patterns(&query.include),
+        exclude: compile_patterns(&query.exclude),
+    };
     let mut matches = Vec::new();
     let mut truncated = false;
-    walk(&root_path, &root_path, query, &pattern, &mut matches, &mut truncated)?;
+    walk(&root_path, query, &globs, &pattern, &mut matches, &mut truncated);
     Ok(TextSearchResponse {
         matches,
         truncated,
@@ -70,58 +168,63 @@ pub fn search_workspace(root: &str, query: &SearchQuery) -> Result<TextSearchRes
     })
 }
 
+/// 用 `ignore` 遍历：开启排除设置时同时遵守 .gitignore，并保留 `SEARCH_EXCLUDE_DIRS` 等静态排除。
 fn walk(
     root: &Path,
-    directory: &Path,
     query: &SearchQuery,
+    globs: &GlobSet,
     pattern: &Regex,
     matches: &mut Vec<TextSearchMatch>,
     truncated: &mut bool,
-) -> Result<(), String> {
-    if *truncated {
-        return Ok(());
-    }
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(()),
-    };
-    for entry in entries.flatten() {
+) {
+    let use_excludes = query.use_exclude_settings;
+    let walker = ignore::WalkBuilder::new(root)
+        .standard_filters(false)
+        .git_ignore(use_excludes)
+        .git_global(use_excludes)
+        .git_exclude(use_excludes)
+        .parents(use_excludes)
+        .follow_links(false)
+        .max_depth(Some(MAX_SEARCH_DEPTH))
+        .filter_entry(move |entry| {
+            entry.depth() == 0
+                || !use_excludes
+                || !crate::files::hidden_in_search(&entry.file_name().to_string_lossy())
+        })
+        .build();
+    for entry in walker.flatten() {
+        if query
+            .cancelled
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Acquire))
+        {
+            *truncated = true;
+            return;
+        }
         if matches.len() >= MATCH_LIMIT {
             *truncated = true;
-            return Ok(());
+            return;
         }
-        let name = entry.file_name().to_string_lossy().to_string();
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+            continue;
+        }
         let path = entry.path();
-        let kind = match entry.file_type() {
-            Ok(kind) => kind,
-            Err(_) => continue,
-        };
-        if kind.is_dir() || (kind.is_symlink() && path.is_dir()) {
-            if query.use_exclude_settings && crate::files::hidden_in_search(&name) {
-                continue;
-            }
-            walk(root, &path, query, pattern, matches, truncated)?;
-            continue;
-        }
-        if !kind.is_file() || (query.use_exclude_settings && crate::files::hidden_in_search(&name)) {
-            continue;
-        }
         let relative = path
             .strip_prefix(root)
-            .unwrap_or(&path)
+            .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
-        if !file_included(&relative, query) {
+        if !file_included(&relative, use_excludes, globs) {
             continue;
         }
-        let metadata = match fs::metadata(&path) {
+        let metadata = match fs::metadata(path) {
             Ok(metadata) => metadata,
             Err(_) => continue,
         };
         if metadata.len() > FILE_LIMIT {
             continue;
         }
-        let bytes = match fs::read(&path) {
+        let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
             Err(_) => continue,
         };
@@ -131,10 +234,9 @@ fn walk(
         let text = String::from_utf8_lossy(&bytes);
         collect_matches(&relative, &text, pattern, matches, truncated);
         if *truncated {
-            return Ok(());
+            return;
         }
     }
-    Ok(())
 }
 
 fn collect_matches(
@@ -198,51 +300,12 @@ fn ceil_char(text: &str, mut index: usize) -> usize {
     index
 }
 
-fn file_included(path: &str, query: &SearchQuery) -> bool {
-    if query.use_exclude_settings && path.split('/').any(crate::files::hidden_in_search) {
+fn file_included(path: &str, use_excludes: bool, globs: &GlobSet) -> bool {
+    if use_excludes && path.split('/').any(crate::files::hidden_in_search) {
         return false;
     }
-    if !pattern_list_matches(path, &query.include, true) {
-        return false;
-    }
-    if pattern_list_matches(path, &query.exclude, false) {
-        return false;
-    }
-    true
-}
-
-fn pattern_list_matches(path: &str, raw: &str, empty_matches: bool) -> bool {
-    let patterns: Vec<&str> = raw
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .collect();
-    if patterns.is_empty() {
-        return empty_matches;
-    }
-    patterns.iter().any(|pattern| glob_match(path, pattern))
-}
-
-fn glob_match(path: &str, pattern: &str) -> bool {
-    let normalized = pattern
-        .trim()
-        .trim_start_matches("./")
-        .trim_matches('/');
-    if normalized.is_empty() {
-        return false;
-    }
-    // 没有通配符时按文件夹前缀匹配，对应「在文件夹中查找」填入的 ./src/components。
-    if !normalized.contains('*') && !normalized.contains('?') {
-        return path == normalized || path.starts_with(&format!("{normalized}/"));
-    }
-    let target = if normalized.contains('/') {
-        path
-    } else {
-        path.rsplit('/').next().unwrap_or(path)
-    };
-    Regex::new(&format!("^{}$", glob_source(normalized)))
-        .map(|regex| regex.is_match(target))
-        .unwrap_or(false)
+    let included = globs.include.is_empty() || globs.include.iter().any(|pattern| pattern.matches(path));
+    included && !globs.exclude.iter().any(|pattern| pattern.matches(path))
 }
 
 fn glob_source(pattern: &str) -> String {
@@ -313,6 +376,7 @@ mod tests {
                 include: "**/*.vue".into(),
                 exclude: String::new(),
                 use_exclude_settings: true,
+                cancelled: None,
             },
         )
         .unwrap();
@@ -337,10 +401,61 @@ mod tests {
                 include: "./src/components".into(),
                 exclude: String::new(),
                 use_exclude_settings: true,
+                cancelled: None,
             },
         )
         .unwrap();
         assert_eq!(response.matches.len(), 1);
         assert_eq!(response.matches[0].path, "src/components/App.vue");
+    }
+
+    fn plain_query(cancelled: Option<Arc<AtomicBool>>) -> SearchQuery {
+        SearchQuery {
+            query: "Title".into(),
+            case_sensitive: false,
+            whole_word: false,
+            regex: false,
+            include: String::new(),
+            exclude: "*.log".into(),
+            use_exclude_settings: true,
+            cancelled,
+        }
+    }
+
+    #[test]
+    fn honours_gitignore_and_does_not_follow_symlink_loops() {
+        let root = tempfile::tempdir().unwrap();
+        std::process::Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .arg(root.path())
+            .status()
+            .unwrap();
+        fs::write(root.path().join(".gitignore"), "dist/\n").unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/out.js"), "Title\n").unwrap();
+        fs::write(root.path().join("keep.ts"), "Title\n").unwrap();
+        fs::write(root.path().join("skip.log"), "Title\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.path(), root.path().join("loop")).unwrap();
+        let response = search_workspace(root.path().to_str().unwrap(), &plain_query(None)).unwrap();
+        let paths: Vec<_> = response.matches.iter().map(|item| item.path.as_str()).collect();
+        assert_eq!(paths, ["keep.ts"]);
+    }
+
+    #[test]
+    fn a_newer_search_with_the_same_key_cancels_the_older_one() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("a.ts"), "Title\n").unwrap();
+        let first = SearchTicket::begin("test-view");
+        let second = SearchTicket::begin("test-view");
+        let stale = search_workspace(root.path().to_str().unwrap(), &plain_query(Some(first.flag()))).unwrap();
+        assert!(stale.matches.is_empty() && stale.truncated);
+        let fresh = search_workspace(root.path().to_str().unwrap(), &plain_query(Some(second.flag()))).unwrap();
+        assert_eq!(fresh.matches.len(), 1);
+        drop(first);
+        assert!(active_searches().contains_key("test-view"));
+        drop(second);
+        assert!(!active_searches().contains_key("test-view"));
     }
 }

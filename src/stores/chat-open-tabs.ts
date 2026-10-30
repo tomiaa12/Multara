@@ -1,3 +1,5 @@
+import { removeStorage, writeStorage } from "../utils/safe-storage";
+
 const STORAGE_KEY = "multara.chat.openTabs";
 const DISMISSED_PREFIX = "multara.chat.dismissedTabs";
 
@@ -20,7 +22,7 @@ export function loadOpenTabsMap(): Record<string, string[]> {
 }
 
 export function persistOpenTabsMap(map: Record<string, string[]>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+  writeStorage(STORAGE_KEY, JSON.stringify(map));
 }
 
 export function loadLegacyDismissed(projectId: string | null | undefined) {
@@ -33,5 +35,5 @@ export function loadLegacyDismissed(projectId: string | null | undefined) {
 }
 
 export function clearLegacyDismissed(projectId: string | null | undefined) {
-  localStorage.removeItem(`${DISMISSED_PREFIX}:${tabScope(projectId)}`);
+  removeStorage(`${DISMISSED_PREFIX}:${tabScope(projectId)}`);
 }

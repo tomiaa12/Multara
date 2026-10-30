@@ -124,6 +124,14 @@ pub fn run() {
     win_shutdown::install();
 
     let builder = tauri::Builder::default()
+        // 第二个实例会打开同一个数据库并重复跑轮询、自动化和 webhook，必须最先注册。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -141,12 +149,19 @@ pub fn run() {
     builder
         .setup(|app| {
             reveal_main_window(app)?;
-            let state = database::open(app.handle())?;
+            let state = database::open(app.handle()).map_err(|error| {
+                let message = format!("无法打开 Multara 数据库（数据目录可能无权限或文件已损坏）：{error}");
+                eprintln!("{message}");
+                message
+            })?;
             if let Ok(data_dir) = app.handle().path().app_data_dir() {
-                let _ = cli::ensure_shim(&data_dir);
                 app.manage(mcp_tools_cache::McpToolsCache::load(
                     data_dir.join("mcp-tools-cache.json"),
                 ));
+                // 每次启动运行前执行器都会再 ensure_shim，这里只是预热，不阻塞窗口。
+                std::thread::spawn(move || {
+                    cli::ensure_shim(&data_dir);
+                });
             }
             app.manage(state);
             automation::start(app.handle().clone());
@@ -341,6 +356,37 @@ pub fn run() {
             delete_snapshots_from,
             stop_run
         ])
-        .run(tauri::generate_context!())
-        .expect("启动 Multara 失败");
+        .build(tauri::generate_context!())
+        .expect("启动 Multara 失败")
+        .run(|app, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                stop_children_once(app);
+            }
+        });
+}
+
+/// 智能体 CLI 在独立进程组里，终端是 PTY 子进程，应用退出时不会自动结束。
+/// 进程退出不跑 static 的析构，只能在这里主动停掉。
+fn stop_children_once(app: &tauri::AppHandle) {
+    static STOPPED: std::sync::Once = std::sync::Once::new();
+    STOPPED.call_once(|| {
+        let run_ids = app
+            .try_state::<database::AppState>()
+            .and_then(|state| {
+                state
+                    .active_runs
+                    .lock()
+                    .ok()
+                    .map(|active| active.keys().cloned().collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+        for run_id in run_ids {
+            let _ = executor::stop(app, &run_id);
+        }
+        commands::close_open_terminals();
+        lsp::stop_all();
+    });
 }

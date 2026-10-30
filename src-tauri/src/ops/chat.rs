@@ -5,6 +5,16 @@ use uuid::Uuid;
 use crate::models::ChatSession;
 
 pub fn fork_session(db: &Connection, session_id: &str) -> Result<ChatSession, String> {
+    // 一次提交：长会话逐条自动提交要上千次 fsync，中途失败也会留下半个副本。
+    let transaction = db
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let forked = copy_session(&transaction, session_id)?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(forked)
+}
+
+fn copy_session(db: &Connection, session_id: &str) -> Result<ChatSession, String> {
     let (project_id, title, target_type, target_id): (Option<String>, String, String, String) = db
         .query_row(
             "SELECT project_id, title, target_type, target_id FROM chat_sessions WHERE id=?1",

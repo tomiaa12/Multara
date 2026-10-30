@@ -8,6 +8,7 @@ import { t } from "../i18n";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
 import CatalogBrowse from "./CatalogBrowse.vue";
+import { escapeClosesDialog } from "./dialog-escape";
 
 type Method = "chooser" | "manual" | "generate" | "local" | "url";
 
@@ -62,7 +63,11 @@ function submitLabel() {
 }
 
 function onKey(event: KeyboardEvent) {
-  if (event.key === "Escape" && !busy.value) emit("close");
+  if (busy.value || !escapeClosesDialog(event)) return;
+  const hasInput = [form.name, form.description, form.body, form.url, form.requirement, folderPath.value]
+    .some((value) => value.trim());
+  if (hasInput && !window.confirm(t("common.discardUnsavedConfirm"))) return;
+  emit("close");
 }
 
 onMounted(() => {

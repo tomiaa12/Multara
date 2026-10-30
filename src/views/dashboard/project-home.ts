@@ -90,22 +90,45 @@ function initialOf(name: string, fallback: string): string {
   return name.trim().slice(0, 1) || fallback;
 }
 
-function sessionActivity(
-  sessionId: string,
-  runStates: Record<string, RunEvent>,
-): "running" | "queued" | "idle" {
-  let queued = false;
-  for (const event of Object.values(runStates)) {
-    if (event.sessionId !== sessionId) continue;
-    if (event.status === "running") return "running";
-    if (event.status === "queued") queued = true;
-  }
-  return queued ? "queued" : "idle";
+/** 所有需求共用的查找表，一次建好，避免每个需求都扫全部工作区、会话和运行。 */
+export interface HomeIndex {
+  workspaces: Map<string, Workspace[]>;
+  sessions: Map<string, ChatSession[]>;
+  activity: Map<string, "running" | "queued">;
+  agents: Map<string, Agent>;
+  squads: Map<string, Squad>;
 }
 
-function targetWorker(session: ChatSession, data: BootstrapData, kind?: HomeWorker["kind"]): HomeWorker {
+function groupByProject<T extends { projectId?: string | null }>(items: T[]) {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    if (!item.projectId) continue;
+    const list = groups.get(item.projectId);
+    if (list) list.push(item);
+    else groups.set(item.projectId, [item]);
+  }
+  return groups;
+}
+
+export function buildHomeIndex(data: BootstrapData, runStates: Record<string, RunEvent>): HomeIndex {
+  const activity = new Map<string, "running" | "queued">();
+  for (const event of Object.values(runStates)) {
+    if (event.status === "running") activity.set(event.sessionId, "running");
+    else if (event.status === "queued" && !activity.has(event.sessionId)) activity.set(event.sessionId, "queued");
+  }
+  return {
+    // 会话专属工作区（例如解决冲突用的临时合并 Worktree）不算需求关联的项目
+    workspaces: groupByProject(data.workspaces.filter((item) => !item.sessionId)),
+    sessions: groupByProject(data.sessions),
+    activity,
+    agents: new Map(data.agents.map((item) => [item.id, item])),
+    squads: new Map(data.squads.map((item) => [item.id, item])),
+  };
+}
+
+function targetWorker(session: ChatSession, index: HomeIndex, kind?: HomeWorker["kind"]): HomeWorker {
   if (session.targetType === "squad") {
-    const squad = data.squads.find((item: Squad) => item.id === session.targetId);
+    const squad = index.squads.get(session.targetId);
     const name = squad?.name || session.title || t("projectHome.squadFallback");
     return {
       key: `squad:${session.targetId}`,
@@ -116,7 +139,7 @@ function targetWorker(session: ChatSession, data: BootstrapData, kind?: HomeWork
       title: name,
     };
   }
-  const agent = data.agents.find((item: Agent) => item.id === session.targetId);
+  const agent = index.agents.get(session.targetId);
   const name = agent?.name || session.title || t("projectHome.agentFallback");
   const avatar = agent?.avatar ?? "";
   return {
@@ -140,21 +163,19 @@ export function buildHomeProject(
   data: BootstrapData,
   runStates: Record<string, RunEvent>,
   now = Date.now(),
+  index = buildHomeIndex(data, runStates),
 ): HomeProject {
-  // 会话专属工作区（例如解决冲突用的临时合并 Worktree）不算需求关联的项目
-  const workspaces = data.workspaces.filter((item) => item.projectId === project.id && !item.sessionId);
-  const sessions = data.sessions
-    .filter((item) => item.projectId === project.id)
-    .slice()
+  const workspaces = index.workspaces.get(project.id) ?? [];
+  const sessions = [...(index.sessions.get(project.id) ?? [])]
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   const working: HomeWorker[] = [];
   const queued: HomeWorker[] = [];
   const seen = new Set<string>();
 
   for (const session of sessions) {
-    const activity = sessionActivity(session.id, runStates);
-    if (activity === "idle") continue;
-    const worker = targetWorker(session, data);
+    const activity = index.activity.get(session.id);
+    if (!activity) continue;
+    const worker = targetWorker(session, index);
     if (seen.has(worker.key)) continue;
     seen.add(worker.key);
     (activity === "running" ? working : queued).push(worker);
@@ -178,7 +199,7 @@ export function buildHomeProject(
   const latest = sessions[0];
   const idleLine = latest
     ? t("projectHome.idleLine", {
-      name: targetWorker(latest, data).name,
+      name: targetWorker(latest, index).name,
       ended: relativeEndedAt(latest.updatedAt, now),
     })
     : t("projectHome.idlePrefix");

@@ -106,8 +106,9 @@ pub fn backfill_results(db: &Connection) -> Result<u32, String> {
         .prepare(
             "SELECT s.id, COALESCE(r.status, 'completed')
              FROM chat_sessions s
-             LEFT JOIN automation_runs r ON s.id = 'automation-run:' || r.id
-             WHERE s.id LIKE 'automation-run:%'
+             LEFT JOIN automation_runs r ON r.id = substr(s.id, length('automation-run:') + 1)
+             -- 用主键范围代替 LIKE（默认不区分大小写，走不了索引）；';' 紧跟在 ':' 之后。
+             WHERE s.id >= 'automation-run:' AND s.id < 'automation-run;'
                AND COALESCE(r.status, 'completed') IN ('completed', 'failed', 'running')
                AND (
                  NOT EXISTS (SELECT 1 FROM tasks t WHERE t.session_id = s.id)
@@ -172,7 +173,7 @@ fn attach_from_session(
             "SELECT a.name, a.prompt
              FROM automation_runs r
              JOIN automations a ON a.id = r.automation_id
-             WHERE r.id = substr(?1, 17)",
+             WHERE r.id = substr(?1, length('automation-run:') + 1)",
             [session_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )

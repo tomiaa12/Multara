@@ -6,6 +6,7 @@ import type { Agent, Squad } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import { useAppStore } from "../stores/app";
 import { t } from "../i18n";
+import { syncDraft } from "./draft-sync";
 
 type Pane = "members" | "instructions";
 const route = useRoute();
@@ -34,15 +35,18 @@ const draft = reactive<Omit<Squad, "id">>({
   memberAgentIds: [],
 });
 
-watch(squad, (value) => {
+const draftBaseline: Omit<Squad, "id"> = { ...draft, memberAgentIds: [] };
+
+// 保存或后台刷新换出新对象时只同步用户没改过的字段；切换到另一个小队才整份重置
+watch(squad, (value, previous) => {
   if (!value) return;
-  Object.assign(draft, {
+  syncDraft(draft, draftBaseline, {
     name: value.name,
     description: value.description,
     instructions: value.instructions ?? "",
     leaderAgentId: value.leaderAgentId,
-    memberAgentIds: [...value.memberAgentIds],
-  });
+    memberAgentIds: value.memberAgentIds,
+  }, value.id !== previous?.id);
 }, { immediate: true });
 
 type MemberStatusKind = "working" | "idle" | "offline";
@@ -68,25 +72,36 @@ function memberStatusData(agent: Agent) {
     : memberStatusLabel(agent);
 }
 
+let persistQueued = false;
+
+/** 保存中再次修改时排队，等这次结束后按最新草稿再提交一次，避免界面和后端不一致。 */
 async function persist() {
-  if (!squad.value || !draft.name.trim() || !draft.leaderAgentId || busy.value) return;
+  if (!squad.value || !draft.name.trim() || !draft.leaderAgentId) return;
+  if (busy.value) {
+    persistQueued = true;
+    return;
+  }
   busy.value = true;
   error.value = "";
   try {
-    if (!draft.memberAgentIds.includes(draft.leaderAgentId)) draft.memberAgentIds.push(draft.leaderAgentId);
-    await store.saveSquad({
-      id: squad.value.id,
-      name: draft.name.trim(),
-      description: draft.description,
-      instructions: draft.instructions,
-      leaderAgentId: draft.leaderAgentId,
-      memberAgentIds: [...draft.memberAgentIds],
-    });
+    do {
+      persistQueued = false;
+      if (!draft.memberAgentIds.includes(draft.leaderAgentId)) draft.memberAgentIds.push(draft.leaderAgentId);
+      await store.saveSquad({
+        id: squad.value.id,
+        name: draft.name.trim(),
+        description: draft.description,
+        instructions: draft.instructions,
+        leaderAgentId: draft.leaderAgentId,
+        memberAgentIds: [...draft.memberAgentIds],
+      });
+    } while (persistQueued && squad.value);
     saved.value = true;
     window.setTimeout(() => { saved.value = false; }, 1600);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   } finally {
+    persistQueued = false;
     busy.value = false;
   }
 }

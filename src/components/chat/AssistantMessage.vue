@@ -87,6 +87,7 @@ const showAssignmentOriginal = computed(() =>
         :items="message.timeline"
         :running="running"
         :elapsed-ms="message.elapsedMs"
+        :run-id="message.runId"
       />
       <RichContent v-if="bodyText.trim()" :content="bodyText" />
       <p v-if="running && extracted.streaming" class="question-summary-pending">{{ t("chat.questionPreparing") }}</p>

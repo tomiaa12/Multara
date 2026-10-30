@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { ArrowUp, LoaderCircle, Square } from "@lucide/vue";
 import type { ChatMessage, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
@@ -14,6 +14,7 @@ import { scrollListToMessage } from "../components/chat/scroll-to-message";
 import { speakerForMessage } from "../components/chat/message-speaker";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import * as backend from "../services/backend";
+import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { useAppStore } from "../stores/app";
 import { t } from "../i18n";
 
@@ -42,6 +43,7 @@ const emptyNodes: ComposerNode[] = [{ type: "text", value: "" }];
 const liveClock = ref(Date.now());
 const liveAnchorFallback = ref<number | null>(null);
 let liveTimer = 0;
+const pageActive = ref(true);
 
 const messages = computed(() => store.messages[props.sessionId] ?? []);
 const agent = computed(() => store.data?.agents.find((item) => item.id === props.agentId));
@@ -110,7 +112,7 @@ const workingLines = computed(() => liveWorkParts(
   Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000)),
   { language: store.data?.settings.language, status: liveRunStatus.value },
 ));
-watch(sessionProcessing, (active) => {
+watch([sessionProcessing, pageActive], ([active, visible]) => {
   window.clearInterval(liveTimer);
   if (!active) {
     liveAnchorFallback.value = null;
@@ -118,11 +120,22 @@ watch(sessionProcessing, (active) => {
   }
   if (liveAnchorFallback.value == null) liveAnchorFallback.value = Date.now();
   liveClock.value = Date.now();
+  // keep-alive 缓存在后台时不走秒表，回到前台再续上
+  if (!visible) return;
   liveTimer = window.setInterval(() => {
     liveClock.value = Date.now();
   }, 1000);
 }, { immediate: true });
-onBeforeUnmount(() => window.clearInterval(liveTimer));
+onActivated(() => {
+  pageActive.value = true;
+});
+onDeactivated(() => {
+  pageActive.value = false;
+});
+onBeforeUnmount(() => {
+  window.clearInterval(liveTimer);
+  for (const image of pastes.value) URL.revokeObjectURL(image.previewUrl);
+});
 const canSend = computed(() => !draftEmpty.value || pastes.value.length > 0);
 const pendingQuestion = computed(() => {
   if (sessionProcessing.value || props.historyViewOnly || !store.awaitingAnswer(props.sessionId)) return null;
@@ -173,12 +186,11 @@ async function pasteImages(files: File[]) {
   const room = Math.max(0, 8 - pastes.value.length);
   for (const file of files.slice(0, room)) {
     try {
-      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      if (bytes.length > 25 * 1024 * 1024) {
+      if (file.size > PASTED_IMAGE_MAX_BYTES) {
         pasteError.value = t("chat.pasteTooLarge");
         continue;
       }
-      const saved = await backend.savePastedAttachment(bytes, file.type || "image/png", file.name || undefined);
+      const saved = await backend.savePastedAttachment(await fileToBase64(file), file.type || "image/png", file.name || undefined);
       pastes.value.push({ ...saved, previewUrl: URL.createObjectURL(file) });
     } catch (cause) {
       pasteError.value = cause instanceof Error ? cause.message : t("chat.pasteFailed");

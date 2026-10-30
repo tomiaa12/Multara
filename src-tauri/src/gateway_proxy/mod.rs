@@ -5,9 +5,10 @@ mod transform;
 use std::{
     collections::HashMap,
     io::Read,
+    panic::{self, AssertUnwindSafe},
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex, MutexGuard, PoisonError,
     },
     thread,
     time::Duration,
@@ -15,6 +16,12 @@ use std::{
 
 use serde_json::{json, Value};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
+
+/// 每个请求一个线程，长 SSE 流不再挡住并行子智能体、标题生成等其它请求。
+const MAX_CONCURRENT_REQUESTS: usize = 16;
+const ACCEPT_POLL: Duration = Duration::from_millis(100);
+const MAX_REQUEST_BYTES: u64 = 32 * 1024 * 1024;
+const INTERNAL_ERROR: &str = "本地代理内部错误";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiFormat {
@@ -126,17 +133,35 @@ impl GatewayProxy {
             .to_ip()
             .ok_or_else(|| "本地代理地址无效".to_string())?;
         let token = format!("multara-{}", uuid::Uuid::new_v4());
-        let thread_token = token.clone();
+        let thread_token: Arc<str> = token.clone().into();
         let stopped = Arc::new(AtomicBool::new(false));
         let thread_stopped = stopped.clone();
+        let config = Arc::new(config);
         let handle = thread::Builder::new()
             .name("multara-gateway-proxy".into())
             .spawn(move || {
-                let mut state = GatewayState::default();
+                let state = Arc::new(Mutex::new(GatewayState::default()));
+                let active = Arc::new(AtomicUsize::new(0));
                 while !thread_stopped.load(Ordering::Relaxed) {
-                    match server.recv_timeout(Duration::from_millis(100)) {
+                    // 满了就先不取新请求，tiny_http 会把它们排在队列里
+                    if active.load(Ordering::Acquire) >= MAX_CONCURRENT_REQUESTS {
+                        thread::sleep(ACCEPT_POLL);
+                        continue;
+                    }
+                    match server.recv_timeout(ACCEPT_POLL) {
                         Ok(Some(request)) => {
-                            handle_request(request, &config, &thread_token, &mut state)
+                            active.fetch_add(1, Ordering::AcqRel);
+                            let slot = ActiveSlot(active.clone());
+                            let (config, token, state) = (config.clone(), thread_token.clone(), state.clone());
+                            let _ = thread::Builder::new()
+                                .name("multara-gateway-request".into())
+                                .spawn(move || {
+                                    let _slot = slot;
+                                    // 请求已在 panic 展开时被丢弃，tiny_http 会回 500；这里只保证线程和名额不泄漏
+                                    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+                                        handle_request(request, &config, &token, &state)
+                                    }));
+                                });
                         }
                         Ok(None) => {}
                         Err(_) => break,
@@ -170,11 +195,28 @@ impl Drop for GatewayProxy {
     }
 }
 
+struct ActiveSlot(Arc<AtomicUsize>);
+
+impl Drop for ActiveSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// 转换代码 panic 时回 502，而不是让请求在展开时被丢弃。
+fn guarded<T>(work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    panic::catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(INTERNAL_ERROR.to_string()))
+}
+
+fn lock_state(state: &Mutex<GatewayState>) -> MutexGuard<'_, GatewayState> {
+    state.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 fn handle_request(
     mut request: Request,
     config: &GatewayProxyConfig,
     token: &str,
-    state: &mut GatewayState,
+    state: &Mutex<GatewayState>,
 ) {
     if !authorized(&request, token) {
         respond_json(
@@ -208,7 +250,7 @@ fn handle_request(
     let mut raw = Vec::new();
     if request
         .as_reader()
-        .take(32 * 1024 * 1024)
+        .take(MAX_REQUEST_BYTES)
         .read_to_end(&mut raw)
         .is_err()
     {
@@ -222,21 +264,23 @@ fn handle_request(
             return;
         }
     };
-    let (mut mapped, body_stream) = match transform::rewrite_request(
-        input,
-        config.client_format,
-        config.upstream_format,
-        &config.model,
-    ) {
-        Ok(result) => result,
-        Err(error) => {
+    let rewritten = panic::catch_unwind(AssertUnwindSafe(|| {
+        transform::rewrite_request(input, config.client_format, config.upstream_format, &config.model)
+    }));
+    let (mut mapped, body_stream) = match rewritten {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => {
             respond_error(request, 400, &error);
+            return;
+        }
+        Err(_) => {
+            respond_error(request, 502, INTERNAL_ERROR);
             return;
         }
     };
     apply_request_options(&mut mapped, config);
     if config.upstream_format == ApiFormat::Gemini {
-        state.prepare_gemini_request(&mut mapped);
+        lock_state(state).prepare_gemini_request(&mut mapped);
     }
     let mut headers = forwarded_headers(&request);
     apply_custom_headers(&mut headers, config, token);
@@ -271,7 +315,7 @@ fn handle_request(
         });
         if !streaming_content {
             let mut raw = String::new();
-            if upstream.read_to_string(&mut raw).is_err() {
+            if upstream.by_ref().take(MAX_REQUEST_BYTES).read_to_string(&mut raw).is_err() {
                 respond_error(request, 502, "读取上游响应失败");
                 return;
             }
@@ -283,14 +327,11 @@ fn handle_request(
                 }
             };
             if config.upstream_format == ApiFormat::Gemini {
-                state.capture_gemini_response(&mut output);
+                lock_state(state).capture_gemini_response(&mut output);
             }
-            let (_, canonical) = match transform::rewrite_response(
-                output,
-                config.upstream_format,
-                config.client_format,
-                &config.model,
-            ) {
+            let canonical = match guarded(|| {
+                transform::canonical_response(output, config.upstream_format, &config.model)
+            }) {
                 Ok(result) => result,
                 Err(error) => {
                     respond_error(request, 502, &error);
@@ -356,21 +397,17 @@ fn handle_request(
         }
     };
     if config.upstream_format == ApiFormat::Gemini {
-        state.capture_gemini_response(&mut output);
+        lock_state(state).capture_gemini_response(&mut output);
     }
-    let (mapped_response, canonical) = match transform::rewrite_response(
-        output,
-        config.upstream_format,
-        config.client_format,
-        &config.model,
-    ) {
+    let mapped_response = match guarded(|| {
+        transform::rewrite_response(output, config.upstream_format, config.client_format, &config.model)
+    }) {
         Ok(result) => result,
         Err(error) => {
             respond_error(request, 502, &error);
             return;
         }
     };
-    let _ = canonical;
     respond_json(request, 200, &mapped_response);
 }
 

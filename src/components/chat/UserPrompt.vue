@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowUp, FileText, Square } from "@lucide/vue";
 import ChatComposer from "./ChatComposer.vue";
 import ComposerPasteImages from "./ComposerPasteImages.vue";
@@ -11,6 +11,7 @@ import type {
   MessageAttachmentInput,
 } from "../../domain/types";
 import * as backend from "../../services/backend";
+import { watchOffscreen } from "../../ui/offscreen-pause";
 import type { ComposerNode } from "./composer-content";
 import { formatAgentPrompt, isFileChip, isPastedImage, parseUserPromptNodes } from "./composer-content";
 
@@ -135,10 +136,24 @@ watch(
   },
 );
 
+const root = ref<HTMLElement | null>(null);
+const seen = ref(false);
+let disposed = false;
+watch(root, (el, _, onCleanup) => {
+  if (el) onCleanup(watchOffscreen(el, (offscreen) => { seen.value ||= !offscreen; }));
+}, { flush: "post" });
+
+onBeforeUnmount(() => {
+  disposed = true;
+  previews.value = {};
+});
+
+// 预览是最大约 13MB 的 data URL：滚到可见才取，卸载即释放。
 watch(
-  () => pastedImages.value,
+  () => (seen.value ? pastedImages.value : []),
   async (attachments) => {
     for (const attachment of attachments) {
+      if (disposed) return;
       if (previews.value[attachment.id]) continue;
       const inline = inlinePreview(attachment);
       if (inline) {
@@ -146,7 +161,7 @@ watch(
         continue;
       }
       const preview = await backend.loadAttachmentPreview(attachment.id);
-      if (preview) previews.value[attachment.id] = preview;
+      if (preview && !disposed) previews.value[attachment.id] = preview;
     }
   },
   { immediate: true },
@@ -154,7 +169,7 @@ watch(
 </script>
 
 <template>
-  <article class="chat-turn user-turn">
+  <article ref="root" class="chat-turn user-turn">
     <ChatComposer
       ref="composer"
       class="user-prompt"

@@ -1,5 +1,6 @@
 use std::{
-    collections::HashMap,
+    cell::RefCell,
+    collections::{hash_map::Entry, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::{Child, ChildStdin},
@@ -49,14 +50,46 @@ pub fn open_file(path: &Path) -> Result<Connection, String> {
     apply_pragmas(&connection).map_err(|error| error.to_string())?;
     migrate(&connection).map_err(|error| error.to_string())?;
     seed(&connection).map_err(|error| error.to_string())?;
+    // 0x10002：长连接在打开时只分析确实缺统计信息的表，代价有上限。
+    let _ = connection.execute_batch("PRAGMA optimize=0x10002;");
     Ok(connection)
 }
 
+/// CLI 用：库已由应用迁移到当前版本时不再 migrate / seed；版本落后才走完整打开。
+pub fn open_file_light(path: &Path) -> Result<Connection, String> {
+    let connection = Connection::open(path).map_err(|error| error.to_string())?;
+    apply_pragmas(&connection).map_err(|error| error.to_string())?;
+    let version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    if version >= SCHEMA_VERSION {
+        return Ok(connection);
+    }
+    drop(connection);
+    open_file(path)
+}
+
+/// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
+const SCHEMA_VERSION: i64 = 1;
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+/// 负数表示 KiB。
+const CACHE_SIZE_KIB: i64 = 16 * 1024;
+const JOURNAL_SIZE_LIMIT_BYTES: i64 = 64 * 1024 * 1024;
+
 fn apply_pragmas(db: &Connection) -> rusqlite::Result<()> {
-    db.busy_timeout(Duration::from_secs(5))?;
+    db.busy_timeout(BUSY_TIMEOUT)?;
     db.pragma_update(None, "journal_mode", "WAL")?;
+    db.pragma_update(None, "synchronous", "NORMAL")?;
+    db.pragma_update(None, "cache_size", -CACHE_SIZE_KIB)?;
+    db.pragma_update(None, "temp_store", "MEMORY")?;
+    db.pragma_update(None, "journal_size_limit", JOURNAL_SIZE_LIMIT_BYTES)?;
     db.pragma_update(None, "foreign_keys", "ON")?;
     Ok(())
+}
+
+/// 长时间运行时定期调用，让查询规划器的统计信息跟上数据增长。
+pub fn optimize(db: &Connection) {
+    let _ = db.execute_batch("PRAGMA optimize;");
 }
 
 impl AppState {
@@ -189,7 +222,9 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           run_id TEXT NOT NULL,
           session_id TEXT NOT NULL,
           seq INTEGER NOT NULL,
-          event_type TEXT NOT NULL CHECK(event_type IN ('text', 'thinking', 'tool_use', 'tool_result', 'error')),
+          event_type TEXT NOT NULL CHECK(event_type IN (
+            'text', 'thinking', 'tool_use', 'tool_result', 'error', 'plan', 'permission'
+          )),
           call_id TEXT,
           tool TEXT,
           content TEXT,
@@ -393,132 +428,133 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         );
         ",
     )?;
-    ensure_column(db, "agent_runs", "started_at", "TEXT")?;
-    ensure_column(db, "agent_runs", "completed_at", "TEXT")?;
+    let columns = ColumnCache::new(db);
+    ensure_column(&columns, "agent_runs", "started_at", "TEXT")?;
+    ensure_column(&columns, "agent_runs", "completed_at", "TEXT")?;
     ensure_column(
-        db,
+        &columns,
         "agent_runs",
         "input_tokens",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_column(
-        db,
+        &columns,
         "agent_runs",
         "output_tokens",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_column(
-        db,
+        &columns,
         "agent_runs",
         "cache_read_tokens",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_column(
-        db,
+        &columns,
         "agent_runs",
         "cache_write_tokens",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
-    ensure_column(db, "agent_runs", "cost_usd", "REAL NOT NULL DEFAULT 0")?;
-    ensure_column(db, "agent_runs", "usage_model", "TEXT")?;
-    ensure_column(db, "messages", "run_id", "TEXT")?;
-    ensure_column(db, "messages", "failure_reason", "TEXT")?;
-    ensure_column(db, "messages", "elapsed_ms", "INTEGER")?;
+    ensure_column(&columns, "agent_runs", "cost_usd", "REAL NOT NULL DEFAULT 0")?;
+    ensure_column(&columns, "agent_runs", "usage_model", "TEXT")?;
+    ensure_column(&columns, "messages", "run_id", "TEXT")?;
+    ensure_column(&columns, "messages", "failure_reason", "TEXT")?;
+    ensure_column(&columns, "messages", "elapsed_ms", "INTEGER")?;
     ensure_column(
-        db,
+        &columns,
         "messages",
         "message_kind",
         "TEXT NOT NULL DEFAULT 'message'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "messages",
         "quick_actions_json",
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
-    ensure_column(db, "run_events", "call_id", "TEXT")?;
+    ensure_column(&columns, "run_events", "call_id", "TEXT")?;
     // 归档时间；NULL 表示未归档。
-    ensure_column(db, "projects", "archived_at", "TEXT")?;
+    ensure_column(&columns, "projects", "archived_at", "TEXT")?;
     crate::merge_flow::migrate(db)?;
-    ensure_column(db, "workspaces", "session_id", "TEXT")?;
-    ensure_column(db, "workspaces", "source_workspace_id", "TEXT")?;
+    ensure_column(&columns, "workspaces", "session_id", "TEXT")?;
+    ensure_column(&columns, "workspaces", "source_workspace_id", "TEXT")?;
     // 同一仓库的多个 Worktree 共用 source_path，唯一约束要落在检出目录上。
     migrate_workspace_checkout_key(db)?;
-    ensure_column(db, "messages", "turn_id", "TEXT")?;
-    ensure_column(db, "messages", "agent_id", "TEXT")?;
-    ensure_column(db, "messages", "audience_type", "TEXT")?;
-    ensure_column(db, "messages", "audience_id", "TEXT")?;
-    ensure_column(db, "messages", "target_type", "TEXT")?;
-    ensure_column(db, "messages", "target_id", "TEXT")?;
-    ensure_column(db, "messages", "source_type", "TEXT")?;
-    ensure_column(db, "messages", "source_meta_json", "TEXT")?;
-    ensure_column(db, "agent_runs", "turn_id", "TEXT")?;
+    ensure_column(&columns, "messages", "turn_id", "TEXT")?;
+    ensure_column(&columns, "messages", "agent_id", "TEXT")?;
+    ensure_column(&columns, "messages", "audience_type", "TEXT")?;
+    ensure_column(&columns, "messages", "audience_id", "TEXT")?;
+    ensure_column(&columns, "messages", "target_type", "TEXT")?;
+    ensure_column(&columns, "messages", "target_id", "TEXT")?;
+    ensure_column(&columns, "messages", "source_type", "TEXT")?;
+    ensure_column(&columns, "messages", "source_meta_json", "TEXT")?;
+    ensure_column(&columns, "agent_runs", "turn_id", "TEXT")?;
     ensure_column(
-        db,
+        &columns,
         "chat_sessions",
         "project_id",
         "TEXT REFERENCES projects(id) ON DELETE CASCADE",
     )?;
-    ensure_column(db, "agents", "system_key", "TEXT")?;
-    ensure_column(db, "squads", "instructions", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&columns, "agents", "system_key", "TEXT")?;
+    ensure_column(&columns, "squads", "instructions", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "provider",
         "TEXT NOT NULL DEFAULT 'custom'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "protocol",
         "TEXT NOT NULL DEFAULT ''",
     )?;
-    ensure_column(db, "custom_runtimes", "api_url", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(db, "custom_runtimes", "api_key", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&columns, "custom_runtimes", "api_url", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&columns, "custom_runtimes", "api_key", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "models_json",
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "env_json",
         "TEXT NOT NULL DEFAULT '{}'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "kind",
         "TEXT NOT NULL DEFAULT 'profile'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "description",
         "TEXT NOT NULL DEFAULT ''",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "wire_api",
         "TEXT NOT NULL DEFAULT 'responses'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "api_format",
         "TEXT NOT NULL DEFAULT ''",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "key_style",
         "TEXT NOT NULL DEFAULT 'bearer'",
     )?;
     ensure_column(
-        db,
+        &columns,
         "custom_runtimes",
         "gateway_options_json",
         "TEXT NOT NULL DEFAULT '{}'",
@@ -572,24 +608,38 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         );
         ",
     )?;
-    ensure_column(db, "inbox_items", "read_message_id", "TEXT")?;
-    ensure_column(db, "inbox_items", "archived_at", "TEXT")?;
-    ensure_column(db, "run_events", "parent_call_id", "TEXT")?;
-    ensure_column(db, "run_events", "status", "TEXT")?;
-    ensure_column(db, "messages", "feedback", "TEXT")?;
-    ensure_column(db, "agent_runs", "model_override", "TEXT")?;
-    ensure_column(db, "agent_runs", "mode", "TEXT")?;
-    ensure_column(db, "agent_runs", "effort", "TEXT")?;
-    ensure_column(db, "chat_sessions", "compact_summary", "TEXT")?;
-    ensure_column(db, "chat_sessions", "compact_message_id", "TEXT")?;
+    ensure_column(&columns, "inbox_items", "read_message_id", "TEXT")?;
+    ensure_column(&columns, "inbox_items", "archived_at", "TEXT")?;
+    ensure_column(&columns, "run_events", "parent_call_id", "TEXT")?;
+    ensure_column(&columns, "run_events", "status", "TEXT")?;
+    ensure_column(&columns, "messages", "feedback", "TEXT")?;
+    ensure_column(&columns, "agent_runs", "model_override", "TEXT")?;
+    ensure_column(&columns, "agent_runs", "mode", "TEXT")?;
+    ensure_column(&columns, "agent_runs", "effort", "TEXT")?;
+    ensure_column(&columns, "chat_sessions", "compact_summary", "TEXT")?;
+    ensure_column(&columns, "chat_sessions", "compact_message_id", "TEXT")?;
     migrate_task_statuses(db)?;
-    ensure_column(db, "tasks", "parent_task_id", "TEXT")?;
-    ensure_column(db, "tasks", "priority", "TEXT NOT NULL DEFAULT 'none'")?;
-    ensure_column(db, "tasks", "labels_json", "TEXT NOT NULL DEFAULT '[]'")?;
-    ensure_column(db, "tasks", "checklist_json", "TEXT NOT NULL DEFAULT '[]'")?;
-    ensure_column(db, "tasks", "pr_url", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(&columns, "tasks", "parent_task_id", "TEXT")?;
+    ensure_column(&columns, "tasks", "priority", "TEXT NOT NULL DEFAULT 'none'")?;
+    ensure_column(&columns, "tasks", "labels_json", "TEXT NOT NULL DEFAULT '[]'")?;
+    ensure_column(&columns, "tasks", "checklist_json", "TEXT NOT NULL DEFAULT '[]'")?;
+    ensure_column(&columns, "tasks", "pr_url", "TEXT NOT NULL DEFAULT ''")?;
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;
+    migrate_run_event_types(db)?;
+    db.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
+         CREATE INDEX IF NOT EXISTS idx_messages_run ON messages(run_id);
+         CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(session_id);
+         CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+         CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_created ON agent_runs(agent_id, created_at);
+         CREATE INDEX IF NOT EXISTS idx_agent_runs_turn ON agent_runs(turn_id);
+         CREATE INDEX IF NOT EXISTS idx_turns_user_message ON agent_turns(user_message_id);
+         CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at);
+         CREATE INDEX IF NOT EXISTS idx_inbox_archived_created ON inbox_items(archived_at, created_at);
+         CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_project
+           ON chat_sessions(updated_at, project_id);",
+    )?;
     db.execute(
         "INSERT OR IGNORE INTO session_projects (session_id, project_id, sort_order)
          SELECT id, project_id, 0 FROM chat_sessions WHERE project_id IS NOT NULL",
@@ -600,6 +650,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     crate::snapshot_db::cleanup_old_snapshots(db).ok();
     // 旧自动化只建了隐藏会话；补成任务和收件箱，重启后就能在看板里看到。
     crate::ops::automation::backfill_results(db).ok();
+    db.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     Ok(())
 }
 
@@ -732,7 +783,8 @@ fn migrate_diff_chunk_keys(db: &Connection) -> rusqlite::Result<()> {
     if !table_has_column(db, "diff_chunk_states", "chunk_index")? {
         return Ok(());
     }
-    db.execute_batch(
+    rebuild_in_transaction(
+        db,
         "DROP TABLE IF EXISTS diff_chunk_states;
          CREATE TABLE diff_chunk_states (
            id TEXT NOT NULL PRIMARY KEY,
@@ -774,9 +826,9 @@ fn migrate_workspace_checkout_key(db: &Connection) -> rusqlite::Result<()> {
     {
         return Ok(());
     }
-    db.execute_batch(
-        "PRAGMA foreign_keys=OFF;
-         CREATE TABLE workspaces_checkout_key (
+    rebuild_without_foreign_keys(
+        db,
+        "CREATE TABLE workspaces_checkout_key (
            id TEXT PRIMARY KEY,
            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
            name TEXT NOT NULL,
@@ -798,8 +850,7 @@ fn migrate_workspace_checkout_key(db: &Connection) -> rusqlite::Result<()> {
          FROM workspaces;
          DROP TABLE workspaces;
          ALTER TABLE workspaces_checkout_key RENAME TO workspaces;
-         CREATE INDEX IF NOT EXISTS idx_workspaces_project ON workspaces(project_id);
-         PRAGMA foreign_keys=ON;",
+         CREATE INDEX IF NOT EXISTS idx_workspaces_project ON workspaces(project_id);",
     )
 }
 
@@ -818,7 +869,8 @@ fn migrate_task_statuses(db: &Connection) -> rusqlite::Result<()> {
     {
         return Ok(());
     }
-    db.execute_batch(
+    rebuild_in_transaction(
+        db,
         "ALTER TABLE tasks RENAME TO tasks_legacy;
          CREATE TABLE tasks (
            id TEXT PRIMARY KEY,
@@ -854,9 +906,9 @@ fn migrate_optional_automation_project(db: &Connection) -> rusqlite::Result<()> 
     if notnull != Some(1) {
         return Ok(());
     }
-    db.execute_batch(
-        "PRAGMA foreign_keys=OFF;
-         CREATE TABLE automations_optional_project (
+    rebuild_without_foreign_keys(
+        db,
+        "CREATE TABLE automations_optional_project (
            id TEXT PRIMARY KEY,
            name TEXT NOT NULL,
            project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
@@ -877,21 +929,110 @@ fn migrate_optional_automation_project(db: &Connection) -> rusqlite::Result<()> 
                 interval_minutes, event_name, enabled, last_run_at, created_at
          FROM automations;
          DROP TABLE automations;
-         ALTER TABLE automations_optional_project RENAME TO automations;
-         PRAGMA foreign_keys=ON;",
+         ALTER TABLE automations_optional_project RENAME TO automations;",
     )
 }
 
+/// 旧库的 CHECK 只允许五种事件，ACP / dsh 的 plan、permission 写不进去。
+fn migrate_run_event_types(db: &Connection) -> rusqlite::Result<()> {
+    let schema: Option<String> = db
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='run_events'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if schema.as_deref().map_or(true, |sql| sql.contains("'plan'")) {
+        return Ok(());
+    }
+    rebuild_in_transaction(
+        db,
+        "CREATE TABLE run_events_event_types (
+           id TEXT PRIMARY KEY,
+           run_id TEXT NOT NULL,
+           session_id TEXT NOT NULL,
+           seq INTEGER NOT NULL,
+           event_type TEXT NOT NULL CHECK(event_type IN (
+             'text', 'thinking', 'tool_use', 'tool_result', 'error', 'plan', 'permission'
+           )),
+           call_id TEXT,
+           tool TEXT,
+           content TEXT,
+           input_json TEXT,
+           output TEXT,
+           created_at TEXT NOT NULL,
+           parent_call_id TEXT,
+           status TEXT,
+           UNIQUE(run_id, seq)
+         );
+         INSERT INTO run_events_event_types
+           (id, run_id, session_id, seq, event_type, call_id, tool, content, input_json,
+            output, created_at, parent_call_id, status)
+         SELECT id, run_id, session_id, seq, event_type, call_id, tool, content, input_json,
+                output, created_at, parent_call_id, status
+         FROM run_events;
+         DROP TABLE run_events;
+         ALTER TABLE run_events_event_types RENAME TO run_events;
+         CREATE INDEX IF NOT EXISTS idx_run_events_run_seq ON run_events(run_id, seq);
+         CREATE INDEX IF NOT EXISTS idx_run_events_session ON run_events(session_id, run_id, seq);",
+    )
+}
+
+/// 中途失败整体回滚，不会留下删了旧表、新表还没改名的半成品。
+fn rebuild_in_transaction(db: &Connection, sql: &str) -> rusqlite::Result<()> {
+    let transaction = db.unchecked_transaction()?;
+    transaction.execute_batch(sql)?;
+    transaction.commit()
+}
+
+/// `PRAGMA foreign_keys` 在事务内不生效，必须在事务外关、事务后无论成败都开回来。
+/// 关掉是为了 DROP 旧表时不触发其它表的 ON DELETE CASCADE。
+fn rebuild_without_foreign_keys(db: &Connection, sql: &str) -> rusqlite::Result<()> {
+    db.pragma_update(None, "foreign_keys", "OFF")?;
+    let rebuilt = rebuild_in_transaction(db, sql);
+    let restored = db.pragma_update(None, "foreign_keys", "ON");
+    rebuilt.and(restored)
+}
+
+/// 每张表只查一次 `PRAGMA table_info`。重建过的表要在重建之后才第一次查询。
+struct ColumnCache<'a> {
+    db: &'a Connection,
+    tables: RefCell<HashMap<String, HashSet<String>>>,
+}
+
+impl<'a> ColumnCache<'a> {
+    fn new(db: &'a Connection) -> Self {
+        Self {
+            db,
+            tables: RefCell::default(),
+        }
+    }
+
+    fn load(&self, table: &str) -> rusqlite::Result<HashSet<String>> {
+        let mut statement = self.db.prepare(&format!("PRAGMA table_info({table})"))?;
+        let names = statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect();
+        names
+    }
+}
+
 fn ensure_column(
-    db: &Connection,
+    columns: &ColumnCache<'_>,
     table: &str,
     column: &str,
     definition: &str,
 ) -> rusqlite::Result<()> {
-    if !table_has_column(db, table, column)? {
-        db.execute_batch(&format!(
+    let mut tables = columns.tables.borrow_mut();
+    let known = match tables.entry(table.to_string()) {
+        Entry::Occupied(entry) => entry.into_mut(),
+        Entry::Vacant(entry) => entry.insert(columns.load(table)?),
+    };
+    if !known.contains(column) {
+        columns.db.execute_batch(&format!(
             "ALTER TABLE {table} ADD COLUMN {column} {definition}"
         ))?;
+        known.insert(column.to_string());
     }
     Ok(())
 }
@@ -926,21 +1067,28 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
-    let runtime_id = crate::runtime::seed_runtime_id();
-    db.execute(
-        "INSERT OR IGNORE INTO agents
-         (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks, system_key)
-         VALUES (?1, ?2, ?3, ?4, '', ?5, 'auto', ?6, ?7)",
-        params![
-            crate::builtin_agents::MIKU_ID,
-            crate::builtin_agents::MIKU_DEFAULT_NAME,
-            crate::builtin_agents::MIKU_AVATAR,
-            crate::builtin_agents::MIKU_DESCRIPTION,
-            runtime_id,
-            crate::builtin_agents::MIKU_MAX_CONCURRENT_TASKS,
-            crate::builtin_agents::MIKU_SYSTEM_KEY,
-        ],
+    let has_miku: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
+        [crate::builtin_agents::MIKU_ID],
+        |row| row.get(0),
     )?;
+    // 检测运行时要起登录 shell 和逐个 --version，只有首次建 Miku 才需要。
+    if !has_miku {
+        db.execute(
+            "INSERT OR IGNORE INTO agents
+             (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks, system_key)
+             VALUES (?1, ?2, ?3, ?4, '', ?5, 'auto', ?6, ?7)",
+            params![
+                crate::builtin_agents::MIKU_ID,
+                crate::builtin_agents::MIKU_DEFAULT_NAME,
+                crate::builtin_agents::MIKU_AVATAR,
+                crate::builtin_agents::MIKU_DESCRIPTION,
+                crate::runtime::seed_runtime_id(),
+                crate::builtin_agents::MIKU_MAX_CONCURRENT_TASKS,
+                crate::builtin_agents::MIKU_SYSTEM_KEY,
+            ],
+        )?;
+    }
     db.execute(
         "UPDATE agents SET system_key=?1 WHERE id=?2 AND system_key IS NULL",
         params![
@@ -1013,7 +1161,8 @@ mod tests {
             .unwrap();
         assert_eq!(status, "cancelled");
         db.execute(
-            "INSERT INTO tasks VALUES ('blocked', 'session-2', '阻塞', '', 'agent', 'blocked', 'now', 'now')",
+            "INSERT INTO tasks (id, session_id, title, description, agent_id, status, created_at, updated_at)
+             VALUES ('blocked', 'session-2', '阻塞', '', 'agent', 'blocked', 'now', 'now')",
             [],
         )
         .unwrap();
@@ -1222,5 +1371,128 @@ mod tests {
         assert_eq!(gateway, "gateway");
         assert_eq!(plain, "profile");
         assert_eq!(api_format, "chat");
+    }
+
+    fn insert_event(db: &Connection, id: &str, seq: i64, event_type: &str) -> rusqlite::Result<usize> {
+        db.execute(
+            "INSERT INTO run_events (id, run_id, session_id, seq, event_type, created_at)
+             VALUES (?1, 'run', 'session', ?2, ?3, 'now')",
+            rusqlite::params![id, seq, event_type],
+        )
+    }
+
+    #[test]
+    fn new_database_accepts_plan_and_permission_events() {
+        let db = Connection::open_in_memory().unwrap();
+        migrate(&db).unwrap();
+        insert_event(&db, "plan", 1, "plan").unwrap();
+        insert_event(&db, "permission", 2, "permission").unwrap();
+        assert!(insert_event(&db, "bogus", 3, "bogus").is_err());
+    }
+
+    #[test]
+    fn migrates_legacy_run_events_check_and_keeps_rows() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE run_events (
+               id TEXT PRIMARY KEY, run_id TEXT NOT NULL, session_id TEXT NOT NULL,
+               seq INTEGER NOT NULL,
+               event_type TEXT NOT NULL CHECK(event_type IN ('text', 'thinking', 'tool_use', 'tool_result', 'error')),
+               call_id TEXT, tool TEXT, content TEXT, input_json TEXT, output TEXT,
+               created_at TEXT NOT NULL, UNIQUE(run_id, seq)
+             );
+             INSERT INTO run_events (id, run_id, session_id, seq, event_type, content, created_at)
+             VALUES ('old', 'run', 'session', 1, 'text', '旧正文', 'now');",
+        )
+        .unwrap();
+        assert!(insert_event(&db, "plan", 2, "plan").is_err());
+
+        migrate(&db).unwrap();
+
+        let content: String = db
+            .query_row("SELECT content FROM run_events WHERE id='old'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(content, "旧正文");
+        insert_event(&db, "plan", 2, "plan").unwrap();
+        insert_event(&db, "permission", 3, "permission").unwrap();
+        assert!(insert_event(&db, "dup", 1, "text").is_err(), "UNIQUE(run_id, seq) 丢了");
+        let indexes: Vec<String> = db
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='run_events'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(indexes.iter().any(|name| name == "idx_run_events_run_seq"));
+        assert!(indexes.iter().any(|name| name == "idx_run_events_session"));
+        let foreign_keys: i64 = db
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+        migrate(&db).unwrap();
+    }
+
+    #[test]
+    fn automation_rebuild_restores_foreign_keys_and_keeps_triggers() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+               created_at TEXT NOT NULL, opened_at TEXT NOT NULL);
+             CREATE TABLE automations (
+               id TEXT PRIMARY KEY, name TEXT NOT NULL,
+               project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+               target_type TEXT NOT NULL, target_id TEXT NOT NULL, prompt TEXT NOT NULL,
+               trigger_type TEXT NOT NULL, interval_minutes INTEGER, event_name TEXT,
+               enabled INTEGER NOT NULL DEFAULT 1, last_run_at TEXT, created_at TEXT NOT NULL
+             );
+             CREATE TABLE automation_triggers (
+               id TEXT PRIMARY KEY,
+               automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+               kind TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, cron_expression TEXT,
+               timezone TEXT, next_run_at TEXT, last_fired_at TEXT, webhook_token TEXT UNIQUE,
+               signing_secret TEXT, event_name TEXT, created_at TEXT NOT NULL
+             );
+             INSERT INTO projects (id, name, created_at, opened_at) VALUES ('p', 'P', 'now', 'now');
+             INSERT INTO automations (id, name, project_id, target_type, target_id, prompt, trigger_type, created_at)
+             VALUES ('a', 'A', 'p', 'agent', 'miku', 'go', 'manual', 'now');
+             INSERT INTO automation_triggers (id, automation_id, kind, created_at)
+             VALUES ('t', 'a', 'schedule', 'now');",
+        )
+        .unwrap();
+
+        migrate(&db).unwrap();
+
+        let triggers: i64 = db
+            .query_row("SELECT COUNT(*) FROM automation_triggers", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(triggers, 1, "重建 automations 时级联删掉了触发器");
+        let foreign_keys: i64 = db
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+    }
+
+    #[test]
+    fn light_open_skips_migration_only_when_schema_is_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("multara.sqlite3");
+        {
+            let db = Connection::open(&path).unwrap();
+            db.execute_batch("CREATE TABLE legacy (id TEXT);").unwrap();
+        }
+        let db = super::open_file_light(&path).unwrap();
+        let version: i64 = db
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, super::SCHEMA_VERSION);
+        drop(db);
+        let db = super::open_file_light(&path).unwrap();
+        let miku: i64 = db
+            .query_row("SELECT COUNT(*) FROM agents WHERE id='miku'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(miku, 1);
     }
 }

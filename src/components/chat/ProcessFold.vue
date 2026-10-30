@@ -16,6 +16,7 @@ const props = defineProps<{
   items: TimelineItem[];
   running?: boolean;
   elapsedMs?: number | null;
+  runId?: string | null;
 }>();
 
 const store = useAppStore();
@@ -76,24 +77,24 @@ function nestedItems(children: TimelineBlock[]) {
         <ThinkingLine v-if="block.type === 'thinking'" :item="block.item" />
         <p v-else-if="block.type === 'error'" class="process-error">{{ errorText(block) }}</p>
         <PlanCard v-else-if="block.type === 'plan'" :todos="block.todos" />
-        <PermissionCard v-else-if="block.type === 'permission'" :item="block.item" />
+        <PermissionCard v-else-if="block.type === 'permission'" :item="block.item" :run-id="runId" />
         <ExploreGroup v-else-if="block.type === 'explore'" :items="block.items" />
         <template v-else-if="block.type === 'edit'">
           <FileDiffCard :item="block.item" />
           <div v-if="block.item.children?.length" class="process-nested">
-            <ProcessFold :items="nestedItems(block.item.children)" />
+            <ProcessFold :items="nestedItems(block.item.children)" :run-id="runId" />
           </div>
         </template>
         <template v-else-if="block.type === 'shell'">
           <ShellCard :item="block.item" />
           <div v-if="block.item.children?.length" class="process-nested">
-            <ProcessFold :items="nestedItems(block.item.children)" />
+            <ProcessFold :items="nestedItems(block.item.children)" :run-id="runId" />
           </div>
         </template>
         <template v-else>
           <ToolCallRow :item="block.item.use" :output="block.item.result?.output" />
           <div v-if="block.item.children?.length" class="process-nested">
-            <ProcessFold :items="nestedItems(block.item.children)" />
+            <ProcessFold :items="nestedItems(block.item.children)" :run-id="runId" />
           </div>
         </template>
       </template>
@@ -104,7 +105,7 @@ function nestedItems(children: TimelineBlock[]) {
       <ThinkingLine v-if="block.type === 'thinking'" :item="block.item" :running="running && index === blocks.length - 1" />
       <p v-else-if="block.type === 'error'" class="process-error">{{ errorText(block) }}</p>
       <PlanCard v-else-if="block.type === 'plan'" :todos="block.todos" />
-      <PermissionCard v-else-if="block.type === 'permission'" :item="block.item" />
+      <PermissionCard v-else-if="block.type === 'permission'" :item="block.item" :run-id="runId" />
       <ExploreGroup
         v-else-if="block.type === 'explore'"
         :items="block.items"
@@ -114,13 +115,13 @@ function nestedItems(children: TimelineBlock[]) {
       <template v-else-if="block.type === 'edit'">
         <FileDiffCard :item="block.item" />
         <div v-if="block.item.children?.length" class="process-nested">
-          <ProcessFold :items="nestedItems(block.item.children)" :running="running" />
+          <ProcessFold :items="nestedItems(block.item.children)" :running="running" :run-id="runId" />
         </div>
       </template>
       <template v-else-if="block.type === 'shell'">
         <ShellCard :item="block.item" />
         <div v-if="block.item.children?.length" class="process-nested">
-          <ProcessFold :items="nestedItems(block.item.children)" :running="running" />
+          <ProcessFold :items="nestedItems(block.item.children)" :running="running" :run-id="runId" />
         </div>
       </template>
       <template v-else>
@@ -130,7 +131,7 @@ function nestedItems(children: TimelineBlock[]) {
           :output="block.item.result?.output"
         />
         <div v-if="block.item.children?.length" class="process-nested">
-          <ProcessFold :items="nestedItems(block.item.children)" :running="running" />
+          <ProcessFold :items="nestedItems(block.item.children)" :running="running" :run-id="runId" />
         </div>
       </template>
     </template>

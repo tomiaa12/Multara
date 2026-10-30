@@ -130,6 +130,8 @@ pub fn prepare(
     Ok(result)
 }
 
+const MAX_DISCOVER_DIRECTORIES: usize = 100;
+
 pub fn discover(source_path: &str, git_command: &str) -> Result<Vec<WorkspaceCandidate>, String> {
     let root = Path::new(source_path)
         .canonicalize()
@@ -140,17 +142,22 @@ pub fn discover(source_path: &str, git_command: &str) -> Result<Vec<WorkspaceCan
     if find_git_root(&root, git_command).as_deref() == Some(root.as_path()) {
         return Ok(vec![candidate(&root, true, git_command)]);
     }
-    let mut candidates = fs::read_dir(&root)
+    let mut directories = fs::read_dir(&root)
         .map_err(|error| error.to_string())?
         .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let file_type = entry.file_type().ok()?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if !file_type.is_dir() || file_type.is_symlink() || name.starts_with('.') {
-                return None;
-            }
-            let path = entry.path().canonicalize().ok()?;
+        .filter(|entry| {
+            let visible = !entry.file_name().to_string_lossy().starts_with('.');
+            visible && entry.file_type().is_ok_and(|kind| kind.is_dir() && !kind.is_symlink())
+        })
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    // 每个子目录要起 2~3 个 git 进程，选到 ~/code 这类大目录时只看按名字排序的前若干个。
+    directories.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()));
+    directories.truncate(MAX_DISCOVER_DIRECTORIES);
+    let mut candidates = directories
+        .into_iter()
+        .filter_map(|path| {
+            let path = path.canonicalize().ok()?;
             let is_git = find_git_root(&path, git_command).as_deref() == Some(path.as_path());
             Some(candidate(&path, is_git, git_command))
         })
@@ -302,14 +309,7 @@ fn current_branch(path: &Path, git_command: &str) -> Option<String> {
 }
 
 fn git_cmd(git_command: &str) -> Command {
-    #[cfg_attr(not(windows), allow(unused_mut))]
-    let mut command = Command::new(git_command);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
-    command
+    crate::git::git_cmd(git_command)
 }
 
 fn create_worktree(
@@ -363,10 +363,8 @@ fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
         let file_type = entry.file_type().map_err(|error| error.to_string())?;
         let destination = target.join(entry.file_name());
         if file_type.is_symlink() {
-            return Err(format!(
-                "隔离复制暂不支持符号链接：{}",
-                entry.path().display()
-            ));
+            copy_symlink(&entry.path(), &destination)?;
+            continue;
         }
         if file_type.is_dir() {
             copy_directory(&entry.path(), &destination)?;
@@ -374,6 +372,18 @@ fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
             fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
         }
     }
+    Ok(())
+}
+
+/// 复制链接本身而不是跟随（如 `node_modules/.bin/*`）；Windows 建链接需要特权，直接跳过。
+fn copy_symlink(source: &Path, destination: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let link = fs::read_link(source).map_err(|error| error.to_string())?;
+        std::os::unix::fs::symlink(link, destination).map_err(|error| error.to_string())?;
+    }
+    #[cfg(not(unix))]
+    let _ = (source, destination);
     Ok(())
 }
 

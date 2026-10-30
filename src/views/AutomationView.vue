@@ -54,6 +54,7 @@ const squadTargets = computed(() =>
   })) ?? [],
 );
 const targets = computed(() => [...agentTargets.value, ...squadTargets.value]);
+const projectsById = computed(() => new Map((store.data?.projects ?? []).map((project) => [project.id, project])));
 const targetGroups = computed(() => [
   { label: t("automation.group.agent"), options: agentTargets.value },
   { label: t("automation.group.squad"), options: squadTargets.value },
@@ -137,7 +138,11 @@ async function save() {
 
 async function remove(item: Automation) {
   if (!window.confirm(t("automation.deleteConfirm", { name: item.name }))) return;
-  await store.deleteAutomation(item.id);
+  try {
+    await store.deleteAutomation(item.id);
+  } catch (cause) {
+    window.alert(cause instanceof Error ? cause.message : String(cause));
+  }
 }
 
 async function run(item: Automation) {
@@ -165,9 +170,13 @@ async function toggleHistory(item: Automation, forceOpen = false) {
     expandedId.value = null;
     return;
   }
-  histories[item.id] = await listAutomationRuns(item.id);
-  deliveries[item.id] = item.triggerType === "webhook" ? await listWebhookDeliveries(item.id) : [];
-  expandedId.value = item.id;
+  try {
+    histories[item.id] = await listAutomationRuns(item.id);
+    deliveries[item.id] = item.triggerType === "webhook" ? await listWebhookDeliveries(item.id) : [];
+    expandedId.value = item.id;
+  } catch (cause) {
+    window.alert(cause instanceof Error ? cause.message : String(cause));
+  }
 }
 
 function webhookUrl(item: Automation) {
@@ -221,7 +230,7 @@ function toggleWeekday(day: number) {
           <span class="automation-status" :class="{ enabled: item.enabled }" />
           <div class="grow">
             <strong>{{ item.name }}</strong>
-            <small>{{ triggerLabel(item) }}<template v-if="store.data?.projects.find((project) => project.id === item.projectId)"> · {{ store.data?.projects.find((project) => project.id === item.projectId)?.name }}</template></small>
+            <small>{{ triggerLabel(item) }}<template v-if="item.projectId && projectsById.get(item.projectId)"> · {{ projectsById.get(item.projectId)?.name }}</template></small>
             <p>{{ item.prompt }}</p>
             <div class="automation-times">
               <span>{{ t("automation.lastRun", { time: formatTime(item.lastRunAt) }) }}</span>

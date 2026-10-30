@@ -1,8 +1,13 @@
 use std::{
     collections::HashSet,
     fs,
-    path::{Path, PathBuf},
-    sync::Mutex,
+    io::{ErrorKind, Write},
+    path::{Component, Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+    time::{Duration, Instant},
 };
 
 use serde_json::{Map, Value};
@@ -18,6 +23,7 @@ const WORKSPACE_MCP_KEYS: &[(&str, &str)] = &[
     ("vscode", ".vscode/mcp.json"),
 ];
 
+#[derive(PartialEq)]
 struct WorkspaceRoot {
     id: String,
     name: String,
@@ -26,16 +32,42 @@ struct WorkspaceRoot {
 
 static WORKSPACES: Mutex<Vec<WorkspaceRoot>> = Mutex::new(Vec::new());
 
+/// CLI 可能在外部改配置，缓存只挡住短时间内的重复扫描；本模块的写操作会主动失效。
+const SCAN_CACHE_TTL: Duration = Duration::from_secs(2);
+static SCAN_CACHE: Mutex<Option<(Instant, Vec<GlobalResource>)>> = Mutex::new(None);
+static SCAN_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// 配置在读和写之间被别的程序改了，就基于新内容重做，最多重做这么多次。
+const UPDATE_SERVERS_ATTEMPTS: usize = 3;
+
+/// 导入 / 迁移 Skill 时复制目录的上限，防止误选仓库根目录把几 GB 复制进来。
+const SKILL_COPY_SKIP_DIRS: &[&str] = &[".git", "node_modules"];
+const SKILL_COPY_MAX_FILES: usize = 2_000;
+const SKILL_COPY_MAX_BYTES: u64 = 100 * 1024 * 1024;
+
+const GIT_CLONE_TIMEOUT: Duration = Duration::from_secs(120);
+
+pub fn invalidate_scan_cache() {
+    SCAN_GENERATION.fetch_add(1, Ordering::AcqRel);
+    if let Ok(mut cache) = SCAN_CACHE.lock() {
+        *cache = None;
+    }
+}
+
 /// 工作区来源的 owner 写成 `ws/<workspaceId>/<key>`，不含冒号，资源 ID 仍可按冒号拆分。
 pub fn set_workspace_roots(roots: Vec<(String, String, PathBuf)>) {
     let mut seen = HashSet::new();
-    let list = roots
+    let list: Vec<WorkspaceRoot> = roots
         .into_iter()
         .filter(|(_, _, path)| path.is_dir() && seen.insert(path.clone()))
         .map(|(id, name, path)| WorkspaceRoot { id, name, path })
         .collect();
-    if let Ok(mut current) = WORKSPACES.lock() {
+    let Ok(mut current) = WORKSPACES.lock() else {
+        return;
+    };
+    if *current != list {
         *current = list;
+        invalidate_scan_cache();
     }
 }
 
@@ -107,9 +139,34 @@ pub fn sources() -> Vec<ResourceSource> {
 }
 
 pub fn scan() -> Vec<GlobalResource> {
+    if let Some((_, resources)) = SCAN_CACHE
+        .lock()
+        .ok()
+        .and_then(|cache| cache.clone())
+        .filter(|(at, _)| at.elapsed() < SCAN_CACHE_TTL)
+    {
+        return resources;
+    }
+    let generation = SCAN_GENERATION.load(Ordering::Acquire);
+    let resources = scan_uncached();
+    if let Ok(mut cache) = SCAN_CACHE.lock() {
+        // 扫描期间有写操作时这份结果可能已过期，不放进缓存
+        if SCAN_GENERATION.load(Ordering::Acquire) == generation {
+            *cache = Some((Instant::now(), resources.clone()));
+        }
+    }
+    resources
+}
+
+fn find_resource(resource_id: &str) -> Option<GlobalResource> {
+    scan().into_iter().find(|resource| resource.id == resource_id)
+}
+
+fn scan_uncached() -> Vec<GlobalResource> {
     let mut resources = Vec::new();
+    let disabled = read_skill_state();
     for owner in skill_owners() {
-        scan_skills(&owner, &mut resources);
+        scan_skills(&owner, &disabled, &mut resources);
     }
     for owner in mcp_owners() {
         scan_mcp(&owner, &mut resources);
@@ -125,18 +182,17 @@ pub fn transfer(resource_id: &str, target_owner: &str, copy: bool) -> Result<(),
     if !known {
         return Err("目标工具不受支持".to_string());
     }
-    let resource = scan()
-        .into_iter()
-        .find(|resource| resource.id == resource_id)
-        .ok_or_else(|| "资源不存在，请重新扫描".to_string())?;
+    let resource = find_resource(resource_id).ok_or_else(|| "资源不存在，请重新扫描".to_string())?;
     if resource.owner == target_owner {
         return Err("来源与目标相同".to_string());
     }
-    match resource.kind {
+    let result = match resource.kind {
         "skill" => transfer_skill(&resource, target_owner, copy),
         "mcp" => transfer_mcp(&resource, target_owner, copy),
         _ => Err("未知资源类型".to_string()),
-    }
+    };
+    invalidate_scan_cache();
+    result
 }
 
 pub fn selected_mcp_config(resource_ids: &[String]) -> Result<Value, String> {
@@ -165,7 +221,7 @@ pub fn selected_mcp_config(resource_ids: &[String]) -> Result<Value, String> {
     )])))
 }
 
-fn scan_skills(owner: &str, output: &mut Vec<GlobalResource>) {
+fn scan_skills(owner: &str, disabled: &HashSet<String>, output: &mut Vec<GlobalResource>) {
     let Some(root) = skill_root(owner) else {
         return;
     };
@@ -178,7 +234,7 @@ fn scan_skills(owner: &str, output: &mut Vec<GlobalResource>) {
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if let Ok(resource) = skill_resource_at(owner, &name, &path) {
+        if let Ok(resource) = skill_resource_with_state(owner, &name, &path, disabled) {
             output.push(resource);
         }
     }
@@ -547,6 +603,7 @@ pub fn create_skill_from_markdown(owner: &str, fallback_name: &str, markdown: &s
 pub fn delete_skill(resource_id: &str) -> Result<(), String> {
     let path = skill_directory(resource_id)?;
     trash::delete(&path).map_err(|error| format!("移到回收站失败：{error}"))?;
+    invalidate_scan_cache();
     let mut state = read_skill_state();
     state.remove(resource_id);
     write_skill_state(&state)
@@ -762,14 +819,13 @@ fn skill_subdir_from_segments(parts: &[String]) -> Option<String> {
 fn percent_decode(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
+    let hex = |index: usize| bytes.get(index).and_then(|byte| (*byte as char).to_digit(16));
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&value[index + 1..index + 3], 16) {
-                out.push(byte);
-                index += 3;
-                continue;
-            }
+        if let (b'%', Some(high), Some(low)) = (bytes[index], hex(index + 1), hex(index + 2)) {
+            out.push((high * 16 + low) as u8);
+            index += 3;
+            continue;
         }
         out.push(bytes[index]);
         index += 1;
@@ -832,10 +888,21 @@ fn install_skill_dir(source: &Path, owner: &str) -> Result<GlobalResource, Strin
     skill_resource_at(owner, &folder, &target)
 }
 
+/// 新建 / 导入后返回资源，顺带让扫描缓存失效。
 fn skill_resource_at(owner: &str, name: &str, path: &Path) -> Result<GlobalResource, String> {
+    invalidate_scan_cache();
+    skill_resource_with_state(owner, name, path, &read_skill_state())
+}
+
+fn skill_resource_with_state(
+    owner: &str,
+    name: &str,
+    path: &Path,
+    disabled: &HashSet<String>,
+) -> Result<GlobalResource, String> {
     let id = format!("skill:{owner}:{name}");
     Ok(GlobalResource {
-        enabled: skill_enabled(&id),
+        enabled: !disabled.contains(&id),
         id,
         kind: "skill",
         owner: owner.to_string(),
@@ -872,7 +939,30 @@ fn parse_skill_name(content: &str) -> Option<String> {
     None
 }
 
+/// `preferred` 来自 URL 片段，必须是不含 `..`、绝对路径或空分量的相对路径；
+/// 解析出的目录（含符号链接）也必须仍在 `root` 之内。
 fn find_skill_dir(root: &Path, preferred: Option<&str>) -> Result<PathBuf, String> {
+    if preferred.is_some_and(|name| !is_plain_relative(name)) {
+        return Err("Skill 路径无效".to_string());
+    }
+    let found = locate_skill_dir(root, preferred)?;
+    let canonical_root = root.canonicalize().map_err(|error| error.to_string())?;
+    let canonical = found.canonicalize().map_err(|error| error.to_string())?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("Skill 路径超出了所选目录".to_string());
+    }
+    Ok(found)
+}
+
+fn is_plain_relative(name: &str) -> bool {
+    !name.is_empty()
+        && name.split(['/', '\\']).all(|part| !part.is_empty())
+        && Path::new(name)
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn locate_skill_dir(root: &Path, preferred: Option<&str>) -> Result<PathBuf, String> {
     if let Some(name) = preferred {
         for candidate in [
             root.join(name),
@@ -932,43 +1022,16 @@ fn collect_skill_dirs(directory: &Path, depth: usize, output: &mut Vec<PathBuf>)
 fn clone_github(git: &str, owner: &str, repo: &str, branch: &str, dest: &Path) -> Result<(), String> {
     let url = format!("https://github.com/{owner}/{repo}.git");
     let dest_text = dest.to_string_lossy().to_string();
-    let mut args = vec![
-        "clone".into(),
-        "--depth".into(),
-        "1".into(),
-        "--branch".into(),
-        branch.to_string(),
-        "--".into(),
-        url.clone(),
-        dest_text.clone(),
-    ];
-    let first = crate::process::command(git)
-        .args(&args)
-        .output()
-        .map_err(|error| format!("无法调用 git：{error}"))?;
-    if first.status.success() {
-        return Ok(());
-    }
-    if branch != "main" && branch != "master" {
-        return Err(format!(
-            "克隆 GitHub 仓库失败：{}",
-            String::from_utf8_lossy(&first.stderr).trim()
-        ));
+    let mut args = vec!["clone", "--depth", "1", "--branch", branch, "--", &url, &dest_text];
+    let first = crate::git::run_with_timeout(git, &dest_text, &args, GIT_CLONE_TIMEOUT, true);
+    if first.is_ok() || (branch != "main" && branch != "master") {
+        return first.map_err(|error| format!("克隆 GitHub 仓库失败：{error}"));
     }
     let _ = fs::remove_dir_all(dest);
     fs::create_dir_all(dest).map_err(|error| error.to_string())?;
-    args.retain(|item| item != "--branch" && item != branch);
-    let fallback = crate::process::command(git)
-        .args(&args)
-        .output()
-        .map_err(|error| format!("无法调用 git：{error}"))?;
-    if fallback.status.success() {
-        return Ok(());
-    }
-    Err(format!(
-        "克隆 GitHub 仓库失败：{}",
-        String::from_utf8_lossy(&fallback.stderr).trim()
-    ))
+    args.retain(|item| *item != "--branch" && *item != branch);
+    crate::git::run_with_timeout(git, &dest_text, &args, GIT_CLONE_TIMEOUT, true)
+        .map_err(|error| format!("克隆 GitHub 仓库失败：{error}"))
 }
 
 fn transfer_skill(resource: &GlobalResource, target_owner: &str, copy: bool) -> Result<(), String> {
@@ -1019,23 +1082,44 @@ fn read_mcp_entry(owner: &str, name: &str) -> Result<Value, String> {
 
 /// 读出某个来源的全部服务器交给 `change` 修改，再原子写回。Codex 是 TOML，其余是 JSON。
 /// 配置文件存在但解析失败时直接报错，不能当成空文件覆盖掉用户的其它配置。
+/// CLI 会在后台改写自己的配置（如 `~/.claude.json`），写回前再读一次，变了就基于新内容重做。
 fn update_servers(
     owner: &str,
-    change: impl FnOnce(&mut Map<String, Value>) -> Result<(), String>,
+    mut change: impl FnMut(&mut Map<String, Value>) -> Result<(), String>,
 ) -> Result<(), String> {
     let path = mcp_path(owner).ok_or_else(|| "这个来源不支持 MCP".to_string())?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
+    for _ in 0..UPDATE_SERVERS_ATTEMPTS {
+        let original = read_existing(&path)?;
+        let output = apply_servers_change(owner, &path, original.as_deref(), &mut change)?;
+        if read_existing(&path)? == original {
+            return atomic_write(&path, &output);
+        }
+    }
+    Err("配置文件正在被其它程序修改，请稍后再试".to_string())
+}
+
+fn read_existing(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn apply_servers_change(
+    owner: &str,
+    path: &Path,
+    original: Option<&str>,
+    change: &mut impl FnMut(&mut Map<String, Value>) -> Result<(), String>,
+) -> Result<String, String> {
     if uses_toml_mcp_servers_map(owner) {
-        let mut table = if path.exists() {
-            fs::read_to_string(&path)
-                .map_err(|error| error.to_string())?
-                .parse::<toml::Table>()
-                .map_err(|error| format!("配置不是有效的 TOML：{error}"))?
-        } else {
-            toml::Table::new()
-        };
+        let mut table = original
+            .map(|text| text.parse::<toml::Table>().map_err(|error| format!("配置不是有效的 TOML：{error}")))
+            .transpose()?
+            .unwrap_or_default();
         let mut servers = match table.get("mcp_servers") {
             Some(value) => serde_json::to_value(value)
                 .map_err(|error| error.to_string())?
@@ -1049,16 +1133,17 @@ fn update_servers(
             "mcp_servers".to_string(),
             toml::Value::try_from(Value::Object(servers)).map_err(|error| error.to_string())?,
         );
-        return atomic_write(&path, &toml::to_string_pretty(&table).map_err(|error| error.to_string())?);
+        return toml::to_string_pretty(&table).map_err(|error| error.to_string());
     }
-    let mut root = if path.exists() {
-        read_json(&path).ok_or_else(|| format!("{} 不是有效的 JSON，请先修好再保存", path.display()))?
-    } else {
-        Value::Object(Map::new())
-    };
+    let mut root = original
+        .map(|text| {
+            parse_json_text(text).ok_or_else(|| format!("{} 不是有效的 JSON，请先修好再保存", path.display()))
+        })
+        .transpose()?
+        .unwrap_or_else(|| Value::Object(Map::new()));
     let servers = json_mcp_servers_mut(&mut root, owner)?;
     change(servers)?;
-    atomic_write(&path, &serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?)
+    serde_json::to_string_pretty(&root).map_err(|error| error.to_string())
 }
 
 fn json_mcp_servers_mut<'a>(root: &'a mut Value, owner: &str) -> Result<&'a mut Map<String, Value>, String> {
@@ -1095,7 +1180,7 @@ fn write_mcp_entry(owner: &str, name: &str, entry: Value) -> Result<(), String> 
         if servers.contains_key(name) {
             return Err(format!("目标已存在同名 MCP：{name}"));
         }
-        servers.insert(name.to_string(), entry);
+        servers.insert(name.to_string(), entry.clone());
         Ok(())
     })
 }
@@ -1142,7 +1227,7 @@ pub fn save_mcp(input: McpInput) -> Result<(), String> {
         for key in MANAGED_MCP_KEYS {
             entry.remove(*key);
         }
-        entry.extend(fields);
+        entry.extend(fields.clone());
         // Cursor 启停写 state.vscdb，不写 mcp.json
         if owner != "cursor" && !input.enabled {
             if codex {
@@ -1165,6 +1250,7 @@ pub fn save_mcp(input: McpInput) -> Result<(), String> {
             let _ = crate::cursor_mcp_state::set_user_server_enabled(&home_dir, &previous, true);
         }
     }
+    invalidate_scan_cache();
     Ok(())
 }
 
@@ -1202,7 +1288,8 @@ pub fn set_mcp_enabled(owner: &str, name: &str, enabled: bool) -> Result<(), Str
         let home_dir = home().ok_or_else(|| "找不到用户目录".to_string())?;
         // 确认配置里存在该服务器
         let _ = read_mcp_entry(&owner, name)?;
-        return crate::cursor_mcp_state::set_user_server_enabled(&home_dir, name, enabled);
+        return crate::cursor_mcp_state::set_user_server_enabled(&home_dir, name, enabled)
+            .inspect(|_| invalidate_scan_cache());
     }
     let codex = owner == "codex";
     update_servers(&owner, |servers| {
@@ -1374,18 +1461,14 @@ fn pairs_text(value: Option<&Value>, separator: &str) -> String {
 }
 
 pub fn resource_path(resource_id: &str) -> Result<PathBuf, String> {
-    let resource = scan()
-        .into_iter()
-        .find(|item| item.id == resource_id)
-        .ok_or_else(|| "资源不存在，请重新扫描".to_string())?;
+    let resource = find_resource(resource_id).ok_or_else(|| "资源不存在，请重新扫描".to_string())?;
     let path = PathBuf::from(&resource.source_path);
     Ok(if resource.kind == "skill" { path.join("SKILL.md") } else { path })
 }
 
 pub fn skill_directory(resource_id: &str) -> Result<PathBuf, String> {
-    let resource = scan()
-        .into_iter()
-        .find(|item| item.id == resource_id && item.kind == "skill")
+    let resource = find_resource(resource_id)
+        .filter(|item| item.kind == "skill")
         .ok_or_else(|| "技能不存在，请重新扫描".to_string())?;
     let path = PathBuf::from(&resource.source_path);
     if !path.is_dir() {
@@ -1508,10 +1591,13 @@ fn fold_lines(lines: &[&str]) -> String {
 }
 
 fn read_json(path: &Path) -> Option<Value> {
-    let text = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text)
+    parse_json_text(&fs::read_to_string(path).ok()?)
+}
+
+fn parse_json_text(text: &str) -> Option<Value> {
+    serde_json::from_str(text)
         .ok()
-        .or_else(|| serde_json::from_str(&strip_jsonc(&text)).ok())
+        .or_else(|| serde_json::from_str(&strip_jsonc(text)).ok())
 }
 
 /// VS Code 的 mcp.json 允许注释和尾逗号，去掉后再按 JSON 解析。
@@ -1558,30 +1644,47 @@ fn strip_jsonc(text: &str) -> String {
     out
 }
 
+/// 同目录临时文件写入并 fsync，沿用原文件权限后一次 rename 覆盖，原路径任何时刻都存在。
+/// 目标是符号链接（如 stow 管理的点文件）时写到链接指向的真实文件，链接本身保留。
 fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
-    let temporary = path.with_extension("multara.tmp");
-    let backup = path.with_extension("multara.backup");
-    fs::write(&temporary, content).map_err(|error| error.to_string())?;
-    if backup.exists() {
-        fs::remove_file(&backup).map_err(|error| error.to_string())?;
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let parent = target.parent().ok_or_else(|| "配置路径无效".to_string())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    temporary
+        .write_all(content.as_bytes())
+        .map_err(|error| error.to_string())?;
+    if let Ok(metadata) = fs::metadata(&target) {
+        fs::set_permissions(temporary.path(), metadata.permissions()).map_err(|error| error.to_string())?;
     }
-    if path.exists() {
-        fs::rename(path, &backup).map_err(|error| error.to_string())?;
+    temporary.as_file().sync_all().map_err(|error| error.to_string())?;
+    temporary
+        .persist(&target)
+        .map_err(|error| error.error.to_string())?;
+    #[cfg(unix)]
+    if let Ok(directory) = fs::File::open(parent) {
+        let _ = directory.sync_all();
     }
-    fs::rename(&temporary, path).map_err(|error| {
-        let _ = fs::remove_file(&temporary);
-        if backup.exists() {
-            let _ = fs::rename(&backup, path);
-        }
-        error.to_string()
-    })?;
-    if backup.exists() {
-        fs::remove_file(backup).map_err(|error| error.to_string())?;
-    }
+    invalidate_scan_cache();
     Ok(())
 }
 
+#[derive(Default)]
+struct CopyBudget {
+    files: usize,
+    bytes: u64,
+}
+
+/// 失败时删掉这次新建的目标目录，不留半个 Skill。
 fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
+    let created = !target.exists();
+    copy_tree(source, target, &mut CopyBudget::default()).inspect_err(|_| {
+        if created {
+            let _ = fs::remove_dir_all(target);
+        }
+    })
+}
+
+fn copy_tree(source: &Path, target: &Path, budget: &mut CopyBudget) -> Result<(), String> {
     fs::create_dir_all(target).map_err(|error| error.to_string())?;
     for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -1589,10 +1692,22 @@ fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
         if file_type.is_symlink() {
             return Err("Skill 包含符号链接，已阻止迁移".to_string());
         }
-        let destination = target.join(entry.file_name());
+        let file_name = entry.file_name();
+        if file_type.is_dir() && SKILL_COPY_SKIP_DIRS.iter().any(|skip| file_name == *skip) {
+            continue;
+        }
+        let destination = target.join(&file_name);
         if file_type.is_dir() {
-            copy_directory(&entry.path(), &destination)?;
+            copy_tree(&entry.path(), &destination, budget)?;
         } else if file_type.is_file() {
+            budget.files += 1;
+            budget.bytes += entry.metadata().map_err(|error| error.to_string())?.len();
+            if budget.files > SKILL_COPY_MAX_FILES || budget.bytes > SKILL_COPY_MAX_BYTES {
+                return Err(format!(
+                    "Skill 目录过大（超过 {SKILL_COPY_MAX_FILES} 个文件或 {} MB），请选择具体的 Skill 目录",
+                    SKILL_COPY_MAX_BYTES / 1024 / 1024
+                ));
+            }
             fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
         }
     }
@@ -1628,6 +1743,49 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "after");
         assert!(!path.with_extension("multara.tmp").exists());
         assert!(!path.with_extension("multara.backup").exists());
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_keeps_mode_and_follows_symlink() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real.json");
+        let link = temp.path().join("link.json");
+        fs::write(&real, "before").unwrap();
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap();
+        symlink(&real, &link).unwrap();
+        atomic_write(&link, "after").unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&real).unwrap(), "after");
+        assert_eq!(fs::metadata(&real).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn copy_skips_heavy_dirs() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        fs::create_dir_all(source.join("node_modules/x")).unwrap();
+        fs::create_dir_all(source.join(".git")).unwrap();
+        fs::write(source.join("SKILL.md"), "# Test").unwrap();
+        fs::write(source.join("node_modules/x/a.js"), "a").unwrap();
+        copy_directory(&source, &target).unwrap();
+        assert!(target.join("SKILL.md").is_file());
+        assert!(!target.join("node_modules").exists());
+        assert!(!target.join(".git").exists());
+    }
+
+    #[test]
+    fn rejects_escaping_skill_names() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(temp.path().join("SKILL.md"), "---\nname: outside\n---\n").unwrap();
+        for name in ["..", "../", "a/../..", "/etc", "a//b", ""] {
+            assert!(super::find_skill_dir(&root, Some(name)).is_err(), "{name}");
+        }
     }
 
     #[test]

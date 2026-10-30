@@ -1,4 +1,4 @@
-import type { ComputedRef, InjectionKey } from "vue";
+import { toRaw, type ComputedRef, type InjectionKey } from "vue";
 import type { ChatMessage } from "../../domain/types";
 
 /** 没有模型回传的 token 计数时，按约 4 个字符 1 token、20 万窗口估算。 */
@@ -26,15 +26,26 @@ export function formatTokenCount(tokens: number): string {
   return String(tokens);
 }
 
+type TimelineItem = NonNullable<ChatMessage["timeline"]>[number];
+
+// 流式更新整项替换时间线条目（见 stores/app.ts），所以按条目对象缓存字符数，只有新换上的那条需要重算。
+const timelineItemChars = new WeakMap<TimelineItem, number>();
+
+function itemChars(item: TimelineItem): number {
+  const raw = toRaw(item);
+  const cached = timelineItemChars.get(raw);
+  if (cached !== undefined) return cached;
+  const chars = (raw.content?.length ?? 0) + (raw.output?.length ?? 0);
+  timelineItemChars.set(raw, chars);
+  return chars;
+}
+
 export function estimateContextUsage(messages: ChatMessage[]): ContextUsage {
   let conversationChars = 0;
   let attachmentBytes = 0;
   for (const message of messages) {
     conversationChars += message.content.length;
-    for (const item of message.timeline ?? []) {
-      conversationChars += item.content?.length ?? 0;
-      conversationChars += item.output?.length ?? 0;
-    }
+    for (const item of message.timeline ?? []) conversationChars += itemChars(item);
     for (const attachment of message.attachments ?? []) {
       attachmentBytes += attachment.size;
       conversationChars += attachment.name.length;

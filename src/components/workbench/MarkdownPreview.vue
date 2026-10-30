@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import DOMPurify from "dompurify";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { marked } from "marked";
 import * as backend from "../../services/backend";
+import { sanitizeMarkdownPreview } from "./markdown-preview-sanitize";
+
+const RENDER_DELAY_MS = 150;
 
 const props = defineProps<{
   content: string;
@@ -13,11 +15,20 @@ const emit = defineEmits<{
   open: [path: string];
 }>();
 
+const source = ref(props.content);
+let renderTimer = 0;
+
+watch(() => props.content, (content) => {
+  window.clearTimeout(renderTimer);
+  renderTimer = window.setTimeout(() => {
+    source.value = content;
+  }, RENDER_DELAY_MS);
+});
+
+onBeforeUnmount(() => window.clearTimeout(renderTimer));
+
 const html = computed(() =>
-  DOMPurify.sanitize(
-    marked.parse(props.content || "", { async: false, gfm: true, breaks: false }) as string,
-    { USE_PROFILES: { html: true } },
-  ),
+  sanitizeMarkdownPreview(marked.parse(source.value || "", { async: false, gfm: true, breaks: false }) as string),
 );
 
 function resolveRelative(href: string) {
@@ -28,9 +39,17 @@ function resolveRelative(href: string) {
   for (const segment of pathPart.split("/")) {
     if (!segment || segment === ".") continue;
     if (segment === "..") parts.pop();
-    else parts.push(decodeURIComponent(segment));
+    else parts.push(safeDecode(segment));
   }
   return parts.join("/");
+}
+
+function safeDecode(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 function onClick(event: MouseEvent) {

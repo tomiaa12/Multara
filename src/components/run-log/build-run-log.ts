@@ -379,9 +379,22 @@ export function stepSummary(step: RunLogStep): string {
   return exploreDetail(item);
 }
 
+const inputJsonCache = new WeakMap<object, string>();
+
+/** 工具入参在 payload 重建时通常是同一个对象，按对象缓存序列化结果，搜索按键时不必重复 stringify。 */
+function inputJson(input: unknown): string {
+  if (!input) return "";
+  if (typeof input !== "object") return JSON.stringify(input);
+  const cached = inputJsonCache.get(input);
+  if (cached !== undefined) return cached;
+  const text = JSON.stringify(input);
+  inputJsonCache.set(input, text);
+  return text;
+}
+
 export function stepHaystack(step: RunLogStep): string {
   if (step.kind !== "call") return (step.item.content ?? "").toLowerCase();
-  const input = step.call?.input ? JSON.stringify(step.call.input) : "";
+  const input = inputJson(step.call?.input);
   const output = (step.result?.output ?? step.result?.content ?? "").slice(0, 4000);
   return `${step.tool} ${input} ${output}`.toLowerCase();
 }

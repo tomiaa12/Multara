@@ -1,4 +1,7 @@
-use std::io::Read;
+use std::{
+    io::Read,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use tauri::{AppHandle, Manager};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
@@ -6,6 +9,18 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 use crate::{commands::process_automation_webhook, database::AppState, models::WebhookInput};
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
+/// 每个请求一个线程处理，同时在处理的请求超过这个数就直接回 503。
+/// tiny_http 不暴露底层 socket，没法给读请求体设超时；发完头不发体的客户端只会占住一个名额。
+const MAX_CONCURRENT_REQUESTS: usize = 8;
+static ACTIVE_REQUESTS: AtomicUsize = AtomicUsize::new(0);
+
+struct ActiveSlot;
+
+impl Drop for ActiveSlot {
+    fn drop(&mut self) {
+        ACTIVE_REQUESTS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 pub fn start(app: AppHandle) {
     let port = {
@@ -28,9 +43,25 @@ pub fn start(app: AppHandle) {
             return;
         };
         for request in server.incoming_requests() {
-            handle_request(request, &app);
+            if ACTIVE_REQUESTS.fetch_add(1, Ordering::AcqRel) >= MAX_CONCURRENT_REQUESTS {
+                ACTIVE_REQUESTS.fetch_sub(1, Ordering::AcqRel);
+                respond(request, 503, &error_body("busy"));
+                continue;
+            }
+            let slot = ActiveSlot;
+            let app = app.clone();
+            let _ = std::thread::Builder::new()
+                .name("multara-webhook-request".into())
+                .spawn(move || {
+                    let _slot = slot;
+                    handle_request(request, &app);
+                });
         }
     });
+}
+
+fn error_body(error: &str) -> String {
+    serde_json::json!({ "error": error }).to_string()
 }
 
 fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
@@ -50,6 +81,10 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
     let event = request_header(&request, "X-Multara-Event");
     let signature = request_header(&request, "X-Multara-Signature");
     let dedupe_key = request_header(&request, "X-Multara-Delivery");
+    if request.body_length().is_some_and(|length| length > MAX_BODY_BYTES) {
+        respond(request, 413, r#"{"error":"payload_too_large"}"#);
+        return;
+    }
     let mut body = Vec::new();
     if request
         .as_reader()
@@ -83,7 +118,7 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
         signature,
     };
     match process_automation_webhook(input, app) {
-        Ok(status) => respond(request, 202, &format!(r#"{{"status":"{status}"}}"#)),
+        Ok(status) => respond(request, 202, &serde_json::json!({ "status": status }).to_string()),
         Err(error) => respond(
             request,
             if error.contains("签名") || error.contains("token") {
@@ -91,10 +126,7 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
             } else {
                 400
             },
-            &format!(
-                r#"{{"error":"{}"}}"#,
-                error.replace('\\', "\\\\").replace('"', "\\\"")
-            ),
+            &error_body(&error),
         ),
     }
 }

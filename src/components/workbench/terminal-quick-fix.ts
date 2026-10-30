@@ -6,6 +6,8 @@ export type TerminalQuickFix =
   | { kind: "openUrl"; label: string; url: string };
 
 const MAX_FIXES = 5;
+/** 引用名、分支名来自终端输出，会被拼进 shell 命令执行，只放行不含 shell 元字符的名字。 */
+const SAFE_REF = /^[\w./-]+$/;
 
 /** 根据刚结束的命令与输出给出修复建议，规则与 VS Code 内置的终端快速修复对应。 */
 export function detectQuickFixes(command: string, output: string, exitCode: number | undefined): TerminalQuickFix[] {
@@ -17,7 +19,7 @@ export function detectQuickFixes(command: string, output: string, exitCode: numb
   const trimmed = command.trim();
 
   const upstream = output.match(/git push --set-upstream (\S+) (\S+)/);
-  if (upstream) {
+  if (upstream && SAFE_REF.test(upstream[1]!) && SAFE_REF.test(upstream[2]!)) {
     const cmd = `git push --set-upstream ${upstream[1]} ${upstream[2]}`;
     push({ kind: "run", label: t("terminal.fix.run", { command: cmd }), command: cmd });
   }
@@ -32,7 +34,7 @@ export function detectQuickFixes(command: string, output: string, exitCode: numb
   }
 
   const pathspec = output.match(/error: pathspec '([^']+)' did not match any file\(s\) known to git/);
-  if (pathspec && /^git\s+(checkout|switch)\b/.test(trimmed)) {
+  if (pathspec && SAFE_REF.test(pathspec[1]!) && /^git\s+(checkout|switch)\b/.test(trimmed)) {
     const verb = /^git\s+switch\b/.test(trimmed) ? "switch -c" : "checkout -b";
     const branchCmd = `git ${verb} ${pathspec[1]}`;
     push({ kind: "run", label: t("terminal.fix.createBranch", { command: branchCmd }), command: branchCmd });

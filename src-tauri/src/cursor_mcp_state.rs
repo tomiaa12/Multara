@@ -4,11 +4,14 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
-use rusqlite::{params, types::ValueRef, Connection, OptionalExtension};
+use rusqlite::{params, types::ValueRef, Connection, OptionalExtension, TransactionBehavior};
 
 const DISABLED_KEY: &str = "cursor/disabledGlobalMcpServers";
+/// Cursor 正在用这个库，等锁太久会卡住调用方（可能在主线程），超时就放弃。
+const STATE_DB_BUSY_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Cursor 用户级 mcp.json 里的服务器，在 state 里对应 `user-<name>`。
 pub fn user_server_id(name: &str) -> String {
@@ -46,6 +49,9 @@ fn disabled_global_ids_at(path: &Path) -> HashSet<String> {
     ) else {
         return HashSet::new();
     };
+    if conn.busy_timeout(STATE_DB_BUSY_TIMEOUT).is_err() {
+        return HashSet::new();
+    }
     read_disabled_list(&conn).unwrap_or_default().into_iter().collect()
 }
 
@@ -53,7 +59,13 @@ fn set_user_server_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<
     if !path.is_file() {
         return Err("找不到 Cursor 状态库（state.vscdb）".to_string());
     }
-    let conn = Connection::open(path).map_err(|error| format!("打开 Cursor 状态库失败：{error}"))?;
+    let mut conn = Connection::open(path).map_err(|error| format!("打开 Cursor 状态库失败：{error}"))?;
+    conn.busy_timeout(STATE_DB_BUSY_TIMEOUT)
+        .map_err(|error| error.to_string())?;
+    // 读和写放在同一个写事务里，中间不会插进 Cursor 的写入
+    let conn = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| format!("Cursor 状态库正忙，请稍后再试：{error}"))?;
     let id = user_server_id(name);
     let mut list = read_disabled_list(&conn).unwrap_or_default();
     let changed = if enabled {
@@ -76,7 +88,7 @@ fn set_user_server_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<
         params![DISABLED_KEY, value],
     )
     .map_err(|error| format!("写入 Cursor MCP 启停失败：{error}"))?;
-    Ok(())
+    conn.commit().map_err(|error| format!("写入 Cursor MCP 启停失败：{error}"))
 }
 
 fn read_disabled_list(conn: &Connection) -> Result<Vec<String>, String> {

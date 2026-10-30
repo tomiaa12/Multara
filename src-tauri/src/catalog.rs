@@ -145,7 +145,10 @@ fn mcp_install_json(server: &Value, fallback_name: &str) -> Option<String> {
         .and_then(Value::as_array)
         .and_then(|items| items.first())
     {
-        let url = remote.get("url").and_then(Value::as_str)?;
+        let url = remote
+            .get("url")
+            .and_then(Value::as_str)
+            .filter(|url| url.starts_with("https://") || url.starts_with("http://"))?;
         let type_name = match remote.get("type").and_then(Value::as_str).unwrap_or("http") {
             "sse" => "sse",
             _ => "http",
@@ -156,7 +159,11 @@ fn mcp_install_json(server: &Value, fallback_name: &str) -> Option<String> {
         .ok();
     }
     let package = server.get("packages").and_then(Value::as_array)?.first()?;
-    let identifier = package.get("identifier").and_then(Value::as_str)?;
+    // 标识符由第三方注册表提供，会原样进 `npx` / `uvx` 的参数，形如 `--call=…` 的会被当成选项执行
+    let identifier = package
+        .get("identifier")
+        .and_then(Value::as_str)
+        .filter(|identifier| !identifier.is_empty() && !identifier.starts_with('-') && !identifier.contains(char::is_whitespace))?;
     let registry = package.get("registryType").and_then(Value::as_str).unwrap_or("npm");
     let (command, args): (&str, Vec<&str>) = match registry {
         "pypi" | "python" => ("uvx", vec![identifier]),
@@ -255,6 +262,17 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert!(items[0].install.contains("npx"));
         assert!(items[1].install.contains("https://example.com/mcp"));
+    }
+
+    #[test]
+    fn skips_option_like_registry_packages() {
+        let items = parse_mcp_registry(&json!({
+            "servers": [
+                { "server": { "name": "a/evil", "packages": [{ "identifier": "--call=touch x" }] }},
+                { "server": { "name": "a/file", "remotes": [{ "url": "file:///etc/passwd" }] }}
+            ]
+        }));
+        assert!(items.is_empty());
     }
 
     #[test]

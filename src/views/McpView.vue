@@ -388,10 +388,16 @@ onMounted(() => {
   });
 });
 
-watch(servers, (rows) => {
-  if (!mcpTools.ready) return;
-  mcpTools.refreshInBackground(rows);
-});
+// 资源数组整体替换时内容往往没变；只在服务器配置真的变化时才排后台刷新（会起 stdio 进程）
+watch(
+  () => servers.value
+    .map((item) => [item.id, item.enabled, item.transport, item.summary, item.configStatus].join("\u0000"))
+    .join("\n"),
+  () => {
+    if (!mcpTools.ready) return;
+    mcpTools.refreshInBackground(servers.value);
+  },
+);
 
 async function refreshList() {
   refreshing.value = true;
