@@ -1,7 +1,20 @@
 import type { TimelineItem } from "../../domain/types";
 import { resolveLocale, translate, type MessageKey } from "../../i18n";
 
-export type ToolKind = "read" | "search" | "browser" | "edit" | "write" | "shell" | "other";
+export type ToolKind =
+  | "read"
+  | "search"
+  | "browser"
+  | "edit"
+  | "write"
+  | "shell"
+  | "task"
+  | "todo"
+  | "delete"
+  | "image"
+  | "question"
+  | "mcp"
+  | "other";
 
 export interface DiffLine {
   kind: "context" | "add" | "del";
@@ -66,8 +79,15 @@ export function inputRecord(item: TimelineItem | undefined): Record<string, unkn
 }
 
 export function toolKind(name: string | null | undefined): ToolKind {
-  const n = (name ?? "").toLowerCase().replaceAll(/[^a-z]/g, "");
+  const raw = (name ?? "").trim();
+  const n = raw.toLowerCase().replaceAll(/[^a-z]/g, "");
   if (!n) return "other";
+  if (raw.toLowerCase().startsWith("mcp_") || n.startsWith("mcp")) return "mcp";
+  if (n === "task" || n.includes("subagent") || n === "tasktool") return "task";
+  if (n === "todowrite" || n === "todoread" || (n.includes("todo") && n.includes("write"))) return "todo";
+  if (["delete", "deletefile", "removefile"].some((tool) => n === tool || n.includes(tool))) return "delete";
+  if (n.includes("generateimage") || n.includes("imagegen") || (n.includes("image") && n.includes("generat"))) return "image";
+  if (n.includes("askquestion") || n === "question" || n.includes("askuser")) return "question";
   if (["read", "readfile", "readpath", "viewfile"].some((tool) => n.includes(tool))) return "read";
   if (["grep", "glob", "search", "listdir", "listdirectory", "find", "explore", "semanticsearch"].some((tool) => n.includes(tool))) {
     return "search";
@@ -296,25 +316,104 @@ function formatLiveElapsed(seconds: number, language?: string): string {
     : translate("chat.elapsedMin", language, { n: minutes });
 }
 
-function liveStageKey(items: TimelineItem[], status?: "queued" | "running" | "sending" | null): MessageKey {
-  if (status === "queued") return "chat.queued";
-  let latest: TimelineItem | undefined;
+function latestWorkItem(items: TimelineItem[]): TimelineItem | undefined {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
     if (!item || item.eventType === "error" || item.eventType === "tool_result") continue;
-    latest = item;
-    break;
+    return item;
   }
-  if (!latest) return status === "sending" ? "chat.waiting" : "chat.thinking";
-  if (latest.eventType === "text") return "chat.typing";
-  if (latest.eventType === "thinking") return "chat.thinking";
-  const kind = toolKind(inferToolName(latest) || latest.tool);
+  return undefined;
+}
+
+function liveStageKeyForKind(kind: ToolKind): MessageKey {
   if (kind === "shell") return "chat.runningCommand";
   if (kind === "read") return "chat.readingFiles";
   if (kind === "search") return "chat.searchingCode";
   if (kind === "edit" || kind === "write") return "chat.makingEdits";
   if (kind === "browser") return "chat.searchingWeb";
+  if (kind === "task") return "chat.callingAgent";
+  if (kind === "todo") return "chat.updatingPlan";
+  if (kind === "delete") return "chat.deletingFile";
+  if (kind === "image") return "chat.generatingImage";
+  if (kind === "question") return "chat.askingQuestion";
+  if (kind === "mcp") return "chat.callingMcp";
   return "chat.working";
+}
+
+function liveStageKey(items: TimelineItem[], status?: "queued" | "running" | "sending" | null): MessageKey {
+  if (status === "queued") return "chat.queued";
+  const latest = latestWorkItem(items);
+  if (!latest) return status === "sending" ? "chat.waiting" : "chat.thinking";
+  if (latest.eventType === "text") return "chat.typing";
+  if (latest.eventType === "thinking") return "chat.thinking";
+  return liveStageKeyForKind(toolKind(inferToolName(latest) || latest.tool));
+}
+
+const LIVE_DETAIL_MAX = 40;
+
+function truncateLiveDetail(text: string): string {
+  const one = text.trim().replace(/\s+/g, " ");
+  if (!one) return "";
+  if (one.length <= LIVE_DETAIL_MAX) return one;
+  return `${one.slice(0, LIVE_DETAIL_MAX - 1)}…`;
+}
+
+function activeTodoLabel(input: Record<string, unknown>): string {
+  const todos = input.todos;
+  if (!Array.isArray(todos)) return "";
+  const rows = todos.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object");
+  const active = rows.find((row) => String(row.status ?? "") === "in_progress")
+    ?? rows.find((row) => String(row.status ?? "") === "pending")
+    ?? rows[0];
+  if (!active) return "";
+  if (typeof active.content === "string" && active.content.trim()) return active.content.trim();
+  if (typeof active.text === "string" && active.text.trim()) return active.text.trim();
+  return "";
+}
+
+function mcpToolShort(name: string): string {
+  const raw = name.replace(/^mcp[_-]?/i, "");
+  const parts = raw.split(/[_-]/).filter(Boolean);
+  if (parts.length >= 2) return parts.slice(-2).join("_");
+  return raw || name;
+}
+
+function mcpLiveDetail(item: TimelineItem): string {
+  const name = inferToolName(item) || item.tool || "MCP";
+  const short = mcpToolShort(name);
+  const hint = stringField(resolvedInput(item), [
+    "url", "path", "file_path", "filePath", "query", "title", "command", "pattern", "text", "selector",
+  ]);
+  return hint ? `${short} ${hint}` : short;
+}
+
+/** 运行中状态行后缀：命令标题 / 文件名 / 搜索词等 */
+function liveWorkDetail(item: TimelineItem | undefined): string {
+  if (!item || item.eventType !== "tool_use") return "";
+  const kind = toolKind(inferToolName(item) || item.tool);
+  if (kind === "shell") {
+    const title = toolDescription(item) || toolCommand(item).split("\n")[0] || "";
+    return truncateLiveDetail(title);
+  }
+  if (kind === "read" || kind === "edit" || kind === "write" || kind === "delete") {
+    return truncateLiveDetail(fileName(toolPath(item)));
+  }
+  if (kind === "search") return truncateLiveDetail(searchLabel(item));
+  if (kind === "browser") return truncateLiveDetail(browserLabel(item));
+  if (kind === "task") {
+    return truncateLiveDetail(
+      toolDescription(item) || stringField(resolvedInput(item), ["prompt", "description", "task"]),
+    );
+  }
+  if (kind === "todo") return truncateLiveDetail(activeTodoLabel(resolvedInput(item)));
+  if (kind === "image") {
+    return truncateLiveDetail(stringField(resolvedInput(item), ["prompt", "description", "text"]));
+  }
+  if (kind === "question") {
+    return truncateLiveDetail(stringField(resolvedInput(item), ["title", "question", "prompt", "text"]));
+  }
+  if (kind === "mcp") return truncateLiveDetail(mcpLiveDetail(item));
+  return truncateLiveDetail(toolDescription(item) || inferToolName(item));
 }
 
 function isEditItem(item: TimelineItem): boolean {
@@ -323,7 +422,7 @@ function isEditItem(item: TimelineItem): boolean {
 }
 
 function editFileLabel(name: string, language?: string): string {
-  return translate("chat.editingFile", language).replace("{file}", name);
+  return translate("chat.editingFile", language, { file: name });
 }
 
 // 还没有结果的修改都算正在进行。同一轮可以同时改多个文件，每个文件一条状态。
@@ -369,7 +468,9 @@ export function liveWorkParts(
     const names = pending.length ? pending : [latestEditName(items)].filter(Boolean);
     if (names.length) return names.map((name) => ({ label: editFileLabel(name, options?.language), elapsed }));
   }
-  return [{ label: translate(stage, options?.language), elapsed }];
+  const base = translate(stage, options?.language);
+  const detail = liveWorkDetail(latestWorkItem(items));
+  return [{ label: detail ? `${base} ${detail}` : base, elapsed }];
 }
 
 export function liveWorkLabels(
