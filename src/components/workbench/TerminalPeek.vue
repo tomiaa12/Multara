@@ -69,9 +69,11 @@ onBeforeUnmount(() => {
       <span v-if="ports.length">{{ formatTerminalPorts(ports) }}</span>
       <div class="terminal-peek-actions">
         <button type="button" @click="emit('openWorkbench')">工作台</button>
-        <button type="button" title="关闭" @click="emit('close')">
-          <Codicon name="close" :size="14" />
-        </button>
+        <UiTooltip content="关闭">
+          <button type="button" @click="emit('close')">
+            <Codicon name="close" :size="14" />
+          </button>
+        </UiTooltip>
       </div>
     </header>
     <div ref="host" class="terminal-body terminal-peek-body" />

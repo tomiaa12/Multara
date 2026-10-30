@@ -81,7 +81,7 @@ function onInput() {
       <UiButton
         variant="ghost"
         size="icon"
-        :title="scmBusyTitle(busy, `ai:${workspaceId}`, 'AI 生成提交信息')"
+        :tip="scmBusyTitle(busy, `ai:${workspaceId}`, 'AI 生成提交信息')"
         :disabled="Boolean(busy)"
         @click="emit('generate')"
       >
@@ -91,7 +91,7 @@ function onInput() {
       <UiButton
         variant="ghost"
         size="icon"
-        title="配置提交信息生成规则"
+        tip="配置提交信息生成规则"
         @click="emit('settings')"
       >
         <Codicon name="gear" />
@@ -100,7 +100,7 @@ function onInput() {
     <div class="scm-commit-split">
       <UiButton
         class="scm-commit-go"
-        :title="scmBusyTitle(busy, [`commit:${workspaceId}`, `push:${workspaceId}`, `sync:${workspaceId}`], primaryLabel())"
+        :tip="scmBusyTitle(busy, [`commit:${workspaceId}`, `push:${workspaceId}`, `sync:${workspaceId}`], primaryLabel())"
         :disabled="repoBusy || !canPrimary"
         @click="emit('submit')"
       >
@@ -115,7 +115,7 @@ function onInput() {
       <UiButton
         v-if="action === 'commit'"
         class="scm-commit-more"
-        :title="scmBusyTitle(busy, `commit:${workspaceId}`, '更多提交操作')"
+        :tip="scmBusyTitle(busy, `commit:${workspaceId}`, '更多提交操作')"
         :disabled="repoBusy || !canCommit"
         @click="emit('menu', $event)"
       >

@@ -4363,6 +4363,9 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   margin-left: auto;
   align-items: center;
 }
+.ui-pane-actions .ds-tooltip-trigger {
+  display: inline-flex;
+}
 .ui-pane:hover > .ui-pane-header .ui-pane-actions,
 .ui-pane:focus-within > .ui-pane-header .ui-pane-actions,
 .ui-pane-header.is-actions-visible .ui-pane-actions {
@@ -4383,6 +4386,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   padding: var(--spacing-2) var(--spacing-4) var(--spacing-2) 22px;
   color: var(--color-text-secondary);
   font-size: var(--font-size-md);
+}
+.ui-pane .ds-tooltip-trigger:has(> .ui-pane-item) {
+  display: block;
+  width: 100%;
+  max-width: none;
 }
 .ui-pane-item {
   display: flex;
@@ -4572,6 +4580,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .scm-history {
   min-width: 0;
   max-width: 100%;
+}
+.scm-history > .ds-tooltip-trigger {
+  display: block;
+  width: 100%;
+  max-width: none;
 }
 .scm-history-row {
   display: flex;
@@ -5045,7 +5058,18 @@ body.is-dragging-workspace-file * {
 .file-tree .tree-entry .tree-name {
   min-width: 0;
 }
-.file-tree .tree-entry > .tree-symlink {
+.file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-name) {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+.file-tree .tree-entry > .ds-tooltip-trigger > .tree-name {
+  flex: 1;
+  min-width: 0;
+}
+.file-tree .tree-entry > .tree-symlink,
+.file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-symlink) {
   display: inline-flex;
   flex: 0 0 auto;
   margin-left: auto;
@@ -5053,7 +5077,9 @@ body.is-dragging-workspace-file * {
   color: var(--color-text-secondary);
   pointer-events: auto;
 }
-.tree-symlink + .tree-git-badge {
+.tree-symlink + .tree-git-badge,
+.ds-tooltip-trigger:has(> .tree-symlink) + .ds-tooltip-trigger:has(> .tree-git-badge),
+.ds-tooltip-trigger:has(> .tree-symlink) + .tree-git-badge {
   margin-left: 0;
 }
 .file-tree button.git-modified,
@@ -9630,6 +9656,18 @@ button.runtime-key-toggle:hover {
   height: 168px;
   margin-top: var(--spacing-4);
 }
+.usage-chart > .ds-tooltip-trigger {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  max-width: none;
+}
+.usage-chart > .ds-tooltip-trigger > .usage-bar {
+  width: 100%;
+  flex: 1;
+}
 .usage-bar {
   display: flex;
   flex: 1 1 0;
@@ -10969,6 +11007,7 @@ label.settings-row:hover {
   padding: 0 6px;
 }
 .search-toolbar button,
+.search-toolbar .ui-button,
 .search-outside,
 .search-details-bar button,
 .search-pattern-input button,
@@ -10986,6 +11025,7 @@ label.settings-row:hover {
   color: inherit;
 }
 .search-toolbar button,
+.search-toolbar .ui-button,
 .search-outside,
 .search-details-bar button,
 .search-pattern-input button,
@@ -10998,11 +11038,13 @@ label.settings-row:hover {
   font-size: var(--font-size-xs);
 }
 .search-toolbar button:hover,
+.search-toolbar .ui-button:hover,
 .search-outside:hover,
 .search-details-bar button:hover,
 .search-pattern-input button:hover,
 .search-input-actions button:hover,
 .search-toolbar button:disabled,
+.search-toolbar .ui-button:disabled,
 .search-outside:disabled {
   background: var(--color-surface-emphasis);
 }
@@ -11012,8 +11054,12 @@ label.settings-row:hover {
   color: var(--color-text-strong);
 }
 .search-toolbar button:disabled,
+.search-toolbar .ui-button:disabled,
 .search-outside:disabled {
   opacity: 0.4;
+}
+.search-toolbar .ds-tooltip-trigger {
+  display: inline-flex;
 }
 .search-widget { padding: 0 12px 0 2px; }
 .search-row { display: flex; align-items: center; }
@@ -11197,6 +11243,11 @@ body.is-resizing-row * {
   background: var(--color-surface);
 }
 .bottom-panel-tabs, .bottom-panel-actions { display: flex; align-items: center; gap: var(--spacing-0-5); min-width: 0; }
+.bottom-panel-tabs > .ds-tooltip-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: none;
+}
 .bottom-panel-tabs {
   flex: 1;
   flex-wrap: nowrap;
@@ -11878,9 +11929,20 @@ body.is-dragging-terminal-tab * {
   border-radius: var(--radius-xs);
   background: rgb(255 255 255 / 6%);
 }
-.run-log-seg {
+.run-log-seg-host {
   position: absolute;
   inset-block: 0;
+}
+.run-log-seg-host > .ds-tooltip-trigger {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+.run-log-seg {
+  display: block;
+  width: 100%;
+  height: 100%;
   border: 0;
   border-radius: var(--radius-xs);
   padding: 0;

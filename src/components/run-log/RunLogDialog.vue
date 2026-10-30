@@ -332,17 +332,21 @@ async function copyTranscript() {
           </p>
           <p v-if="payload.error" class="run-log-error">{{ payload.error }}</p>
         </div>
-        <button type="button" class="run-log-close" :title="t('common.close')" :aria-label="t('common.close')" @click="emit('close')">
-          <X :size="16" />
-        </button>
+        <UiTooltip :content="t('common.close')">
+          <button type="button" class="run-log-close" :aria-label="t('common.close')" @click="emit('close')">
+            <X :size="16" />
+          </button>
+        </UiTooltip>
       </header>
 
       <div v-if="outcome" class="run-log-outcome">
         <span class="run-log-outcome-label">{{ t("runLog.outcome") }}</span>
-        <span v-if="outcome.paths.length" class="run-log-chip" :title="outcome.paths.join('\n')">
-          <FilePen :size="12" />
-          {{ t("runLog.filesCount", { n: outcome.paths.length }) }}
-        </span>
+        <UiTooltip v-if="outcome.paths.length" :content="outcome.paths.join('\n')">
+          <span class="run-log-chip">
+            <FilePen :size="12" />
+            {{ t("runLog.filesCount", { n: outcome.paths.length }) }}
+          </span>
+        </UiTooltip>
         <span v-if="outcome.commandCount" class="run-log-chip">
           <Terminal :size="12" />
           {{ t("runLog.commandsCount", { n: outcome.commandCount }) }}
@@ -378,38 +382,42 @@ async function copyTranscript() {
               >{{ formatTick(tick) }}</span>
             </div>
             <div class="run-log-track">
-              <button
-                v-for="(segment, index) in lanes.model"
-                :key="`model-${index}`"
-                type="button"
-                class="run-log-seg"
-                :class="segmentClass(segment.kind)"
-                :style="laneSegmentStyle(segment, lanes.totalMs)"
-                :title="t('runLog.laneTitleModel', { time: formatLaneTotal(segment.durationMs) })"
-                @click="seek(segment.startMs)"
-              />
+              <template v-for="(segment, index) in lanes.model" :key="`model-${index}`">
+                <span class="run-log-seg-host" :style="laneSegmentStyle(segment, lanes.totalMs)">
+                  <UiTooltip :content="t('runLog.laneTitleModel', { time: formatLaneTotal(segment.durationMs) })">
+                    <button
+                      type="button"
+                      class="run-log-seg"
+                      :class="segmentClass(segment.kind)"
+                      @click="seek(segment.startMs)"
+                    />
+                  </UiTooltip>
+                </span>
+              </template>
             </div>
             <div class="run-log-track">
-              <button
-                v-for="(segment, index) in lanes.tool"
-                :key="`tool-${index}`"
-                type="button"
-                class="run-log-seg is-tool"
-                :style="laneSegmentStyle(segment, lanes.totalMs)"
-                :title="t('runLog.laneTitleTool', { time: formatLaneTotal(segment.durationMs) })"
-                @click="seek(segment.startMs)"
-              />
+              <template v-for="(segment, index) in lanes.tool" :key="`tool-${index}`">
+                <span class="run-log-seg-host" :style="laneSegmentStyle(segment, lanes.totalMs)">
+                  <UiTooltip :content="t('runLog.laneTitleTool', { time: formatLaneTotal(segment.durationMs) })">
+                    <button type="button" class="run-log-seg is-tool" @click="seek(segment.startMs)" />
+                  </UiTooltip>
+                </span>
+              </template>
             </div>
           </div>
         </div>
         <div class="run-log-zoom" :class="{ 'is-on': zoom > 1 }">
-          <button type="button" :title="t('runLog.zoomOut')" :disabled="!canZoomOut" @click="setZoom(ZOOM_STEPS[zoomIndex - 1] ?? 1)">
-            <Minus :size="12" />
-          </button>
+          <UiTooltip :content="t('runLog.zoomOut')">
+            <button type="button" :disabled="!canZoomOut" @click="setZoom(ZOOM_STEPS[zoomIndex - 1] ?? 1)">
+              <Minus :size="12" />
+            </button>
+          </UiTooltip>
           <span>{{ zoom }}×</span>
-          <button type="button" :title="t('runLog.zoomIn')" :disabled="!canZoomIn" @click="setZoom(ZOOM_STEPS[zoomIndex + 1] ?? zoom)">
-            <Plus :size="12" />
-          </button>
+          <UiTooltip :content="t('runLog.zoomIn')">
+            <button type="button" :disabled="!canZoomIn" @click="setZoom(ZOOM_STEPS[zoomIndex + 1] ?? zoom)">
+              <Plus :size="12" />
+            </button>
+          </UiTooltip>
         </div>
       </section>
 
@@ -428,17 +436,18 @@ async function copyTranscript() {
           <template v-else>{{ t("runLog.stepsCount", { n: steps.length }) }}</template>
         </span>
         <div v-if="filterOptions.length" class="run-log-menu-wrap">
-          <button
-            type="button"
-            class="run-log-menu-btn"
-            :class="{ 'is-on': filterKeys.length }"
-            :title="t('common.filter')"
-            @click="filterOpen = !filterOpen; moreOpen = false"
-          >
-            <Filter :size="13" />
-            {{ t("common.filter") }}
-            <span v-if="filterKeys.length">{{ filterKeys.length }}</span>
-          </button>
+          <UiTooltip :content="t('common.filter')">
+            <button
+              type="button"
+              class="run-log-menu-btn"
+              :class="{ 'is-on': filterKeys.length }"
+              @click="filterOpen = !filterOpen; moreOpen = false"
+            >
+              <Filter :size="13" />
+              {{ t("common.filter") }}
+              <span v-if="filterKeys.length">{{ filterKeys.length }}</span>
+            </button>
+          </UiTooltip>
           <div v-if="filterOpen" class="run-log-menu" role="menu">
             <button
               v-for="[key, label] in filterOptions"
@@ -455,14 +464,15 @@ async function copyTranscript() {
           </div>
         </div>
         <div class="run-log-menu-wrap">
-          <button
-            type="button"
-            class="run-log-menu-btn is-icon"
-            :title="t('scm.moreActions')"
-            @click="moreOpen = !moreOpen; filterOpen = false"
-          >
-            <MoreHorizontal :size="14" />
-          </button>
+          <UiTooltip :content="t('scm.moreActions')">
+            <button
+              type="button"
+              class="run-log-menu-btn is-icon"
+              @click="moreOpen = !moreOpen; filterOpen = false"
+            >
+              <MoreHorizontal :size="14" />
+            </button>
+          </UiTooltip>
           <div v-if="moreOpen" class="run-log-menu" role="menu">
             <button type="button" @click="sortNewest = !sortNewest; moreOpen = false">
               {{ sortNewest ? t("runLog.sortOldest") : t("runLog.sortNewest") }}
@@ -539,9 +549,11 @@ async function copyTranscript() {
           <header>
             <strong>{{ stepTitle(selectedStep) }}</strong>
             <span>{{ offsetLabel(selectedStep.startedAt) }}</span>
-            <button type="button" :title="t('runLog.closeDetail')" :aria-label="t('runLog.closeDetail')" @click="selectedSeq = null">
-              <X :size="14" />
-            </button>
+            <UiTooltip :content="t('runLog.closeDetail')">
+              <button type="button" :aria-label="t('runLog.closeDetail')" @click="selectedSeq = null">
+                <X :size="14" />
+              </button>
+            </UiTooltip>
           </header>
           <pre class="vs-scroll">{{ visibleDetail || t("runLog.noDetail") }}</pre>
           <UiButton

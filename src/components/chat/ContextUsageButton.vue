@@ -48,10 +48,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" class="context-usage" :class="tone">
-    <button
+    <UiTooltip :content="`上下文用量 ${rounded}%`"><button
       type="button"
       class="context-usage-button"
-      :title="`上下文用量 ${rounded}%`"
+     
       :aria-expanded="open"
       @click.stop="open = !open"
     >
@@ -71,7 +71,7 @@ onBeforeUnmount(() => {
           transform="rotate(-90 8 8)"
         />
       </svg>
-    </button>
+    </button></UiTooltip>
     <div
       v-if="open"
       class="context-usage-popover"

@@ -317,7 +317,7 @@ const emptyHint = computed(() => {
             { value: 'unused', label: t('skills.unused') },
           ]"
         />
-        <UiButton :title="sortDesc ? t('common.desc') : t('common.asc')" @click="toggleSort(sortField)">
+        <UiButton :tip="sortDesc ? t('common.desc') : t('common.asc')" @click="toggleSort(sortField)">
           {{ sortLabel }}
           <ArrowDown v-if="sortDesc" :size="14" />
           <ArrowUp v-else :size="14" />

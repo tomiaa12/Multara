@@ -438,12 +438,12 @@ function onColumnMenu(id: string) {
           <strong>{{ column.label }}</strong>
           <span>{{ columnTasks(column.id).length }}</span>
           <template v-if="canAddInColumn(column.id)">
-            <button type="button" class="task-icon-button" :title="t('tasks.columnMenu')" @click="openColumnMenu($event, column.id)">
+            <UiTooltip :content="t('tasks.columnMenu')"><button type="button" class="task-icon-button" @click="openColumnMenu($event, column.id)">
               <MoreHorizontal :size="15" />
-            </button>
-            <button type="button" class="task-icon-button" :title="t('tasks.addTask')" @click="openCreate(column.id)">
+            </button></UiTooltip>
+            <UiTooltip :content="t('tasks.addTask')"><button type="button" class="task-icon-button" @click="openCreate(column.id)">
               <Plus :size="15" />
-            </button>
+            </button></UiTooltip>
           </template>
         </header>
         <div class="task-column-list vs-scroll">

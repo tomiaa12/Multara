@@ -5248,7 +5248,7 @@ defineExpose({
           v-if="sidebarTabsOverflow"
           variant="ghost"
           class="sidebar-tab-arrow"
-          :title="t('workbench.sidebarPrev')"
+          :tip="t('workbench.sidebarPrev')"
           :disabled="leftTab === 'files'"
           @click="shiftSidebarTab(-1)"
         >
@@ -5257,7 +5257,7 @@ defineExpose({
         <div ref="sidebarTabsEl" class="workspace-sidebar-tablist">
           <UiButton
             :class="{ active: leftTab === 'files' }"
-            :title="t('workbench.files')"
+            :tip="t('workbench.files')"
             :aria-pressed="leftTab === 'files'"
             @click="leftTab = 'files'"
           >
@@ -5265,7 +5265,7 @@ defineExpose({
           </UiButton>
           <UiButton
             :class="{ active: leftTab === 'git' }"
-            :title="t('workbench.git')"
+            :tip="t('workbench.git')"
             :aria-label="gitChangeCount ? t('workbench.gitChangesAria', { count: gitChangeCount }) : t('workbench.git')"
             :aria-pressed="leftTab === 'git'"
             @click="leftTab = 'git'"
@@ -5275,7 +5275,7 @@ defineExpose({
           </UiButton>
           <UiButton
             :class="{ active: leftTab === 'search' }"
-            :title="t('workbench.search')"
+            :tip="t('workbench.search')"
             :aria-pressed="leftTab === 'search'"
             @click="leftTab = 'search'"
           >
@@ -5286,7 +5286,7 @@ defineExpose({
           v-if="sidebarTabsOverflow"
           variant="ghost"
           class="sidebar-tab-arrow"
-          :title="t('workbench.sidebarNext')"
+          :tip="t('workbench.sidebarNext')"
           :disabled="leftTab === 'search'"
           @click="shiftSidebarTab(1)"
         >
@@ -5333,7 +5333,7 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="t('workbench.saveAll')"
+              :tip="t('workbench.saveAll')"
               :disabled="!dirtyEditorTabs().length"
               @click="saveAllOpenEditors"
             >
@@ -5342,7 +5342,7 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="t('workbench.closeAll')"
+              :tip="t('workbench.closeAll')"
               :disabled="!editorTabs.length"
               @click="closeAllEditorTabs"
             >
@@ -5350,39 +5350,40 @@ defineExpose({
             </UiButton>
           </template>
           <p v-if="!editorTabs.length" class="ui-pane-empty">{{ t('workbench.noOpenEditors') }}</p>
-          <div
-            v-for="tab in editorTabs"
-            :key="tabKey(tab)"
-            class="ui-pane-item"
-            role="button"
-            tabindex="0"
-            :class="{ 'is-active': activeEditorKey === tabKey(tab), 'is-preview': !tab.pinned }"
-            :title="editorTabTitle(tab)"
-            @click="activateEditorTab(tab)"
-            @keydown.enter.prevent="activateEditorTab(tab)"
-            @auxclick="onOpenEditorAux($event, tab)"
-            @contextmenu="openOpenEditorsMenu(tab, $event)"
-          >
-            <FileTypeIcon :name="fileNameOf(tab.path)" />
-            <span :class="{ 'is-preview-name': !tab.pinned }">{{ fileNameOf(tab.path) }}</span>
-            <i v-if="isEditorTabDirty(tab)" class="ui-pane-dirty" />
-            <UiButton
-              class="ui-pane-close"
-              variant="ghost"
-              size="icon"
-              :title="t('common.close')"
-              @click="closeEditorTab(tab, $event)"
-            >
-              <Codicon name="close" />
-            </UiButton>
-          </div>
+          <template v-for="tab in editorTabs" :key="tabKey(tab)">
+            <UiTooltip :content="editorTabTitle(tab)">
+              <div
+                class="ui-pane-item"
+                role="button"
+                tabindex="0"
+                :class="{ 'is-active': activeEditorKey === tabKey(tab), 'is-preview': !tab.pinned }"
+                @click="activateEditorTab(tab)"
+                @keydown.enter.prevent="activateEditorTab(tab)"
+                @auxclick="onOpenEditorAux($event, tab)"
+                @contextmenu="openOpenEditorsMenu(tab, $event)"
+              >
+                <FileTypeIcon :name="fileNameOf(tab.path)" />
+                <span :class="{ 'is-preview-name': !tab.pinned }">{{ fileNameOf(tab.path) }}</span>
+                <i v-if="isEditorTabDirty(tab)" class="ui-pane-dirty" />
+                <UiButton
+                  class="ui-pane-close"
+                  variant="ghost"
+                  size="icon"
+                  :tip="t('common.close')"
+                  @click="closeEditorTab(tab, $event)"
+                >
+                  <Codicon name="close" />
+                </UiButton>
+              </div>
+            </UiTooltip>
+          </template>
         </UiPane>
         <UiPane :title="t('workbench.folders')" fill actions-visible storage-key="multara.explorer.folders" :min-body="120" @contextmenu="openExplorerViewMenu">
           <template #actions>
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.newFile')"
+            :tip="t('workbench.newFile')"
             @click="startCreateInSelection(false)"
           >
             <Codicon name="new-file" />
@@ -5390,7 +5391,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.newFolder')"
+            :tip="t('workbench.newFolder')"
             @click="startCreateInSelection(true)"
           >
             <Codicon name="new-folder" />
@@ -5398,7 +5399,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.refresh')"
+            :tip="t('workbench.refresh')"
             @click="refreshExplorer"
           >
             <Codicon name="refresh" />
@@ -5406,7 +5407,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.collapseAll')"
+            :tip="t('workbench.collapseAll')"
             @click="collapseExplorer"
           >
             <Codicon name="collapse-all" />
@@ -5414,7 +5415,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.revealActiveFile')"
+            :tip="t('workbench.revealActiveFile')"
             :disabled="!openedFileTarget()"
             @click="revealActiveExplorerFile"
           >
@@ -5423,7 +5424,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.findWithShortcut', { keys: explorerKeys.find })"
+            :tip="t('workbench.findWithShortcut', { keys: explorerKeys.find })"
             @click="explorerFindOpen = true"
           >
             <Codicon name="search" />
@@ -5431,7 +5432,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('workbench.view')"
+            :tip="t('workbench.view')"
             @click="openExplorerViewMenu"
           >
             <Codicon name="more" />
@@ -5447,17 +5448,22 @@ defineExpose({
             spellcheck="false"
             @keydown.escape.stop.prevent="explorer.closeFind()"
           />
-          <button
-            type="button"
-            class="explorer-find-mode"
-            :title="explorerFindMode === 'filter' ? t('workbench.filterMode') : t('workbench.highlightMode')"
-            @click="explorerFindMode = explorerFindMode === 'filter' ? 'highlight' : 'filter'"
+          <UiTooltip
+            :content="explorerFindMode === 'filter' ? t('workbench.filterMode') : t('workbench.highlightMode')"
           >
-            <Codicon :name="explorerFindMode === 'filter' ? 'filter' : 'search'" />
-          </button>
-          <button type="button" class="explorer-find-mode" :title="t('common.close')" @click="explorer.closeFind()">
-            <Codicon name="close" />
-          </button>
+            <button
+              type="button"
+              class="explorer-find-mode"
+              @click="explorerFindMode = explorerFindMode === 'filter' ? 'highlight' : 'filter'"
+            >
+              <Codicon :name="explorerFindMode === 'filter' ? 'filter' : 'search'" />
+            </button>
+          </UiTooltip>
+          <UiTooltip :content="t('common.close')">
+            <button type="button" class="explorer-find-mode" @click="explorer.closeFind()">
+              <Codicon name="close" />
+            </button>
+          </UiTooltip>
         </div>
         <div
           ref="fileTreeEl"
@@ -5486,7 +5492,6 @@ defineExpose({
               role="button"
               tabindex="0"
               :data-tree-key="explorerItemKey(workspace.id, '')"
-              :title="workspaceModeHint(workspace)"
               @click="explorer.clickSelect(treeItem(workspace.id, '', true), $event) && toggleWorkspace(workspace.id)"
               @keydown="onExplorerKeydown($event, workspace.id)"
               @contextmenu="openTreeMenu(workspace.id, null, $event)"
@@ -5502,15 +5507,17 @@ defineExpose({
                 :directory="workspace.kind !== 'git'"
                 :open="expandedWorkspaces.has(workspace.id)"
               />
-              <div class="tree-workspace-copy">
-                <strong>{{ workspace.name }}</strong>
-                <small>{{
-                  workspaceSubtitle(
-                    workspace,
-                    gitRepositoryByWorkspace.get(workspace.id)?.branch,
-                  )
-                }}</small>
-              </div>
+              <UiTooltip :content="workspaceModeHint(workspace)">
+                <div class="tree-workspace-copy">
+                  <strong>{{ workspace.name }}</strong>
+                  <small>{{
+                    workspaceSubtitle(
+                      workspace,
+                      gitRepositoryByWorkspace.get(workspace.id)?.branch,
+                    )
+                  }}</small>
+                </div>
+              </UiTooltip>
               <span
                 class="workspace-mode-pill"
                 :class="`pill-${workspaceMode(workspace)}`"
@@ -5577,7 +5584,6 @@ defineExpose({
                     paddingLeft: `${treeRowPad(entry.depth)}px`,
                     '--tree-depth': entry.depth,
                   }"
-                  :title="explorerHoverTitle(entry)"
                   @click="onTreeClick(workspace.id, entry, $event)"
                   @dblclick="onTreeOpenPinned(workspace.id, entry)"
                   @keydown="onTreeKeydown(workspace.id, entry, $event)"
@@ -5615,45 +5621,52 @@ defineExpose({
                     @keydown.stop="onTreeEditKeydown"
                     @blur="commitTreeEdit"
                   />
-                  <span v-else-if="entry.compact" class="tree-name tree-compact">
-                    <template v-for="(name, index) in entry.compact.names" :key="entry.compact.paths[index]">
-                      <span v-if="index" class="tree-compact-sep">/</span>
+                  <UiTooltip v-else-if="entry.compact" :content="explorerHoverTitle(entry)">
+                    <span class="tree-name tree-compact">
+                      <template v-for="(name, index) in entry.compact.names" :key="entry.compact.paths[index]">
+                        <span v-if="index" class="tree-compact-sep">/</span>
+                        <span
+                          class="tree-compact-seg"
+                          :class="{
+                            'is-drop': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && explorerDragOver.valid,
+                            'is-drop-invalid': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && !explorerDragOver.valid,
+                          }"
+                          :data-tree-key="treeKey(workspace.id, entry.compact!.paths[index])"
+                          @click="onCompactClick(workspace.id, entry.compact!.paths[index], $event)">{{ name }}</span>
+                      </template>
+                    </span>
+                  </UiTooltip>
+                  <UiTooltip v-else :content="explorerHoverTitle(entry)">
+                    <span class="tree-name">
                       <span
-                        class="tree-compact-seg"
-                        :class="{
-                          'is-drop': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && explorerDragOver.valid,
-                          'is-drop-invalid': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && !explorerDragOver.valid,
-                        }"
-                        :data-tree-key="treeKey(workspace.id, entry.compact!.paths[index])"
-                        @click="onCompactClick(workspace.id, entry.compact!.paths[index], $event)">{{ name }}</span>
-                    </template>
-                  </span>
-                  <span v-else class="tree-name">
-                    <span
-                      v-for="(part, index) in treeNameParts(entry)"
-                      :key="index"
-                      :class="{ 'is-match': part.hit }"
-                    >{{ part.text }}</span>
-                  </span>
+                        v-for="(part, index) in treeNameParts(entry)"
+                        :key="index"
+                        :class="{ 'is-match': part.hit }"
+                      >{{ part.text }}</span>
+                    </span>
+                  </UiTooltip>
                   <span
                     v-if="treeEdit?.path === entry.path && treeEditProblem"
                     class="tree-edit-error"
                     :class="`is-${treeEditProblem.severity}`"
                   >{{ treeEditProblem.message }}</span>
-                  <span
+                  <UiTooltip
                     v-if="entry.symlinkTarget"
-                    class="tree-symlink"
-                    :title="`${entry.symlinkTarget} · ${t('workbench.symlinkSuffix')}`"
+                    :content="`${entry.symlinkTarget} · ${t('workbench.symlinkSuffix')}`"
                   >
-                    <ArrowUpRight :size="12" />
-                  </span>
-                  <span
+                    <span class="tree-symlink">
+                      <ArrowUpRight :size="12" />
+                    </span>
+                  </UiTooltip>
+                  <UiTooltip
                     v-if="treeGitStatus(workspace.id, entry)"
-                    class="tree-git-badge"
-                    :class="{ 'is-folder': entry.isDirectory }"
-                    :title="treeGitBadgeTitle(workspace.id, entry)"
-                    >{{ entry.isDirectory ? "" : treeGitStatus(workspace.id, entry) }}</span
+                    :content="treeGitBadgeTitle(workspace.id, entry)"
                   >
+                    <span
+                      class="tree-git-badge"
+                      :class="{ 'is-folder': entry.isDirectory }"
+                    >{{ entry.isDirectory ? "" : treeGitStatus(workspace.id, entry) }}</span>
+                  </UiTooltip>
                 </div>
                 </template>
                 <template #edit="{ entry }">
@@ -5715,13 +5728,13 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="outlineFollowCursor ? t('workbench.outlineFollowOn') : t('workbench.outlineFollowOff')"
+              :tip="outlineFollowCursor ? t('workbench.outlineFollowOn') : t('workbench.outlineFollowOff')"
               :class="{ 'is-active-action': outlineFollowCursor }"
               @click="toggleOutlineFollow"
             >
               <Codicon name="target" />
             </UiButton>
-            <UiButton variant="ghost" size="icon" :title="t('workbench.collapseAll')" @click="outlinePane?.collapseAll()">
+            <UiButton variant="ghost" size="icon" :tip="t('workbench.collapseAll')" @click="outlinePane?.collapseAll()">
               <Codicon name="collapse-all" />
             </UiButton>
           </template>
@@ -5746,18 +5759,18 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="timelinePane?.pinned ? t('workbench.timelineUnpin') : t('workbench.timelinePinFile')"
+              :tip="timelinePane?.pinned ? t('workbench.timelineUnpin') : t('workbench.timelinePinFile')"
               @click="timelinePane?.togglePin()"
             >
               <Codicon :name="timelinePane?.pinned ? 'pinned' : 'pin'" />
             </UiButton>
-            <UiButton variant="ghost" size="icon" :title="t('workbench.refresh')" @click="timelinePane?.refresh()">
+            <UiButton variant="ghost" size="icon" :tip="t('workbench.refresh')" @click="timelinePane?.refresh()">
               <Codicon name="refresh" />
             </UiButton>
             <UiButton
               variant="ghost"
               size="icon"
-              :title="t('workbench.filterTimeline')"
+              :tip="t('workbench.filterTimeline')"
               @click="timelinePane?.openFilter($event)"
             >
               <Codicon name="filter" />
@@ -5827,36 +5840,38 @@ defineExpose({
     <section class="editor-area" data-workspace-drop="editor">
       <header class="editor-tabbar">
         <div ref="editorTabsEl" class="editor-tabs vs-scroll">
-          <button
-            v-for="tab in editorTabs"
-            :key="tabKey(tab)"
-            type="button"
-            class="editor-tab"
-            :class="{
-              active: activeEditorKey === tabKey(tab),
-              'is-preview': !tab.pinned,
-              'is-dirty': isEditorTabDirty(tab),
-            }"
-            :title="editorTabTitle(tab)"
-            @click="activateEditorTab(tab)"
-            @dblclick="pinEditorTab(tab)"
-            @click.middle.prevent="closeEditorTab(tab, $event)"
-            @mousedown.middle.prevent
-            @mousedown="$event.button === 2 && $event.preventDefault()"
-            @contextmenu="openTabMenu(tab, $event)"
-          >
-            <FileTypeIcon :name="fileNameOf(tab.path)" />
-            <span class="editor-tab-name">{{ fileNameOf(tab.path) }}</span>
-            <span v-if="tab.gitDiff" class="editor-tab-diff">{{ tab.gitDiff.short }}</span>
-            <span
-              class="tab-close"
-              :class="{ 'is-dirty': isEditorTabDirty(tab) }"
-              :title="t('common.close')"
-              @click="closeEditorTab(tab, $event)"
-            >
-              <X :size="12" />
-            </span>
-          </button>
+          <template v-for="tab in editorTabs" :key="tabKey(tab)">
+            <UiTooltip :content="editorTabTitle(tab)">
+              <button
+                type="button"
+                class="editor-tab"
+                :class="{
+                  active: activeEditorKey === tabKey(tab),
+                  'is-preview': !tab.pinned,
+                  'is-dirty': isEditorTabDirty(tab),
+                }"
+                @click="activateEditorTab(tab)"
+                @dblclick="pinEditorTab(tab)"
+                @click.middle.prevent="closeEditorTab(tab, $event)"
+                @mousedown.middle.prevent
+                @mousedown="$event.button === 2 && $event.preventDefault()"
+                @contextmenu="openTabMenu(tab, $event)"
+              >
+                <FileTypeIcon :name="fileNameOf(tab.path)" />
+                <span class="editor-tab-name">{{ fileNameOf(tab.path) }}</span>
+                <span v-if="tab.gitDiff" class="editor-tab-diff">{{ tab.gitDiff.short }}</span>
+                <UiTooltip :content="t('common.close')">
+                  <span
+                    class="tab-close"
+                    :class="{ 'is-dirty': isEditorTabDirty(tab) }"
+                    @click="closeEditorTab(tab, $event)"
+                  >
+                    <X :size="12" />
+                  </span>
+                </UiTooltip>
+              </button>
+            </UiTooltip>
+          </template>
         </div>
         <div
           v-if="markdownToggleVisible"
@@ -5864,26 +5879,26 @@ defineExpose({
           role="tablist"
           :aria-label="t('workbench.markdownView')"
         >
-          <button
+          <UiTooltip :content="t('workbench.markdownPreviewTitle')"><button
             type="button"
             role="tab"
             :class="{ active: markdownMode === 'preview' }"
             :aria-selected="markdownMode === 'preview'"
-            :title="t('workbench.markdownPreviewTitle')"
+           
             @click="setMarkdownMode('preview')"
           >
             Preview
-          </button>
-          <button
+          </button></UiTooltip>
+          <UiTooltip :content="t('workbench.markdownSourceTitle')"><button
             type="button"
             role="tab"
             :class="{ active: markdownMode === 'source' }"
             :aria-selected="markdownMode === 'source'"
-            :title="t('workbench.markdownSourceTitle')"
+           
             @click="setMarkdownMode('source')"
           >
             Markdown
-          </button>
+          </button></UiTooltip>
         </div>
       </header>
       <UiNotice
@@ -5914,7 +5929,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('diff.prevPendingFile')"
+            :tip="t('diff.prevPendingFile')"
             @click="goPendingDiffFile(-1)"
           >
             <ChevronLeft :size="13" />
@@ -5923,7 +5938,7 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :title="t('diff.nextPendingFile')"
+            :tip="t('diff.nextPendingFile')"
             @click="goPendingDiffFile(1)"
           >
             <ChevronRight :size="13" />
@@ -5933,7 +5948,7 @@ defineExpose({
               class="diff-hunk-nav"
               variant="ghost"
               size="icon"
-              :title="t('diff.prevHunk')"
+              :tip="t('diff.prevHunk')"
               @click="stepDiffGroup(-1)"
             >
               <ChevronUp :size="13" />
@@ -5942,7 +5957,7 @@ defineExpose({
             <UiButton
               variant="ghost"
               size="icon"
-              :title="t('diff.nextHunk')"
+              :tip="t('diff.nextHunk')"
               @click="stepDiffGroup(1)"
             >
               <ChevronDown :size="13" />
@@ -5952,7 +5967,7 @@ defineExpose({
             <UiButton
               class="diff-file-action diff-file-action-keep"
               size="small"
-              :title="t('diff.keepAllFilesTitle')"
+              :tip="t('diff.keepAllFilesTitle')"
               :disabled="diffFileActionBusy"
               @click="acceptAllPendingFiles"
             >
@@ -5962,7 +5977,7 @@ defineExpose({
               class="diff-file-action"
               variant="ghost"
               size="small"
-              :title="t('diff.nextChangeFileTitle')"
+              :tip="t('diff.nextChangeFileTitle')"
               :disabled="diffFileActionBusy"
               @click="goNextChangeFile"
             >
@@ -5973,7 +5988,7 @@ defineExpose({
             <UiButton
               class="diff-file-action diff-file-action-keep"
               size="small"
-              :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.keepAllTitle')"
+              :tip="activeFileBeingWritten ? t('diff.writingFile') : t('diff.keepAllTitle')"
               :disabled="acceptFileActionDisabled"
               @click="acceptAllCurrentFile"
             >
@@ -5983,7 +5998,7 @@ defineExpose({
               class="diff-file-action"
               variant="ghost"
               size="small"
-              :title="activeFileBeingWritten ? t('diff.writingFile') : t('diff.undoAllWriteBackTitle')"
+              :tip="activeFileBeingWritten ? t('diff.writingFile') : t('diff.undoAllWriteBackTitle')"
               :disabled="undoFileActionDisabled"
               @click="undoAllCurrentFile"
             >
@@ -6108,7 +6123,9 @@ defineExpose({
         >
           <Codicon :name="workspace.kind === 'git' ? 'repo' : 'folder'" :size="16" />
           <span>{{ workspace.name }}</span>
-          <small :title="workspace.workPath || workspace.sourcePath">{{ workspace.workPath || workspace.sourcePath }}</small>
+          <UiTooltip :content="workspace.workPath || workspace.sourcePath || ''">
+            <small>{{ workspace.workPath || workspace.sourcePath }}</small>
+          </UiTooltip>
         </button>
         <p v-if="!terminalPickChoices.length">{{ t('workbench.noMatchingProjects') }}</p>
       </div>

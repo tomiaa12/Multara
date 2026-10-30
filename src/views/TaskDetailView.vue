@@ -330,14 +330,14 @@ function openLatestRunLog() {
   <div v-if="task" class="task-issue">
     <header class="task-issue-bar">
       <span class="task-issue-crumb" />
-      <UiButton variant="ghost" size="icon" class="task-issue-delete" :title="t('tasks.delete')" :aria-label="t('tasks.delete')" @click="removeTask">
+      <UiButton variant="ghost" size="icon" class="task-issue-delete" :tip="t('tasks.delete')" :aria-label="t('tasks.delete')" @click="removeTask">
         <Trash2 :size="15" />
       </UiButton>
       <UiButton
         variant="ghost"
         size="icon"
         :class="{ active: sideOpen }"
-        :title="t('tasks.propertiesPanel')"
+        :tip="t('tasks.propertiesPanel')"
         :aria-label="t('tasks.propertiesPanel')"
         :aria-pressed="sideOpen"
         @click="sideOpen = !sideOpen"

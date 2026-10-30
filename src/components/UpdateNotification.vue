@@ -31,14 +31,14 @@ async function restartNow() {
         </UiButton>
       </div>
     </div>
-    <button
+    <UiTooltip :content="t('common.close')"><button
       type="button"
       class="update-toast-close"
-      :title="t('common.close')"
+     
       :aria-label="t('common.close')"
       @click="updater.dismiss()"
     >
       <X :size="14" />
-    </button>
+    </button></UiTooltip>
   </div>
 </template>

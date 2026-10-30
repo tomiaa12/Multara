@@ -99,17 +99,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button
+  <UiTooltip :content="t('terminal.activity.monitoringTitle')"><button
     v-if="serving.length"
     type="button"
     class="statusbar-item terminal-activity-button"
     :aria-expanded="open"
-    :title="t('terminal.activity.monitoringTitle')"
+   
     @click="toggle"
   >
     <i class="ds-dot" data-tone="success" />
     {{ t('terminal.activity.runningCount', { count: serving.length }) }}
-  </button>
+  </button></UiTooltip>
   <div
     v-if="open"
     ref="menu"

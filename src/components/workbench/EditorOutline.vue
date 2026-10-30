@@ -83,40 +83,44 @@ defineExpose({ collapseAll, clearFilter: () => { query.value = ""; } });
         :placeholder="t('outline.filterPlaceholder')"
         spellcheck="false"
       />
-      <select v-model="sort" class="editor-outline-sort" :title="t('outline.sortTitle')" :aria-label="t('outline.sortAria')">
-        <option value="position">{{ t("outline.sort.position") }}</option>
-        <option value="name">{{ t("outline.sort.name") }}</option>
-        <option value="type">{{ t("outline.sort.type") }}</option>
-      </select>
+      <UiTooltip :content="t('outline.sortTitle')">
+        <select v-model="sort" class="editor-outline-sort" :aria-label="t('outline.sortAria')">
+          <option value="position">{{ t("outline.sort.position") }}</option>
+          <option value="name">{{ t("outline.sort.name") }}</option>
+          <option value="type">{{ t("outline.sort.type") }}</option>
+        </select>
+      </UiTooltip>
     </div>
     <div v-if="availableKinds.length > 1" class="editor-outline-kinds">
-      <button
-        v-for="kind in availableKinds"
-        :key="kind"
-        type="button"
-        class="editor-outline-kind"
-        :class="{ 'is-off': hiddenKinds.has(kind) }"
-        :title="kindLabel(kind)"
-        @click="toggleKind(kind)"
-      >
-        {{ kindLabel(kind) }}
-      </button>
+      <template v-for="kind in availableKinds" :key="kind">
+        <UiTooltip :content="kindLabel(kind)">
+          <button
+            type="button"
+            class="editor-outline-kind"
+            :class="{ 'is-off': hiddenKinds.has(kind) }"
+            @click="toggleKind(kind)"
+          >
+            {{ kindLabel(kind) }}
+          </button>
+        </UiTooltip>
+      </template>
     </div>
     <div class="editor-outline-list vs-scroll">
       <div v-if="!items.length" class="tree-empty">{{ t("outline.emptyFile") }}</div>
       <div v-else-if="!visible.length" class="tree-empty">{{ t("outline.noMatch") }}</div>
-      <button
-        v-for="item in visible"
-        :key="`${item.line}-${item.label}`"
-        type="button"
-        class="editor-outline-item"
-        :class="{ 'is-active': followCursor && item.line === activeLine }"
-        :title="`${item.label}:${item.line}`"
-        @click="emit('reveal', item.line)"
-      >
-        <Codicon :name="KIND_ICON[item.kind]" :size="14" />
-        <span>{{ item.label }}</span>
-      </button>
+      <template v-for="item in visible" :key="`${item.line}-${item.label}`">
+        <UiTooltip :content="`${item.label}:${item.line}`">
+          <button
+            type="button"
+            class="editor-outline-item"
+            :class="{ 'is-active': followCursor && item.line === activeLine }"
+            @click="emit('reveal', item.line)"
+          >
+            <Codicon :name="KIND_ICON[item.kind]" :size="14" />
+            <span>{{ item.label }}</span>
+          </button>
+        </UiTooltip>
+      </template>
     </div>
   </div>
 </template>

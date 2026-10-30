@@ -356,11 +356,11 @@ async function create() {
           {{ t('skills.create.method.manual') }}
         </p>
         <div>
-          <button type="button" class="task-icon-button" :title="expanded ? t('skills.collapse') : t('skills.expand')" @click="expanded = !expanded">
+          <UiTooltip :content="expanded ? t('skills.collapse') : t('skills.expand')"><button type="button" class="task-icon-button" @click="expanded = !expanded">
             <Minimize2 v-if="expanded" :size="15" />
             <Maximize2 v-else :size="15" />
-          </button>
-          <button type="button" class="task-icon-button" :title="t('common.close')" @click="emit('close')"><X :size="16" /></button>
+          </button></UiTooltip>
+          <UiTooltip :content="t('common.close')"><button type="button" class="task-icon-button" @click="emit('close')"><X :size="16" /></button></UiTooltip>
         </div>
       </header>
       <input v-model="form.title" class="task-create-title" :placeholder="t('tasks.titlePlaceholder')" />
@@ -412,7 +412,7 @@ async function create() {
           </div>
         </template>
         <template #actions>
-          <UiButton type="button" size="icon" variant="ghost" :title="t('tasks.addFileOrFolder')" @click="pickFilesOrFolders">
+          <UiButton type="button" size="icon" variant="ghost" :tip="t('tasks.addFileOrFolder')" @click="pickFilesOrFolders">
             <Paperclip :size="16" />
           </UiButton>
           <label class="task-create-keep">

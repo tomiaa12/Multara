@@ -392,7 +392,7 @@ defineExpose({
       <div class="composer-actions">
         <ContextUsageButton v-if="showContextUsage" :placement="usagePlacement" />
         <slot name="actions">
-          <UiButton class="ds-send-button send-button" type="submit" :disabled="disabled || !canSend" title="发送">
+          <UiButton class="ds-send-button send-button" type="submit" :disabled="disabled || !canSend" tip="发送">
             <ArrowUp :size="16" />
           </UiButton>
         </slot>

@@ -251,8 +251,8 @@ function projectName(item: ChannelInstallation) {
             <p class="channel-code">
               {{ t("channels.pairingCode") }}
               <code>{{ item.pairingCode }}</code>
-              <UiButton variant="ghost" size="icon" :title="t('channels.copyCode')" @click="copyCode(item)"><Copy :size="13" /></UiButton>
-              <UiButton variant="ghost" size="icon" :title="t('channels.rotateCode')" @click="rotateCode(item)"><RefreshCw :size="13" /></UiButton>
+              <UiButton variant="ghost" size="icon" :tip="t('channels.copyCode')" @click="copyCode(item)"><Copy :size="13" /></UiButton>
+              <UiButton variant="ghost" size="icon" :tip="t('channels.rotateCode')" @click="rotateCode(item)"><RefreshCw :size="13" /></UiButton>
             </p>
           </div>
           <span class="ds-badge" :data-tone="item.enabled ? 'success' : undefined">
@@ -262,8 +262,8 @@ function projectName(item: ChannelInstallation) {
             <UiButton variant="ghost" size="small" :disabled="busy" @click="test(item)"><Check :size="14" /> {{ t("channels.test") }}</UiButton>
             <UiButton variant="ghost" size="small" @click="toggle(item)">{{ item.enabled ? t("channels.disable") : t("channels.enable") }}</UiButton>
             <UiButton variant="ghost" size="small" @click="toggleUsers(item)">{{ t("channels.users") }}</UiButton>
-            <UiButton variant="ghost" size="icon" :title="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
-            <UiButton variant="ghost" size="icon" :title="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+            <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
+            <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
           </div>
         </div>
         <div v-if="expandedId === item.id" class="channel-users">
@@ -272,7 +272,7 @@ function projectName(item: ChannelInstallation) {
             <strong>{{ user.displayName || user.channelUserId }}</strong>
             <code>{{ user.channelUserId }}</code>
             <span class="ds-badge">{{ user.role }}</span>
-            <UiButton variant="ghost" size="icon" :title="t('common.delete')" @click="removeUser(item, user.channelUserId)"><X :size="13" /></UiButton>
+            <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="removeUser(item, user.channelUserId)"><X :size="13" /></UiButton>
           </div>
         </div>
       </article>
@@ -282,7 +282,7 @@ function projectName(item: ChannelInstallation) {
       <form class="modal channel-dialog" @submit.prevent="save">
         <header class="channel-dialog-head">
           <h2>{{ form.id ? t("channels.edit") : t("channels.add") }}</h2>
-          <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="showForm = false"><X :size="16" /></UiButton>
+          <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="showForm = false"><X :size="16" /></UiButton>
         </header>
         <div class="channel-dialog-body">
           <label>{{ t("channels.name") }}<UiInput v-model="form.name" required :placeholder="t('channels.namePlaceholder')" /></label>

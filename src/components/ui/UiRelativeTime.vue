@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { formatAbsoluteTime, formatRelativeTime } from "./relative-time";
+import UiTooltip from "./UiTooltip.vue";
 
 const props = withDefaults(defineProps<{
   /** ISO 字符串、毫秒时间戳或 Date */
@@ -17,11 +18,11 @@ const title = computed(() => formatAbsoluteTime(props.value));
 </script>
 
 <template>
-  <time
-    v-if="text"
-    class="ui-relative-time"
-    :datetime="typeof value === 'string' ? value : undefined"
-    :title="title"
-  >{{ text }}</time>
+  <UiTooltip v-if="text" :content="title" :disabled="!title">
+    <time
+      class="ui-relative-time"
+      :datetime="typeof value === 'string' ? value : undefined"
+    >{{ text }}</time>
+  </UiTooltip>
   <span v-else class="ui-relative-time is-empty">{{ empty }}</span>
 </template>

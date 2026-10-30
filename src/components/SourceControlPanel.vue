@@ -435,13 +435,13 @@ defineExpose({ refresh });
         <UiButton
           variant="ghost"
           size="icon"
-          :title="viewMode === 'list' ? t('scm.viewFolders') : t('scm.viewFlat')"
+          :tip="viewMode === 'list' ? t('scm.viewFolders') : t('scm.viewFlat')"
           @click="setViewMode(viewMode === 'list' ? 'tree' : 'list')"
         >
           <Codicon v-if="viewMode === 'list'" name="list-tree" />
           <Codicon v-else name="list-flat" />
         </UiButton>
-        <UiButton variant="ghost" size="icon" :title="t('scm.refresh')" :disabled="Boolean(busy)" @click="refresh()">
+        <UiButton variant="ghost" size="icon" :tip="t('scm.refresh')" :disabled="Boolean(busy)" @click="refresh()">
           <Codicon name="refresh" />
         </UiButton>
       </template>
