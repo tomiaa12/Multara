@@ -36,7 +36,7 @@ function commit(id: string, fallback: string) {
     <div class="modal">
       <div class="modal-heading">
         <h2>{{ t('dashboard.manageTags') }}</h2>
-        <UiButton class="icon-button" size="icon" :title="t('common.close')" @click="emit('close')">
+        <UiButton class="icon-button" size="icon" :tip="t('common.close')" @click="emit('close')">
           <X :size="15" />
         </UiButton>
       </div>

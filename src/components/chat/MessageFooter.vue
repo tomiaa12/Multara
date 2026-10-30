@@ -39,7 +39,7 @@ async function copyMessage() {
       class="message-copy"
       variant="ghost"
       size="icon"
-      :title="t('chat.feedbackHelpful')"
+      :tip="t('chat.feedbackHelpful')"
       :aria-pressed="feedback === 'up'"
       @click="store.setMessageFeedback(messageId, feedback === 'up' ? null : 'up')"
     >
@@ -50,7 +50,7 @@ async function copyMessage() {
       class="message-copy"
       variant="ghost"
       size="icon"
-      :title="t('chat.feedbackUnhelpful')"
+      :tip="t('chat.feedbackUnhelpful')"
       :aria-pressed="feedback === 'down'"
       @click="store.setMessageFeedback(messageId, feedback === 'down' ? null : 'down')"
     >
@@ -60,16 +60,14 @@ async function copyMessage() {
       class="message-copy"
       variant="ghost"
       size="icon"
-      :title="copied ? t('chat.copied') : t('common.copy')"
+      :tip="copied ? t('chat.copied') : t('common.copy')"
       :aria-label="copied ? t('chat.copied') : t('chat.copyMessage')"
       @click="copyMessage"
     >
       <Check v-if="copied" :size="13" /><Copy v-else :size="13" />
     </UiButton>
-    <span
-      v-if="relativeTime"
-      class="message-time"
-      :title="absoluteTime"
-    >{{ relativeTime }}</span>
+    <UiTooltip v-if="relativeTime" :content="absoluteTime">
+      <span class="message-time">{{ relativeTime }}</span>
+    </UiTooltip>
   </footer>
 </template>

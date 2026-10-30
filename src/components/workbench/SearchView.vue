@@ -351,34 +351,53 @@ async function readFile(workspaceId: string, path: string) {
 <template>
   <section class="search-view">
     <div class="search-toolbar">
-      <button type="button" :title="searching ? t('search.cancel') : t('search.refresh')" :disabled="!searching && !options.query" @click="searching ? cancelSearch() : runSearch()">
+      <UiButton
+        variant="ghost"
+        size="icon"
+        :tip="searching ? t('search.cancel') : t('search.refresh')"
+        :disabled="!searching && !options.query"
+        @click="searching ? cancelSearch() : runSearch()"
+      >
         <Codicon :name="searching ? 'search-stop' : 'refresh'" :size="16" />
-      </button>
-      <button type="button" :title="t('search.clearResults')" :disabled="!options.query && !replacement && !matches.length" @click="clearSearch">
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="icon"
+        :tip="t('search.clearResults')"
+        :disabled="!options.query && !replacement && !matches.length"
+        @click="clearSearch"
+      >
         <Codicon name="clear-all" :size="16" />
-      </button>
-      <button
-        type="button"
-        :title="viewAsTree ? t('search.viewAsList') : t('search.viewAsTree')"
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="icon"
+        :tip="viewAsTree ? t('search.viewAsList') : t('search.viewAsTree')"
         @click="viewAsTree = !viewAsTree"
       >
         <Codicon :name="viewAsTree ? 'list-tree' : 'list-flat'" :size="16" />
-      </button>
-      <button type="button" :title="allCollapsed() ? t('search.expandAll') : t('search.collapseAll')" :disabled="!matches.length" @click="toggleAll">
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="icon"
+        :tip="allCollapsed() ? t('search.expandAll') : t('search.collapseAll')"
+        :disabled="!matches.length"
+        @click="toggleAll"
+      >
         <Codicon :name="allCollapsed() ? 'expand-all' : 'collapse-all'" :size="16" />
-      </button>
+      </UiButton>
     </div>
     <div class="search-widget">
       <div class="search-row">
-        <button
+        <UiTooltip :content="showReplace ? t('search.hideReplace') : t('search.replaceToggle')"><button
           type="button"
           class="search-toggle"
-          :title="showReplace ? t('search.hideReplace') : t('search.replaceToggle')"
+         
           :aria-expanded="showReplace"
           @click="showReplace = !showReplace"
         >
           <Codicon :name="showReplace ? 'chevron-down' : 'chevron-right'" :size="14" />
-        </button>
+        </button></UiTooltip>
         <label class="search-input">
           <input
             ref="input"
@@ -388,9 +407,9 @@ async function readFile(workspaceId: string, path: string) {
             spellcheck="false"
           />
           <span class="search-input-actions">
-            <button type="button" :title="t('search.caseSensitive')" :class="{ active: options.caseSensitive }" @click="options.caseSensitive = !options.caseSensitive">Aa</button>
-            <button type="button" :title="t('search.wholeWord')" :class="{ active: options.wholeWord }" @click="options.wholeWord = !options.wholeWord">ab</button>
-            <button type="button" :title="t('search.regex')" :class="{ active: options.regex }" @click="options.regex = !options.regex">.*</button>
+            <UiTooltip :content="t('search.caseSensitive')"><button type="button" :class="{ active: options.caseSensitive }" @click="options.caseSensitive = !options.caseSensitive">Aa</button></UiTooltip>
+            <UiTooltip :content="t('search.wholeWord')"><button type="button" :class="{ active: options.wholeWord }" @click="options.wholeWord = !options.wholeWord">ab</button></UiTooltip>
+            <UiTooltip :content="t('search.regex')"><button type="button" :class="{ active: options.regex }" @click="options.regex = !options.regex">.*</button></UiTooltip>
           </span>
         </label>
       </div>
@@ -399,18 +418,18 @@ async function readFile(workspaceId: string, path: string) {
         <label class="search-input">
           <input v-model="replacement" :placeholder="t('search.replacePlaceholder')" :aria-label="t('search.replacePlaceholder')" spellcheck="false" />
           <span class="search-input-actions">
-            <button type="button" :title="t('search.preserveCase')" :class="{ active: options.preserveCase }" @click="options.preserveCase = !options.preserveCase">AB</button>
+            <UiTooltip :content="t('search.preserveCase')"><button type="button" :class="{ active: options.preserveCase }" @click="options.preserveCase = !options.preserveCase">AB</button></UiTooltip>
           </span>
         </label>
-        <button type="button" class="search-outside" :title="t('search.replaceAll')" :disabled="!matches.length" @click="replaceAll">
+        <UiTooltip :content="t('search.replaceAll')"><button type="button" class="search-outside" :disabled="!matches.length" @click="replaceAll">
           <Codicon name="replace-all" :size="16" />
-        </button>
+        </button></UiTooltip>
       </div>
       <div class="search-details-bar">
         <span>{{ showDetails ? "" : t('search.includeFiles') }}</span>
-        <button type="button" :title="t('search.details')" :aria-expanded="showDetails" @click="showDetails = !showDetails">
+        <UiTooltip :content="t('search.details')"><button type="button" :aria-expanded="showDetails" @click="showDetails = !showDetails">
           <Codicon name="ellipsis" :size="16" />
-        </button>
+        </button></UiTooltip>
       </div>
       <div v-if="showDetails" class="search-details">
         <label class="search-file-pattern">
@@ -421,14 +440,14 @@ async function readFile(workspaceId: string, path: string) {
           <span>{{ t('search.excludeFiles') }}</span>
           <span class="search-pattern-input">
             <input v-model="options.exclude" :placeholder="t('search.excludePlaceholder')" :aria-label="t('search.excludeFiles')" spellcheck="false" />
-            <button
+            <UiTooltip :content="t('search.useExclude')"><button
               type="button"
-              :title="t('search.useExclude')"
+             
               :class="{ active: options.useExcludeSettings }"
               @click="options.useExcludeSettings = !options.useExcludeSettings"
             >
               <Codicon name="book" :size="14" />
-            </button>
+            </button></UiTooltip>
           </span>
         </label>
       </div>

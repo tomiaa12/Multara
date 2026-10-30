@@ -235,8 +235,8 @@ watch(items, (list) => {
           <ArrowRight :size="14" />
         </UiButton>
         <UiButton v-if="selected.read" variant="ghost" size="small" @click="store.markInboxUnread(selected.id)">{{ t("common.markUnread") }}</UiButton>
-        <UiButton variant="ghost" size="icon" :title="t('common.archive')" @click="store.archiveInboxItem(selected.id)"><Archive :size="14" /></UiButton>
-        <UiButton variant="ghost" size="icon" :title="t('common.delete')" @click="store.deleteInboxItem(selected.id)"><Trash2 :size="14" /></UiButton>
+        <UiButton variant="ghost" size="icon" :tip="t('common.archive')" @click="store.archiveInboxItem(selected.id)"><Archive :size="14" /></UiButton>
+        <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="store.deleteInboxItem(selected.id)"><Trash2 :size="14" /></UiButton>
       </header>
       <TaskActivity
         v-if="selected.taskId"

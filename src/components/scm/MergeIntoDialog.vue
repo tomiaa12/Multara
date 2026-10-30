@@ -302,7 +302,7 @@ onMounted(async () => {
             v-if="!conflictOutcome"
             class="icon-button"
             size="icon"
-            :title="t('common.close')"
+            :tip="t('common.close')"
             :disabled="running"
             @click="emit('close')"
           >
@@ -366,7 +366,9 @@ onMounted(async () => {
                     <small>{{ mergeQueueSummary(item.preview, item.loading, item.error) }}</small>
                   </div>
                   <em v-if="item.preview">{{ mergePlanBadge(item.preview.plan) }}</em>
-                  <Codicon name="gripper" :size="14" :title="t('scm.merge.dragOrder')" />
+                  <UiTooltip :content="t('scm.merge.dragOrder')">
+                    <Codicon name="gripper" :size="14" />
+                  </UiTooltip>
                 </li>
               </ol>
               <p v-if="picked.length" class="merge-note">
@@ -415,7 +417,9 @@ onMounted(async () => {
               </header>
               <ul v-if="item.status === 'conflict'" class="merge-conflicts">
                 <li v-for="file in item.result?.conflicts || []" :key="file">
-                  <span :title="file">{{ file }}</span>
+                  <UiTooltip :content="file">
+                    <span>{{ file }}</span>
+                  </UiTooltip>
                 </li>
               </ul>
               <p

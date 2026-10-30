@@ -264,15 +264,15 @@ function submit() {
         spellcheck="false"
         :placeholder="t('runtime.keyPlaceholder')"
       />
-      <button
+      <UiTooltip :content="showKey ? '隐藏 API Key' : '显示 API Key'"><button
         type="button"
         class="runtime-key-toggle"
-        :title="showKey ? '隐藏 API Key' : '显示 API Key'"
+       
         :aria-pressed="showKey"
         @click="showKey = !showKey"
       >
         <Codicon :name="showKey ? 'eye-closed' : 'eye'" :size="14" />
-      </button>
+      </button></UiTooltip>
     </span>
   </label>
   <label>{{ t("runtime.field.defaultModel") }}<UiInput v-model="defaultModel" placeholder="gpt-4.1" /></label>

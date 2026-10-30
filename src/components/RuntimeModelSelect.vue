@@ -94,7 +94,7 @@ const selectValue = computed({
         type="button"
         :class="{ 'is-loading': loading }"
         :disabled="loading"
-        :title="t('runtimeModel.refreshList')"
+        :tip="t('runtimeModel.refreshList')"
         @click="load(true)"
       >
         <RefreshCw :size="14" />

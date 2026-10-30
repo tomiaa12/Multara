@@ -43,24 +43,27 @@ function entryKey(entry: ExploreEntry) {
           :item="entry.item"
           :running="runningTail && index === items.length - 1"
         />
-        <component
-          :is="canReveal(entry.item) ? 'button' : 'div'"
+        <UiTooltip
           v-else
-          class="read-row-line"
-          :class="{
-            'is-running': running && !entry.item.result,
-            'is-clickable': canReveal(entry.item),
-          }"
-          :type="canReveal(entry.item) ? 'button' : undefined"
-          :title="fileRevealTarget(entry.item.use)?.path || exploreDetail(entry.item.use)"
-          @click="canReveal(entry.item) ? onRead(entry.item) : undefined"
+          :content="fileRevealTarget(entry.item.use)?.path || exploreDetail(entry.item.use)"
         >
-          <UiShimmerText
-            class="read-row-text"
-            :text="`${exploreVerb(entry.item.use, language)} ${exploreDetail(entry.item.use)}`"
-            :active="Boolean(running && !entry.item.result)"
-          />
-        </component>
+          <component
+            :is="canReveal(entry.item) ? 'button' : 'div'"
+            class="read-row-line"
+            :class="{
+              'is-running': running && !entry.item.result,
+              'is-clickable': canReveal(entry.item),
+            }"
+            :type="canReveal(entry.item) ? 'button' : undefined"
+            @click="canReveal(entry.item) ? onRead(entry.item) : undefined"
+          >
+            <UiShimmerText
+              class="read-row-text"
+              :text="`${exploreVerb(entry.item.use, language)} ${exploreDetail(entry.item.use)}`"
+              :active="Boolean(running && !entry.item.result)"
+            />
+          </component>
+        </UiTooltip>
       </template>
     </div>
   </details>

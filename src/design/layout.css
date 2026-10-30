@@ -251,6 +251,14 @@ a.titlebar-crumb:hover {
   display: grid;
   gap: 1px;
 }
+.nav-group > .ds-tooltip-trigger {
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+.nav-group > .ds-tooltip-trigger > .nav-item {
+  width: 100%;
+}
 .nav-label {
   padding: 0 var(--spacing-2-5) var(--spacing-1-5);
   overflow: hidden;

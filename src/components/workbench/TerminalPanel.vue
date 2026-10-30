@@ -1362,64 +1362,67 @@ defineExpose({
         @dblclick="onTabsDblClick"
         @contextmenu="openEmptyMenu"
       >
-        <button
-          v-for="session in sessions"
-          :key="session.id"
-          type="button"
-          class="bottom-panel-tab"
-          :class="{
-            active: session.id === activeId || visibleSessions.some((item) => item.id === session.id),
-            busy: session.busy,
-            error: session.exitCode,
-            [`color-${session.color}`]: session.color,
-          }"
-          :data-terminal-tab="session.id"
-          :title="tabTooltip(session)"
-          @pointerdown="onTabPointerDown(session.id, $event)"
-          @click="onTabClick(session.id)"
-          @dblclick.stop="onTabDblClick(session.id)"
-          @contextmenu="openTabMenu(session.id, $event)"
-        >
-          <Codicon :name="session.icon || 'terminal'" :size="14" :spin="session.busy" />
-          <span v-if="renameId !== session.id">{{ tabLabel(session) }}</span>
-          <input
-            v-else
-            ref="renameInput"
-            v-model="renameValue"
-            class="terminal-rename"
-            @click.stop
-            @keydown.enter.prevent="commitRename"
-            @keydown.escape.stop="renameId = ''"
-            @blur="commitRename"
-          />
-          <i :title="t('terminal.kill')" @click.stop="emit('kill', session.id)">
-            <Codicon name="close" :size="12" />
-          </i>
-        </button>
+        <template v-for="session in sessions" :key="session.id">
+          <UiTooltip :content="tabTooltip(session)">
+            <button
+              type="button"
+              class="bottom-panel-tab"
+              :class="{
+                active: session.id === activeId || visibleSessions.some((item) => item.id === session.id),
+                busy: session.busy,
+                error: session.exitCode,
+                [`color-${session.color}`]: session.color,
+              }"
+              :data-terminal-tab="session.id"
+              @pointerdown="onTabPointerDown(session.id, $event)"
+              @click="onTabClick(session.id)"
+              @dblclick.stop="onTabDblClick(session.id)"
+              @contextmenu="openTabMenu(session.id, $event)"
+            >
+              <Codicon :name="session.icon || 'terminal'" :size="14" :spin="session.busy" />
+              <span v-if="renameId !== session.id">{{ tabLabel(session) }}</span>
+              <input
+                v-else
+                ref="renameInput"
+                v-model="renameValue"
+                class="terminal-rename"
+                @click.stop
+                @keydown.enter.prevent="commitRename"
+                @keydown.escape.stop="renameId = ''"
+                @blur="commitRename"
+              />
+              <UiTooltip :content="t('terminal.kill')">
+                <i @click.stop="emit('kill', session.id)">
+                  <Codicon name="close" :size="12" />
+                </i>
+              </UiTooltip>
+            </button>
+          </UiTooltip>
+        </template>
         <span v-if="!sessions.length" class="bottom-panel-empty">{{ t('terminal.label') }}</span>
       </div>
       <div class="bottom-panel-actions">
-        <button type="button" :title="newTitle" @click="onNewButton">
+        <UiTooltip :content="newTitle"><button type="button" @click="onNewButton">
           <Codicon name="add" :size="16" />
-        </button>
-        <button type="button" :title="t('terminal.newMenu')" @click="openNewMenu">
+        </button></UiTooltip>
+        <UiTooltip :content="t('terminal.newMenu')"><button type="button" @click="openNewMenu">
           <Codicon name="chevron-down" :size="12" />
-        </button>
-        <button type="button" :title="t('terminal.splitTerminal')" :disabled="!activeId" @click="emit('split')">
+        </button></UiTooltip>
+        <UiTooltip :content="t('terminal.splitTerminal')"><button type="button" :disabled="!activeId" @click="emit('split')">
           <Codicon name="split-horizontal" :size="16" />
-        </button>
-        <button type="button" :title="t('terminal.clearTerminal')" :disabled="!activeId" @click="hosts.get(activeId)?.term.clear()">
+        </button></UiTooltip>
+        <UiTooltip :content="t('terminal.clearTerminal')"><button type="button" :disabled="!activeId" @click="hosts.get(activeId)?.term.clear()">
           <Codicon name="clear-all" :size="16" />
-        </button>
-        <button type="button" :title="t('terminal.findInTerminal')" :disabled="!activeId" @click="openFind">
+        </button></UiTooltip>
+        <UiTooltip :content="t('terminal.findInTerminal')"><button type="button" :disabled="!activeId" @click="openFind">
           <Codicon name="search" :size="16" />
-        </button>
-        <button type="button" :title="t('terminal.kill')" :disabled="!activeId" @click="emit('kill', activeId)">
+        </button></UiTooltip>
+        <UiTooltip :content="t('terminal.kill')"><button type="button" :disabled="!activeId" @click="emit('kill', activeId)">
           <Codicon name="trash" :size="16" />
-        </button>
-        <button type="button" :title="t('terminal.hidePanel')" @click="emit('close')">
+        </button></UiTooltip>
+        <UiTooltip :content="t('terminal.hidePanel')"><button type="button" @click="emit('close')">
           <Codicon name="chevron-down" :size="16" />
-        </button>
+        </button></UiTooltip>
       </div>
     </header>
     <div ref="body" class="terminal-body" @pointerdown="onTerminalPointerDown" @wheel="onTerminalWheel">

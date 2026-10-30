@@ -151,13 +151,13 @@ watch(mode, () => {
         />
         <template v-if="isReplay">
           <UiButton v-if="step === 0" class="primary" @click="start">开始</UiButton>
-          <UiButton v-else title="上一步" :disabled="step === 0" @click="previous">
+          <UiButton v-else tip="上一步" :disabled="step === 0" @click="previous">
             <ChevronLeft :size="14" />上一步
           </UiButton>
-          <UiButton title="下一步" :disabled="step >= stepCount" @click="next">
+          <UiButton tip="下一步" :disabled="step >= stepCount" @click="next">
             下一步<ChevronRight :size="14" />
           </UiButton>
-          <UiButton class="icon-button" title="重置" @click="reset">
+          <UiButton class="icon-button" tip="重置" @click="reset">
             <RotateCcw :size="14" />
           </UiButton>
         </template>

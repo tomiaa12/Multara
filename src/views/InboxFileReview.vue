@@ -90,13 +90,15 @@ defineExpose({ layout });
     <section v-if="file" class="editor-area">
       <header class="editor-tabbar">
         <div class="editor-tabs">
-          <button type="button" class="editor-tab active" :title="filePath">
+          <UiTooltip :content="filePath"><button type="button" class="editor-tab active">
             <FileTypeIcon :name="title" />
             <span class="editor-tab-name">{{ title }}</span>
-            <span class="tab-close" :title="t('common.close')" @click="emit('close')">
-              <X :size="12" />
-            </span>
-          </button>
+            <UiTooltip :content="t('common.close')">
+              <span class="tab-close" @click="emit('close')">
+                <X :size="12" />
+              </span>
+            </UiTooltip>
+          </button></UiTooltip>
         </div>
       </header>
       <div class="editor-main">
@@ -104,7 +106,7 @@ defineExpose({ layout });
           <UiButton
             class="diff-file-action diff-file-action-keep"
             size="small"
-            :title="t('diff.keepAllTitle')"
+            :tip="t('diff.keepAllTitle')"
             :disabled="busy"
             @click="keep"
           >{{ t('diff.keep') }}</UiButton>
@@ -112,7 +114,7 @@ defineExpose({ layout });
             class="diff-file-action"
             variant="ghost"
             size="small"
-            :title="t('diff.revertFileTitle')"
+            :tip="t('diff.revertFileTitle')"
             :disabled="busy"
             @click="undo"
           >{{ t('diff.revert') }}</UiButton>

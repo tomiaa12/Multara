@@ -257,7 +257,7 @@ function openAgent(group: StatisticGroup) {
         <p>{{ timezone }} · {{ t("stats.updatedAt", { time: updatedAt || "—" }) }}</p>
       </div>
       <div class="header-actions">
-        <UiButton :title="t('stats.refresh')" :class="{ 'is-loading': loading }" :disabled="loading" @click="refresh">
+        <UiButton :tip="t('stats.refresh')" :class="{ 'is-loading': loading }" :disabled="loading" @click="refresh">
           <RefreshCw :size="14" />{{ t("stats.refresh") }}
         </UiButton>
       </div>
@@ -342,11 +342,15 @@ function openAgent(group: StatisticGroup) {
         </header>
         <p v-if="buckets.every((item) => chartValue(item) === 0)" class="muted">{{ t("stats.noRangeData") }}</p>
         <div v-else class="usage-chart" role="img" :aria-label="chartTitle">
-          <div v-for="(item, index) in buckets" :key="item.date" class="usage-bar" :title="barTitle(item)">
-            <span class="usage-bar-fill" :style="{ height: barHeight(item) }" />
-            <small v-if="index % labelEvery === 0 || item.partial">{{ item.partial ? `${item.label}*` : item.label }}</small>
-            <small v-else>&nbsp;</small>
-          </div>
+          <template v-for="(item, index) in buckets" :key="item.date">
+            <UiTooltip :content="barTitle(item)">
+              <div class="usage-bar">
+                <span class="usage-bar-fill" :style="{ height: barHeight(item) }" />
+                <small v-if="index % labelEvery === 0 || item.partial">{{ item.partial ? `${item.label}*` : item.label }}</small>
+                <small v-else>&nbsp;</small>
+              </div>
+            </UiTooltip>
+          </template>
         </div>
       </section>
 
@@ -467,11 +471,15 @@ function openAgent(group: StatisticGroup) {
         </header>
         <p v-if="stats.failed === 0" class="muted">{{ t("stats.noFailedRuns") }}</p>
         <div v-else class="usage-chart" role="img" :aria-label="t('stats.errorTrend')">
-          <div v-for="(item, index) in buckets" :key="item.date" class="usage-bar" :title="barTitle(item)">
-            <span class="usage-bar-fill is-error" :style="{ height: barHeight(item) }" />
-            <small v-if="index % labelEvery === 0">{{ item.label }}</small>
-            <small v-else>&nbsp;</small>
-          </div>
+          <template v-for="(item, index) in buckets" :key="item.date">
+            <UiTooltip :content="barTitle(item)">
+              <div class="usage-bar">
+                <span class="usage-bar-fill is-error" :style="{ height: barHeight(item) }" />
+                <small v-if="index % labelEvery === 0">{{ item.label }}</small>
+                <small v-else>&nbsp;</small>
+              </div>
+            </UiTooltip>
+          </template>
         </div>
       </section>
 

@@ -1420,7 +1420,7 @@ defineExpose({
     <aside v-if="showSessionList" class="thread-list">
       <div class="thread-heading">
         <strong>{{ t("chat.threadsTitle") }}</strong>
-        <UiButton class="icon-button" :title="t('chat.newChat')" :disabled="!targetOptions.length" @click="createSession">
+        <UiButton class="icon-button" :tip="t('chat.newChat')" :disabled="!targetOptions.length" @click="createSession">
           <MessageSquarePlus :size="15" />
         </UiButton>
       </div>
@@ -1446,36 +1446,35 @@ defineExpose({
         </div>
         <div v-else class="chat-session-bar">
           <div ref="sessionTabs" class="chat-session-tabs vs-scroll">
-            <button
-              v-for="item in displaySessions"
-              :key="item.id"
-              type="button"
-              class="chat-session-tab"
-              :class="{ active: item.id === session?.id }"
-              :data-session-id="item.id"
-              :title="item.title"
-              @click="selectSession(item.id)"
-              @click.middle.prevent="closeSessionTab(item.id, $event)"
-              @auxclick.middle.prevent="closeSessionTab(item.id, $event)"
-              @mousedown.middle.prevent
-              @contextmenu="openTabMenu(item.id, $event)"
-            >
-              <MessageSquare :size="13" />
-              <span>{{ item.title }}</span>
-              <span
-                class="tab-close"
-                :title="t('chat.closeTab')"
-                @click="closeSessionTab(item.id, $event)"
-              >
-                <X :size="12" />
-              </span>
-            </button>
+            <template v-for="item in displaySessions" :key="item.id">
+              <UiTooltip :content="item.title">
+                <button
+                  type="button"
+                  class="chat-session-tab"
+                  :class="{ active: item.id === session?.id }"
+                  :data-session-id="item.id"
+                  @click="selectSession(item.id)"
+                  @click.middle.prevent="closeSessionTab(item.id, $event)"
+                  @auxclick.middle.prevent="closeSessionTab(item.id, $event)"
+                  @mousedown.middle.prevent
+                  @contextmenu="openTabMenu(item.id, $event)"
+                >
+                  <MessageSquare :size="13" />
+                  <span>{{ item.title }}</span>
+                  <UiTooltip :content="t('chat.closeTab')">
+                    <span class="tab-close" @click="closeSessionTab(item.id, $event)">
+                      <X :size="12" />
+                    </span>
+                  </UiTooltip>
+                </button>
+              </UiTooltip>
+            </template>
           </div>
           <UiButton
             v-if="canCreateSession"
             class="chat-session-new"
             variant="ghost"
-            :title="t('chat.newChatLabel')"
+            :tip="t('chat.newChatLabel')"
             :disabled="!preview && !targetOptions.length"
             @click="createSession"
           >
@@ -1564,9 +1563,11 @@ defineExpose({
           <span>{{ t("chat.sendNotDelivered") }}</span>
         </div>
         <div class="chat-queue-item">
-          <span :title="queuePreview(pendingFailure.content, pendingFailure.attachments.map((item) => item.name))">{{ queuePreviewShort(pendingFailure.content, pendingFailure.attachments.map((item) => item.name)) || pendingFailure.message }}</span>
+          <UiTooltip :content="queuePreview(pendingFailure.content, pendingFailure.attachments.map((item) => item.name))">
+            <span>{{ queuePreviewShort(pendingFailure.content, pendingFailure.attachments.map((item) => item.name)) || pendingFailure.message }}</span>
+          </UiTooltip>
           <UiButton variant="ghost" size="small" @click="restoreFailedDraft">{{ t("chat.restoreToComposer") }}</UiButton>
-          <UiButton class="icon-button" variant="ghost" size="icon" :title="t('common.close')" @click="store.dismissSendFailure()">
+          <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('common.close')" @click="store.dismissSendFailure()">
             <X :size="12" />
           </UiButton>
         </div>
@@ -1604,18 +1605,20 @@ defineExpose({
         <ol v-show="!queueCollapsed" class="chat-queue-list vs-scroll">
           <li v-for="queued in sessionQueue" :key="queued.index" class="chat-queue-item">
             <span class="chat-queue-dot" aria-hidden="true" />
-            <span class="chat-queue-text" :title="queuePreview(queued.content, queued.attachments.map((item) => item.name))">{{ queuePreviewShort(queued.content, queued.attachments.map((item) => item.name)) }}</span>
+            <UiTooltip :content="queuePreview(queued.content, queued.attachments.map((item) => item.name))">
+              <span class="chat-queue-text">{{ queuePreviewShort(queued.content, queued.attachments.map((item) => item.name)) }}</span>
+            </UiTooltip>
             <span class="chat-queue-actions">
               <UiButton
                 variant="ghost"
                 size="small"
-                :title="queueHeld ? t('chat.queueSkipQuestion') : t('chat.queueSendImmediate')"
+                :tip="queueHeld ? t('chat.queueSkipQuestion') : t('chat.queueSendImmediate')"
                 @click="store.promoteQueuedMessage(queued.index)"
               >{{ t("chat.queueSendNow") }}</UiButton>
-              <UiButton class="icon-button" variant="ghost" size="icon" :title="t('chat.queueEdit')" @click="editQueued(queued.index)">
+              <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.queueEdit')" @click="editQueued(queued.index)">
                 <Pencil :size="12" />
               </UiButton>
-              <UiButton class="icon-button" variant="ghost" size="icon" :title="t('chat.queueRemove')" @click="store.removeQueuedMessage(queued.index)">
+              <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.queueRemove')" @click="store.removeQueuedMessage(queued.index)">
                 <Trash2 :size="12" />
               </UiButton>
             </span>
@@ -1658,7 +1661,7 @@ defineExpose({
           <div v-for="attachment in attachments" :key="attachment.path" class="composer-attachment">
             <FileText :size="15" />
             <span>{{ attachment.name }}</span>
-            <UiButton type="button" variant="ghost" size="icon" :title="t('chat.removeAttachment')" @click="removeAttachment(attachment.path)">
+            <UiButton type="button" variant="ghost" size="icon" :tip="t('chat.removeAttachment')" @click="removeAttachment(attachment.path)">
               <X :size="12" />
             </UiButton>
           </div>
@@ -1673,20 +1676,20 @@ defineExpose({
               variant="ghost"
               @click="searchMissingFile"
             >{{ t("chat.globalSearch") }}</UiButton>
-            <UiButton type="button" size="icon" variant="ghost" :title="t('common.close')" @click="dismissComposerMessage">
+            <UiButton type="button" size="icon" variant="ghost" :tip="t('common.close')" @click="dismissComposerMessage">
               <X :size="12" />
             </UiButton>
           </span>
         </p>
         <template #actions>
-            <UiButton type="button" class="icon-button" variant="ghost" :title="t('chat.addAttachment')" @click="chooseAttachments">
+            <UiButton type="button" class="icon-button" variant="ghost" :tip="t('chat.addAttachment')" @click="chooseAttachments">
               <Paperclip :size="15" />
             </UiButton>
             <UiButton
               v-if="canStop"
               type="button"
               class="icon-button"
-              :title="t('chat.stopTaskShortcut')"
+              :tip="t('chat.stopTaskShortcut')"
               @click="stopAgent"
             ><Square :size="14" /></UiButton>
             <UiButton
@@ -1694,7 +1697,7 @@ defineExpose({
               class="ds-send-button send-button"
               type="submit"
               :disabled="!canSend"
-              :title="canStop ? t('chat.enqueue') : t('chat.send')"
+              :tip="canStop ? t('chat.enqueue') : t('chat.send')"
             >
               <ArrowUp :size="16" />
             </UiButton>

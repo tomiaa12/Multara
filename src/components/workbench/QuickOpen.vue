@@ -108,7 +108,9 @@ void nextTick(() => input.value?.focus());
       >
         <FileTypeIcon :name="file.label" />
         <span>{{ file.label }}</span>
-        <small :title="file.detail">{{ file.detail }}</small>
+        <UiTooltip :content="file.detail">
+          <small>{{ file.detail }}</small>
+        </UiTooltip>
       </button>
       <p v-if="!loading && !matches.length">{{ t('workbench.quickOpen.noMatch') }}</p>
     </div>
