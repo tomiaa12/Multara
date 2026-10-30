@@ -246,6 +246,22 @@ export function useExplorer(host: ExplorerHost) {
     return itemOf(next);
   }
 
+  /** Ctrl+方向键：只移动焦点，不改变选择。 */
+  function moveFocusOnly(move: "next" | "previous") {
+    const next = moveFocus(order.value, selection.value.focus, move, 1);
+    if (!next) return null;
+    selection.value = { ...selection.value, focus: next };
+    return itemOf(next);
+  }
+
+  /** Ctrl+Space：切换焦点项的选中状态。 */
+  function toggleFocused() {
+    const key = selection.value.focus;
+    if (!key) return null;
+    selection.value = toggleSelection(selection.value, key);
+    return itemOf(key);
+  }
+
   function focusKey(key: string) {
     const item = itemOf(key);
     if (!item) return null;
@@ -733,7 +749,10 @@ export function useExplorer(host: ExplorerHost) {
       const workspace = host.workspaces()[0];
       return workspace ? { workspaceId: workspace.id, path: "", name: workspace.name } : null;
     }
-    if (item.isDirectory) return { workspaceId: item.workspaceId, path: item.path, name: item.name };
+    if (item.isDirectory) {
+      const root = item.path ? null : host.workspaces().find((entry) => entry.id === item.workspaceId);
+      return { workspaceId: item.workspaceId, path: item.path, name: root?.name ?? item.name };
+    }
     const dir = parentOf(item.path);
     const workspace = host.workspaces().find((entry) => entry.id === item.workspaceId);
     return { workspaceId: item.workspaceId, path: dir, name: dir ? baseName(dir) : (workspace?.name ?? "") };
@@ -1209,6 +1228,8 @@ export function useExplorer(host: ExplorerHost) {
     clickSelect,
     contextSelect,
     moveSelection,
+    moveFocusOnly,
+    toggleFocused,
     focusKey,
     selectAllVisible,
     actionItems,
