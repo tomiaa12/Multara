@@ -5412,7 +5412,7 @@ defineExpose({
           >
             <Codicon name="collapse-all" />
           </UiButton>
-          <UiButton
+          <!-- <UiButton
             variant="ghost"
             size="icon"
             :tip="t('workbench.revealActiveFile')"
@@ -5420,7 +5420,7 @@ defineExpose({
             @click="revealActiveExplorerFile"
           >
             <Codicon name="target" />
-          </UiButton>
+          </UiButton> -->
           <UiButton
             variant="ghost"
             size="icon"

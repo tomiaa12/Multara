@@ -491,6 +491,12 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
   overflow: hidden;
   white-space: nowrap;
 }
+.ds-select-value .ds-avatar,
+.ds-select-value .agent-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
 .ds-select-value > .ds-select-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -591,7 +597,8 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ds-select-tag .ds-avatar {
+.ds-select-tag .ds-avatar,
+.ds-select-tag .agent-avatar {
   width: 16px;
   height: 16px;
   font-size: 10px;
@@ -787,12 +794,14 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
   color: var(--color-text-disabled);
   cursor: not-allowed;
 }
-.ds-select-option .ds-avatar {
+.ds-select-option .ds-avatar,
+.ds-select-option .agent-avatar {
   width: 22px;
   height: 22px;
   font-size: 12px;
 }
-.ds-select-option.has-description .ds-avatar {
+.ds-select-option.has-description .ds-avatar,
+.ds-select-option.has-description .agent-avatar {
   width: 28px;
   height: 28px;
   font-size: 14px;
