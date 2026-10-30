@@ -91,7 +91,8 @@ function startReask(
 </script>
 
 <template>
-  <div v-if="message.role === 'user'">
+  <!-- display:contents：避免包一层矮 div，否则 .user-turn sticky 的父级和自身一样高，永远粘不住 -->
+  <div v-if="message.role === 'user'" class="message-user-slot">
     <div v-if="channelSource" class="channel-message-source">{{ channelSource }}</div>
     <UserPrompt
       :message="message"
@@ -123,6 +124,9 @@ function startReask(
 </template>
 
 <style scoped>
+.message-user-slot {
+  display: contents;
+}
 .channel-message-source {
   margin: 0 0 4px 12px;
   font-size: 11px;
