@@ -359,6 +359,29 @@ describe("per-session message queues", () => {
     expect(store.sessionProcessing("other")).toBe(true);
   });
 
+  test("stopping a run keeps the session queue instead of auto-sending", async () => {
+    const store = useAppStore();
+    await emit();
+    store.send("queued after stop", "welcome");
+    await vi.runAllTimersAsync();
+    expect(store.queuedMessages.map((item) => item.content)).toEqual(["queued after stop"]);
+    await emit({ status: "stopped" });
+    await vi.runAllTimersAsync();
+    expect(backend.sendMessage).not.toHaveBeenCalled();
+    expect(store.queuedMessages.map((item) => item.content)).toEqual(["queued after stop"]);
+  });
+
+  test("a failed run keeps the session queue instead of auto-sending", async () => {
+    const store = useAppStore();
+    await emit();
+    store.send("queued after fail", "welcome");
+    await vi.runAllTimersAsync();
+    await emit({ status: "failed", error: "boom" });
+    await vi.runAllTimersAsync();
+    expect(backend.sendMessage).not.toHaveBeenCalled();
+    expect(store.queuedMessages.map((item) => item.content)).toEqual(["queued after fail"]);
+  });
+
   test("a completion refresh preserves a message being submitted immediately", async () => {
     const store = useAppStore();
     await emit();

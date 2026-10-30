@@ -201,7 +201,12 @@ export const useAppStore = defineStore("app", () => {
         return;
       }
       runStates.value[payload.runId] = payload;
-      if (pendingRunSessions.value.delete(payload.sessionId)) {
+      // 停止/失败后保持排队，不自动发下一条；只有正常推进时才尝试 drain。
+      if (
+        pendingRunSessions.value.delete(payload.sessionId)
+        && payload.status !== "failed"
+        && payload.status !== "stopped"
+      ) {
         queueMicrotask(() => drainMessageQueue());
       }
       let surfacesRefresh: Promise<void> | undefined;
@@ -324,9 +329,12 @@ export const useAppStore = defineStore("app", () => {
         }
         // 对话里可能通过 CLI 增删智能体/小队，结束后同步列表
         void refreshAgentsAndSquads();
-        queueMicrotask(() => {
-          drainMessageQueue();
-        });
+        // 完成才继续队列；停止或失败时队列原样保留，等用户手动「立即发送」或再发一条。
+        if (payload.status === "completed") {
+          queueMicrotask(() => {
+            drainMessageQueue();
+          });
+        }
       }
     });
   }
