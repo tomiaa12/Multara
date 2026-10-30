@@ -1044,6 +1044,7 @@ const catalog: MessageCatalog = {
   "chat.sampleAgent": "샘플 에이전트",
   "chat.pickTarget": "실행자 선택",
   "chat.forkSession": "세션 복제",
+  "chat.forkFromMessage": "이 메시지에서 복제",
   "chat.compact": "컨텍스트 압축",
   "chat.close": "닫기",
   "chat.closeOthers": "다른 탭 닫기",

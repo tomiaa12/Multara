@@ -1526,6 +1526,7 @@ defineExpose({
               :enable-replay="!preview && !historyViewOnly"
               :view-only="historyViewOnly"
               :allow-continue="!historyViewOnly && allowContinueFor(message)"
+              :allow-fork="sessionCommands && !preview"
               :restore-nonce="restoreNonce"
               :restore-message-id="restoreMessageId"
               :turn-running="userTurnRunning(message)"
