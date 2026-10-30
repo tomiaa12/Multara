@@ -214,7 +214,6 @@ watch(
       <p v-if="editNotice" class="composer-error">{{ editNotice }}</p>
       <ComposerPasteImages
         :images="pastedImages.map((image) => ({ key: image.id, src: previews[image.id], name: image.name }))"
-        @open="(id) => { const image = pastedImages.find((item) => item.id === id); if (image) void openAttachment(image); }"
       />
       <div v-if="files.length" class="composer-attachments vs-scroll">
         <template v-for="file in files" :key="file.id">
