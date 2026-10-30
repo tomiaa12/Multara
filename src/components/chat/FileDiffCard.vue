@@ -7,7 +7,6 @@ import { workspaceFileLabel } from "../workbench/workspace-file-location";
 import { translate, useI18n } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import { useDiffStore } from "../../stores/diff";
-import * as backend from "../../services/backend";
 
 const props = defineProps<{ item: PairedTool }>();
 const { t } = useI18n();
@@ -27,16 +26,10 @@ const editingLabel = computed(() => {
 });
 
 const reviewFile = computed(() => {
-  void diffStore.baselines;
   const target = fullPath.value;
   if (!target) return null;
-  for (const key of diffStore.baselines.keys()) {
-    const sep = key.indexOf("\n");
-    if (sep < 0) continue;
-    if (key.slice(sep + 1) !== target) continue;
-    return { workspaceId: key.slice(0, sep), filePath: target };
-  }
-  return null;
+  const workspaceId = diffStore.baselineWorkspaceByPath.get(target);
+  return workspaceId === undefined ? null : { workspaceId, filePath: target };
 });
 
 const pathTitle = computed(() => {
@@ -54,11 +47,8 @@ async function readLive() {
     liveContent.value = null;
     return;
   }
-  try {
-    liveContent.value = (await backend.readWorkspaceFile(file.workspaceId, file.filePath)).content;
-  } catch {
-    liveContent.value = "";
-  }
+  // 同一文件同一个 diskEpoch 只读一次，所有编辑卡共用。
+  liveContent.value = await diffStore.readLiveContent(file.workspaceId, file.filePath);
 }
 
 watch(reviewFile, () => {

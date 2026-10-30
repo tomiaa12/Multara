@@ -15,6 +15,9 @@ struct Delta {
     tool_name: String,
     tool_arguments: String,
     tool_start: bool,
+    /// Chat 上游可能在每个参数碎片里重复带 `id`；只有它需要按 id/index 判断是否续写同一个调用。
+    tool_continuation_check: bool,
+    tool_upstream_index: Option<u64>,
     done: bool,
     input_tokens: u64,
     output_tokens: u64,
@@ -43,6 +46,7 @@ pub struct BridgeReader<R: Read> {
     tool_id: String,
     tool_name: String,
     tool_arguments: String,
+    tool_upstream_index: Option<u64>,
     completed_outputs: Vec<Value>,
 }
 
@@ -71,6 +75,7 @@ impl<R: Read> BridgeReader<R> {
             tool_id: String::new(),
             tool_name: String::new(),
             tool_arguments: String::new(),
+            tool_upstream_index: None,
             completed_outputs: Vec::new(),
         }
     }
@@ -124,7 +129,8 @@ impl<R: Read> BridgeReader<R> {
         if !delta.reasoning.is_empty() {
             self.emit_reasoning(&delta.reasoning);
         }
-        if delta.tool_start {
+        if delta.tool_start && !self.continues_open_tool(&delta) {
+            self.tool_upstream_index = delta.tool_upstream_index;
             self.emit_tool_start(&delta.tool_id, &delta.tool_name);
         }
         if !delta.tool_arguments.is_empty() {
@@ -214,6 +220,16 @@ impl<R: Read> BridgeReader<R> {
                 json!({"candidates":[{"content":{"role":"model","parts":[{"text":text,"thought":true}]}}],"modelVersion":self.model})
             )),
         }
+    }
+
+    /// 同一个调用的后续参数碎片（id 相同或为空、index 未变）只追加参数，不再开新 tool_use。
+    fn continues_open_tool(&self, delta: &Delta) -> bool {
+        if !delta.tool_continuation_check || !self.tool_open {
+            return false;
+        }
+        let same_id = delta.tool_id.is_empty() || delta.tool_id == self.tool_id;
+        let same_index = delta.tool_upstream_index == self.tool_upstream_index;
+        same_id && same_index
     }
 
     fn emit_tool_start(&mut self, id: &str, name: &str) {
@@ -442,6 +458,8 @@ fn extract_delta(format: ApiFormat, event: &str, value: &Value) -> Delta {
                 .to_string(),
             tool_start: event == "content_block_start"
                 && value.pointer("/content_block/type").and_then(Value::as_str) == Some("tool_use"),
+            tool_continuation_check: false,
+            tool_upstream_index: None,
             done: event == "message_stop",
             input_tokens: value
                 .pointer("/message/usage/input_tokens")
@@ -484,6 +502,8 @@ fn extract_delta(format: ApiFormat, event: &str, value: &Value) -> Delta {
                 .to_string(),
             tool_start: event == "response.output_item.added"
                 && value.pointer("/item/type").and_then(Value::as_str) == Some("function_call"),
+            tool_continuation_check: false,
+            tool_upstream_index: None,
             done: event == "response.completed" || event == "response.failed",
             input_tokens: value
                 .pointer("/response/usage/input_tokens")
@@ -524,7 +544,9 @@ fn extract_delta(format: ApiFormat, event: &str, value: &Value) -> Delta {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
-                tool_start: tool.get("id").is_some(),
+                tool_start: tool.get("id").is_some_and(|id| id.as_str().is_some_and(|id| !id.is_empty())),
+                tool_continuation_check: true,
+                tool_upstream_index: tool.get("index").and_then(Value::as_u64),
                 done: value
                     .pointer("/choices/0/finish_reason")
                     .is_some_and(|value| !value.is_null()),
@@ -568,6 +590,8 @@ fn extract_delta(format: ApiFormat, event: &str, value: &Value) -> Delta {
                     .to_string(),
                 tool_arguments: call.get("args").map(Value::to_string).unwrap_or_default(),
                 tool_start: call.is_object(),
+                tool_continuation_check: false,
+                tool_upstream_index: None,
                 done: value
                     .pointer("/candidates/0/finishReason")
                     .and_then(Value::as_str)
@@ -609,6 +633,25 @@ mod tests {
         assert!(output.contains("text_delta"));
         assert!(output.contains("\"ok\""));
         assert!(output.contains("event: message_stop"));
+    }
+
+    #[test]
+    fn repeated_chat_tool_id_continues_one_call() {
+        let source = concat!(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"com\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"\",\"arguments\":\"mand\\\":\\\"pwd\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+        );
+        let mut bridge = BridgeReader::new(
+            Cursor::new(source),
+            ApiFormat::Chat,
+            ApiFormat::Anthropic,
+            "model".into(),
+        );
+        let mut output = String::new();
+        bridge.read_to_string(&mut output).unwrap();
+        assert_eq!(output.matches("event: content_block_start").count(), 1);
+        assert_eq!(output.matches("input_json_delta").count(), 2);
     }
 
     #[test]

@@ -1465,6 +1465,12 @@ export async function gitBlameLine(
   });
 }
 
+/** 整文件 blame：`null` 表示不在仓库里；空数组表示整个文件都没有历史（尚未提交）。 */
+export async function gitBlameFile(workspaceId: string, path: string): Promise<GitLineBlame[] | null> {
+  if (!inTauri()) return null;
+  return invoke<GitLineBlame[] | null>("git_blame_file", { workspaceId, path });
+}
+
 export async function gitRevisionFile(
   workspaceId: string,
   revision: string,

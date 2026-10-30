@@ -800,6 +800,74 @@ pub fn blame_line(
     }
 }
 
+/// 整文件 blame，一次子进程。编辑器把结果缓存起来，移动光标只查表，不再每换一行起一次 git。
+pub fn blame_file(
+    root: &str,
+    git_command: &str,
+    rel_path: &str,
+) -> Result<Option<Vec<GitLineBlame>>, String> {
+    validate_relative(rel_path)?;
+    let inside =
+        output(git_command, root, &["rev-parse", "--is-inside-work-tree"]).unwrap_or_default();
+    if inside.trim() != "true" {
+        return Ok(None);
+    }
+    match output(git_command, root, &["blame", "--porcelain", "--", rel_path]) {
+        Ok(text) => Ok(Some(parse_blame_porcelain_file(&text))),
+        // 没有历史（新文件）：空列表表示“整个文件都尚未提交”，None 才表示不在仓库里。
+        Err(message) if blame_has_no_history(&message) => Ok(Some(Vec::new())),
+        Err(message) => Err(message),
+    }
+}
+
+/// porcelain 里每个提交的作者/摘要只在第一次出现时给出，之后的行只有头部。
+pub fn parse_blame_porcelain_file(text: &str) -> Vec<GitLineBlame> {
+    let mut commits: std::collections::HashMap<String, GitLineBlame> =
+        std::collections::HashMap::new();
+    let mut lines = Vec::new();
+    let mut current: Option<(String, GitLineBlame)> = None;
+    for raw in text.lines() {
+        if raw.starts_with('\t') {
+            if let Some((hash, info)) = current.take() {
+                commits.entry(hash).or_insert_with(|| info.clone());
+                lines.push(info);
+            }
+            continue;
+        }
+        if let Some((_, info)) = current.as_mut() {
+            if let Some(rest) = raw.strip_prefix("author ") {
+                info.author_name = rest.to_string();
+            } else if let Some(rest) = raw.strip_prefix("author-mail ") {
+                info.author_email = rest
+                    .trim()
+                    .trim_start_matches('<')
+                    .trim_end_matches('>')
+                    .to_string();
+            } else if let Some(rest) = raw.strip_prefix("author-time ") {
+                info.author_time = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = raw.strip_prefix("summary ") {
+                info.subject = rest.to_string();
+            }
+            continue;
+        }
+        let mut parts = raw.split_whitespace();
+        let Some(hash) = parts.next().filter(|hash| hash.len() >= 8) else {
+            continue;
+        };
+        let committed = hash.chars().any(|char| char != '0');
+        let info = commits.get(hash).cloned().unwrap_or(GitLineBlame {
+            committed,
+            hash: if committed { hash.to_string() } else { String::new() },
+            author_name: String::new(),
+            author_email: String::new(),
+            author_time: 0,
+            subject: String::new(),
+        });
+        current = Some((hash.to_string(), info));
+    }
+    lines
+}
+
 fn uncommitted_blame() -> GitLineBlame {
     GitLineBlame {
         committed: false,
@@ -1418,5 +1486,27 @@ mod tests {
             .status()
             .unwrap()
             .success());
+    }
+}
+
+#[cfg(test)]
+mod blame_file_tests {
+    use super::parse_blame_porcelain_file;
+
+    #[test]
+    fn reuses_commit_metadata_for_repeated_hashes() {
+        let text = concat!(
+            "aaaaaaaa1111111111111111111111111111111a 1 1 2\n",
+            "author Ann\nauthor-mail <ann@x.dev>\nauthor-time 100\nsummary first\n",
+            "filename f.rs\n\tline one\n",
+            "aaaaaaaa1111111111111111111111111111111a 2 2\n\tline two\n",
+            "0000000000000000000000000000000000000000 3 3 1\n",
+            "author Not Committed Yet\nsummary Version of f.rs from f.rs\n\tline three\n",
+        );
+        let lines = parse_blame_porcelain_file(text);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[1].author_name, "Ann");
+        assert_eq!(lines[1].subject, "first");
+        assert!(lines[0].committed && !lines[2].committed);
     }
 }

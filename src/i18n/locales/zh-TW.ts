@@ -1305,6 +1305,7 @@ const catalog: MessageCatalog = {
   "chat.newMessagesDivider": "新消息",
   "chat.sendNotDelivered": "沒有發出",
   "chat.restoreToComposer": "放回輸入框",
+  "chat.showEarlier": "顯示更早的 {count} 輪對話",
   "chat.scrollToBottom": "回到底部",
   "chat.queueCount": "{n} 條排隊消息",
   "chat.queueHeldHint": "回答提問后繼續發送",

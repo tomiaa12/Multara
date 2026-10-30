@@ -32,6 +32,7 @@ class WorkspaceCodeIndex {
   private typingLocations = new Map<string, LocatedFile | null>();
   private indexedSourceBytes = 0;
   private indexedSourceFiles = 0;
+  private paused = false;
 
   setWorkspaces(owner: object, workspaceIds: string[]) {
     this.owners.set(owner, workspaceIds);
@@ -52,6 +53,16 @@ class WorkspaceCodeIndex {
   setCompilerOptions(workspaceId: string, options: WorkspaceCompilerOptions) {
     this.compilerOptions.set(workspaceId, options);
     this.applyCompilerOptions();
+  }
+
+  /**
+   * 智能体在改文件时，每次磁盘变化都会触发整个工作区的重新索引（建模型、同步给 TS worker、重算诊断），
+   * 和聊天流式渲染抢主线程。运行期间先攒着，结束后补一次。
+   */
+  setPaused(paused: boolean) {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (!paused) this.refreshAll();
   }
 
   refreshAll() {
@@ -95,6 +106,7 @@ class WorkspaceCodeIndex {
   private refresh(workspaceId: string): Promise<void> {
     const entry = this.workspaces.get(workspaceId);
     if (!entry) return Promise.resolve();
+    if (this.paused && entry.mtimes.size > 0) return Promise.resolve();
     if (entry.refreshing) {
       entry.queued = true;
       return entry.refreshing;

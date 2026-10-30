@@ -1305,6 +1305,7 @@ const catalog: MessageCatalog = {
   "chat.newMessagesDivider": "New messages",
   "chat.sendNotDelivered": "Not sent",
   "chat.restoreToComposer": "Restore to input",
+  "chat.showEarlier": "이전 {count}개 보기",
   "chat.scrollToBottom": "Back to bottom",
   "chat.queueCount": "{n} queued messages",
   "chat.queueHeldHint": "Send after you answer the question",

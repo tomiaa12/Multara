@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { ChevronRight } from "@lucide/vue";
 import type { TimelineItem } from "../../domain/types";
 import { useAppStore } from "../../stores/app";
@@ -20,6 +20,8 @@ const props = defineProps<{
 
 const store = useAppStore();
 const blocks = computed(() => groupTimeline(props.items));
+// 折叠态默认不渲染几百上千行的工具明细，展开时再挂载。
+const opened = ref(false);
 const collapsed = computed(() => !props.running && blocks.value.length > 0);
 const foldLabel = computed(() =>
   workFoldLabel(props.elapsedMs, store.data?.settings.language),
@@ -60,12 +62,16 @@ function nestedItems(children: TimelineBlock[]) {
 </script>
 
 <template>
-  <details v-if="collapsed" class="process-fold">
+  <details
+    v-if="collapsed"
+    class="process-fold"
+    @toggle="opened = ($event.target as HTMLDetailsElement).open"
+  >
     <summary>
       <span>{{ foldLabel }}</span>
       <ChevronRight :size="12" />
     </summary>
-    <div class="process-stream">
+    <div v-if="opened" class="process-stream">
       <template v-for="(block, index) in blocks" :key="blockKey(block, index)">
         <ThinkingLine v-if="block.type === 'thinking'" :item="block.item" />
         <p v-else-if="block.type === 'error'" class="process-error">{{ errorText(block) }}</p>

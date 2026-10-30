@@ -2383,7 +2383,16 @@ function isWriteTimelineItem(item: ChatMessage["timeline"][number]) {
   return kind === "edit" || kind === "write";
 }
 
+// 写入工具迟迟没有结果时不能一直把文件锁成只读（光标会消失、无法输入）；超过这个时间就放行。
+const WRITE_LOCK_STALE_MS = 90_000;
+const writeLockClock = ref(Date.now());
+const writeLockTimer = window.setInterval(() => {
+  writeLockClock.value = Date.now();
+}, 10_000);
+onBeforeUnmount(() => window.clearInterval(writeLockTimer));
+
 const filesBeingWritten = computed(() => {
+  const now = writeLockClock.value;
   const keys = new Set<string>();
   for (const event of Object.values(store.runStates)) {
     if (event.status !== "running") continue;
@@ -2397,6 +2406,8 @@ const filesBeingWritten = computed(() => {
         continue;
       }
       if (item.eventType !== "tool_use" || !isWriteTimelineItem(item)) continue;
+      const startedAt = Date.parse(item.createdAt);
+      if (Number.isFinite(startedAt) && now - startedAt > WRITE_LOCK_STALE_MS) continue;
       const raw = toolPath(item);
       if (!raw) continue;
       const resolved = resolveToolPath(raw);
@@ -2669,7 +2680,12 @@ function editorModelUri(workspaceId: string, path: string) {
 
 function adoptEditorModel(workspaceId: string, path: string, content: string) {
   const model = monaco.editor.getModel(editorModelUri(workspaceId, path));
-  if (model && model.getValue() !== content) model.setValue(content);
+  if (!model || model.getValue() === content) return;
+  // 正在显示这个模型时，setValue 会把光标和滚动位置打回开头，先存后还原。
+  const editor = codeEditor.value;
+  const viewState = editor && editor.getModel() === model ? editor.saveViewState() : null;
+  model.setValue(content);
+  if (viewState && editor) editor.restoreViewState(viewState);
 }
 
 function discardEditorChanges(tab: EditorTab) {
@@ -4965,6 +4981,18 @@ watch(
     }
   },
 );
+
+watch(
+  () =>
+    Object.values(store.runStates).some((event) => {
+      if (event.status !== "running") return false;
+      const session = store.data?.sessions.find((item) => item.id === event.sessionId);
+      return session?.projectId === projectId.value;
+    }),
+  (running) => codeIndex.setPaused(running),
+  { immediate: true },
+);
+onBeforeUnmount(() => codeIndex.setPaused(false));
 
 watch(
   () =>
