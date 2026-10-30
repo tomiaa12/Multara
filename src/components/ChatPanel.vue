@@ -28,7 +28,9 @@ import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
+import { listIsAtBottom, stickListToBottom } from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
+import { lastUnansweredUser } from "./chat/unanswered-turn";
 import { decodeTextBytes } from "./workbench/text-encoding";
 
 const emit = defineEmits<{
@@ -86,11 +88,6 @@ let rollbackFailureResolve: ((allowed: boolean) => void) | null = null;
 const restoreNonce = ref(0);
 const restoreMessageId = ref("");
 const MAX_ATTACHMENTS = 10;
-
-async function stopAgent() {
-  if (props.preview) return;
-  await store.stopActiveRun();
-}
 
 const store = useAppStore();
 const diffStore = useDiffStore();
@@ -966,20 +963,14 @@ function removeAttachment(path: string) {
   pendingAttachments.value[session.value.id] = attachments.value.filter((item) => item.path !== path);
 }
 
-function listIsAtBottom(element: HTMLElement) {
-  // 最后一轮 .message-exchange 有 min-height: 100%（新提问顶到视口顶部），回答短时下方是空白；
-  // 按最后一条真实内容的底部判断，视口停在空白里时不算离开底部。
-  const lastContent = element.querySelector(".message-exchange:last-child")?.lastElementChild;
-  if (lastContent) {
-    return lastContent.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom < 80;
-  }
-  return element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-}
+/** 程序化滚底时忽略 scroll 事件，避免误关 followBottom。 */
+let suppressScrollFollow = false;
+let messageListResize: ResizeObserver | null = null;
 
 function handleScroll() {
   const element = messageList.value;
   if (!element) return;
-  followBottom.value = listIsAtBottom(element);
+  if (!suppressScrollFollow) followBottom.value = listIsAtBottom(element);
   if (element.scrollTop < 160 && hiddenGroupCount.value > 0) void showEarlierGroups();
 }
 
@@ -992,15 +983,41 @@ function rememberSessionScroll(sessionId: string | undefined) {
   });
 }
 
+function scheduleStickToBottom(behavior: ScrollBehavior = "auto") {
+  const run = () => {
+    const element = messageList.value;
+    if (!element || !followBottom.value) return;
+    suppressScrollFollow = true;
+    stickListToBottom(element, behavior);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        suppressScrollFollow = false;
+      });
+    });
+  };
+  void nextTick(() => {
+    run();
+    requestAnimationFrame(run);
+  });
+}
+
 function applySessionScroll(sessionId: string | undefined) {
   const element = messageList.value;
   if (!element || !sessionId) return;
   const saved = sessionScroll.get(sessionId);
   const atBottom = !saved || saved.atBottom;
   followBottom.value = atBottom;
-  element.scrollTop = !saved || saved.atBottom
-    ? element.scrollHeight
-    : Math.min(saved.scrollTop, element.scrollHeight);
+  if (!saved || saved.atBottom) {
+    scheduleStickToBottom("auto");
+    return;
+  }
+  suppressScrollFollow = true;
+  element.scrollTop = Math.min(saved.scrollTop, element.scrollHeight);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      suppressScrollFollow = false;
+    });
+  });
 }
 
 function revealTranscript(sessionId: string | undefined) {
@@ -1017,10 +1034,46 @@ function revealTranscript(sessionId: string | undefined) {
 }
 
 function scrollToBottom(behavior: ScrollBehavior = "smooth") {
-  const element = messageList.value;
-  if (!element) return;
   followBottom.value = true;
-  element.scrollTo({ top: element.scrollHeight, behavior });
+  scheduleStickToBottom(behavior);
+}
+
+/** 发送后把最新一轮顶到视口顶部，配合末轮 min-height:100% 与 .user-turn sticky。 */
+function pinLastExchangeToTop() {
+  const list = messageList.value;
+  const last = list?.querySelector<HTMLElement>(".message-exchange:last-child");
+  if (!list || !last) {
+    scrollToBottom("auto");
+    return;
+  }
+  followBottom.value = true;
+  suppressScrollFollow = true;
+  const align = () => {
+    const delta = last.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    if (Math.abs(delta) > 1) list.scrollTop += delta;
+  };
+  align();
+  requestAnimationFrame(() => {
+    align();
+    // 末轮撑满一屏后，再贴一次绝对底部，短回答时提问仍停在顶部
+    stickListToBottom(list, "auto");
+    requestAnimationFrame(() => {
+      suppressScrollFollow = false;
+    });
+  });
+}
+
+function bindMessageListResize() {
+  messageListResize?.disconnect();
+  messageListResize = null;
+  const element = messageList.value;
+  if (!element || typeof ResizeObserver === "undefined") return;
+  messageListResize = new ResizeObserver(() => {
+    if (!followBottom.value) return;
+    stickListToBottom(element, "auto");
+  });
+  // 观察子节点高度：Markdown / 卡片异步撑高时继续贴底（观察列表自身不会因 scrollHeight 变化触发）。
+  for (const child of element.children) messageListResize.observe(child);
 }
 
 async function startReaskFromMessage(
@@ -1057,6 +1110,19 @@ async function applyFailedDraft(failure: { content: string; attachments: Message
   ) && failure.attachments.length === 0;
   await nextTick();
   composerInput.value?.restore(nodes);
+}
+
+async function stopAgent() {
+  if (props.preview || !session.value) return;
+  const unanswered = lastUnansweredUser(sessionMessages.value);
+  if (unanswered) {
+    const draft = await store.withdrawUnansweredPrompt(session.value.id);
+    if (draft) {
+      await applyFailedDraft(draft);
+      return;
+    }
+  }
+  await store.stopActiveRun();
 }
 
 const queueCollapsed = ref(false);
@@ -1164,6 +1230,12 @@ watch(
       applySessionScroll(typeof current[0] === "string" ? current[0] : undefined);
       return;
     }
+    // 刚发出的用户消息：把这一轮顶到视口顶部（粘性提问）。
+    if (lengthAfter > lengthBefore && sessionMessages.value.at(-1)?.role === "user") {
+      followBottom.value = true;
+      void nextTick(() => pinLastExchangeToTop());
+      return;
+    }
     if (!followBottom.value) return;
     const opened = element.scrollHeight - before > element.clientHeight;
     if (opened) {
@@ -1171,6 +1243,7 @@ watch(
       return;
     }
     // 流式输出时每个片段都会走到这里，smooth 动画会被反复重启并连带强制布局。
+    // 新提问靠末轮 min-height:100% + sticky，贴底后提问停在视口顶，回答在下方展开。
     scrollToBottom(sessionProcessing.value ? "auto" : "smooth");
   },
 );
@@ -1224,9 +1297,20 @@ onMounted(() => {
   void ensureSession();
   void nextTick(() => {
     sessionTabs.value?.addEventListener("wheel", onTabsWheel, { passive: false });
+    bindMessageListResize();
+    if (session.value?.id) revealTranscript(session.value.id);
   });
 });
+watch(messageList, () => bindMessageListResize());
+watch(
+  () => [visibleGroups.value.length, sessionMessages.value.length, showWorking.value] as const,
+  () => {
+    void nextTick(() => bindMessageListResize());
+  },
+);
 onBeforeUnmount(() => {
+  messageListResize?.disconnect();
+  messageListResize = null;
   window.clearInterval(liveTimer);
   sessionTabs.value?.removeEventListener("wheel", onTabsWheel);
 });

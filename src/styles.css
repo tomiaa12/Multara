@@ -510,8 +510,10 @@
   padding-top: 15vh;
   text-align: center;
 }
+/* 末轮至少一屏高：跟到底时提问在视口顶，回答在下方展开（配合 .user-turn sticky） */
 .message-exchange:last-child {
   min-height: 100%;
+  box-sizing: border-box;
 }
 .message-exchange + .message-exchange {
   margin-top: var(--spacing-8);
