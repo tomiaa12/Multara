@@ -31,14 +31,19 @@ describe("liveWorkLabel", () => {
       [item("tool_use", "Shell", { command: "multara project list" }), item("tool_result", "Shell")],
       12,
       { status: "running", language: "zh-CN" },
-    )).toBe("执行命令 · 12 秒");
-    expect(liveWorkLabel([item("tool_use", "Read", { path: ".env.dev" })], 65, { status: "running", language: "zh-CN" })).toBe("读取文件 · 1 分 5 秒");
-    expect(liveWorkLabel([item("tool_use", "Read", { path: ".env.dev" })], 65, { status: "running", language: "en" })).toBe("Reading files · 1m 5s");
+    )).toBe("运行命令 multara project list · 12 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "Shell", { command: "pnpm test", description: "跑单测" })],
+      12,
+      { status: "running", language: "zh-CN" },
+    )).toBe("运行命令 跑单测 · 12 秒");
+    expect(liveWorkLabel([item("tool_use", "Read", { path: ".env.dev" })], 65, { status: "running", language: "zh-CN" })).toBe("读取文件 .env.dev · 1 分 5 秒");
+    expect(liveWorkLabel([item("tool_use", "Read", { path: ".env.dev" })], 65, { status: "running", language: "en" })).toBe("Reading files .env.dev · 1m 5s");
     expect(liveWorkLabel(
       [item("tool_use", "StrReplace", { path: "src/styles.css" })],
       4,
       { status: "running", language: "zh-CN" },
-    )).toBe("修改中 styles.css · 4 秒");
+    )).toBe("编辑文件 styles.css · 4 秒");
     expect(liveWorkLabel(
       [
         { ...item("tool_use", "StrReplace", { path: "src/ChatComposerField.vue" }), seq: 1, callId: "a" },
@@ -46,7 +51,42 @@ describe("liveWorkLabel", () => {
       ],
       4,
       { status: "running", language: "zh-CN" },
-    )).toBe("修改中 ChatComposerField.vue · 4 秒\n修改中 ChatComposer.vue · 4 秒");
+    )).toBe("编辑文件 ChatComposerField.vue · 4 秒\n编辑文件 ChatComposer.vue · 4 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "Task", { description: "查代码" })],
+      2,
+      { status: "running", language: "zh-CN" },
+    )).toBe("调用子代理 查代码 · 2 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "Delete", { path: "tmp/a.ts" })],
+      2,
+      { status: "running", language: "zh-CN" },
+    )).toBe("删除文件 a.ts · 2 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "TodoWrite", {
+        todos: [
+          { id: "1", content: "读文件", status: "completed" },
+          { id: "2", content: "改代码", status: "in_progress" },
+        ],
+      })],
+      2,
+      { status: "running", language: "zh-CN" },
+    )).toBe("更新计划 改代码 · 2 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "mcp_chrome-browser-plugin_browser_navigate", { url: "https://example.com" })],
+      2,
+      { status: "running", language: "zh-CN" },
+    )).toBe("调用 MCP browser_navigate https://example.com · 2 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "GenerateImage", { prompt: "一只橘猫坐在窗台" })],
+      2,
+      { status: "running", language: "zh-CN" },
+    )).toBe("生成图片 一只橘猫坐在窗台 · 2 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "AskQuestion", { title: "选分支策略" })],
+      2,
+      { status: "running", language: "zh-CN" },
+    )).toBe("提问 选分支策略 · 2 秒");
   });
 });
 
