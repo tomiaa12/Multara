@@ -59,4 +59,13 @@ describe("explorerKey", () => {
     expect(action({ key: "ArrowDown", metaKey: true }, mac)).toBe("open");
     expect(action({ key: "Escape" }, win)).toBe("cancel-cut");
   });
+
+  test("Ctrl+arrow moves focus without selecting, Ctrl+Space toggles", () => {
+    for (const platform of [win, mac]) {
+      expect(action({ key: "ArrowDown", ctrlKey: true }, platform)).toBe("focus-next");
+      expect(action({ key: "ArrowUp", ctrlKey: true }, platform)).toBe("focus-previous");
+      expect(action({ key: " ", ctrlKey: true }, platform)).toBe("toggle-select");
+    }
+    expect(action({ key: "ArrowDown", metaKey: true }, mac)).toBe("open");
+  });
 });

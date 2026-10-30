@@ -25,6 +25,9 @@ export type ExplorerKeyAction =
   | "last"
   | "page-down"
   | "page-up"
+  | "focus-next"
+  | "focus-previous"
+  | "toggle-select"
   | "chord-k";
 
 type KeyState = {
@@ -94,6 +97,12 @@ export function explorerKey(
   if (!isMac && noMods && key === "Enter") return { action: "open" };
   if (only({ primary: true }) && key === "Enter") return { action: "open-side" };
   if (noMods && key === " ") return { action: "open-preserve-focus" };
+
+  // 不改变选择地移动焦点，再用 Ctrl+Space 切换当前项（VS Code 列表的不连续多选）。
+  const ctrlOnly = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+  if (ctrlOnly && key === "ArrowDown") return { action: "focus-next" };
+  if (ctrlOnly && key === "ArrowUp") return { action: "focus-previous" };
+  if (ctrlOnly && key === " ") return { action: "toggle-select" };
 
   if (only({ primary: true }) && key === "ArrowLeft") return { action: "collapse-all" };
   if (isMac && only({ primary: true }) && key === "ArrowUp") return { action: "left" };

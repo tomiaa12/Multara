@@ -4061,6 +4061,38 @@ function attachWorkspacePath(item: {
   });
 }
 
+let treeScrollSpeed = 0;
+let treeScrollFrame = 0;
+
+/** 拖动时指针靠近文件树上 / 下边缘就自动滚动，离边缘越近越快。 */
+function updateTreeAutoScroll(clientY: number) {
+  const scroller = fileTreeEl.value;
+  if (!scroller) return;
+  const rect = scroller.getBoundingClientRect();
+  const edge = 36;
+  if (clientY < rect.top + edge) treeScrollSpeed = -Math.ceil(((rect.top + edge - clientY) / edge) * 14);
+  else if (clientY > rect.bottom - edge) treeScrollSpeed = Math.ceil(((clientY - (rect.bottom - edge)) / edge) * 14);
+  else treeScrollSpeed = 0;
+  treeScrollSpeed = Math.max(-28, Math.min(28, treeScrollSpeed));
+  if (treeScrollSpeed && !treeScrollFrame) {
+    const step = () => {
+      if (!treeScrollSpeed || !fileTreeEl.value) {
+        treeScrollFrame = 0;
+        return;
+      }
+      fileTreeEl.value.scrollTop += treeScrollSpeed;
+      treeScrollFrame = requestAnimationFrame(step);
+    };
+    treeScrollFrame = requestAnimationFrame(step);
+  }
+}
+
+function stopTreeAutoScroll() {
+  treeScrollSpeed = 0;
+  if (treeScrollFrame) cancelAnimationFrame(treeScrollFrame);
+  treeScrollFrame = 0;
+}
+
 function onTreePointerDown(
   workspaceId: string,
   entry: FileEntry,
@@ -4086,12 +4118,15 @@ function onTreePointerDown(
       },
       onMove: (moveEvent) => {
         explorer.updateDragOver(treeItemFromPoint(moveEvent.clientX, moveEvent.clientY), isCopyDrag(moveEvent, explorer.isMac));
+        updateTreeAutoScroll(moveEvent.clientY);
       },
       onCancel: () => {
+        stopTreeAutoScroll();
         draggingTreeKey.value = "";
         explorer.endDrag();
       },
       onDrop: (payload, zone, dropEvent) => {
+        stopTreeAutoScroll();
         requestAnimationFrame(() => {
           draggingTreeKey.value = "";
         });
@@ -4131,6 +4166,11 @@ async function finishTreeDrag(
     }
     return;
   }
+  if (zone === "explorer" && !target) {
+    // 拖到文件树空白处：移动 / 复制到被拖项所在工作区的根目录（VS Code 同样）。
+    await explorer.dropOnTarget(treeItem(payload.workspaceId, "", true), copy);
+    return;
+  }
   explorer.endDrag();
   if (zone) store.reportComposerNotice(t("workbench.composerDropHint"));
 }
@@ -4151,6 +4191,22 @@ function onExplorerKeydown(event: KeyboardEvent, workspaceId?: string, entry?: F
   if (event.isComposing) return;
   const target = event.target as HTMLElement | null;
   if (target?.closest(".tree-inline-input, .explorer-find-input")) return;
+  if (event.key === "ContextMenu" || (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "F10")) {
+    // 键盘唤起右键菜单：菜单锚在当前行左下，而不是鼠标位置。
+    const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : null;
+    const focused = explorer.focusedItem.value;
+    const menuWorkspace = workspaceId ?? focused?.workspaceId;
+    if (anchor && menuWorkspace) {
+      const menuEntry = entry ?? (focused?.path ? fileEntryFromItem(focused) : null);
+      openTreeMenu(menuWorkspace, menuEntry, {
+        clientX: anchor.left + 24,
+        clientY: anchor.bottom,
+        preventDefault: () => event.preventDefault(),
+        stopPropagation: () => event.stopPropagation(),
+      } as MouseEvent);
+    }
+    return;
+  }
   const result = explorerKey(event, { isMac: isMacOS, chordK: explorerChordK });
   if (result?.action === "chord-k") {
     event.preventDefault();
@@ -4217,6 +4273,17 @@ async function runExplorerKey(result: ExplorerKeyResult, workspaceId?: string, e
       return;
     }
     clearTreeSelection();
+    return;
+  }
+
+  if (result.action === "focus-next" || result.action === "focus-previous") {
+    const next = explorer.moveFocusOnly(result.action === "focus-next" ? "next" : "previous");
+    if (next) void focusExplorerItem(next);
+    return;
+  }
+  if (result.action === "toggle-select") {
+    const toggled = explorer.toggleFocused();
+    if (toggled) void focusExplorerItem(toggled);
     return;
   }
 
@@ -5522,7 +5589,14 @@ defineExpose({
                   <span v-else-if="entry.compact" class="tree-name tree-compact">
                     <template v-for="(name, index) in entry.compact.names" :key="entry.compact.paths[index]">
                       <span v-if="index" class="tree-compact-sep">/</span>
-                      <span class="tree-compact-seg" @click="onCompactClick(workspace.id, entry.compact!.paths[index], $event)">{{ name }}</span>
+                      <span
+                        class="tree-compact-seg"
+                        :class="{
+                          'is-drop': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && explorerDragOver.valid,
+                          'is-drop-invalid': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && !explorerDragOver.valid,
+                        }"
+                        :data-tree-key="treeKey(workspace.id, entry.compact!.paths[index])"
+                        @click="onCompactClick(workspace.id, entry.compact!.paths[index], $event)">{{ name }}</span>
                     </template>
                   </span>
                   <span v-else class="tree-name">
