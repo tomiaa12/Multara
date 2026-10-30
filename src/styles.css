@@ -4843,6 +4843,13 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   background: var(--color-primary-subtle);
   box-shadow: inset 0 0 0 1px var(--color-focus);
 }
+.file-tree .tree-compact-seg.is-drop {
+  background: var(--color-primary-subtle);
+  box-shadow: inset 0 0 0 1px var(--color-focus);
+}
+.file-tree .tree-compact-seg.is-drop-invalid {
+  box-shadow: inset 0 0 0 1px var(--color-error);
+}
 .file-tree .tree-entry.is-drop-invalid,
 .file-tree .tree-workspace-head.is-drop-invalid {
   background: var(--color-error-subtle, color-mix(in srgb, var(--color-error) 12%, transparent));
