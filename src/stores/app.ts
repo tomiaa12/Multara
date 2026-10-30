@@ -18,6 +18,7 @@ import { mergeById } from "./merge-by-id";
 import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
 import { extractQuestions } from "../components/chat/question-block";
+import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unanswered-turn";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
 import { t, translate } from "../i18n";
 
@@ -66,6 +67,8 @@ export const useAppStore = defineStore("app", () => {
   const sendingSessions = ref(new Set<string>());
   const pendingRunSessions = ref(new Set<string>());
   const optimisticMessages = new Map<string, string>();
+  /** 尚未落库就被撤回的乐观 user 消息；sendMessage 返回后删掉服务端记录。 */
+  const withdrawnOptimistic = new Set<string>();
   const runStates = ref<Record<string, RunEvent>>({});
   const composerContexts = ref<EditorSelectionContext[]>([]);
   const composerFocusNonce = ref(0);
@@ -1436,6 +1439,20 @@ export const useAppStore = defineStore("app", () => {
       try {
         pendingRunSessions.value.add(next.sessionId);
         const result = await backend.sendMessage(next.sessionId, next.content, next.attachments);
+        if (withdrawnOptimistic.has(optimisticId)) {
+          withdrawnOptimistic.delete(optimisticId);
+          const returnedUser = result.find((message) => message.role === "user");
+          if (returnedUser) {
+            await backend.truncateSessionFromMessage(next.sessionId, returnedUser.id, false).catch(() => undefined);
+            messages.value[next.sessionId] = await backend.listChatMessages(next.sessionId);
+          } else {
+            messages.value[next.sessionId] = (messages.value[next.sessionId] ?? []).filter(
+              (item) => item.id !== optimisticId,
+            );
+          }
+          pendingRunSessions.value.delete(next.sessionId);
+          return;
+        }
         const returnedUser = result.find((message) => message.role === "user");
         if (returnedUser) {
           const current = messages.value[next.sessionId] ?? [];
@@ -1489,6 +1506,37 @@ export const useAppStore = defineStore("app", () => {
 
   async function stopActiveRun() {
     await stopSessionRuns(activeSessionId.value);
+  }
+
+  /**
+   * 最后一轮还没产出任何回答时撤回提问：停 run、删掉该条及之后消息，返回可回填输入框的草稿。
+   */
+  async function withdrawUnansweredPrompt(sessionId = activeSessionId.value) {
+    if (!sessionId) return null;
+    const user = lastUnansweredUser(messages.value[sessionId] ?? []);
+    if (!user) return null;
+    const draft = {
+      content: user.content,
+      attachments: attachmentsAsInput(user),
+    };
+    await stopSessionRuns(sessionId);
+    if (optimisticMessages.has(user.id)) {
+      withdrawnOptimistic.add(user.id);
+      const list = messages.value[sessionId] ?? [];
+      const index = list.findIndex((item) => item.id === user.id);
+      if (index >= 0) messages.value[sessionId] = list.slice(0, index);
+      return draft;
+    }
+    try {
+      await backend.truncateSessionFromMessage(sessionId, user.id, false);
+      useDiffStore().clearChunkStatesFrom(user.id, sessionId);
+      messages.value[sessionId] = await backend.listChatMessages(sessionId);
+    } catch {
+      const list = messages.value[sessionId] ?? [];
+      const index = list.findIndex((item) => item.id === user.id);
+      if (index >= 0) messages.value[sessionId] = list.slice(0, index);
+    }
+    return draft;
   }
 
   return {
@@ -1604,5 +1652,6 @@ export const useAppStore = defineStore("app", () => {
     abortMergeSession,
     stopActiveRun,
     stopSessionRuns,
+    withdrawUnansweredPrompt,
   };
 });
