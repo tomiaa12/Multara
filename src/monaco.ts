@@ -1,5 +1,5 @@
 import * as monaco from "monaco-editor";
-import { json } from "monaco-editor";
+import { json, typescript } from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import CssWorker from "monaco-editor/language/css/css.worker.js?worker";
 import HtmlWorker from "monaco-editor/language/html/html.worker.js?worker";
@@ -29,6 +29,10 @@ function configureMonacoLanguageServices() {
     ...json.jsonDefaults.diagnosticsOptions,
     ...jsoncDiagnosticsOptions,
   });
+  // 代码索引会给整个工作区建模型，默认每建一个都要在 TS worker 里重建程序再校验，几百个文件就能把内存撑爆
+  for (const defaults of [typescript.typescriptDefaults, typescript.javascriptDefaults]) {
+    defaults.setDiagnosticsOptions({ ...defaults.getDiagnosticsOptions(), onlyVisible: true });
+  }
 
   const clearEmbeddedMarkers = (model: monaco.editor.ITextModel) => {
     const markers = monaco.editor.getModelMarkers({ resource: model.uri });

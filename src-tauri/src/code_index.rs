@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 const MAX_SOURCE_FILES: usize = 3_000;
-const MAX_SOURCE_BYTES: u64 = 512 * 1024;
+const MAX_SOURCE_BYTES: u64 = 256 * 1024;
 const MAX_SOURCE_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TYPING_FILES: usize = 4_000;
 const MAX_TYPING_TOTAL_BYTES: u64 = 24 * 1024 * 1024;

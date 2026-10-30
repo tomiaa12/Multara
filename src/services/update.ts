@@ -151,6 +151,8 @@ function startBackgroundDownload(update: Update): void {
 }
 
 async function checkOnce(): Promise<Update | null> {
+  // updater 会把可执行文件所在目录当成安装目录，dev 下就是 target/debug，安装会整个替换掉编译缓存
+  if (import.meta.env.DEV) return null;
   if (inFlightCheck) return inFlightCheck;
   const task = check(checkOptions())
     .catch((error) => {
