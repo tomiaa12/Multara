@@ -514,6 +514,7 @@ fn description_file(parsed: &ParsedArgs) -> Result<String, String> {
     let path = parsed
         .flag(&["description-file"])
         .ok_or_else(|| "缺少 --description 或 --description-file".to_string())?;
+    ensure_description_file_allowed(path)?;
     let mut bytes = Vec::new();
     fs::File::open(path)
         .and_then(|file| file.take(MAX_DESCRIPTION_FILE_BYTES + 1).read_to_end(&mut bytes))
@@ -528,6 +529,22 @@ fn description_file(parsed: &ParsedArgs) -> Result<String, String> {
 }
 
 const MAX_DESCRIPTION_FILE_BYTES: u64 = 1024 * 1024;
+
+/// 描述内容之后能通过 `task get` 读出来，所以只允许读当前目录（智能体的工作区）和系统临时目录里的文件，
+/// 不能拿它去读 `~/.ssh/*` 之类的任意路径。
+fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
+    let target = fs::canonicalize(path).map_err(|error| format!("读取 description-file 失败：{error}"))?;
+    let allowed = [env::current_dir().ok(), Some(env::temp_dir())]
+        .into_iter()
+        .flatten()
+        .filter_map(|root| fs::canonicalize(root).ok())
+        .any(|root| target.starts_with(root));
+    if allowed {
+        Ok(())
+    } else {
+        Err("description-file 只能位于当前目录或系统临时目录内".to_string())
+    }
+}
 
 fn open_db() -> Result<Connection, String> {
     let path = db_path()?;
@@ -927,5 +944,18 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("conversation id"));
+    }
+
+    #[test]
+    fn description_file_rejects_paths_outside_cwd_and_temp() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        assert!(super::ensure_description_file_allowed(temp.path().to_str().unwrap()).is_ok());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/etc".into());
+        let outside = if std::path::Path::new("/etc/hosts").exists() {
+            "/etc/hosts".to_string()
+        } else {
+            home
+        };
+        assert!(super::ensure_description_file_allowed(&outside).is_err());
     }
 }

@@ -35,7 +35,11 @@ pub fn status(
     git_command: &str,
 ) -> Result<GitRepositoryStatus, String> {
     // 一次 status 同时拿到分支、上游和 ahead/behind，代替原来的 branch / rev-parse / rev-list 三个进程。
-    let porcelain = output(git_command, root, &["status", "--porcelain=v1", "-z", "--branch"])?;
+    let porcelain = output(
+        git_command,
+        root,
+        &["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"],
+    )?;
     let (header, entries) = porcelain.split_once('\0').unwrap_or((porcelain.as_str(), ""));
     let tracking = parse_branch_header(header.strip_prefix("## ").unwrap_or_default());
     let changes = parse_status_records(entries);
@@ -232,7 +236,13 @@ fn discard_untracked(git_command: &str, root: &str, path: &str) -> Result<(), St
 
 /// `-z` 输出不加引号、不转义，中文和带空格、引号的路径原样返回。
 fn status_porcelain(git_command: &str, root: &str, paths: &[&str]) -> Result<String, String> {
-    let mut args = vec![LITERAL_PATHSPECS, "status", "--porcelain=v1", "-z"];
+    let mut args = vec![
+        LITERAL_PATHSPECS,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+    ];
     if !paths.is_empty() {
         args.push("--");
         args.extend(paths);
@@ -1474,14 +1484,18 @@ mod tests {
             "keep\n"
         );
 
-        let directory = status("workspace", "repo", root, "git")
+        let nested = status("workspace", "repo", root, "git")
             .unwrap()
             .changes
             .into_iter()
-            .find(|change| change.path.ends_with('/'))
-            .expect("untracked directory");
-        discard(root, "git", &[directory.path]).unwrap();
-        assert!(!temp.path().join("nested").exists());
+            .find(|change| change.path == "nested/inside.txt")
+            .expect("untracked file inside a new directory");
+        discard(root, "git", &[nested.path]).unwrap();
+        assert!(!temp.path().join("nested").join("inside.txt").exists());
+        assert!(status("workspace", "repo", root, "git")
+            .unwrap()
+            .changes
+            .is_empty());
     }
 
     #[test]
