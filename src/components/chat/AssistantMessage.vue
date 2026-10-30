@@ -119,8 +119,6 @@ const showAssignmentOriginal = computed(() =>
         :content="footerText"
         :created-at="message.createdAt"
         :elapsed-ms="message.timeline.length ? null : message.elapsedMs"
-        :message-id="message.id"
-        :feedback="message.feedback"
       />
       <div v-if="message.quickActions.length && !running" class="quick-actions">
         <UiButton
