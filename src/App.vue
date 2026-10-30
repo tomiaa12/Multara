@@ -513,7 +513,7 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- 需求工作台/预览自带聊天：只隐藏不销毁，避免切菜单后再开气泡回到最早提问 -->
-    <FloatingChat :hidden="route.path.startsWith('/projects') || route.path === '/preview'" />
+    <FloatingChat :hidden="isWorkbenchPath(route.path)" />
     <UpdateNotification />
     <UnsavedChangesDialog
       v-if="unsavedPrompt"

@@ -24,36 +24,39 @@ watch(
   },
   { immediate: true },
 );
-const panelOpen = computed(() => store.chatOpen && !props.hidden);
-const fabVisible = computed(() => !store.chatOpen && !props.hidden);
+/** host 已在 hidden 时整体 v-show=false；此处只区分面板 / FAB */
+const panelOpen = computed(() => store.chatOpen);
+const fabVisible = computed(() => !store.chatOpen);
 </script>
 
 <template>
-  <!-- 收起/换页用 v-show，保留会话/滚动；勿用 v-if 把 ChatPanel 拆掉 -->
-  <Transition name="floating-chat">
-    <section v-show="panelOpen" class="floating-chat" :class="{ expanded }">
-      <ChatPanel
-        v-if="retained"
-        :key="projectId ?? 'global'"
-        :project-id="projectId"
-        compact
-        session-commands
-        :show-editing-bar="false"
-      >
-        <template #header-actions>
-          <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="expanded = !expanded">
-            <Minimize2 v-if="expanded" :size="15" />
-            <Maximize2 v-else :size="15" />
-          </UiButton>
-          <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.floatMinimize')" @click="store.chatOpen = false">
-            <Minus :size="16" />
-          </UiButton>
-        </template>
-      </ChatPanel>
-    </section>
-  </Transition>
+  <!-- 工作台等自带聊天时整块隐藏；ChatPanel 仍用 v-show/retained，避免拆掉丢会话 -->
+  <div v-show="!hidden" class="floating-chat-host">
+    <Transition name="floating-chat">
+      <section v-show="panelOpen" class="floating-chat" :class="{ expanded }">
+        <ChatPanel
+          v-if="retained"
+          :key="projectId ?? 'global'"
+          :project-id="projectId"
+          compact
+          session-commands
+          :show-editing-bar="false"
+        >
+          <template #header-actions>
+            <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="expanded = !expanded">
+              <Minimize2 v-if="expanded" :size="15" />
+              <Maximize2 v-else :size="15" />
+            </UiButton>
+            <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.floatMinimize')" @click="store.chatOpen = false">
+              <Minus :size="16" />
+            </UiButton>
+          </template>
+        </ChatPanel>
+      </section>
+    </Transition>
 
-  <UiButton v-show="fabVisible" class="chat-fab" :tip="t('chat.floatOpen')" @click="store.chatOpen = true">
-    <MessageCircle :size="22" />
-  </UiButton>
+    <UiButton v-show="fabVisible" class="chat-fab" :tip="t('chat.floatOpen')" @click="store.chatOpen = true">
+      <MessageCircle :size="22" />
+    </UiButton>
+  </div>
 </template>
