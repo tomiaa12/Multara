@@ -37,7 +37,8 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      output: { manualChunks: vendorChunk },
+      // Rolldown 拆块后默认不保证模块执行顺序；Monaco 靠副作用注册颜色和贡献，乱序会让菜单透明、编辑器层叠错乱。
+      output: { manualChunks: vendorChunk, strictExecutionOrder: true },
     },
   },
   test: {
