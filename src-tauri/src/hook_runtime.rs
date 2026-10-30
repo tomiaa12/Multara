@@ -50,6 +50,11 @@ pub fn link_worktree_runtime(source: &Path, worktree: &Path) -> RuntimeLinkRepor
             LinkResult::Already => {}
             LinkResult::Failed(error) => report.husky_error = Some(error),
         }
+        // husky 安装时会写 `.husky/_/.gitignore`（内容 `*`），它本身被忽略、不会检出到 worktree。
+        let ignore = worktree.join(".husky/_/.gitignore");
+        if worktree_husky.symlink_metadata().is_ok() && ignore.symlink_metadata().is_err() {
+            let _ = fs::write(&ignore, "*\n");
+        }
     }
     let source_modules = source.join("node_modules");
     let worktree_modules = worktree.join("node_modules");
@@ -453,6 +458,10 @@ error: failed to push some refs to 'http://example.test/pages.git'";
         assert_eq!(
             fs::read_to_string(worktree.join(".husky/_/husky.sh")).unwrap(),
             "echo husky\n"
+        );
+        assert_eq!(
+            fs::read_to_string(worktree.join(".husky/_/.gitignore")).unwrap(),
+            "*\n"
         );
         assert!(preflight(
             worktree.to_str().unwrap(),
