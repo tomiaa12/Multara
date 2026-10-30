@@ -6,7 +6,7 @@ import { canDropInExplorer, dropFolderFor, isCopyDrag } from "./explorer-dnd";
 import { globMatch, isExcluded } from "./explorer-glob";
 import { findAvailableName, incrementFileName, renameSelection, validateFileName } from "./explorer-names";
 import { ExplorerFileNestingTrie, nestDirectoryFiles } from "./explorer-nesting";
-import { applyFind, buildExplorerRows, flattenRows, fuzzyMatch, type BuildRowsInput } from "./explorer-rows";
+import { applyFind, buildExplorerRows, flattenRows, fuzzyMatch, soleCompressibleChild, type BuildRowsInput } from "./explorer-rows";
 import {
   distinctParents,
   moveFocus,
@@ -293,6 +293,32 @@ describe("row building", () => {
     expect(rows[0].compact?.paths).toEqual(["src", "src/main"]);
     expect(rows[1].depth).toBe(1);
     expect(rows[2].nestParent).toBe(true);
+  });
+
+  test("soleCompressibleChild matches VS Code autoExpandCompressedChildren", () => {
+    const hide = (entry: { path: string; name: string }, siblings: ReadonlySet<string>) =>
+      isExcluded(entry.path, entry.name, DEFAULT_EXPLORER_SETTINGS.filesExclude, (name) => siblings.has(name));
+    expect(
+      soleCompressibleChild(
+        [{ name: "skills", path: ".agent/skills", isDirectory: true, depth: 1 }],
+        hide,
+      )?.path,
+    ).toBe(".agent/skills");
+    expect(
+      soleCompressibleChild(
+        [
+          { name: "skills", path: ".agent/skills", isDirectory: true, depth: 1 },
+          { name: "README.md", path: ".agent/README.md", isDirectory: false, depth: 1 },
+        ],
+        hide,
+      ),
+    ).toBeNull();
+    expect(
+      soleCompressibleChild(
+        [{ name: "SKILL.md", path: ".agent/skills/SKILL.md", isDirectory: false, depth: 2 }],
+        hide,
+      ),
+    ).toBeNull();
   });
 
   test("expanded nests show children; compact chain breaks where editing", () => {

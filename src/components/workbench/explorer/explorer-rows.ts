@@ -61,17 +61,36 @@ function nameOf(path: string) {
   return slash === -1 ? path : path.slice(slash + 1);
 }
 
-function visibleChildren(input: BuildRowsInput, entries: ExplorerEntryLike[]) {
+function visibleChildren(
+  entries: ExplorerEntryLike[],
+  isHidden: (entry: ExplorerEntryLike, siblings: ReadonlySet<string>) => boolean,
+  forceVisible: (path: string) => boolean,
+) {
   const names = new Set(entries.map((entry) => entry.name));
   const out: Array<ExplorerEntryLike & { excluded?: boolean }> = [];
   for (const entry of entries) {
-    if (!input.isHidden(entry, names)) {
+    if (!isHidden(entry, names)) {
       out.push(entry);
-    } else if (input.forceVisible(entry.path)) {
+    } else if (forceVisible(entry.path)) {
       out.push({ ...entry, excluded: true });
     }
   }
   return out;
+}
+
+/**
+ * VS Code `autoExpandCompressedChildren`：可见子项恰好为一个目录时返回它，
+ * 否则 null（压缩后需连同展开，否则只剩折叠的 `a/b` 行）。
+ */
+export function soleCompressibleChild(
+  entries: ExplorerEntryLike[] | undefined,
+  isHidden: (entry: ExplorerEntryLike, siblings: ReadonlySet<string>) => boolean,
+  forceVisible: (path: string) => boolean = () => false,
+): ExplorerEntryLike | null {
+  if (!entries) return null;
+  const children = visibleChildren(entries, isHidden, forceVisible);
+  if (children.length !== 1 || !children[0].isDirectory) return null;
+  return children[0];
 }
 
 function compactChain(input: BuildRowsInput, head: ExplorerEntryLike) {
@@ -81,9 +100,9 @@ function compactChain(input: BuildRowsInput, head: ExplorerEntryLike) {
   while (!input.breakCompactAt(current.path)) {
     const loaded = input.childrenOf(current.path);
     if (!loaded) break;
-    const children = visibleChildren(input, loaded);
-    if (children.length !== 1 || !children[0].isDirectory) break;
-    current = children[0];
+    const child = soleCompressibleChild(loaded, input.isHidden, input.forceVisible);
+    if (!child) break;
+    current = child;
     chain.push(current);
   }
   return chain;
@@ -95,7 +114,7 @@ function buildLevel(
   dirPath: string,
   depth: number,
 ): ExplorerRowNode[] {
-  const visible = visibleChildren(input, entries);
+  const visible = visibleChildren(entries, input.isHidden, input.forceVisible);
   let nests = new Map<string, string[]>();
   if (input.nestingPatterns) {
     const files = visible.filter((entry) => !entry.isDirectory).map((entry) => entry.name);
