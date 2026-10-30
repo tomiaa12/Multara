@@ -55,6 +55,8 @@ const props = withDefaults(defineProps<{
   previewBusy?: boolean;
   /** 是否展示 /compact、/fork（需求工作台 / 右下角气泡）。 */
   sessionCommands?: boolean;
+  /** 输入框上方的待审改文件条；右下角气泡关掉。 */
+  showEditingBar?: boolean;
 }>(), {
   projectId: null,
   sessionId: null,
@@ -72,6 +74,7 @@ const props = withDefaults(defineProps<{
   previewSessionTitle: null,
   previewBusy: false,
   sessionCommands: false,
+  showEditingBar: true,
 });
 const reaskTarget = ref<{
   messageId: string;
@@ -1627,7 +1630,7 @@ defineExpose({
         </ol>
       </section>
       <ChatEditingBar
-        v-if="!preview"
+        v-if="!preview && showEditingBar"
         :workspace-ids="reviewWorkspaceIds"
         :review-in-place="reviewInPlace"
         @open="emit('review-file', $event)"
