@@ -1947,8 +1947,10 @@ button.ds-stat.is-on {
 
 /* Tooltip（UiTooltip）：Teleport 到 body + fixed；z-index 由 nextPopupZIndex() 写入 */
 .ds-tooltip-trigger {
-  display: inline;
+  display: inline-flex;
   max-width: 100%;
+  vertical-align: middle;
+  align-items: center;
 }
 .ds-tooltip {
   position: fixed;

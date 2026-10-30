@@ -148,29 +148,30 @@ function onResizePointerDown(event: PointerEvent) {
   >
     <div v-for="(group, index) in groups" :key="group.label ?? index" class="nav-group">
       <span v-if="group.label" class="nav-label">{{ group.label }}</span>
-      <component
-        :is="item.to ? RouterLink : 'button'"
-        v-for="item in group.items"
-        :key="item.id"
-        :to="item.to"
-        :type="item.to ? undefined : 'button'"
-        class="nav-item"
-        :class="{ 'router-link-active': item.active }"
-        :aria-current="item.active ? 'page' : undefined"
-        :title="iconCollapsed ? item.label : item.title"
-        @click="emit('select', item)"
-      >
-        <slot name="leading" :item="item">
-          <component :is="item.icon" v-if="item.icon" :size="16" />
-        </slot>
-        <span class="nav-item-label">{{ item.label }}</span>
-        <UiCountBadge
-          v-if="item.badge != null && item.badge !== ''"
-          class="nav-badge"
-          tone="primary"
-          :label="item.badge"
-        />
-      </component>
+      <template v-for="item in group.items" :key="item.id">
+        <UiTooltip :content="(iconCollapsed ? item.label : item.title) || ''" :disabled="!(iconCollapsed ? item.label : item.title)">
+          <component
+            :is="item.to ? RouterLink : 'button'"
+            :to="item.to"
+            :type="item.to ? undefined : 'button'"
+            class="nav-item"
+            :class="{ 'router-link-active': item.active }"
+            :aria-current="item.active ? 'page' : undefined"
+            @click="emit('select', item)"
+          >
+            <slot name="leading" :item="item">
+              <component :is="item.icon" v-if="item.icon" :size="16" />
+            </slot>
+            <span class="nav-item-label">{{ item.label }}</span>
+            <UiCountBadge
+              v-if="item.badge != null && item.badge !== ''"
+              class="nav-badge"
+              tone="primary"
+              :label="item.badge"
+            />
+          </component>
+        </UiTooltip>
+      </template>
     </div>
     <div v-if="$slots.footer" class="nav-group sidebar-footer">
       <slot name="footer" />

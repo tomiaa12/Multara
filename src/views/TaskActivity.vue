@@ -353,10 +353,10 @@ watch(
         @remove="removePaste"
       />
       <template #actions>
-        <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" :title="t('chat.stop')" @click="stop">
+        <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" :tip="t('chat.stop')" @click="stop">
           <Square :size="14" />
         </UiButton>
-        <UiButton v-else class="ds-send-button send-button" type="submit" :title="sessionRunning ? t('chat.enqueue') : t('chat.send')" :disabled="!canSend">
+        <UiButton v-else class="ds-send-button send-button" type="submit" :tip="sessionRunning ? t('chat.enqueue') : t('chat.send')" :disabled="!canSend">
           <ArrowUp :size="16" />
         </UiButton>
       </template>

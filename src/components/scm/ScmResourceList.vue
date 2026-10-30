@@ -207,7 +207,7 @@ function guideLeft(level: number) {
           v-if="group.id !== 'staged'"
           variant="ghost"
           size="icon"
-          :title="scmBusyTitle(busy, `discard:${workspaceId}`, t('scm.resource.discardAll'))"
+          :tip="scmBusyTitle(busy, `discard:${workspaceId}`, t('scm.resource.discardAll'))"
           :disabled="Boolean(busy)"
           @click.stop="emit('discard', group.files.map((file) => ({ path: file.path, worktreeStatus: file.worktreeStatus })))"
         >
@@ -217,7 +217,7 @@ function guideLeft(level: number) {
           v-if="group.id === 'staged'"
           variant="ghost"
           size="icon"
-          :title="scmBusyTitle(busy, `stage:${workspaceId}`, t('scm.resource.unstageAll'))"
+          :tip="scmBusyTitle(busy, `stage:${workspaceId}`, t('scm.resource.unstageAll'))"
           :disabled="Boolean(busy)"
           @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: false })"
         >
@@ -227,7 +227,7 @@ function guideLeft(level: number) {
           v-else
           variant="ghost"
           size="icon"
-          :title="scmBusyTitle(busy, `stage:${workspaceId}`, group.id === 'merge' ? t('scm.resource.markAllResolved') : t('scm.resource.stageAll'))"
+          :tip="scmBusyTitle(busy, `stage:${workspaceId}`, group.id === 'merge' ? t('scm.resource.markAllResolved') : t('scm.resource.stageAll'))"
           :disabled="Boolean(busy)"
           @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: true })"
         >
@@ -276,14 +276,16 @@ function guideLeft(level: number) {
           />
           <FileTypeIcon :name="fileNameOf(row.file.path)" :size="16" />
           <span class="scm-file-name">{{ fileNameOf(row.file.path) }}</span>
-          <span v-if="viewMode === 'list'" class="scm-file-path" :title="row.file.path">{{ dirNameOf(row.file.path) }}</span>
+          <UiTooltip v-if="viewMode === 'list'" :content="row.file.path">
+            <span class="scm-file-path">{{ dirNameOf(row.file.path) }}</span>
+          </UiTooltip>
           <span v-else class="scm-file-path" />
           <div class="scm-file-actions">
             <UiButton
               v-if="row.file.worktreeStatus !== 'D' && row.file.indexStatus !== 'D'"
               variant="ghost"
               size="icon"
-              :title="t('scm.resource.openFile')"
+              :tip="t('scm.resource.openFile')"
               @click.stop="emit('openFile', row.file.path)"
             >
               <Codicon name="go-to-file" :size="12" />
@@ -292,7 +294,7 @@ function guideLeft(level: number) {
               v-if="group.id !== 'staged'"
               variant="ghost"
               size="icon"
-              :title="t('scm.resource.discardChanges')"
+              :tip="t('scm.resource.discardChanges')"
               @click.stop="emit('discard', [{ path: row.file.path, worktreeStatus: row.file.worktreeStatus }])"
             >
               <Codicon name="discard" :size="12" />
@@ -300,14 +302,16 @@ function guideLeft(level: number) {
             <UiButton
               variant="ghost"
               size="icon"
-              :title="group.id === 'staged' ? t('scm.unstage') : t('workbench.gitStage')"
+              :tip="group.id === 'staged' ? t('scm.unstage') : t('workbench.gitStage')"
               @click.stop="emit('stage', { paths: [row.file.path], staged: group.id !== 'staged' })"
             >
               <Codicon v-if="group.id === 'staged'" name="remove" :size="12" />
               <Codicon v-else name="add" :size="12" />
             </UiButton>
           </div>
-          <b :title="gitStatusTitle(scmResourceLetter(row.file, group.id))">{{ scmResourceLetter(row.file, group.id) }}</b>
+          <UiTooltip :content="gitStatusTitle(scmResourceLetter(row.file, group.id))">
+            <b>{{ scmResourceLetter(row.file, group.id) }}</b>
+          </UiTooltip>
         </div>
       </template>
     </template>

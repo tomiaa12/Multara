@@ -275,7 +275,12 @@ async function removeSkill() {
           <div><dt>{{ t("common.name") }}</dt><dd>{{ skill.name }}</dd></div>
           <div class="is-multiline"><dt>{{ t("skills.detail.field.description") }}</dt><dd>{{ skill.description || t("common.noDescription") }}</dd></div>
           <div><dt>{{ t("common.source") }}</dt><dd>{{ sourceName }}</dd></div>
-          <div><dt>{{ t("common.path") }}</dt><dd :title="skill.sourcePath">{{ skill.sourcePath }}</dd></div>
+          <div>
+            <dt>{{ t("common.path") }}</dt>
+            <UiTooltip :content="skill.sourcePath">
+              <dd>{{ skill.sourcePath }}</dd>
+            </UiTooltip>
+          </div>
         </dl>
       </section>
       <section class="agent-settings-card">

@@ -667,7 +667,7 @@ async function authorizeForm() {
           <button type="button" :class="{ active: mode === 'ui' }" @click="setMode('ui')">{{ t("mcp.mode.ui") }}</button>
           <button type="button" :class="{ active: mode === 'json' }" @click="setMode('json')">{{ t("mcp.mode.json") }}</button>
         </div>
-        <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="editor = false"><X :size="16" /></UiButton>
+        <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="editor = false"><X :size="16" /></UiButton>
       </header>
       <template v-if="mode === 'ui'">
         <label>{{ t("mcp.saveTo") }}
@@ -743,7 +743,7 @@ async function authorizeForm() {
           >{{ mcpBrandInitial(probeDialog.name) }}</span>
           <h2>{{ t("mcp.probeTitle") }}</h2>
         </div>
-        <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="probeDialog = null"><X :size="16" /></UiButton>
+        <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="probeDialog = null"><X :size="16" /></UiButton>
       </header>
       <template v-if="activeProbe">
         <p v-if="activeProbe.error" class="form-error">{{ friendlyError(activeProbe.error) }}</p>
@@ -793,7 +793,7 @@ async function authorizeForm() {
           >{{ mcpBrandInitial(toolsDialog.item.name) }}</span>
           <h2>{{ toolsDialog.probe.error ? t("mcp.toolsFailedTitle") : t("mcp.toolsTitle") }}</h2>
         </div>
-        <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="toolsDialog = null"><X :size="16" /></UiButton>
+        <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="toolsDialog = null"><X :size="16" /></UiButton>
       </header>
       <p v-if="toolsDialog.probe.error" class="form-error">{{ friendlyError(toolsDialog.probe.error) }}</p>
       <ul v-else-if="toolsDialog.probe.tools.length" class="mcp-tools-list">

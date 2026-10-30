@@ -225,7 +225,7 @@ defineExpose({ focus: () => root.value?.focus() });
           class="icon-button"
           variant="ghost"
           size="icon"
-          :title="t('chat.question.prev')"
+          :tip="t('chat.question.prev')"
           :disabled="index === 0"
           @click="activate(index - 1)"
         ><ChevronUp :size="14" /></UiButton>
@@ -234,7 +234,7 @@ defineExpose({ focus: () => root.value?.focus() });
           class="icon-button"
           variant="ghost"
           size="icon"
-          :title="t('chat.question.next')"
+          :tip="t('chat.question.next')"
           :disabled="isLast"
           @click="activate(index + 1)"
         ><ChevronDown :size="14" /></UiButton>
@@ -243,7 +243,7 @@ defineExpose({ focus: () => root.value?.focus() });
         class="icon-button chat-question-collapse"
         variant="ghost"
         size="icon"
-        :title="collapsed ? t('chat.question.expand') : t('chat.question.collapse')"
+        :tip="collapsed ? t('chat.question.expand') : t('chat.question.collapse')"
         :aria-expanded="!collapsed"
         @click="collapsed = !collapsed"
       >
@@ -322,7 +322,7 @@ defineExpose({ focus: () => root.value?.focus() });
         <UiButton
           class="primary"
           size="small"
-          :title="t('chat.question.submitShortcut', { mod: submitMod })"
+          :tip="t('chat.question.submitShortcut', { mod: submitMod })"
           :disabled="!answeredCount"
           @click="submit"
         >{{ multiple ? t("chat.question.submitProgress", { answered: answeredCount, total }) : t("chat.question.submit") }}</UiButton>

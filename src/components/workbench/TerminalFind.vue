@@ -141,25 +141,25 @@ defineExpose({
   <div class="terminal-find" role="search" @keydown="onKey">
     <div class="terminal-find-field">
       <input ref="input" v-model="query" type="text" :placeholder="t('terminal.find.placeholder')" :aria-label="t('terminal.find.aria')" spellcheck="false" />
-      <button type="button" :class="{ on: caseSensitive }" :title="t('terminal.find.caseSensitive')" @click="toggle('caseSensitive')">
+      <UiTooltip :content="t('terminal.find.caseSensitive')"><button type="button" :class="{ on: caseSensitive }" @click="toggle('caseSensitive')">
         <Codicon name="case-sensitive" :size="14" />
-      </button>
-      <button type="button" :class="{ on: wholeWord }" :title="t('terminal.find.wholeWord')" @click="toggle('wholeWord')">
+      </button></UiTooltip>
+      <UiTooltip :content="t('terminal.find.wholeWord')"><button type="button" :class="{ on: wholeWord }" @click="toggle('wholeWord')">
         <Codicon name="whole-word" :size="14" />
-      </button>
-      <button type="button" :class="{ on: regex }" :title="t('terminal.find.regex')" @click="toggle('regex')">
+      </button></UiTooltip>
+      <UiTooltip :content="t('terminal.find.regex')"><button type="button" :class="{ on: regex }" @click="toggle('regex')">
         <Codicon name="regex" :size="14" />
-      </button>
+      </button></UiTooltip>
     </div>
     <span class="terminal-find-count" :class="{ empty: summaryEmpty }">{{ summary }}</span>
-    <button type="button" :title="t('terminal.find.previous')" :disabled="!query" @click="findPrevious">
+    <UiTooltip :content="t('terminal.find.previous')"><button type="button" :disabled="!query" @click="findPrevious">
       <Codicon name="arrow-up" :size="14" />
-    </button>
-    <button type="button" :title="t('terminal.find.next')" :disabled="!query" @click="findNext()">
+    </button></UiTooltip>
+    <UiTooltip :content="t('terminal.find.next')"><button type="button" :disabled="!query" @click="findNext()">
       <Codicon name="arrow-down" :size="14" />
-    </button>
-    <button type="button" :title="t('terminal.find.close')" @click="close">
+    </button></UiTooltip>
+    <UiTooltip :content="t('terminal.find.close')"><button type="button" @click="close">
       <Codicon name="close" :size="14" />
-    </button>
+    </button></UiTooltip>
   </div>
 </template>

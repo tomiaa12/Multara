@@ -201,12 +201,12 @@ watch(
             v-if="running"
             type="button"
             class="icon-button"
-            title="停止当前任务"
+            tip="停止当前任务"
             @click="emit('stop')"
           >
             <Square :size="14" />
           </UiButton>
-          <UiButton class="ds-send-button send-button" type="submit" :disabled="draftEmpty" :title="running ? '加入队列' : '发送'">
+          <UiButton class="ds-send-button send-button" type="submit" :disabled="draftEmpty" :tip="running ? '加入队列' : '发送'">
             <ArrowUp :size="16" />
           </UiButton>
         </template>
@@ -217,17 +217,14 @@ watch(
         @open="(id) => { const image = pastedImages.find((item) => item.id === id); if (image) void openAttachment(image); }"
       />
       <div v-if="files.length" class="composer-attachments vs-scroll">
-        <button
-          v-for="file in files"
-          :key="file.id"
-          class="composer-attachment"
-          type="button"
-          :title="file.name"
-          @click="openAttachment(file)"
-        >
-          <FileText :size="15" />
-          <span>{{ file.name }}</span>
-        </button>
+        <template v-for="file in files" :key="file.id">
+          <UiTooltip :content="file.name">
+            <button class="composer-attachment" type="button" @click="openAttachment(file)">
+              <FileText :size="15" />
+              <span>{{ file.name }}</span>
+            </button>
+          </UiTooltip>
+        </template>
       </div>
     </ChatComposer>
   </article>

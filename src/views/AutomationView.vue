@@ -237,14 +237,16 @@ function toggleWeekday(day: number) {
               <span v-if="item.nextRunAt">{{ t("automation.nextRun", { time: formatTime(item.nextRunAt) }) }}</span>
               <span v-if="item.lastRunStatus" class="ds-badge" :data-tone="runStatusTone(item.lastRunStatus)">{{ t("automation.lastStatus", { status: runStatusLabel(item.lastRunStatus) }) }}</span>
             </div>
-            <code v-if="item.triggerType === 'webhook' && item.webhookToken" class="webhook-url" :title="webhookUrl(item)">{{ webhookUrl(item) }}</code>
+            <UiTooltip v-if="item.triggerType === 'webhook' && item.webhookToken" :content="webhookUrl(item)">
+              <code class="webhook-url">{{ webhookUrl(item) }}</code>
+            </UiTooltip>
           </div>
           <span class="ds-badge" :data-tone="item.enabled ? 'success' : undefined">{{ item.enabled ? t("common.enabledOn") : t("common.enabledOff") }}</span>
           <div class="automation-actions">
-            <UiButton variant="ghost" size="icon" :title="t('common.runNow')" :disabled="!item.enabled" @click="run(item)"><Play :size="14" /></UiButton>
-            <UiButton variant="ghost" size="small" :title="t('common.history')" :class="{ active: expandedId === item.id }" @click="toggleHistory(item)"><History :size="14" /><component :is="expandedId === item.id ? ChevronUp : ChevronDown" :size="12" /></UiButton>
-            <UiButton variant="ghost" size="icon" :title="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
-            <UiButton variant="ghost" size="icon" class="automation-delete" :title="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+            <UiButton variant="ghost" size="icon" :tip="t('common.runNow')" :disabled="!item.enabled" @click="run(item)"><Play :size="14" /></UiButton>
+            <UiButton variant="ghost" size="small" :tip="t('common.history')" :class="{ active: expandedId === item.id }" @click="toggleHistory(item)"><History :size="14" /><component :is="expandedId === item.id ? ChevronUp : ChevronDown" :size="12" /></UiButton>
+            <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
+            <UiButton variant="ghost" size="icon" class="automation-delete" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
           </div>
         </div>
         <div v-if="expandedId === item.id" class="automation-history">
@@ -270,7 +272,7 @@ function toggleWeekday(day: number) {
       <form class="modal automation-dialog" @submit.prevent="save">
         <header class="automation-dialog-head">
           <h2>{{ form.id ? t("automation.edit") : t("automation.create") }}</h2>
-          <UiButton variant="ghost" size="icon" :title="t('common.close')" @click="showForm = false"><X :size="16" /></UiButton>
+          <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="showForm = false"><X :size="16" /></UiButton>
         </header>
 
         <div class="automation-dialog-body">

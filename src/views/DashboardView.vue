@@ -450,7 +450,7 @@ async function removeProject(projectId: string, projectName: string) {
                 class="icon-button"
                 size="icon"
                 variant="ghost"
-                :title="t('dashboard.edit')"
+                :tip="t('dashboard.edit')"
                 @click="openEdit(row.id, row.name, row.note)"
               >
                 <Pencil :size="14" />
@@ -459,7 +459,7 @@ async function removeProject(projectId: string, projectName: string) {
                 class="icon-button"
                 size="icon"
                 variant="ghost"
-                :title="row.archived ? t('dashboard.unarchive') : t('dashboard.archive')"
+                :tip="row.archived ? t('dashboard.unarchive') : t('dashboard.archive')"
                 @click="toggleArchive(row.id, row.archived)"
               >
                 <ArchiveRestore v-if="row.archived" :size="14" />
@@ -469,7 +469,7 @@ async function removeProject(projectId: string, projectName: string) {
                 class="icon-button req-delete"
                 size="icon"
                 variant="danger"
-                :title="t('dashboard.delete')"
+                :tip="t('dashboard.delete')"
                 @click="removeProject(row.id, row.name)"
               >
                 <Trash2 :size="14" />
@@ -477,7 +477,7 @@ async function removeProject(projectId: string, projectName: string) {
               <UiButton
                 size="small"
                 variant="ghost"
-                :title="t('dashboard.addWorkspaceTitle')"
+                :tip="t('dashboard.addWorkspaceTitle')"
                 @click="openWorkspacePicker(row.id)"
               >
                 <FolderPlus :size="14" /> {{ t("workspace.addTitle") }}
@@ -485,7 +485,7 @@ async function removeProject(projectId: string, projectName: string) {
               <UiButton
                 size="small"
                 :disabled="!canOpenProject(row.id, row.workspaces.length)"
-                :title="store.isProjectPreparing(row.id) ? t('dashboard.preparingBlocked') : ''"
+                :tip="store.isProjectPreparing(row.id) ? t('dashboard.preparingBlocked') : ''"
                 @click="router.push(`/projects/${row.id}`)"
               >
                 {{ store.isProjectPreparing(row.id) ? t("dashboard.preparing") : t("common.open") }}
@@ -511,20 +511,18 @@ async function removeProject(projectId: string, projectName: string) {
                   <div class="req-block-label">{{ t("dashboard.working") }}</div>
                   <div class="req-workers">
                     <div class="req-faces">
-                      <span
-                        v-for="worker in row.workers"
-                        :key="worker.key"
-                        class="req-face"
-                        :class="worker.kind"
-                        :title="worker.title"
-                      >
-                        <img
-                          v-if="worker.image"
-                          :src="worker.image"
-                          :alt="worker.name"
-                        />
-                        <template v-else>{{ worker.initial }}</template>
-                      </span>
+                      <template v-for="worker in row.workers" :key="worker.key">
+                        <UiTooltip :content="worker.title">
+                          <span class="req-face" :class="worker.kind">
+                            <img
+                              v-if="worker.image"
+                              :src="worker.image"
+                              :alt="worker.name"
+                            />
+                            <template v-else>{{ worker.initial }}</template>
+                          </span>
+                        </UiTooltip>
+                      </template>
                     </div>
                     <p>
                       <template
@@ -634,7 +632,7 @@ async function removeProject(projectId: string, projectName: string) {
             <h2>{{ editingId ? t("dashboard.edit") : t("dashboard.create") }}</h2>
             <p>{{ editingId ? t("dashboard.editHint") : t("dashboard.createHint") }}</p>
           </div>
-          <UiButton class="icon-button" size="icon" :title="t('common.close')" @click="closeEditor">
+          <UiButton class="icon-button" size="icon" :tip="t('common.close')" @click="closeEditor">
             <X :size="15" />
           </UiButton>
         </header>

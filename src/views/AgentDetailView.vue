@@ -305,7 +305,7 @@ function openRun(run: AgentActivityRecord) {
         </div>
         <p>{{ agentDescription(agent) }}</p>
       </div>
-      <UiButton v-if="!isChief" variant="ghost" size="icon" class="agent-delete" :title="t('agent.delete')" @click="remove"><Trash2 :size="15" /></UiButton>
+      <UiButton v-if="!isChief" variant="ghost" size="icon" class="agent-delete" :tip="t('agent.delete')" @click="remove"><Trash2 :size="15" /></UiButton>
     </header>
 
     <nav class="ds-tabs agent-detail-tabs" role="tablist" :aria-label="t('agent.tabsAria')">
@@ -438,9 +438,13 @@ function openRun(run: AgentActivityRecord) {
             </header>
             <p v-if="statsDays.every((item) => totalTokens(item) === 0 && item.total === 0)" class="muted">{{ t("agent.stats.noRangeData") }}</p>
             <div v-else class="usage-chart" role="img" :aria-label="t('agent.stats.dailyTokens')">
-              <div v-for="item in statsDays" :key="item.date" class="usage-bar" :title="`${item.date} ${formatTokens(totalTokens(item))} · ${formatUsd(item.costUsd)}`">
-                <span class="usage-bar-fill" :style="{ height: statsBarHeight(item) }" />
-              </div>
+              <template v-for="item in statsDays" :key="item.date">
+                <UiTooltip :content="`${item.date} ${formatTokens(totalTokens(item))} · ${formatUsd(item.costUsd)}`">
+                  <div class="usage-bar">
+                    <span class="usage-bar-fill" :style="{ height: statsBarHeight(item) }" />
+                  </div>
+                </UiTooltip>
+              </template>
             </div>
           </section>
         </template>

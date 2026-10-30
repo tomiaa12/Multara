@@ -26,12 +26,10 @@ const sizeStyle = computed(() =>
 </script>
 
 <template>
-  <span
-    class="agent-avatar"
-    :style="sizeStyle"
-    :title="name || undefined"
-  >
-    <img v-if="isImage" draggable="false" referrerpolicy="no-referrer" :src="value ?? ''" :alt="name ? `${name} 的头像` : '智能体头像'" />
-    <span v-else class="agent-avatar-glyph">{{ fallback }}</span>
-  </span>
+  <UiTooltip :content="name || ''" :disabled="!name">
+    <span class="agent-avatar" :style="sizeStyle">
+      <img v-if="isImage" draggable="false" referrerpolicy="no-referrer" :src="value ?? ''" :alt="name ? `${name} 的头像` : '智能体头像'" />
+      <span v-else class="agent-avatar-glyph">{{ fallback }}</span>
+    </span>
+  </UiTooltip>
 </template>

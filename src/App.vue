@@ -428,16 +428,16 @@ onBeforeUnmount(() => {
     <header class="titlebar" data-tauri-drag-region>
       <div class="titlebar-drag" data-tauri-drag-region @dblclick="toggleMaximizeWindow" />
       <nav class="titlebar-crumbs" data-tauri-drag-region :aria-label="t('nav.breadcrumb')">
-        <button
+        <UiTooltip :content="backCrumb ? t('nav.backTo', { label: backCrumb.label }) : undefined"><button
           type="button"
           class="titlebar-action titlebar-back"
           :disabled="!backCrumb"
-          :title="backCrumb ? t('nav.backTo', { label: backCrumb.label }) : undefined"
+         
           :aria-label="t('nav.back')"
           @click="goBack"
         >
           <ChevronLeft :size="16" />
-        </button>
+        </button></UiTooltip>
         <template v-for="(crumb, index) in crumbs" :key="crumb.path">
           <ChevronRight v-if="index > 0" class="titlebar-crumb-sep" :size="13" aria-hidden="true" />
           <span v-if="index === crumbs.length - 1" class="titlebar-crumb is-current" aria-current="page">{{ crumb.label }}</span>
@@ -447,31 +447,35 @@ onBeforeUnmount(() => {
       <!-- 面包屑已表明当前页面；中间只在需求工作台展示写入的详情（需求名 + 项目数） -->
       <span class="titlebar-title" data-tauri-drag-region>
         <template v-if="titlebarDetail && route.path.startsWith('/projects/')">
-          <strong :title="titlebarDetail.title">{{ titlebarDetail.title }}</strong>
-          <small v-if="titlebarDetail.summary" :title="titlebarDetail.summary">{{ titlebarDetail.summary }}</small>
+          <UiTooltip :content="titlebarDetail.title">
+            <strong>{{ titlebarDetail.title }}</strong>
+          </UiTooltip>
+          <UiTooltip v-if="titlebarDetail.summary" :content="titlebarDetail.summary">
+            <small>{{ titlebarDetail.summary }}</small>
+          </UiTooltip>
         </template>
       </span>
       <div class="titlebar-right">
-        <button
+        <UiTooltip :content="documentTheme === 'light' ? t('nav.themeDark') : t('nav.themeLight')"><button
           type="button"
           class="titlebar-action"
-          :title="documentTheme === 'light' ? t('nav.themeDark') : t('nav.themeLight')"
+         
           @click="toggleTheme"
         >
           <Moon v-if="documentTheme === 'light'" :size="15" />
           <Sun v-else :size="15" />
-        </button>
+        </button></UiTooltip>
         <div v-if="isWindows" class="window-controls">
-          <button type="button" class="window-control" :title="t('app.minimize')" @pointerdown.stop.prevent="minimizeWindow">
+          <UiTooltip :content="t('app.minimize')"><button type="button" class="window-control" @pointerdown.stop.prevent="minimizeWindow">
             <Minus :size="12" />
-          </button>
-          <button type="button" class="window-control" :title="maximized ? t('app.restore') : t('app.maximize')" @pointerdown.stop.prevent="toggleMaximizeWindow">
+          </button></UiTooltip>
+          <UiTooltip :content="maximized ? t('app.restore') : t('app.maximize')"><button type="button" class="window-control" @pointerdown.stop.prevent="toggleMaximizeWindow">
             <Copy v-if="maximized" :size="11" />
             <Square v-else :size="11" />
-          </button>
-          <button type="button" class="window-control is-close" :title="t('app.close')" @pointerdown.stop.prevent="closeWindow">
+          </button></UiTooltip>
+          <UiTooltip :content="t('app.close')"><button type="button" class="window-control is-close" @pointerdown.stop.prevent="closeWindow">
             <X :size="13" />
-          </button>
+          </button></UiTooltip>
         </div>
       </div>
     </header>
@@ -484,16 +488,16 @@ onBeforeUnmount(() => {
       @resize-start="beginSidebarResize"
     >
       <template #footer>
-        <button
+        <UiTooltip :content="sidebarCollapsed ? t('app.expandSidebar') : t('app.collapseSidebar')"><button
           type="button"
           class="nav-item sidebar-collapse"
-          :title="sidebarCollapsed ? t('app.expandSidebar') : t('app.collapseSidebar')"
+         
           @click="toggleSidebar"
         >
           <PanelLeftOpen v-if="sidebarCollapsed" :size="16" />
           <PanelLeftClose v-else :size="16" />
           <span class="nav-item-label">{{ t("app.collapseSidebar") }}</span>
-        </button>
+        </button></UiTooltip>
       </template>
     </SideNav>
 
@@ -521,50 +525,55 @@ onBeforeUnmount(() => {
     />
     <footer class="statusbar">
       <div class="statusbar-end">
-        <span
+        <UiTooltip
           v-if="showEditorStatus && editorStatus.blameLabel"
-          class="statusbar-item"
-          :title="editorStatus.blameTitle"
-        >{{ editorStatus.blameLabel }}</span>
-        <button
+          :content="editorStatus.blameTitle"
+        >
+          <span class="statusbar-item">{{ editorStatus.blameLabel }}</span>
+        </UiTooltip>
+        <UiTooltip :content="t('app.gotoLine')"><button
           v-if="showEditorStatus"
           type="button"
           class="statusbar-item"
-          :title="t('app.gotoLine')"
+         
           @click="editorStatus.requestDocument({ type: 'goto' })"
         >
           {{ editorStatus.positionLabel }}
-        </button>
-        <span v-if="showEditorStatus" class="statusbar-item" :title="t('app.encoding')">{{ editorStatus.encoding }}</span>
-        <button
+        </button></UiTooltip>
+        <UiTooltip v-if="showEditorStatus" :content="t('app.encoding')">
+          <span class="statusbar-item">{{ editorStatus.encoding }}</span>
+        </UiTooltip>
+        <UiTooltip :content="t('app.eol')"><button
           v-if="showEditorStatus"
           type="button"
           class="statusbar-item"
-          :title="t('app.eol')"
+         
           @click="openStatusMenu('eol', $event)"
         >
           {{ editorStatus.eol }}
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="t('app.indent')"><button
           v-if="showEditorStatus"
           type="button"
           class="statusbar-item"
-          :title="t('app.indent')"
+         
           @click="openStatusMenu('indent', $event)"
         >
           {{ editorStatus.indentText }}
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="t('app.languageMode')"><button
           v-if="showEditorLanguage"
           ref="languageButton"
           type="button"
           class="statusbar-item"
-          :title="t('app.languageMode')"
+         
           @click="toggleLanguagePicker"
         >
           {{ editorStatus.languageLabel }}
-        </button>
-        <span v-if="showEditorStatus" class="statusbar-item" :title="editorZoomLabel">{{ editorZoomLabel }}</span>
+        </button></UiTooltip>
+        <UiTooltip v-if="showEditorStatus" :content="editorZoomLabel">
+          <span class="statusbar-item">{{ editorZoomLabel }}</span>
+        </UiTooltip>
         <TerminalActivity />
         <span class="statusbar-running">
           <i class="ds-dot" :data-tone="(store.data?.stats.running ?? 0) > 0 ? 'success' : undefined" />

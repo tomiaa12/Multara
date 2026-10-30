@@ -382,9 +382,11 @@ function runtimeSubtitle(runtime: Runtime) {
           <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'online' : 'offline'">
             {{ runtime.status === "online" ? t("runtime.online") : t("runtime.offline") }}
           </span>
-          <code class="runtime-directory-path" :title="runtime.path ?? runtime.command">
-            {{ runtimePath(runtime) || t("runtime.notFound", { command: runtime.command }) }}
-          </code>
+          <UiTooltip :content="runtime.path ?? runtime.command ?? ''">
+            <code class="runtime-directory-path">
+              {{ runtimePath(runtime) || t("runtime.notFound", { command: runtime.command }) }}
+            </code>
+          </UiTooltip>
           <span class="agent-directory-field" @click.stop>
             <UiSelect
               :model-value="runtime.maxConcurrent"
@@ -396,8 +398,8 @@ function runtimeSubtitle(runtime: Runtime) {
           </span>
           <span class="runtime-directory-actions">
             <template v-if="runtime.id.startsWith('custom:')">
-              <UiButton class="icon-button" size="icon" :title="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
-              <UiButton class="icon-button" size="icon" variant="danger" :title="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
+              <UiButton class="icon-button" size="icon" :tip="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
+              <UiButton class="icon-button" size="icon" variant="danger" :tip="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
             </template>
           </span>
         </div>
@@ -419,7 +421,9 @@ function runtimeSubtitle(runtime: Runtime) {
             </span>
           </div>
           <code v-if="runtime.kind === 'gateway' && runtime.apiUrl" class="runtime-path">{{ gatewayHost(runtime.apiUrl) }}</code>
-          <code class="runtime-path" :title="runtime.path ?? runtime.command">{{ runtime.path ?? t("runtime.notFound", { command: runtime.command }) }}</code>
+          <UiTooltip :content="runtime.path ?? runtime.command ?? ''">
+            <code class="runtime-path">{{ runtime.path ?? t("runtime.notFound", { command: runtime.command }) }}</code>
+          </UiTooltip>
           <footer class="runtime-card-foot">
             <label class="runtime-concurrency">
               {{ t("collection.maxConcurrent") }}
@@ -432,8 +436,8 @@ function runtimeSubtitle(runtime: Runtime) {
               />
             </label>
             <div v-if="runtime.id.startsWith('custom:')" class="runtime-actions">
-              <UiButton class="icon-button" size="icon" :title="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
-              <UiButton class="icon-button" size="icon" variant="danger" :title="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
+              <UiButton class="icon-button" size="icon" :tip="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
+              <UiButton class="icon-button" size="icon" variant="danger" :tip="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
             </div>
           </footer>
         </article>
@@ -484,7 +488,7 @@ function runtimeSubtitle(runtime: Runtime) {
         <RouterLink :to="`/agents/${agent.id}`" class="agent-directory-hit">
           <span>{{ agentTaskCount(agent.id) }}</span>
         </RouterLink>
-        <UiButton v-if="!isMiku(agent)" class="icon-button" :title="t('collection.deleteAgent')" @click.stop="removeAgent(agent)"><Trash2 :size="13" /></UiButton>
+        <UiButton v-if="!isMiku(agent)" class="icon-button" :tip="t('collection.deleteAgent')" @click.stop="removeAgent(agent)"><Trash2 :size="13" /></UiButton>
         <span v-else />
       </div>
     </div>
@@ -527,7 +531,7 @@ function runtimeSubtitle(runtime: Runtime) {
             <small v-else-if="!squad.memberAgentIds.length">{{ t("collection.noMembers") }}</small>
           </span>
         </RouterLink>
-        <UiButton class="icon-button" :title="t('collection.deleteSquad')" @click.stop="removeSquad(squad)"><Trash2 :size="13" /></UiButton>
+        <UiButton class="icon-button" :tip="t('collection.deleteSquad')" @click.stop="removeSquad(squad)"><Trash2 :size="13" /></UiButton>
       </div>
     </div>
 

@@ -302,22 +302,23 @@ defineExpose({ openFilter, refresh: () => load(true), togglePin, pinned });
 <template>
   <div class="explorer-timeline">
     <p v-if="emptyMessage()" class="ui-pane-empty">{{ emptyMessage() }}</p>
-    <button
-      v-for="row in rows"
-      :key="`${row.source}:${row.id}`"
-      type="button"
-      class="explorer-timeline-row"
-      :title="`${row.detail ? `${row.label} · ${row.detail}` : row.label}\n${absoluteTimelineTime(row.at)}`"
-      @click="openRow(row.id, row.source)"
-      @contextmenu="openRowMenu(row.id, row.source, $event)"
-    >
-      <Codicon :name="row.source === 'local' ? 'history' : 'git-commit'" />
-      <span class="explorer-timeline-copy">
-        <span class="explorer-timeline-label">{{ row.label }}</span>
-        <span v-if="row.detail" class="explorer-timeline-detail">{{ row.detail }}</span>
-      </span>
-      <span class="explorer-timeline-time" :class="{ 'is-duplicate': row.hideTimestamp }">{{ row.timestamp }}</span>
-    </button>
+    <template v-for="row in rows" :key="`${row.source}:${row.id}`">
+      <UiTooltip :content="`${row.detail ? `${row.label} · ${row.detail}` : row.label}\n${absoluteTimelineTime(row.at)}`">
+        <button
+          type="button"
+          class="explorer-timeline-row"
+          @click="openRow(row.id, row.source)"
+          @contextmenu="openRowMenu(row.id, row.source, $event)"
+        >
+          <Codicon :name="row.source === 'local' ? 'history' : 'git-commit'" />
+          <span class="explorer-timeline-copy">
+            <span class="explorer-timeline-label">{{ row.label }}</span>
+            <span v-if="row.detail" class="explorer-timeline-detail">{{ row.detail }}</span>
+          </span>
+          <span class="explorer-timeline-time" :class="{ 'is-duplicate': row.hideTimestamp }">{{ row.timestamp }}</span>
+        </button>
+      </UiTooltip>
+    </template>
     <button
       v-if="hasMore && gitSource"
       type="button"

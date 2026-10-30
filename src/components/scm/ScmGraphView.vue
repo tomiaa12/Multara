@@ -210,14 +210,16 @@ function letter(status: string) {
     :min-body="120"
   >
     <template #title-extra>
-      <span v-if="workspaceName" class="scm-graph-project" :title="workspaceName">{{ workspaceName }}</span>
+      <UiTooltip v-if="workspaceName" :content="workspaceName">
+        <span class="scm-graph-project">{{ workspaceName }}</span>
+      </UiTooltip>
     </template>
     <template #actions>
       <UiButton
         v-if="live !== false"
         variant="ghost"
         size="icon"
-        :title="t('scm.graph.refresh')"
+        :tip="t('scm.graph.refresh')"
         :disabled="loading"
         @click="load(true)"
       >
@@ -234,44 +236,44 @@ function letter(status: string) {
         class="scm-history"
         :class="{ 'is-head': isHistoryHead(row.commit), 'is-open': openHash === row.commit.hash }"
       >
-        <button
-          type="button"
-          class="scm-history-row"
-          :title="`${row.commit.subject}\n${row.commit.author}`"
-          @click="toggleCommit(row.commit.hash)"
-          @contextmenu="openMenu($event, row)"
-        >
-          <svg class="scm-history-lane" :width="graphWidth" :height="SCM_LANE_HEIGHT" aria-hidden="true">
-            <path
-              v-for="(path, index) in historyGraph(row, openHash === row.commit.hash).paths"
-              :key="`p-${index}`"
-              :class="`scm-lane scm-lane-${path.color}`"
-              :d="path.d"
-              :stroke-width="path.width"
-            />
-            <circle
-              v-for="(dot, index) in historyGraph(row, openHash === row.commit.hash).dots"
-              :key="`d-${index}`"
-              :class="dotClass(dot.hole, dot.color)"
-              :cx="dotX(dot.index)"
-              cy="11"
-              :r="dot.r"
-            />
-          </svg>
-          <span class="scm-history-subject">{{ row.commit.subject || row.commit.hash.slice(0, 7) }}</span>
-          <span class="scm-history-refs">
-            <em
-              v-for="badge in historyRefBadges(row.commit)"
-              :key="badge.key"
-              :class="`scm-ref scm-ref-${badge.kind}`"
-              :title="badge.title"
-            >
-              <span v-if="badge.count" class="scm-ref-count">{{ badge.count }}</span>
-              <Codicon :name="HISTORY_REF_ICON[badge.kind]" :size="12" />
-              <span v-if="badge.name" class="scm-ref-name">{{ badge.name }}</span>
-            </em>
-          </span>
-        </button>
+        <UiTooltip :content="`${row.commit.subject}\n${row.commit.author}`">
+          <button
+            type="button"
+            class="scm-history-row"
+            @click="toggleCommit(row.commit.hash)"
+            @contextmenu="openMenu($event, row)"
+          >
+            <svg class="scm-history-lane" :width="graphWidth" :height="SCM_LANE_HEIGHT" aria-hidden="true">
+              <path
+                v-for="(path, index) in historyGraph(row, openHash === row.commit.hash).paths"
+                :key="`p-${index}`"
+                :class="`scm-lane scm-lane-${path.color}`"
+                :d="path.d"
+                :stroke-width="path.width"
+              />
+              <circle
+                v-for="(dot, index) in historyGraph(row, openHash === row.commit.hash).dots"
+                :key="`d-${index}`"
+                :class="dotClass(dot.hole, dot.color)"
+                :cx="dotX(dot.index)"
+                cy="11"
+                :r="dot.r"
+              />
+            </svg>
+            <span class="scm-history-subject">{{ row.commit.subject || row.commit.hash.slice(0, 7) }}</span>
+            <span class="scm-history-refs">
+              <template v-for="badge in historyRefBadges(row.commit)" :key="badge.key">
+                <UiTooltip :content="badge.title">
+                  <em :class="`scm-ref scm-ref-${badge.kind}`">
+                    <span v-if="badge.count" class="scm-ref-count">{{ badge.count }}</span>
+                    <Codicon :name="HISTORY_REF_ICON[badge.kind]" :size="12" />
+                    <span v-if="badge.name" class="scm-ref-name">{{ badge.name }}</span>
+                  </em>
+                </UiTooltip>
+              </template>
+            </span>
+          </button>
+        </UiTooltip>
         <div v-if="openHash === row.commit.hash" class="scm-history-files">
           <p v-if="filesLoading === row.commit.hash" class="tree-empty">{{ t('scm.graph.loadingFiles') }}</p>
           <div
@@ -297,7 +299,9 @@ function letter(status: string) {
             >
               <FileTypeIcon :name="fileNameOf(file.path)" />
               <span class="scm-file-name">{{ fileNameOf(file.path) }}</span>
-              <span class="scm-file-path" :title="file.path">{{ file.path }}</span>
+              <UiTooltip :content="file.path">
+                <span class="scm-file-path">{{ file.path }}</span>
+              </UiTooltip>
               <b>{{ letter(file.status) }}</b>
             </button>
           </div>

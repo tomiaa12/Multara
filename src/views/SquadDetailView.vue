@@ -163,7 +163,7 @@ async function remove() {
         <h1>{{ squad.name }}</h1>
         <p>{{ squad.description || t("squad.noDescription") }}</p>
       </div>
-      <UiButton variant="ghost" size="icon" class="agent-delete" :title="t('squad.delete')" @click="remove"><Trash2 :size="15" /></UiButton>
+      <UiButton variant="ghost" size="icon" class="agent-delete" :tip="t('squad.delete')" @click="remove"><Trash2 :size="15" /></UiButton>
     </header>
 
     <div class="squad-workbench">
@@ -228,17 +228,19 @@ async function remove() {
                 v-if="member.id !== draft.leaderAgentId"
                 variant="ghost"
                 size="icon"
-                :title="t('squad.setLeader')"
+                :tip="t('squad.setLeader')"
                 :disabled="busy"
                 @click="setLeader(member.id)"
               ><Crown :size="14" /></UiButton>
-              <span v-else class="squad-crown" :title="t('squad.leader')"><Crown :size="14" /></span>
-              <UiButton variant="ghost" size="icon" :title="t('squad.openAgent')" @click="router.push(`/agents/${member.id}`)"><ArrowUpRight :size="14" /></UiButton>
+              <UiTooltip v-else :content="t('squad.leader')">
+                <span class="squad-crown"><Crown :size="14" /></span>
+              </UiTooltip>
+              <UiButton variant="ghost" size="icon" :tip="t('squad.openAgent')" @click="router.push(`/agents/${member.id}`)"><ArrowUpRight :size="14" /></UiButton>
               <UiButton
                 variant="ghost"
                 size="icon"
                 class="squad-member-remove"
-                :title="t('squad.removeMember')"
+                :tip="t('squad.removeMember')"
                 :disabled="busy || member.id === draft.leaderAgentId"
                 @click="removeMember(member.id)"
               ><Trash2 :size="14" /></UiButton>

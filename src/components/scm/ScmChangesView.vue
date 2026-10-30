@@ -384,76 +384,76 @@ function onPrimary() {
     @click.capture="workspace.kind === 'git' && emit('select')"
   >
     <div v-if="!compact || repository" class="scm-provider" :class="{ 'is-nested': !compact }" @click="expanded = !expanded">
-      <button
+      <UiTooltip :content="workspaceModeHint(workspace)"><button
         type="button"
         class="scm-repo-toggle"
-        :title="workspaceModeHint(workspace)"
+       
       >
         <Codicon name="chevron-down" class="tree-chevron" :class="{ 'is-open': expanded }" :size="16" />
         <Codicon v-if="workspace.kind === 'git'" name="source-control" :size="16" />
         <FileTypeIcon v-else :name="workspace.name" directory :open="expanded" :size="16" />
         <span class="scm-repo-name">{{ workspace.name }}</span>
         <span v-if="workspace.kind === 'git'" class="scm-repo-kind">Git</span>
-      </button>
+      </button></UiTooltip>
       <div v-if="repository && branchBar" class="scm-repo-actions">
-        <button
+        <UiTooltip :content="branchTitle"><button
           type="button"
           class="scm-status-action"
           :class="{ 'is-static': !canCheckout }"
           :data-scm-branch="workspace.id"
-          :title="branchTitle"
+         
           :disabled="canCheckout && Boolean(busy)"
           @click.stop="openCheckout"
         >
           <Codicon v-if="branchBusy" name="loading" spin :size="16" />
           <span>{{ branchBar.label }}</span>
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="syncBusy ? t('scm.syncing') : syncBar.tooltip"><button
           v-if="syncBar"
           type="button"
           class="scm-status-action"
-          :title="syncBusy ? t('scm.syncing') : syncBar.tooltip"
+         
           :disabled="repoBusy || repository.merging"
           @click.stop="syncBar.kind === 'publish' ? emit('publish') : emit('sync')"
         >
           <Codicon :name="syncBusy ? 'sync' : syncBar.icon" :spin="syncBusy" :size="16" />
           <span v-if="syncBar.text">{{ syncBar.text }}</span>
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="viewMode === 'list' ? t('scm.viewTree') : t('scm.viewList')"><button
           type="button"
           class="scm-status-action is-icon scm-repo-menu"
-          :title="viewMode === 'list' ? t('scm.viewTree') : t('scm.viewList')"
+         
           @click.stop="emit('toggleView')"
         >
           <Codicon :name="viewMode === 'list' ? 'list-tree' : 'list-flat'" :size="16" />
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="t('scm.commit')"><button
           type="button"
           class="scm-status-action is-icon scm-repo-menu"
-          :title="t('scm.commit')"
+         
           :disabled="!canCommit || repoBusy"
           @click.stop="emit('commit')"
         >
           <Codicon name="check" :size="16" />
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="t('scm.refresh')"><button
           type="button"
           class="scm-status-action is-icon scm-repo-menu"
-          :title="t('scm.refresh')"
+         
           :disabled="Boolean(busy)"
           @click.stop="emit('refresh')"
         >
           <Codicon name="refresh" :size="16" />
-        </button>
-        <button
+        </button></UiTooltip>
+        <UiTooltip :content="t('scm.moreActions')"><button
           type="button"
           class="scm-status-action is-icon"
-          :title="t('scm.moreActions')"
+         
           :disabled="Boolean(busy)"
           @click.stop="openAt($event, 'more')"
         >
           <Codicon name="ellipsis" :size="16" />
-        </button>
+        </button></UiTooltip>
       </div>
     </div>
     <div v-if="expanded" class="scm-repository-body">
@@ -480,7 +480,7 @@ function onPrimary() {
             <UiButton
               size="small"
               :disabled="Boolean(busy)"
-              :title="scmBusyTitle(busy, `abort-merge:${workspace.id}`, t('scm.abortMergeTitle'))"
+              :tip="scmBusyTitle(busy, `abort-merge:${workspace.id}`, t('scm.abortMergeTitle'))"
               @click="emit('abortMergeSession')"
             >
               {{ t("scm.abortMerge") }}
@@ -489,7 +489,7 @@ function onPrimary() {
               v-if="mergeSession.push && !unresolvedCount"
               size="small"
               :disabled="Boolean(busy)"
-              :title="scmBusyTitle(busy, `pull-merge:${workspace.id}`, t('scm.pullLatestTitle'))"
+              :tip="scmBusyTitle(busy, `pull-merge:${workspace.id}`, t('scm.pullLatestTitle'))"
               @click="emit('pullMerge')"
             >
               {{ t("scm.pullLatest") }}
@@ -498,7 +498,7 @@ function onPrimary() {
               v-if="unresolvedCount"
               size="small"
               :disabled="Boolean(busy)"
-              :title="t('scm.aiResolveTitle')"
+              :tip="t('scm.aiResolveTitle')"
               @click="emit('resolveWithAi')"
             >
               {{ t("scm.aiResolve") }}
@@ -507,7 +507,7 @@ function onPrimary() {
               size="small"
               variant="primary"
               :disabled="Boolean(busy)"
-              :title="scmBusyTitle(busy, `finish-merge:${workspace.id}`, t('scm.finishMergeTitle'))"
+              :tip="scmBusyTitle(busy, `finish-merge:${workspace.id}`, t('scm.finishMergeTitle'))"
               @click="emit('finishMerge')"
             >
               {{ t("scm.finishMerge") }}
@@ -533,7 +533,7 @@ function onPrimary() {
           <UiButton
             size="small"
             :disabled="Boolean(busy)"
-            :title="scmBusyTitle(busy, `abort:${workspace.id}`, t('scm.abortMergeShortTitle'))"
+            :tip="scmBusyTitle(busy, `abort:${workspace.id}`, t('scm.abortMergeShortTitle'))"
             @click="emit('abort')"
           >
             {{ t("scm.abortMergeShort") }}

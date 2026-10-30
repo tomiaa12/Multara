@@ -119,12 +119,12 @@ async function undoFile() {
   <details v-if="lines.length" class="diff-card" open>
     <summary>
       <ChevronDown :size="12" />
-      <button class="diff-file" type="button" :title="pathTitle" @click.stop="openFile">{{ editingLabel }}</button>
+      <UiTooltip :content="pathTitle"><button class="diff-file" type="button" @click.stop="openFile">{{ editingLabel }}</button></UiTooltip>
       <span v-if="stats.added" class="diff-added">+{{ stats.added }}</span>
       <span v-if="stats.deleted" class="diff-deleted">-{{ stats.deleted }}</span>
       <template v-if="usingLiveDiff">
-        <UiButton variant="ghost" size="small" :title="t('diff.keepFileTitle')" :disabled="busy" @click.stop="keepFile">{{ t('diff.keep') }}</UiButton>
-        <UiButton variant="ghost" size="small" :title="t('diff.undoFileTitle')" :disabled="busy" @click.stop="undoFile">{{ t('diff.undo') }}</UiButton>
+        <UiButton variant="ghost" size="small" :tip="t('diff.keepFileTitle')" :disabled="busy" @click.stop="keepFile">{{ t('diff.keep') }}</UiButton>
+        <UiButton variant="ghost" size="small" :tip="t('diff.undoFileTitle')" :disabled="busy" @click.stop="undoFile">{{ t('diff.undo') }}</UiButton>
       </template>
     </summary>
     <div class="diff-body vs-scroll" :class="{ 'is-collapsed': folded, 'is-expanded': !folded }">
@@ -138,19 +138,18 @@ async function undoFile() {
         <span class="diff-mark">{{ line.kind === "add" ? "+" : line.kind === "del" ? "-" : "" }}</span>
         <code>{{ line.text }}</code>
       </div>
-      <button
+      <UiTooltip
         v-if="lines.length > DIFF_COLLAPSE_LINES"
-        class="diff-expand"
-        type="button"
-        :title="expanded ? t('diff.collapseRest') : t('diff.expandRest')"
-        @click="expanded = !expanded"
+        :content="expanded ? t('diff.collapseRest') : t('diff.expandRest')"
       >
-        <ChevronDown :size="14" />
-      </button>
+        <button class="diff-expand" type="button" @click="expanded = !expanded">
+          <ChevronDown :size="14" />
+        </button>
+      </UiTooltip>
     </div>
   </details>
   <div v-else class="diff-card diff-card-empty">
-    <button class="diff-file" type="button" :title="pathTitle" @click="openFile">{{ editingLabel }}</button>
+    <UiTooltip :content="pathTitle"><button class="diff-file" type="button" @click="openFile">{{ editingLabel }}</button></UiTooltip>
     <span>{{ t('diff.noVisualDiff') }}</span>
   </div>
 </template>

@@ -638,7 +638,9 @@ onBeforeUnmount(() => {
             :aria-label="t('select.removeTag', { label: option.label })"
           ><X :size="12" /></span>
         </span>
-        <span v-if="restTags.length" class="ds-select-tag is-rest" :title="restTags.join('、')">+{{ restTags.length }}</span>
+        <UiTooltip v-if="restTags.length" :content="restTags.join('、')">
+          <span class="ds-select-tag is-rest">+{{ restTags.length }}</span>
+        </UiTooltip>
       </span>
       <span
         v-if="multiple && hasValue"

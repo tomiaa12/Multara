@@ -21,13 +21,13 @@ import { t } from "../../i18n";
     @pointerdown.stop
     @click.stop
   >
-    <button type="button" :title="t('workbench.shortcut.zoomOut')" :disabled="!canZoomOut" @pointerdown.prevent.stop="zoomEditorOut">
+    <UiTooltip :content="t('workbench.shortcut.zoomOut')"><button type="button" :disabled="!canZoomOut" @pointerdown.prevent.stop="zoomEditorOut">
       <Minus :size="13" />
-    </button>
+    </button></UiTooltip>
     <strong>{{ editorZoomLabel }}</strong>
-    <button type="button" :title="t('workbench.shortcut.zoomIn')" :disabled="!canZoomIn" @pointerdown.prevent.stop="zoomEditorIn">
+    <UiTooltip :content="t('workbench.shortcut.zoomIn')"><button type="button" :disabled="!canZoomIn" @pointerdown.prevent.stop="zoomEditorIn">
       <Plus :size="13" />
-    </button>
-    <button type="button" class="is-reset" :title="t('workbench.editorZoomReset')" @pointerdown.prevent.stop="resetEditorZoom">{{ t('workbench.editorZoomResetShort') }}</button>
+    </button></UiTooltip>
+    <UiTooltip :content="t('workbench.editorZoomReset')"><button type="button" class="is-reset" @pointerdown.prevent.stop="resetEditorZoom">{{ t('workbench.editorZoomResetShort') }}</button></UiTooltip>
   </div>
 </template>

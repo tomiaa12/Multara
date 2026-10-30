@@ -29,8 +29,10 @@ onBeforeUnmount(() => window.clearTimeout(timer));
 <template>
   <div class="ui-notice" :data-tone="tone ?? 'warning'" role="status">
     <span>{{ message }}</span>
-    <button type="button" title="关闭" @click="emit('close')">
-      <Codicon name="close" :size="14" />
-    </button>
+    <UiTooltip content="关闭">
+      <button type="button" @click="emit('close')">
+        <Codicon name="close" :size="14" />
+      </button>
+    </UiTooltip>
   </div>
 </template>

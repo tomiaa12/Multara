@@ -254,7 +254,7 @@ defineExpose({ picking });
             class="icon-button"
             type="button"
             size="icon"
-            :title="isAlreadyBound(item.path) ? t('workspace.removeItem') : t('common.delete')"
+            :tip="isAlreadyBound(item.path) ? t('workspace.removeItem') : t('common.delete')"
             @click="removeItem(item.path)"
           >
             <Trash2 :size="15" />
@@ -283,7 +283,7 @@ defineExpose({ picking });
                   type="button"
                   variant="ghost"
                   size="icon"
-                  :title="t('workspace.generateBranch')"
+                  :tip="t('workspace.generateBranch')"
                   :disabled="(!requirementName && !item.name) || generatingPath === item.path"
                   @click="generateBranchName(item)"
                 >
@@ -295,7 +295,7 @@ defineExpose({ picking });
                   type="button"
                   variant="ghost"
                   size="icon"
-                  :title="t('workspace.configureBranch')"
+                  :tip="t('workspace.configureBranch')"
                   @click="emit('settings')"
                 >
                   <Settings :size="14" />
