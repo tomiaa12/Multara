@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
+import { computed, createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
 import { Bot, FolderKanban, Hash, Sparkles } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import Codicon from "../ui/Codicon.vue";
@@ -36,6 +36,7 @@ const emit = defineEmits<{
 
 const editor = ref<HTMLDivElement | null>(null);
 const chipText = new Map<string, string>();
+const contextById = computed(() => new Map(props.contexts.map((item) => [item.id, item])));
 const ime = createComposerIme();
 let trackedContextIds = new Set<string>();
 
@@ -119,7 +120,7 @@ function contextFromChip(chip: HTMLElement): ComposerNode & { type: "chip" } {
       label: chip.dataset.referenceLabel ?? "",
     };
   }
-  const stored = props.contexts.find((item) => item.id === id);
+  const stored = contextById.value.get(id);
   return {
     type: "chip",
     id,
@@ -185,13 +186,14 @@ function hasFieldContent(nodes = snapshot()) {
   return nodes.some((node) => node.type === "text" && stripLineBreakPad(node.value.replace(/\u00a0/g, " ")).length > 0);
 }
 
-function refreshEmpty() {
-  editor.value?.classList.toggle("is-empty", !hasFieldContent());
+function refreshEmpty(nodes = snapshot()) {
+  editor.value?.classList.toggle("is-empty", !hasFieldContent(nodes));
 }
 
 function emitChange() {
-  refreshEmpty();
-  emit("change", snapshot());
+  const nodes = snapshot();
+  refreshEmpty(nodes);
+  emit("change", nodes);
 }
 
 function placeCaretAfter(node: Node) {
@@ -323,7 +325,7 @@ function syncChipContexts() {
   let changed = false;
   for (const chip of [...root.querySelectorAll<HTMLElement>(".composer-chip")]) {
     const id = chip.dataset.contextId ?? "";
-    const stored = props.contexts.find((item) => item.id === id);
+    const stored = contextById.value.get(id);
     if (trackedContextIds.has(id) && !ids.has(id)) {
       const next = chip.nextSibling;
       if (next?.nodeType === Node.TEXT_NODE && next.textContent === "\u00a0") next.remove();
@@ -567,9 +569,11 @@ function restoreExternalDrop() {
   const html = externalDropHtml;
   if (!root || html === null || root.innerHTML === html) return;
   externalDropHtml = null;
+  // unmountChip 会删 chipText；不在 props.contexts 里的芯片（粘贴、insertNodesAtCaret 创建的）要靠它取正文
+  const savedText = new Map(chipText);
   for (const chip of root.querySelectorAll<HTMLElement>(".composer-chip")) unmountChip(chip);
   root.innerHTML = html;
-  refreshEmpty();
+  for (const [id, text] of savedText) chipText.set(id, text);
   emitChange();
 }
 

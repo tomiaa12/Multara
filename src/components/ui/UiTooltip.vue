@@ -26,6 +26,7 @@ const tipEl = ref<HTMLElement | null>(null);
 const tipStyle = ref<Record<string, string>>({});
 const resolved = ref<TooltipPlacement>(props.placement);
 let hideTimer = 0;
+let positionFrame = 0;
 
 async function show() {
   if (props.disabled || !props.content.trim()) return;
@@ -37,7 +38,9 @@ async function show() {
     maxWidth: `${props.maxWidth}px`,
   };
   await nextTick();
-  requestAnimationFrame(() => {
+  cancelAnimationFrame(positionFrame);
+  positionFrame = requestAnimationFrame(() => {
+    positionFrame = 0;
     updatePosition();
     ready.value = true;
   });
@@ -71,6 +74,7 @@ function updatePosition() {
 
 onBeforeUnmount(() => {
   window.clearTimeout(hideTimer);
+  cancelAnimationFrame(positionFrame);
 });
 </script>
 

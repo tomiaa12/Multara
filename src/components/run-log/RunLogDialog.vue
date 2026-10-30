@@ -54,8 +54,14 @@ const emit = defineEmits<{
 
 /** 时间轴缩放档位：1 / 2 / 4 / 8。 */
 const ZOOM_STEPS = [1, 2, 4, 8] as const;
+/** 详情超过这个字符数先截断显示，几 MB 的工具输出整段塞进一个文本节点会卡住布局。 */
+const DETAIL_PREVIEW_CHARS = 20000;
+const SEARCH_DEBOUNCE_MS = 200;
 
 const query = ref("");
+const appliedQuery = ref("");
+const detailExpanded = ref(false);
+let searchTimer = 0;
 const expandedGroups = ref<Set<number>>(new Set());
 const selectedSeq = ref<number | null>(null);
 const filterKeys = ref<RunLogFilterKey[]>([]);
@@ -99,8 +105,15 @@ const filterOptions = computed(() => {
   return [...seen.entries()];
 });
 
+watch(query, (value) => {
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    appliedQuery.value = value;
+  }, SEARCH_DEBOUNCE_MS);
+});
+
 const filteredSteps = computed(() => {
-  const needle = query.value.trim().toLowerCase();
+  const needle = appliedQuery.value.trim().toLowerCase();
   const active = new Set(filterKeys.value);
   return steps.value.filter((step) => {
     if (active.size > 0 && !active.has(stepFilterKey(step))) return false;
@@ -124,6 +137,15 @@ const selectedStep = computed(() => {
   return steps.value.find((step) => step.seq === selectedSeq.value) ?? null;
 });
 
+const selectedDetail = computed(() => (selectedStep.value ? stepDetailText(selectedStep.value) : ""));
+const visibleDetail = computed(() =>
+  detailExpanded.value ? selectedDetail.value : selectedDetail.value.slice(0, DETAIL_PREVIEW_CHARS),
+);
+
+watch(selectedSeq, () => {
+  detailExpanded.value = false;
+});
+
 const selectedOffsetMs = computed(() => {
   const step = selectedStep.value;
   if (!step?.startedAt || runStartMs.value === undefined) return undefined;
@@ -136,6 +158,7 @@ watch(
   () => props.payload.runId,
   () => {
     query.value = "";
+    appliedQuery.value = "";
     expandedGroups.value = new Set();
     selectedSeq.value = null;
     filterKeys.value = [];
@@ -192,6 +215,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey);
   document.removeEventListener("pointerdown", onDocPointer);
   stopLiveTick();
+  window.clearTimeout(searchTimer);
 });
 
 watch(isLive, (live) => {
@@ -519,7 +543,15 @@ async function copyTranscript() {
               <X :size="14" />
             </button>
           </header>
-          <pre class="vs-scroll">{{ stepDetailText(selectedStep) || t("runLog.noDetail") }}</pre>
+          <pre class="vs-scroll">{{ visibleDetail || t("runLog.noDetail") }}</pre>
+          <UiButton
+            v-if="visibleDetail.length < selectedDetail.length"
+            variant="ghost"
+            size="small"
+            @click="detailExpanded = true"
+          >
+            {{ t("runLog.showFullDetail", { n: selectedDetail.length }) }}
+          </UiButton>
         </aside>
       </div>
     </div>

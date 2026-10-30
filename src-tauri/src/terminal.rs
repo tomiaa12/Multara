@@ -3,9 +3,14 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex},
+    process::Stdio,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver},
+        Arc, LazyLock, Mutex,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -14,8 +19,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
+
 struct Session {
-    writer: Box<dyn Write + Send>,
+    /// 单独加锁：PTY 输入缓冲写满时 `write_all` 会阻塞，不能拖住全局 `SESSIONS`。
+    writer: SharedWriter,
     master: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
@@ -23,6 +31,7 @@ struct Session {
 impl Drop for Session {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -67,6 +76,12 @@ pub struct OpenedTerminal {
 const EXIT_POLL_MS: u64 = 250;
 /// 进程退出后再等一会儿，让读线程把最后的输出发完。
 const EXIT_FLUSH_MS: u64 = 150;
+/// 输出合并：首块到达后最多再等这么久，或攒够这么多字节，就发一次 `terminal-data`。
+const OUTPUT_BATCH_WINDOW: Duration = Duration::from_millis(8);
+const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+/// 读线程与发事件线程之间的队列；满了读线程就停下，PTY 自然形成背压。
+const OUTPUT_QUEUE_CHUNKS: usize = 64;
+const READ_CHUNK_BYTES: usize = 8192;
 
 pub fn open(app: AppHandle, app_data: Option<&Path>, cwd: &str, profile_id: Option<&str>) -> Result<OpenedTerminal, String> {
     let directory = Path::new(cwd);
@@ -120,27 +135,25 @@ pub fn open(app: AppHandle, app_data: Option<&Path>, cwd: &str, profile_id: Opti
     let id = Uuid::new_v4().to_string();
     let emit_id = id.clone();
     let data_app = app.clone();
+    let (sender, receiver) = mpsc::sync_channel::<Vec<u8>>(OUTPUT_QUEUE_CHUNKS);
     thread::spawn(move || {
-        let mut buffer = [0_u8; 8192];
+        let mut buffer = [0_u8; READ_CHUNK_BYTES];
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(size) => {
-                    let _ = data_app.emit(
-                        "terminal-data",
-                        TerminalChunk {
-                            id: emit_id.clone(),
-                            data: STANDARD.encode(&buffer[..size]),
-                        },
-                    );
+                    if sender.send(buffer[..size].to_vec()).is_err() {
+                        break;
+                    }
                 }
             }
         }
     });
+    thread::spawn(move || emit_batched(data_app, emit_id, receiver));
     sessions().insert(
         id.clone(),
         Session {
-            writer,
+            writer: Arc::new(Mutex::new(writer)),
             master: pair.master,
             child,
         },
@@ -184,15 +197,37 @@ fn watch_exit(app: AppHandle, id: String) {
     });
 }
 
+/// 首块输出立刻开始计时，窗口内到达的后续块合并成一个事件，载荷格式不变。
+fn emit_batched(app: AppHandle, id: String, receiver: Receiver<Vec<u8>>) {
+    while let Ok(mut batch) = receiver.recv() {
+        let deadline = Instant::now() + OUTPUT_BATCH_WINDOW;
+        while batch.len() < OUTPUT_BATCH_BYTES {
+            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+            match receiver.recv_timeout(left) {
+                Ok(more) => batch.extend_from_slice(&more),
+                Err(_) => break,
+            }
+        }
+        let _ = app.emit(
+            "terminal-data",
+            TerminalChunk {
+                id: id.clone(),
+                data: STANDARD.encode(&batch),
+            },
+        );
+    }
+}
+
 pub fn write(id: &str, data: &[u8]) -> Result<(), String> {
-    let mut sessions = sessions();
-    let session = sessions.get_mut(id).ok_or_else(|| "终端已关闭".to_string())?;
-    session
-        .writer
-        .write_all(data)
-        .map_err(|error| error.to_string())?;
-    session.writer.flush().map_err(|error| error.to_string())?;
-    Ok(())
+    let writer = sessions()
+        .get(id)
+        .map(|session| Arc::clone(&session.writer))
+        .ok_or_else(|| "终端已关闭".to_string())?;
+    let mut writer = writer.lock().unwrap_or_else(|error| error.into_inner());
+    writer.write_all(data).map_err(|error| error.to_string())?;
+    writer.flush().map_err(|error| error.to_string())
 }
 
 pub fn resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
@@ -211,7 +246,10 @@ pub fn resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
 
 pub fn close(id: &str) -> Result<(), String> {
     let removed = sessions().remove(id);
-    drop(removed);
+    // `Session::drop` 会 kill 再 wait 收尸，放到后台线程，不卡调用方。
+    if let Some(session) = removed {
+        thread::spawn(move || drop(session));
+    }
     Ok(())
 }
 
@@ -718,6 +756,7 @@ pub fn publish_snapshot(
     text: &str,
     active: bool,
 ) -> Result<(), String> {
+    validate_snapshot_id(id)?;
     let _guard = snapshot_io();
     let dir = app_data.join(SNAPSHOT_DIR);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -736,7 +775,16 @@ pub fn publish_snapshot(
     write_index(&dir, &index)
 }
 
+/// id 会拼进文件名，只接受 UUID 字符集，防止 `../` 写到快照目录之外。
+fn validate_snapshot_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
+        return Err("无效的终端 id".to_string());
+    }
+    Ok(())
+}
+
 pub fn remove_snapshot(app_data: &Path, id: &str) -> Result<(), String> {
+    validate_snapshot_id(id)?;
     let _guard = snapshot_io();
     let dir = app_data.join(SNAPSHOT_DIR);
     let _ = fs::remove_file(dir.join(format!("{id}.txt")));
@@ -847,8 +895,27 @@ pub struct TerminalService {
     pub ports: Vec<u16>,
 }
 
-/// 每个还活着的终端壳进程，以及它的子进程正在监听的 TCP 端口。
+/// `ps` / `lsof` / `netstat` 的上限：macOS 上 lsof 偶尔要几秒，卡住时这一轮宁可没有端口信息。
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const PROBE_POLL: Duration = Duration::from_millis(20);
+
+static SERVICES_RUNNING: AtomicBool = AtomicBool::new(false);
+static LAST_SERVICES: LazyLock<Mutex<Vec<TerminalService>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// 前端定时轮询；上一轮还没跑完时直接返回上一轮的结果，不叠加子进程。
 pub fn services() -> Vec<TerminalService> {
+    let last = || LAST_SERVICES.lock().unwrap_or_else(|error| error.into_inner()).clone();
+    if SERVICES_RUNNING.swap(true, Ordering::AcqRel) {
+        return last();
+    }
+    let found = collect_services();
+    *LAST_SERVICES.lock().unwrap_or_else(|error| error.into_inner()) = found.clone();
+    SERVICES_RUNNING.store(false, Ordering::Release);
+    found
+}
+
+/// 每个还活着的终端壳进程，以及它的子进程正在监听的 TCP 端口。
+fn collect_services() -> Vec<TerminalService> {
     let alive = alive_sessions();
     if alive.is_empty() {
         return Vec::new();
@@ -875,26 +942,67 @@ pub fn services() -> Vec<TerminalService> {
         .collect()
 }
 
-/// 结束正在监听该端口的进程，返回被结束的进程数。
+/// 结束终端会话里（壳进程及其后代）正在监听该端口的进程，返回成功结束的进程数。
+/// 不碰终端之外的进程，例如同端口的数据库服务。
 pub fn free_port(port: u16) -> Result<usize, String> {
+    let children = process_children();
+    let family: HashSet<u32> = alive_sessions()
+        .into_iter()
+        .flat_map(|(_, pid)| descendant_pids(pid, &children))
+        .collect();
     let owners: Vec<u32> = listen_ports()
         .into_iter()
-        .filter(|(_, ports)| ports.contains(&port))
+        .filter(|(pid, ports)| ports.contains(&port) && family.contains(pid))
         .map(|(pid, _)| pid)
         .filter(|pid| *pid != 0 && *pid != std::process::id())
         .collect();
     if owners.is_empty() {
-        return Err(format!("没有进程在监听端口 {port}"));
+        return Err(format!("终端里没有进程在监听端口 {port}"));
     }
-    for pid in &owners {
-        let status = if cfg!(windows) {
-            crate::process::command("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).status()
-        } else {
-            crate::process::command("kill").args(["-9", &pid.to_string()]).status()
-        };
-        status.map_err(|error| error.to_string())?;
-    }
-    Ok(owners.len())
+    let killed = owners
+        .iter()
+        .filter(|pid| {
+            let status = if cfg!(windows) {
+                crate::process::command("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).status()
+            } else {
+                crate::process::command("kill").args(["-9", &pid.to_string()]).status()
+            };
+            status.is_ok_and(|status| status.success())
+        })
+        .count();
+    Ok(killed)
+}
+
+/// 带超时地取子进程的标准输出；超时或失败返回 None。
+fn probe_output(command: &mut std::process::Command) -> Option<String> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout.read_to_end(&mut bytes);
+        bytes
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < PROBE_TIMEOUT => thread::sleep(PROBE_POLL),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    let bytes = reader.join().ok()?;
+    status
+        .success()
+        .then(|| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn alive_sessions() -> Vec<(String, u32)> {
@@ -944,37 +1052,25 @@ fn process_children() -> HashMap<u32, Vec<u32>> {
 
 #[cfg(not(windows))]
 fn process_children() -> HashMap<u32, Vec<u32>> {
-    let output = crate::process::command(ps_program())
-        .args(["-ax", "-o", "pid=,ppid="])
-        .output();
-    let Ok(output) = output else {
-        return HashMap::new();
-    };
-    if !output.status.success() {
-        return HashMap::new();
-    }
-    parse_process_tree(&String::from_utf8_lossy(&output.stdout))
+    probe_output(crate::process::command(ps_program()).args(["-ax", "-o", "pid=,ppid="]))
+        .map(|text| parse_process_tree(&text))
+        .unwrap_or_default()
 }
 
 #[cfg(windows)]
 fn listen_ports() -> HashMap<u32, Vec<u16>> {
-    let output = crate::process::command("netstat").args(["-ano", "-p", "TCP"]).output();
-    let mut ports = output
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| parse_netstat(&String::from_utf8_lossy(&output.stdout)))
+    let mut ports = probe_output(crate::process::command("netstat").args(["-ano", "-p", "TCP"]))
+        .map(|text| parse_netstat(&text))
         .unwrap_or_default();
-    if let Ok(output) = crate::process::command("netstat").args(["-ano", "-p", "TCPv6"]).output() {
-        if output.status.success() {
-            for (pid, list) in parse_netstat(&String::from_utf8_lossy(&output.stdout)) {
-                let merged = ports.entry(pid).or_default();
-                for port in list {
-                    if !merged.contains(&port) {
-                        merged.push(port);
-                    }
+    if let Some(text) = probe_output(crate::process::command("netstat").args(["-ano", "-p", "TCPv6"])) {
+        for (pid, list) in parse_netstat(&text) {
+            let merged = ports.entry(pid).or_default();
+            for port in list {
+                if !merged.contains(&port) {
+                    merged.push(port);
                 }
-                merged.sort_unstable();
             }
+            merged.sort_unstable();
         }
     }
     ports
@@ -982,16 +1078,9 @@ fn listen_ports() -> HashMap<u32, Vec<u16>> {
 
 #[cfg(not(windows))]
 fn listen_ports() -> HashMap<u32, Vec<u16>> {
-    let output = crate::process::command(lsof_program())
-        .args(["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"])
-        .output();
-    let Ok(output) = output else {
-        return HashMap::new();
-    };
-    if !output.status.success() {
-        return HashMap::new();
-    }
-    parse_listen_ports(&String::from_utf8_lossy(&output.stdout))
+    probe_output(crate::process::command(lsof_program()).args(["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"]))
+        .map(|text| parse_listen_ports(&text))
+        .unwrap_or_default()
 }
 
 #[cfg(not(windows))]
@@ -1111,7 +1200,24 @@ fn sessions() -> std::sync::MutexGuard<'static, HashMap<String, Session>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_name, descendant_pids, parse_listen_ports, parse_netstat, parse_process_tree, slice_terminal_text};
+    use super::{
+        command_name, descendant_pids, parse_listen_ports, parse_netstat, parse_process_tree, publish_snapshot,
+        remove_snapshot, slice_terminal_text,
+    };
+
+    #[test]
+    fn snapshot_ids_cannot_escape_the_snapshot_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        for id in ["../escape", "a/b", "", "x.txt"] {
+            assert!(publish_snapshot(&data, id, "t", "/", 1, "secret", true).is_err());
+            assert!(remove_snapshot(&data, id).is_err());
+        }
+        assert!(!temp.path().join("escape.txt").exists());
+        let id = uuid::Uuid::new_v4().to_string();
+        publish_snapshot(&data, &id, "t", "/", 1, "ok", true).unwrap();
+        remove_snapshot(&data, &id).unwrap();
+    }
 
     #[test]
     fn slice_uses_one_based_lines_and_the_stored_offset() {

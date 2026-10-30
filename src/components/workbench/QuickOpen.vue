@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
-import { parseQuickOpenQuery, rankQuickOpenFiles, type QuickOpenFile } from "./quick-open";
+import {
+  parseQuickOpenQuery,
+  prepareQuickOpenFiles,
+  rankPreparedQuickOpenFiles,
+  type QuickOpenFile,
+} from "./quick-open";
 import { t } from "../../i18n";
 
 const props = defineProps<{
@@ -20,10 +25,28 @@ const index = ref(0);
 const input = ref<HTMLInputElement | null>(null);
 const list = ref<HTMLElement | null>(null);
 
-const parsed = computed(() => parseQuickOpenQuery(query.value));
+const QUICK_OPEN_DEBOUNCE_MS = 120;
+const QUICK_OPEN_EMPTY_RESULTS = 100;
+const filterQuery = ref(query.value);
+let filterTimer = 0;
+watch(query, (value) => {
+  window.clearTimeout(filterTimer);
+  filterTimer = window.setTimeout(() => {
+    filterQuery.value = value;
+  }, QUICK_OPEN_DEBOUNCE_MS);
+});
+onBeforeUnmount(() => window.clearTimeout(filterTimer));
+
+function flushFilterQuery() {
+  window.clearTimeout(filterTimer);
+  filterQuery.value = query.value;
+}
+
+const candidates = computed(() => prepareQuickOpenFiles(props.files));
+const parsed = computed(() => parseQuickOpenQuery(filterQuery.value));
 const matches = computed(() => {
-  if (!parsed.value.filter) return props.files.slice(0, 100);
-  return rankQuickOpenFiles(props.files, parsed.value.filter);
+  if (!parsed.value.filter) return props.files.slice(0, QUICK_OPEN_EMPTY_RESULTS);
+  return rankPreparedQuickOpenFiles(candidates.value, parsed.value.filter);
 });
 
 watch(matches, () => {
@@ -43,7 +66,10 @@ function move(delta: number) {
 }
 
 function confirm() {
-  const file = matches.value[index.value];
+  // 防抖还没生效时高亮项属于旧列表，按新结果的第一项打开。
+  const stale = filterQuery.value !== query.value;
+  flushFilterQuery();
+  const file = matches.value[stale ? 0 : index.value];
   if (!file) return;
   emit("open", file, parsed.value.startLine, parsed.value.endLine);
 }

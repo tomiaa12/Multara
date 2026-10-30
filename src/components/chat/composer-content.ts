@@ -27,12 +27,21 @@ export type ComposerNode =
   | { type: "text"; value: string }
   | ComposerChipNode;
 
+// 围栏长度可变（见 fencedBlock），收尾用反向引用匹配同长围栏；旧内容固定 ``` 同样能解析。
 const CITATION_PATTERN =
-  /\[代码引用\][ \t]+(.+):(\d+)(?:-(\d+))?\n```[^\n]*\n([\s\S]*?)```/g;
+  /\[代码引用\][ \t]+(.+):(\d+)(?:-(\d+))?\n(`{3,})[^\n]*\n([\s\S]*?)\4(?!`)/g;
 const FOLDER_PATTERN =
-  /\[文件夹\][ \t]+([^\n]+)(?:\n```[^\n]*\n([\s\S]*?)```)?/g;
+  /\[文件夹\][ \t]+([^\n]+)(?:\n(`{3,})[^\n]*\n([\s\S]*?)\2(?!`))?/g;
 const FILE_PATTERN =
-  /\[文件\][ \t]+([^\n]+)(?:\n```[^\n]*\n([\s\S]*?)```)?/g;
+  /\[文件\][ \t]+([^\n]+)(?:\n(`{3,})[^\n]*\n([\s\S]*?)\2(?!`))?/g;
+const MIN_FENCE_LENGTH = 3;
+
+/** 围栏比内容里最长的连续反引号多一个，内容含 ``` 时不会提前截断。 */
+export function fencedBlock(text: string) {
+  const longest = (text.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = "`".repeat(Math.max(MIN_FENCE_LENGTH, longest + 1));
+  return `${fence}\n${text}\n${fence}`;
+}
 const REFERENCE_PATTERN =
   /\[实体引用\][ \t]+(agent|squad|skill|task|requirement)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
 const ASSIGNMENT_PATTERN =
@@ -109,23 +118,23 @@ export function formatAgentPrompt(nodes: ComposerNode[], options: { directMentio
     if (!isFileChip(node) || !node.path) return [];
     if (node.source === "terminal") {
       const location = node.startLine === node.endLine ? `${node.startLine}` : `${node.startLine}-${node.endLine}`;
-      return [`[终端] ${location}\n\`\`\`\n${node.text}\n\`\`\``];
+      return [`[终端] ${location}\n${fencedBlock(node.text)}`];
     }
     if (node.isDirectory) {
       return node.text.trim()
-        ? [`[文件夹] ${node.path}\n\`\`\`\n${node.text}\n\`\`\``]
+        ? [`[文件夹] ${node.path}\n${fencedBlock(node.text)}`]
         : [`[文件夹] ${node.path}`];
     }
     if (isWholeFileChip(node)) {
       return node.text.trim()
-        ? [`[文件] ${node.path}\n\`\`\`\n${node.text}\n\`\`\``]
+        ? [`[文件] ${node.path}\n${fencedBlock(node.text)}`]
         : [`[文件] ${node.path}`];
     }
     if (!node.text.trim()) return [];
     const location = node.startLine === node.endLine
       ? `${node.path}:${node.startLine}`
       : `${node.path}:${node.startLine}-${node.endLine}`;
-    return [`[代码引用] ${location}\n\`\`\`\n${node.text}\n\`\`\``];
+    return [`[代码引用] ${location}\n${fencedBlock(node.text)}`];
   });
   const visible = nodes
     .map((node) => (node.type === "chip" ? markedChipLabel(node) : node.value))
@@ -161,7 +170,7 @@ export function parseUserPromptNodes(content: string): ComposerNode[] {
       });
       return "";
     })
-    .replace(CITATION_PATTERN, (_raw, path: string, start: string, end: string | undefined, code: string) => {
+    .replace(CITATION_PATTERN, (_raw, path: string, start: string, end: string | undefined, _fence: string, code: string) => {
       citations.push({
         type: "chip",
         id: `${path}:${start}-${end ?? start}`,
@@ -172,7 +181,7 @@ export function parseUserPromptNodes(content: string): ComposerNode[] {
       });
       return "";
     })
-    .replace(FOLDER_PATTERN, (_raw, path: string, listing: string | undefined) => {
+    .replace(FOLDER_PATTERN, (_raw, path: string, _fence: string | undefined, listing: string | undefined) => {
       citations.push({
         type: "chip",
         id: `${path}:folder`,
@@ -184,7 +193,7 @@ export function parseUserPromptNodes(content: string): ComposerNode[] {
       });
       return "";
     })
-    .replace(FILE_PATTERN, (_raw, path: string, content: string | undefined) => {
+    .replace(FILE_PATTERN, (_raw, path: string, _fence: string | undefined, content: string | undefined) => {
       citations.push({
         type: "chip",
         id: `${path}:file`,

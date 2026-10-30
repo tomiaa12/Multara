@@ -10,7 +10,9 @@ import {
   joinFsPath,
   normalizeDefinitionResult,
   replyToServerRequest,
+  supportsIncrementalSync,
   type JsonRpcMessage,
+  type LspRange,
 } from "./protocol";
 
 type ServerChoice = { server: string; languageId: string };
@@ -36,6 +38,8 @@ const SERVERS_BY_EXTENSION: Record<string, ServerChoice> = {
 const INITIALIZE_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const CHANGE_DEBOUNCE_MS = 150;
+/** 单条消息写入卡住时放行后面的消息，否则串行发送链会带着所有待发文本无限变长。 */
+const SEND_TIMEOUT_MS = 10_000;
 const MAX_RESTARTS = 3;
 
 export function serverForPath(path: string): ServerChoice | null {
@@ -47,6 +51,7 @@ type OpenDocument = {
   version: number;
   timer: number | null;
   disposables: monaco.IDisposable[];
+  changes: Array<{ range: LspRange; text: string }>;
 };
 
 type Pending = {
@@ -62,6 +67,7 @@ class LspConnection {
   private readonly documents = new Map<string, OpenDocument>();
   private readonly workspaceFolders: Array<{ uri: string; name: string }>;
   private closed = false;
+  private incremental = false;
 
   constructor(
     readonly key: string,
@@ -72,7 +78,7 @@ class LspConnection {
   }
 
   async initialize() {
-    await this.request(
+    const result = await this.request(
       "initialize",
       {
         processId: null,
@@ -93,6 +99,7 @@ class LspConnection {
       },
       INITIALIZE_TIMEOUT_MS,
     );
+    this.incremental = supportsIncrementalSync(result);
     this.notify("initialized", {});
   }
 
@@ -104,13 +111,16 @@ class LspConnection {
       version: 1,
       timer: null,
       disposables: [],
+      changes: [],
     };
     this.documents.set(key, document);
     this.notify("textDocument/didOpen", {
       textDocument: { uri: document.uri, languageId, version: document.version, text: model.getValue() },
     });
     document.disposables.push(
-      model.onDidChangeContent(() => {
+      model.onDidChangeContent((event) => {
+        // Monaco 一次事件里的 changes 已按可顺序应用排好，跨事件累积后按原顺序发出即可。
+        if (this.incremental) document.changes.push(...event.changes.map(toLspChange));
         if (document.timer != null) window.clearTimeout(document.timer);
         document.timer = window.setTimeout(() => this.sendChange(model, document), CHANGE_DEBOUNCE_MS);
       }),
@@ -171,11 +181,13 @@ class LspConnection {
   private sendChange(model: monaco.editor.ITextModel, document: OpenDocument) {
     if (document.timer != null) window.clearTimeout(document.timer);
     document.timer = null;
+    const changes = document.changes;
+    document.changes = [];
     if (model.isDisposed()) return;
     document.version += 1;
     this.notify("textDocument/didChange", {
       textDocument: { uri: document.uri, version: document.version },
-      contentChanges: [{ text: model.getValue() }],
+      contentChanges: this.incremental ? changes : [{ text: model.getValue() }],
     });
   }
 
@@ -200,9 +212,29 @@ class LspConnection {
   private send(message: JsonRpcMessage) {
     const text = JSON.stringify(message);
     this.outgoing = this.outgoing
-      .then(() => backend.lspSend(this.info.id, text))
+      .then(() => (this.closed ? undefined : withTimeout(backend.lspSend(this.info.id, text), SEND_TIMEOUT_MS)))
       .catch(() => undefined);
   }
+}
+
+function toLspChange(change: monaco.editor.IModelContentChange) {
+  return {
+    range: {
+      start: { line: change.range.startLineNumber - 1, character: change.range.startColumn - 1 },
+      end: { line: change.range.endLineNumber - 1, character: change.range.endColumn - 1 },
+    },
+    text: change.text,
+  };
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number) {
+  let timer = 0;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error("timeout")), ms);
+    }),
+  ]).finally(() => window.clearTimeout(timer));
 }
 
 /** 按（工作区, 语言）懒启动语言服务器，并把该语言的模型同步过去。 */

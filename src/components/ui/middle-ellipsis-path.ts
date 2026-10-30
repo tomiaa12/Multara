@@ -36,10 +36,13 @@ export function fitMiddleEllipsis(
   return best;
 }
 
-/** 用元素计算样式建测量函数（canvas）。 */
+let sharedContext: CanvasRenderingContext2D | null | undefined;
+let sharedFont = "";
+
+/** 用元素计算样式建测量函数；所有实例共用一个 canvas，测量前切到各自的字体。 */
 export function createTextMeasurer(el: Element): (value: string) => number {
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
+  sharedContext ??= document.createElement("canvas").getContext("2d");
+  const ctx = sharedContext;
   if (!ctx) return (value) => value.length;
   const style = getComputedStyle(el);
   const font = [
@@ -48,8 +51,13 @@ export function createTextMeasurer(el: Element): (value: string) => number {
     style.fontSize,
     style.fontFamily,
   ].join(" ");
-  ctx.font = font;
-  return (value) => ctx.measureText(value).width;
+  return (value) => {
+    if (sharedFont !== font) {
+      ctx.font = font;
+      sharedFont = font;
+    }
+    return ctx.measureText(value).width;
+  };
 }
 
 /** @deprecated 段级缩略；新 UI 请用 fitMiddleEllipsis */

@@ -19,6 +19,7 @@ function linesOf(text: string) {
 
 /** 扫描 <<<<<<< / ======= / >>>>>>>。不完整或嵌套的标记到此为止，和 VS Code 一样。 */
 export function findMergeConflicts(text: string): MergeConflict[] {
+  if (!text.includes(HEADER)) return [];
   const lines = linesOf(text);
   const conflicts: MergeConflict[] = [];
   let header = 0;

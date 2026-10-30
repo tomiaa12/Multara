@@ -2,7 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import hljs from "highlight.js";
+import { hljs, PLAINTEXT_LANGUAGE } from "./highlight";
+import { sanitizeRichHtml } from "./rich-content-sanitize";
 import * as backend from "../../services/backend";
 import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
@@ -48,11 +49,7 @@ watch(() => props.content, (content) => {
 });
 onBeforeUnmount(() => window.clearTimeout(renderTimer));
 
-const html = computed(() =>
-  DOMPurify.sanitize(marked.parse(shown.value || "", { async: false }) as string, {
-    USE_PROFILES: { html: true },
-  }),
-);
+const html = computed(() => sanitizeRichHtml(marked.parse(shown.value || "", { async: false }) as string));
 
 function fenceInfoOf(code: HTMLElement) {
   const raw = [...code.classList]
@@ -65,7 +62,8 @@ function languageOf(code: HTMLElement) {
   const fence = fenceInfoOf(code);
   const name = fence.language;
   if (!name) return "";
-  return languageAlias[name] ?? name;
+  const language = languageAlias[name] ?? name;
+  return hljs.getLanguage(language) ? language : PLAINTEXT_LANGUAGE;
 }
 
 function highlightCode(code: HTMLElement) {
@@ -278,7 +276,7 @@ async function enhanceBlocks() {
     if (code.classList.contains("language-html-preview")) {
       const preview = document.createElement("div");
       preview.className = "html-preview vs-scroll";
-      preview.innerHTML = DOMPurify.sanitize(code.textContent ?? "", { USE_PROFILES: { html: true } });
+      preview.innerHTML = sanitizeRichHtml(code.textContent ?? "");
       block.replaceWith(preview);
       continue;
     }

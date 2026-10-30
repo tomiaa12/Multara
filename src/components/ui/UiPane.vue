@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, inject, nextTick, onMounted, ref, watch } from "vue";
+import { readStorage, writeStorage } from "../../utils/safe-storage";
 
 const props = withDefaults(defineProps<{
   title: string;
@@ -36,7 +37,7 @@ const expanded = computed(() => (controlled.value ? Boolean(props.expanded) : ma
 
 function readExpanded() {
   if (props.storageKey) {
-    const stored = localStorage.getItem(props.storageKey);
+    const stored = readStorage(props.storageKey);
     if (stored === "1") return false;
     if (stored === "0") return true;
   }
@@ -45,7 +46,7 @@ function readExpanded() {
 
 function setExpanded(value: boolean) {
   if (!controlled.value) managed.value = value;
-  if (props.storageKey) localStorage.setItem(props.storageKey, value ? "0" : "1");
+  if (props.storageKey) writeStorage(props.storageKey, value ? "0" : "1");
   emit("update:expanded", value);
 }
 

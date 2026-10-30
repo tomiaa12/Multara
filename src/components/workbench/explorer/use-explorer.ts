@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from "vue";
 import type { FileEntry, Workspace } from "../../../domain/types";
 import { monaco } from "../../../monaco";
 import * as backend from "../../../services/backend";
@@ -993,7 +993,10 @@ export function useExplorer(host: ExplorerHost) {
   }
 
   // ---- .gitignore ----
-  const ignored = ref<Record<string, Set<string>>>({});
+  // 原地修改后 triggerRef，不再每次 flush 克隆整个集合并替换深响应式对象。
+  const ignored = shallowRef(new Map<string, Set<string>>());
+  /** isIgnored 的结果缓存（含祖先回溯），集合变化时按工作区整体失效。 */
+  const ignoredLookup = new Map<string, Map<string, boolean>>();
   const checked = new Map<string, Set<string>>();
   const pendingIgnore = new Map<string, Set<string>>();
   let ignoreTimer = 0;
@@ -1020,10 +1023,12 @@ export function useExplorer(host: ExplorerHost) {
     for (const [workspaceId, paths] of batches) {
       try {
         const hits = await explorerBackend.gitIgnoredPaths(workspaceId, [...paths]);
-        const current = new Set(ignored.value[workspaceId] ?? []);
+        const current = ignored.value.get(workspaceId) ?? new Set<string>();
         for (const path of paths) current.delete(path);
         for (const hit of hits) current.add(hit);
-        ignored.value = { ...ignored.value, [workspaceId]: current };
+        ignored.value.set(workspaceId, current);
+        ignoredLookup.delete(workspaceId);
+        triggerRef(ignored);
       } catch {
         /* 不是 Git 仓库或 git 不可用 */
       }
@@ -1035,15 +1040,16 @@ export function useExplorer(host: ExplorerHost) {
     noteEntries(workspaceId, host.loadedPaths(workspaceId).map((path) => ({ path })));
   }
 
-  function isIgnored(workspaceId: string, path: string) {
-    const set = ignored.value[workspaceId];
+  function isIgnored(workspaceId: string, path: string): boolean {
+    const set = ignored.value.get(workspaceId);
     if (!set?.size || !path) return false;
-    let current = path;
-    while (current) {
-      if (set.has(current)) return true;
-      current = parentOf(current);
-    }
-    return false;
+    const cache = ignoredLookup.get(workspaceId) ?? new Map<string, boolean>();
+    ignoredLookup.set(workspaceId, cache);
+    const known = cache.get(path);
+    if (known !== undefined) return known;
+    const result = set.has(path) || isIgnored(workspaceId, parentOf(path));
+    cache.set(path, result);
+    return result;
   }
 
   // ---- 问题标记（Monaco markers） ----

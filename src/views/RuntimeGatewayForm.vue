@@ -85,6 +85,9 @@ const testing = ref("");
 const connectionLog = ref("");
 const logEl = ref<HTMLElement | null>(null);
 let stopLog: (() => void) | undefined;
+let stopLogTimer = 0;
+/** 测试结束后再收一会儿迟到的日志事件 */
+const LOG_DRAIN_MS = 200;
 
 const spec = computed(() => familyOf(draft.value.provider));
 const parsed = computed(() => parseCommandLine(draft.value.commandLine));
@@ -157,6 +160,7 @@ async function testConnection() {
     testing.value = "";
     return;
   }
+  window.clearTimeout(stopLogTimer);
   stopLog?.();
   try {
     stopLog = await listen<string>("runtime-connection-log", (event) => {
@@ -174,7 +178,7 @@ async function testConnection() {
       command: parsedLine.commandName,
       args: parsedLine.fixedArgs,
       apiUrl: draft.value.apiUrl,
-      apiKey: apiKey.value,
+      apiKey: apiKey.value.trim(),
       model: defaultModel.value,
       wireApi: draft.value.wireApi,
       apiFormat: draft.value.apiFormat,
@@ -194,14 +198,17 @@ async function testConnection() {
     if (message && !connectionLog.value.includes(message)) pushLog(message);
     testing.value = "";
   } finally {
-    window.setTimeout(() => {
+    stopLogTimer = window.setTimeout(() => {
       stopLog?.();
       stopLog = undefined;
-    }, 200);
+    }, LOG_DRAIN_MS);
   }
 }
 
-onBeforeUnmount(() => stopLog?.());
+onBeforeUnmount(() => {
+  window.clearTimeout(stopLogTimer);
+  stopLog?.();
+});
 
 function submit() {
   if (!parsed.value.ok || !draft.value.name.trim() || !draft.value.apiUrl.trim() || !defaultModel.value) return;
@@ -213,7 +220,7 @@ function submit() {
     args: parsed.value.fixedArgs,
     description: draft.value.description.trim(),
     apiUrl: draft.value.apiUrl.trim().replace(/\/+$/, ""),
-    apiKey: apiKey.value,
+    apiKey: apiKey.value.trim(),
     models: modelLines.value,
     wireApi: draft.value.apiFormat === "chat" ? "chat" : "responses",
     apiFormat: draft.value.apiFormat,

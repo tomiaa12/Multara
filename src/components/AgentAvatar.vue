@@ -31,7 +31,7 @@ const sizeStyle = computed(() =>
     :style="sizeStyle"
     :title="name || undefined"
   >
-    <img v-if="isImage" draggable="false" :src="value ?? ''" :alt="name ? `${name} 的头像` : '智能体头像'" />
+    <img v-if="isImage" draggable="false" referrerpolicy="no-referrer" :src="value ?? ''" :alt="name ? `${name} 的头像` : '智能体头像'" />
     <span v-else class="agent-avatar-glyph">{{ fallback }}</span>
   </span>
 </template>

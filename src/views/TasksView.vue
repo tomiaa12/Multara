@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   Ban,
@@ -19,8 +19,9 @@ import AgentAvatar from "../components/AgentAvatar.vue";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
-import { loadRequirementCategories } from "./dashboard/requirement-categories";
-import { moveTask, orderColumn, relativeTime, TASK_COLUMNS, taskCode } from "./task-board";
+import { readStorage, writeStorage } from "../utils/safe-storage";
+import { sharedRequirementCategories } from "./dashboard/requirement-categories";
+import { moveTask, orderColumn, relativeTime, TASK_COLUMNS, taskCodeMap } from "./task-board";
 import { readTaskMeta } from "./task-meta";
 import TaskCreateDialog from "./TaskCreateDialog.vue";
 
@@ -38,16 +39,9 @@ const showCancelled = ref(loadDisplay().showCancelled);
 const displayOpen = ref(false);
 const createOpen = ref(false);
 const createStatus = ref<TaskStatus>("todo");
-const categoryTick = ref(0);
-const categories = computed(() => {
-  void categoryTick.value;
-  return loadRequirementCategories(localStorage).categories;
-});
+const requirementCategories = sharedRequirementCategories();
+const categories = computed(() => requirementCategories.value.categories);
 const error = ref("");
-
-watch(createOpen, () => {
-  categoryTick.value += 1;
-});
 const dragId = ref("");
 const dropStatus = ref<TaskStatus | "">("");
 const dropBeforeId = ref("");
@@ -82,9 +76,10 @@ const tagFilterOptions = computed(() =>
  * 任务本身只记执行的智能体；是否属于某个小队，看它所在会话的目标。
  * 「小队」范围下未选具体小队时，展示所有交给小队的任务。
  */
+const sessionsById = computed(() => new Map((store.data?.sessions ?? []).map((item) => [item.id, item])));
 const filtered = computed(() =>
   tasks.value.filter((task) => {
-    const session = store.data?.sessions.find((item) => item.id === task.sessionId);
+    const session = sessionsById.value.get(task.sessionId);
     if (scope.value === "agent" && agentFilter.value && task.agentId !== agentFilter.value) return false;
     if (scope.value === "squad") {
       if (session?.targetType !== "squad") return false;
@@ -100,13 +95,16 @@ const filtered = computed(() =>
   }),
 );
 
+const categoryIdLookup = computed(() => new Map([
+  ...categories.value.map((item) => [item.name, item.id] as const),
+  ...categories.value.map((item) => [item.id, item.id] as const),
+]));
+
 function taskLabelIds(task: Task): string[] {
-  const known = new Map(categories.value.map((item) => [item.id, item.id]));
-  const byName = new Map(categories.value.map((item) => [item.name, item.id]));
   const raw = [...(task.labels ?? []), ...readTaskMeta(task.id).labels];
   const ids: string[] = [];
   for (const item of raw) {
-    const id = known.get(item) ?? byName.get(item);
+    const id = categoryIdLookup.value.get(item);
     if (id && !ids.includes(id)) ids.push(id);
   }
   return ids;
@@ -154,7 +152,7 @@ const columnMenuItems: ContextMenuItem[] = [{ id: "add", label: t("tasks.addTask
 
 function loadOrder() {
   try {
-    const raw = localStorage.getItem(ORDER_KEY);
+    const raw = readStorage(ORDER_KEY);
     const parsed = raw ? JSON.parse(raw) as Record<string, string[]> : {};
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
@@ -164,7 +162,7 @@ function loadOrder() {
 
 function loadDisplay() {
   try {
-    const raw = localStorage.getItem(DISPLAY_KEY);
+    const raw = readStorage(DISPLAY_KEY);
     const parsed = raw ? JSON.parse(raw) as { showDone?: boolean; showCancelled?: boolean } : {};
     return {
       // 已完成默认展示；仅当用户显式关掉时隐藏。已取消仍默认隐藏。
@@ -177,7 +175,7 @@ function loadDisplay() {
 }
 
 function persistDisplay() {
-  localStorage.setItem(DISPLAY_KEY, JSON.stringify({
+  writeStorage(DISPLAY_KEY, JSON.stringify({
     showDone: showDone.value,
     showCancelled: showCancelled.value,
   }));
@@ -185,15 +183,22 @@ function persistDisplay() {
 
 function persist(status: TaskStatus, ids: string[]) {
   order.value = { ...order.value, [status]: ids };
-  localStorage.setItem(ORDER_KEY, JSON.stringify(order.value));
+  writeStorage(ORDER_KEY, JSON.stringify(order.value));
 }
 
+const tasksByColumn = computed(() => new Map(TASK_COLUMNS.map((column) => [
+  column.id,
+  orderColumn(filtered.value.filter((task) => task.status === column.id), order.value[column.id] ?? []),
+])));
+const taskCodes = computed(() => taskCodeMap(tasks.value));
+const agentsById = computed(() => new Map(agents.value.map((agent) => [agent.id, agent])));
+
 function columnTasks(status: TaskStatus) {
-  return orderColumn(filtered.value.filter((task) => task.status === status), order.value[status] ?? []);
+  return tasksByColumn.value.get(status) ?? [];
 }
 
 function agentFor(agentId: string) {
-  return agents.value.find((agent) => agent.id === agentId);
+  return agentsById.value.get(agentId);
 }
 
 function openCreate(status: TaskStatus = "todo") {
@@ -458,7 +463,7 @@ function onColumnMenu(id: string) {
             @click="openTask(task)"
             @contextmenu.prevent="openCardMenu($event, task)"
           >
-            <span class="task-code">{{ taskCode(task, tasks) }}</span>
+            <span class="task-code">{{ taskCodes.get(task.id) }}</span>
             <h3>{{ task.title }}</h3>
             <footer>
               <AgentAvatar :value="agentFor(task.agentId)?.avatar ?? 'M'" :name="agentFor(task.agentId)?.name ?? t('common.unassigned')" :size="18" />

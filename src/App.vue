@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lastProjectsPath, rememberProjectsPath } from "./views/dashboard/last-projects-path";
+import { readStorage, writeStorage } from "./utils/safe-storage";
 import {
   BarChart3,
   Bot,
@@ -100,12 +101,12 @@ function clampSidebarWidth(width: number) {
 }
 
 function readStoredSidebarWidth() {
-  const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  const raw = Number(readStorage(SIDEBAR_WIDTH_KEY));
   if (!Number.isFinite(raw)) return SIDEBAR_DEFAULT_WIDTH;
   return clampSidebarWidth(raw);
 }
 
-const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true");
+const sidebarCollapsed = ref(readStorage(SIDEBAR_COLLAPSED_KEY) === "true");
 const sidebarWidth = ref(readStoredSidebarWidth());
 const sidebarResizing = ref(false);
 const shellSidebarPx = computed(() =>
@@ -115,8 +116,8 @@ const documentTheme = ref(document.documentElement.dataset.theme === "light" ? "
 let themeObserver: MutationObserver | undefined;
 
 function persistSidebar() {
-  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed.value));
-  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value));
+  writeStorage(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed.value));
+  writeStorage(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value));
 }
 
 function toggleSidebar() {

@@ -857,8 +857,11 @@ export async function openMessageAttachment(attachmentId: string): Promise<void>
   await invoke("open_message_attachment", { attachmentId });
 }
 
+// eslint-disable-next-line no-control-regex
+const UNSAFE_URL_CHARS = /[\s"<>^|`\u0000-\u001f\u007f]/;
+
 export async function openExternalUrl(url: string): Promise<void> {
-  if (!/^https?:\/\//i.test(url)) return;
+  if (!/^https?:\/\//i.test(url) || UNSAFE_URL_CHARS.test(url)) return;
   if (!inTauri()) {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
@@ -959,9 +962,13 @@ export async function compactChatSession(sessionId: string): Promise<string> {
   return invoke<string>("compact_chat_session", { sessionId });
 }
 
-export async function resolvePermission(requestId: string, optionId: string): Promise<void> {
+export async function resolvePermission(
+  requestId: string,
+  optionId: string,
+  runId?: string | null,
+): Promise<void> {
   if (!inTauri()) return;
-  await invoke("resolve_permission", { requestId, optionId });
+  await invoke("resolve_permission", { requestId, optionId, runId: runId || null });
 }
 
 export async function listAutomationRuns(automationId: string): Promise<AutomationRun[]> {
@@ -1191,6 +1198,7 @@ export async function searchWorkspace(
     exclude: string;
     useExcludeSettings?: boolean;
   },
+  cancelKey?: string,
 ): Promise<{
   matches: Array<{
     path: string;
@@ -1213,6 +1221,7 @@ export async function searchWorkspace(
     include: options.include,
     exclude: options.exclude,
     useExcludeSettings: options.useExcludeSettings !== false,
+    cancelKey,
   });
 }
 
@@ -1687,14 +1696,14 @@ export async function gitRepairWorktreeRuntime(workspaceId: string): Promise<str
 }
 
 export async function savePastedAttachment(
-  bytes: number[],
+  bytesBase64: string,
   mimeType: string,
   name?: string,
 ): Promise<MessageAttachmentInput> {
   if (!inTauri()) {
     throw new Error("当前环境不支持粘贴图片");
   }
-  return invoke<MessageAttachmentInput>("save_pasted_attachment", { bytes, mimeType, name });
+  return invoke<MessageAttachmentInput>("save_pasted_attachment", { bytesBase64, mimeType, name });
 }
 
 export async function selectMessageAttachments(): Promise<MessageAttachmentInput[]> {

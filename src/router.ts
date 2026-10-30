@@ -2,8 +2,9 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import { confirmLeaveUnsavedEditors } from "./components/workbench/unsaved-editor";
 import { installBreadcrumbs } from "./stores/breadcrumbs";
 import DashboardView from "./views/DashboardView.vue";
-import CollectionView from "./views/CollectionView.vue";
-import ProjectWorkspaceView from "./views/ProjectWorkspaceView.vue";
+
+const CollectionView = () => import("./views/CollectionView.vue");
+const ProjectWorkspaceView = () => import("./views/ProjectWorkspaceView.vue");
 
 export const router = createRouter({
   history: createWebHashHistory(),

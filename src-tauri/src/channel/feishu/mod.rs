@@ -5,7 +5,9 @@ pub mod pb;
 pub mod ws;
 
 use std::collections::HashMap;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -16,6 +18,13 @@ use crate::database::AppState;
 use super::{router, store, Installation};
 use api::FeishuApi;
 use pb::Frame;
+
+/// 每个连接处理入站事件的线程数与排队上限。
+const EVENT_WORKERS: usize = 4;
+const EVENT_QUEUE_CAPACITY: usize = 256;
+/// 分片消息的上限与过期时间，收不全的分片不会一直占着内存。
+const MAX_CHUNKS: usize = 64;
+const CHUNK_TTL: Duration = Duration::from_secs(60);
 
 pub fn api_for(app: &AppHandle, installation_id: &str) -> Result<(Installation, FeishuApi), String> {
     let installation = {
@@ -41,8 +50,10 @@ pub fn emit_status(app: &AppHandle, installation: &Installation, status: &str, e
     );
 }
 
-pub fn run(app: &AppHandle, installation_id: &str, stop: &AtomicBool) {
-    let result = run_inner(app, installation_id, stop);
+/// 返回这一轮是否连上过，供守护线程在成功连接后重置退避。
+pub fn run(app: &AppHandle, installation_id: &str, stop: &AtomicBool) -> bool {
+    let mut connected = false;
+    let result = run_inner(app, installation_id, stop, &mut connected);
     if let Ok((installation, _)) = api_for(app, installation_id) {
         match &result {
             Ok(()) if stop.load(Ordering::SeqCst) => {
@@ -62,9 +73,15 @@ pub fn run(app: &AppHandle, installation_id: &str, stop: &AtomicBool) {
             }
         }
     }
+    connected
 }
 
-fn run_inner(app: &AppHandle, installation_id: &str, stop: &AtomicBool) -> Result<(), String> {
+fn run_inner(
+    app: &AppHandle,
+    installation_id: &str,
+    stop: &AtomicBool,
+    connected: &mut bool,
+) -> Result<(), String> {
     let (installation, api) = api_for(app, installation_id)?;
     if installation.channel_type != super::TYPE_FEISHU && installation.channel_type != super::TYPE_LARK {
         return Err("暂不支持这个渠道类型".to_string());
@@ -86,6 +103,7 @@ fn run_inner(app: &AppHandle, installation_id: &str, stop: &AtomicBool) -> Resul
     }
 
     let mut conn = ws::WsConn::connect(&url, Duration::from_secs(15))?;
+    *connected = true;
     {
         let state = app.state::<AppState>();
         if let Ok(db) = state.lock_db() {
@@ -98,7 +116,8 @@ fn run_inner(app: &AppHandle, installation_id: &str, stop: &AtomicBool) -> Resul
     let ping_interval = Duration::from_secs(ping_secs.clamp(20, 300));
     let mut next_ping = Instant::now() + ping_interval;
     let service = service_id_of(&url);
-    let mut chunks: HashMap<String, (usize, Vec<Option<Vec<u8>>>)> = HashMap::new();
+    let mut chunks: HashMap<String, PendingChunks> = HashMap::new();
+    let events = spawn_event_workers(app, &installation);
 
     while !stop.load(Ordering::SeqCst) {
         if Instant::now() >= next_ping {
@@ -156,11 +175,11 @@ fn run_inner(app: &AppHandle, installation_id: &str, stop: &AtomicBool) -> Resul
                     }
                 };
                 if let Some(event) = event {
-                    let app = app.clone();
-                    let installation = installation.clone();
-                    std::thread::spawn(move || {
-                        router::handle_event(&app, &installation, event);
-                    });
+                    if events.try_send(event).is_err() {
+                        crate::diag::write(&format!(
+                            "CHANNEL feishu {installation_id} 入站事件积压过多，已丢弃一条"
+                        ));
+                    }
                 }
             }
             Err(ws::WsError::Timeout) => {}
@@ -171,10 +190,32 @@ fn run_inner(app: &AppHandle, installation_id: &str, stop: &AtomicBool) -> Resul
     Ok(())
 }
 
-fn reassemble(
-    frame: &Frame,
-    chunks: &mut HashMap<String, (usize, Vec<Option<Vec<u8>>>)>,
-) -> Option<Vec<u8>> {
+/// 入站事件交给固定数量的工作线程处理，队列满了就丢弃，陌生人刷消息不会起无上限的线程。
+/// 连接结束时发送端被丢弃，工作线程处理完队列里剩下的事件后退出。
+fn spawn_event_workers(app: &AppHandle, installation: &Installation) -> mpsc::SyncSender<super::InboundEvent> {
+    let (sender, receiver) = mpsc::sync_channel::<super::InboundEvent>(EVENT_QUEUE_CAPACITY);
+    let receiver = Arc::new(Mutex::new(receiver));
+    for _ in 0..EVENT_WORKERS {
+        let app = app.clone();
+        let installation = installation.clone();
+        let receiver = receiver.clone();
+        std::thread::spawn(move || loop {
+            let Ok(event) = receiver.lock().unwrap_or_else(PoisonError::into_inner).recv() else {
+                break;
+            };
+            let _ = panic::catch_unwind(AssertUnwindSafe(|| router::handle_event(&app, &installation, event)));
+        });
+    }
+    sender
+}
+
+struct PendingChunks {
+    sum: usize,
+    parts: Vec<Option<Vec<u8>>>,
+    started: Instant,
+}
+
+fn reassemble(frame: &Frame, chunks: &mut HashMap<String, PendingChunks>) -> Option<Vec<u8>> {
     let sum = frame
         .header_value(pb::HEADER_SUM)
         .parse::<usize>()
@@ -182,6 +223,11 @@ fn reassemble(
     if sum <= 1 {
         return frame.payload.clone();
     }
+    // 分片数来自服务端帧头，不能直接拿来分配
+    if sum > MAX_CHUNKS {
+        return None;
+    }
+    chunks.retain(|_, pending| pending.started.elapsed() < CHUNK_TTL);
     let seq = frame
         .header_value(pb::HEADER_SEQ)
         .parse::<usize>()
@@ -190,17 +236,20 @@ fn reassemble(
     if message_id.is_empty() {
         return None;
     }
-    let entry = chunks
-        .entry(message_id.clone())
-        .or_insert_with(|| (sum, vec![None; sum]));
-    if entry.0 != sum {
-        *entry = (sum, vec![None; sum]);
+    let fresh = || PendingChunks {
+        sum,
+        parts: vec![None; sum],
+        started: Instant::now(),
+    };
+    let entry = chunks.entry(message_id.clone()).or_insert_with(fresh);
+    if entry.sum != sum {
+        *entry = fresh();
     }
     if seq < sum {
-        entry.1[seq] = frame.payload.clone();
+        entry.parts[seq] = frame.payload.clone();
     }
-    if entry.1.iter().all(Option::is_some) {
-        let (_, parts) = chunks.remove(&message_id)?;
+    if entry.parts.iter().all(Option::is_some) {
+        let parts = chunks.remove(&message_id)?.parts;
         let mut out = Vec::new();
         for part in parts {
             out.extend_from_slice(&part.unwrap_or_default());

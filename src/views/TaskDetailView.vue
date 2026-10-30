@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowLeft, ListTodo, PanelRight, ScrollText, Trash2, User } from "@lucide/vue";
 import type { TaskRunRecord, TaskStatus } from "../domain/types";
@@ -18,11 +18,11 @@ import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import {
   addRequirementCategory,
-  loadRequirementCategories,
   recolorRequirementCategory,
   removeRequirementCategory,
   renameRequirementCategory,
   saveRequirementCategories,
+  sharedRequirementCategories,
   type RequirementCategoryState,
 } from "./dashboard/requirement-categories";
 import { PRIORITY_OPTIONS, readTaskMeta, writeTaskMeta, type TaskPriority } from "./task-meta";
@@ -45,7 +45,7 @@ const error = ref("");
 const titleDraft = ref("");
 const descriptionDraft = ref("");
 const showTagManage = ref(false);
-const categories = ref<RequirementCategoryState>(loadRequirementCategories(localStorage));
+const categories = sharedRequirementCategories();
 const runs = ref<Awaited<ReturnType<typeof backend.listTaskRuns>>>([]);
 const titleEl = ref<HTMLInputElement | null>(null);
 const issueScroll = ref<HTMLElement | null>(null);
@@ -111,7 +111,7 @@ watch(
   { immediate: true },
 );
 
-watch(
+const followStream = watch(
   () => {
     const sessionId = task.value?.sessionId;
     const list = sessionId ? store.messages[sessionId] ?? [] : [];
@@ -126,6 +126,9 @@ watch(
     pinIssueToBottom(sessionChanged || historyFilled);
   },
 );
+// keep-alive 缓存在后台时不跟流式片段滚动，回到前台再补一次
+onDeactivated(() => followStream.pause());
+onActivated(() => followStream.resume());
 
 const checklistDraft = ref("");
 const prDraft = ref("");

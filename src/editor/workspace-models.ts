@@ -12,21 +12,31 @@ export function workspaceModelUri(workspaceId: string, path: string) {
 }
 
 const rootsByOwner = new Map<object, WorkspacePathRoot[]>();
+/** 每次建模型、每次跳转定义都会查，按工作区根变化失效。 */
+let knownCache: { list: WorkspacePathRoot[]; ids: Set<string> } | null = null;
 
 export function setWorkspaceRoots(owner: object, roots: WorkspacePathRoot[]) {
   rootsByOwner.set(owner, roots);
+  knownCache = null;
 }
 
 export function releaseWorkspaceRoots(owner: object) {
   rootsByOwner.delete(owner);
+  knownCache = null;
 }
 
-export function knownWorkspaces(): WorkspacePathRoot[] {
+function known() {
+  if (knownCache) return knownCache;
   const byId = new Map<string, WorkspacePathRoot>();
   for (const roots of rootsByOwner.values()) {
     for (const root of roots) byId.set(root.id, root);
   }
-  return [...byId.values()];
+  knownCache = { list: [...byId.values()], ids: new Set(byId.keys()) };
+  return knownCache;
+}
+
+export function knownWorkspaces(): WorkspacePathRoot[] {
+  return [...known().list];
 }
 
 export function workspaceRootPath(workspaceId: string): string | null {
@@ -37,7 +47,7 @@ export function locateModel(uri: monaco.Uri): LocatedFile | null {
   if (uri.scheme !== "file") return null;
   const [, workspaceId, ...rest] = uri.path.split("/");
   if (!workspaceId || !rest.length) return null;
-  if (!knownWorkspaces().some((item) => item.id === workspaceId)) return null;
+  if (!known().ids.has(workspaceId)) return null;
   return { workspaceId, path: rest.join("/") };
 }
 

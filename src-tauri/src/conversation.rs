@@ -13,13 +13,27 @@ pub const CONTINUE_ASSIGNMENT: &str =
 
 const HISTORY_CHAR_LIMIT: usize = 60_000;
 const ENTRY_CHAR_LIMIT: usize = 8_000;
+const MAX_CONVERSATION_ID_LEN: usize = 128;
 
 pub fn resumes_via_cli(runtime_id: &str) -> bool {
     matches!(runtime_id, "cursor" | "claude" | "copilot" | "opencode")
 }
 
+/// CLI 回报的会话 id 会拼进 transcripts 路径、也会作为 `--resume` 参数传回去，只接受安全字符。
+fn is_safe_conversation_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_CONVERSATION_ID_LEN
+        && !id.starts_with('-')
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
 pub fn id_from_line(line: &str) -> Option<String> {
-    let value: Value = serde_json::from_str(line).ok()?;
+    id_from_value(&serde_json::from_str(line).ok()?)
+}
+
+pub fn id_from_value(value: &Value) -> Option<String> {
     ["session_id", "sessionId", "sessionID"]
         .iter()
         .find_map(|key| {
@@ -27,7 +41,7 @@ pub fn id_from_line(line: &str) -> Option<String> {
                 .get(*key)
                 .and_then(Value::as_str)
                 .map(str::trim)
-                .filter(|id| !id.is_empty())
+                .filter(|id| is_safe_conversation_id(id))
                 .map(str::to_string)
         })
 }
@@ -37,7 +51,10 @@ pub fn apply_resume(
     runtime_id: &str,
     conversation_id: Option<&str>,
 ) -> Vec<String> {
-    let Some(id) = conversation_id.map(str::trim).filter(|id| !id.is_empty()) else {
+    let Some(id) = conversation_id
+        .map(str::trim)
+        .filter(|id| is_safe_conversation_id(id))
+    else {
         return args;
     };
     match runtime_id {
@@ -194,7 +211,7 @@ pub fn clear_runtime_transcripts(
     let ids: Vec<&str> = conversation_ids
         .iter()
         .map(|id| id.trim())
-        .filter(|id| !id.is_empty())
+        .filter(|id| is_safe_conversation_id(id))
         .collect();
     if ids.is_empty() {
         return removed;
@@ -206,12 +223,20 @@ pub fn clear_runtime_transcripts(
         let transcripts = cursor_project_dir(home, path).join("agent-transcripts");
         for id in &ids {
             let dir = transcripts.join(id);
-            if dir.is_dir() && fs::remove_dir_all(&dir).is_ok() {
+            if dir.is_dir() && is_strictly_inside(&dir, &transcripts) && fs::remove_dir_all(&dir).is_ok() {
                 removed += 1;
             }
         }
     }
     removed
+}
+
+/// 解析符号链接后 `dir` 仍在 `root` 之下（且不是 `root` 本身）。
+fn is_strictly_inside(dir: &Path, root: &Path) -> bool {
+    match (dir.canonicalize(), root.canonicalize()) {
+        (Ok(dir), Ok(root)) => dir != root && dir.starts_with(&root),
+        _ => false,
+    }
 }
 
 fn rollback_key(session_id: &str) -> String {
@@ -239,23 +264,20 @@ fn cursor_project_dir(home: &Path, path: &str) -> std::path::PathBuf {
         .join(cursor_project_slug(path))
 }
 
-pub fn persist_from_line(
+pub fn persist_id(
     app: &AppHandle,
     session_id: &str,
     agent_id: &str,
     runtime_id: &str,
-    line: &str,
+    conversation_id: &str,
 ) {
-    let Some(id) = id_from_line(line) else {
-        return;
-    };
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
     let Ok(db) = state.lock_db() else {
         return;
     };
-    let _ = save_id(&db, session_id, agent_id, runtime_id, &id);
+    let _ = save_id(&db, session_id, agent_id, runtime_id, conversation_id);
 }
 
 pub fn prepare(
@@ -301,31 +323,36 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
                  ORDER BY created_at DESC, rowid DESC
                  LIMIT 1
                ), '')
-             ORDER BY created_at, rowid",
+             ORDER BY created_at DESC, rowid DESC",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([session_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-        .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
-    let entries = rows
-        .into_iter()
-        .filter_map(|(role, content)| {
-            let text = clip(&content, ENTRY_CHAR_LIMIT);
-            if text.is_empty() {
-                return None;
-            }
-            let label = if role == "assistant" {
-                "助手"
-            } else {
-                "用户"
-            };
-            Some(format!("{label}：\n{text}"))
-        })
-        .collect::<Vec<_>>();
+    // 从最新一条往回取，超出预算就停，不把整个会话都读出来。
+    let mut selected = Vec::new();
+    let mut used = 0usize;
+    for row in rows {
+        let (role, content) = row.map_err(|error| error.to_string())?;
+        let text = clip(&content, ENTRY_CHAR_LIMIT);
+        if text.is_empty() {
+            continue;
+        }
+        let label = if role == "assistant" {
+            "助手"
+        } else {
+            "用户"
+        };
+        let entry = format!("{label}：\n{text}");
+        let size = entry.chars().count();
+        if used + size > HISTORY_CHAR_LIMIT && !selected.is_empty() {
+            break;
+        }
+        used += size;
+        selected.push(entry);
+    }
     let compact: Option<String> = db
         .query_row(
             "SELECT compact_summary FROM chat_sessions WHERE id=?1",
@@ -336,20 +363,10 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
         .map_err(|error| error.to_string())?
         .flatten()
         .filter(|value| !value.trim().is_empty());
-    if entries.is_empty() {
+    if selected.is_empty() {
         return Ok(compact
             .map(|summary| format!("对话摘要：\n{}\n\n", summary.trim()))
             .unwrap_or_default());
-    }
-    let mut selected = Vec::new();
-    let mut used = 0usize;
-    for entry in entries.into_iter().rev() {
-        let size = entry.chars().count();
-        if used + size > HISTORY_CHAR_LIMIT && !selected.is_empty() {
-            break;
-        }
-        used += size;
-        selected.push(entry);
     }
     selected.reverse();
     let history = format!("对话历史：\n{}\n\n", selected.join("\n\n"));
@@ -361,11 +378,10 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
 
 fn clip(value: &str, max_chars: usize) -> String {
     let trimmed = value.trim();
-    let chars = trimmed.chars().collect::<Vec<_>>();
-    if chars.len() <= max_chars {
-        return trimmed.to_string();
+    match trimmed.char_indices().nth(max_chars) {
+        Some((index, _)) => format!("{}…", &trimmed[..index]),
+        None => trimmed.to_string(),
     }
-    format!("{}…", chars[..max_chars].iter().collect::<String>())
 }
 
 #[cfg(test)]
@@ -399,6 +415,71 @@ mod tests {
             Some("chat-abc")
         );
         assert_eq!(id_from_line(r#"{"type":"assistant","text":"hi"}"#), None);
+    }
+
+    #[test]
+    fn rejects_unsafe_session_ids() {
+        for bad in ["../../etc", "/abs/path", "-rf", "a b", "a/b", "a.b"] {
+            let line = serde_json::json!({ "session_id": bad }).to_string();
+            assert_eq!(id_from_line(&line), None, "{bad}");
+        }
+        let long = "a".repeat(200);
+        let line = serde_json::json!({ "session_id": long }).to_string();
+        assert_eq!(id_from_line(&line), None);
+        assert_eq!(
+            id_from_line(r#"{"sessionID":"ses_1-A"}"#).as_deref(),
+            Some("ses_1-A")
+        );
+        assert_eq!(
+            apply_resume(vec!["-p".into()], "claude", Some("--evil")),
+            ["-p"]
+        );
+    }
+
+    #[test]
+    fn transcript_cleanup_ignores_unsafe_ids() {
+        let home = tempfile::tempdir().unwrap();
+        let source = "/Users/tomiaa/Documents/github/client";
+        let project = home
+            .path()
+            .join(".cursor/projects")
+            .join(cursor_project_slug(source));
+        std::fs::create_dir_all(project.join("agent-transcripts")).unwrap();
+        std::fs::create_dir_all(project.join("keep")).unwrap();
+        let removed = clear_runtime_transcripts(
+            home.path(),
+            &[],
+            &[source.to_string()],
+            &["../keep".to_string(), "..".to_string()],
+        );
+        assert_eq!(removed, 0);
+        assert!(project.join("keep").exists());
+        assert!(project.join("agent-transcripts").exists());
+    }
+
+    #[test]
+    fn history_keeps_newest_messages_within_budget() {
+        let db = db();
+        let big = "旧".repeat(super::ENTRY_CHAR_LIMIT);
+        for index in 0..10 {
+            db.execute(
+                "INSERT INTO messages (id, session_id, role, content, created_at)
+                 VALUES (?1, 'sess', 'assistant', ?2, ?3)",
+                rusqlite::params![format!("a{index}"), format!("{index}{big}"), format!("t{index}")],
+            )
+            .unwrap();
+        }
+        db.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at)
+             VALUES ('u-last', 'sess', 'user', '最新提问', 't9z')",
+            [],
+        )
+        .unwrap();
+        let history = history_block(&db, "sess").unwrap();
+        assert!(history.contains("9旧"));
+        assert!(!history.contains("0旧"));
+        assert!(history.chars().count() <= super::HISTORY_CHAR_LIMIT + 100);
+        assert!(history.find("8旧").unwrap() < history.find("9旧").unwrap());
     }
 
     #[test]

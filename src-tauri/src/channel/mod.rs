@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod commands;
 pub mod feishu;
 pub mod outbound;
+mod pairing;
 pub mod router;
 pub mod secret;
 pub mod store;

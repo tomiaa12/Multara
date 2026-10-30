@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { applyLanguageSetting } from "../i18n";
 import type { Task } from "../domain/types";
-import { moveTask, orderColumn, relativeTime, taskCode, boardStatusFromRun } from "./task-board";
+import { moveTask, orderColumn, relativeTime, taskCode, taskCodeMap, boardStatusFromRun } from "./task-board";
 
 beforeAll(() => applyLanguageSetting("zh-CN"));
 
@@ -32,6 +32,11 @@ describe("task board order", () => {
   it("numbers tasks by creation time and formats relative time", () => {
     const tasks = [task("late", "2026-02-01", "2026-02-01"), task("early", "2026-01-01", "2026-01-01")];
     expect(taskCode(tasks[1], tasks)).toBe("TASK-1");
+    const codes = taskCodeMap(tasks);
+    expect(codes.get("early")).toBe("TASK-1");
+    expect(codes.get("late")).toBe("TASK-2");
+    expect(tasks.map((item) => item.id)).toEqual(["late", "early"]);
+    for (const item of tasks) expect(codes.get(item.id)).toBe(taskCode(item, tasks));
     expect(relativeTime("2026-01-01T00:00:00.000Z", Date.parse("2026-01-01T00:03:00.000Z"))).toBe("3 分钟前");
   });
 

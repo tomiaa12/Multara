@@ -96,14 +96,25 @@ export function editorOptionsFromConfig(props: EditorConfigProps): {
   };
 }
 
-function globMatches(glob: string, filePath: string): boolean {
-  const name = filePath.split("/").pop() ?? filePath;
+const globCache = new Map<string, RegExp>();
+
+/** glob 来自仓库里不可信的 .editorconfig：连续的 `*` 合并，避免叠出会回溯的 `.*.*.*`。 */
+function globRegExp(glob: string) {
+  const cached = globCache.get(glob);
+  if (cached) return cached;
   const pattern = glob
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*/g, "{{GLOBSTAR}}")
+    .replace(/\*{2,}/g, "{{GLOBSTAR}}")
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
     .replace(/{{GLOBSTAR}}/g, ".*");
   const re = new RegExp(`^${pattern}$`, "i");
+  globCache.set(glob, re);
+  return re;
+}
+
+function globMatches(glob: string, filePath: string): boolean {
+  const name = filePath.split("/").pop() ?? filePath;
+  const re = globRegExp(glob);
   return re.test(name) || re.test(filePath);
 }

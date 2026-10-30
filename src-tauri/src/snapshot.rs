@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::Read,
     path::{Component, Path},
 };
 
@@ -102,6 +103,84 @@ pub fn resolve_workspace_file<'a>(
     workspaces.first().map(|workspace| (workspace, rel))
 }
 
+/// 已在锁外读好、算好 hash 并压缩的文件内容。
+pub struct PreparedSnapshot {
+    pub file_path: String,
+    content: String,
+    hash: String,
+    compressed: Vec<u8>,
+}
+
+pub fn snapshot_rel_path(rel_file_path: &str) -> Result<String, String> {
+    files::normalize_relative(&normalize_rel_path(rel_file_path))
+}
+
+/// 不碰数据库：读文件、算 sha256、zstd 压缩。过大或二进制返回 `None`。
+pub fn prepare_snapshot(
+    workspace: &Workspace,
+    rel_file_path: &str,
+) -> Result<Option<PreparedSnapshot>, String> {
+    let abs_path = files::resolve_existing_or_new(&workspace.work_path, rel_file_path)?;
+    let raw_content = match fs::metadata(&abs_path) {
+        Ok(meta) if meta.len() > MAX_FILE_BYTES as u64 => return Ok(None),
+        Ok(_) => {
+            let mut bytes = Vec::new();
+            fs::File::open(&abs_path)
+                .and_then(|file| file.take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut bytes))
+                .map_err(|error| error.to_string())?;
+            bytes
+        }
+        Err(_) => Vec::new(),
+    };
+
+    if raw_content.len() > MAX_FILE_BYTES || is_binary(&raw_content) {
+        return Ok(None);
+    }
+
+    let compressed = if raw_content.is_empty() {
+        Vec::new()
+    } else {
+        zstd::bulk::compress(&raw_content, 3).map_err(|error| error.to_string())?
+    };
+    Ok(Some(PreparedSnapshot {
+        file_path: rel_file_path.to_string(),
+        hash: sha256_hex(&raw_content),
+        content: String::from_utf8_lossy(&raw_content).into_owned(),
+        compressed,
+    }))
+}
+
+/// 在数据库锁内落库；期间别的线程已经写过同一份快照时跳过。
+pub fn save_prepared_snapshot(
+    db: &Connection,
+    message_id: &str,
+    session_id: &str,
+    workspace_id: &str,
+    prepared: PreparedSnapshot,
+) -> Result<Option<CapturedSnapshot>, String> {
+    if snapshot_db::snapshot_exists(db, message_id, workspace_id, &prepared.file_path)? {
+        return Ok(None);
+    }
+    let row = TurnFileSnapshot {
+        id: Uuid::new_v4().to_string(),
+        message_id: message_id.into(),
+        session_id: session_id.into(),
+        workspace_id: workspace_id.into(),
+        file_path: prepared.file_path,
+        content: prepared.compressed,
+        content_hash: prepared.hash,
+        snapshot_at: chrono::Utc::now().timestamp(),
+    };
+    snapshot_db::insert_turn_snapshot(db, &row)?;
+    snapshot_db::ensure_review_baseline_compressed(db, workspace_id, &row.file_path, &row.content)?;
+
+    Ok(Some(CapturedSnapshot {
+        workspace_id: row.workspace_id,
+        file_path: row.file_path,
+        content: prepared.content,
+    }))
+}
+
 pub fn capture_file_before_edit(
     db: &Connection,
     message_id: &str,
@@ -109,53 +188,19 @@ pub fn capture_file_before_edit(
     workspace: &Workspace,
     rel_file_path: &str,
 ) -> Result<Option<CapturedSnapshot>, String> {
-    let rel_file_path = files::normalize_relative(&normalize_rel_path(rel_file_path))?;
+    let rel_file_path = snapshot_rel_path(rel_file_path)?;
     if rel_file_path.is_empty() {
         return Ok(None);
     }
     if snapshot_db::snapshot_exists(db, message_id, &workspace.id, &rel_file_path)? {
         return Ok(None);
     }
-
-    let abs_path = files::resolve_existing_or_new(&workspace.work_path, &rel_file_path)?;
-    let raw_content = if abs_path.exists() {
-        fs::read(&abs_path).map_err(|error| error.to_string())?
-    } else {
-        Vec::new()
-    };
-
-    if raw_content.len() > MAX_FILE_BYTES || is_binary(&raw_content) {
-        return Ok(None);
+    match prepare_snapshot(workspace, &rel_file_path)? {
+        Some(prepared) => {
+            save_prepared_snapshot(db, message_id, session_id, &workspace.id, prepared)
+        }
+        None => Ok(None),
     }
-
-    let content = String::from_utf8_lossy(&raw_content).into_owned();
-    let hash = sha256_hex(&raw_content);
-    let compressed = if raw_content.is_empty() {
-        Vec::new()
-    } else {
-        zstd::bulk::compress(&raw_content, 3).map_err(|error| error.to_string())?
-    };
-
-    snapshot_db::insert_turn_snapshot(
-        db,
-        &TurnFileSnapshot {
-            id: Uuid::new_v4().to_string(),
-            message_id: message_id.into(),
-            session_id: session_id.into(),
-            workspace_id: workspace.id.clone(),
-            file_path: rel_file_path.clone(),
-            content: compressed,
-            content_hash: hash,
-            snapshot_at: chrono::Utc::now().timestamp(),
-        },
-    )?;
-    snapshot_db::ensure_review_baseline(db, &workspace.id, &rel_file_path, &content)?;
-
-    Ok(Some(CapturedSnapshot {
-        workspace_id: workspace.id.clone(),
-        file_path: rel_file_path,
-        content,
-    }))
 }
 
 fn normalize_rel_path(path: &str) -> String {

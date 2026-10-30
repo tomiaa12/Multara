@@ -89,21 +89,28 @@ fn generate_pairing_code() -> String {
     digits.chars().take(6).collect()
 }
 
+/// 钥匙串访问（`security` 子进程，可能弹授权框）不能在主线程，也不能持有数据库锁。
 #[tauri::command]
-pub fn list_channel_installations(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<ChannelInstallationView>, String> {
-    let db = state.lock_db()?;
-    let installations = store::list_installations(&db)?;
-    Ok(installations.iter().map(|item| view(&app, item)).collect())
+pub async fn list_channel_installations(app: AppHandle) -> Result<Vec<ChannelInstallationView>, String> {
+    crate::commands::off_main(app.clone(), move |state| {
+        let installations = store::list_installations(&*state.lock_db()?)?;
+        Ok(installations.iter().map(|item| view(&app, item)).collect())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn save_channel_installation(
+pub async fn save_channel_installation(
     input: ChannelInstallationInput,
     app: AppHandle,
-    state: tauri::State<'_, AppState>,
+) -> Result<ChannelInstallationView, String> {
+    crate::commands::off_main(app.clone(), move |state| save_installation_blocking(input, &app, state)).await
+}
+
+fn save_installation_blocking(
+    input: ChannelInstallationInput,
+    app: &AppHandle,
+    state: &AppState,
 ) -> Result<ChannelInstallationView, String> {
     let name = input.name.trim();
     let app_id = input.app_id.trim();
@@ -190,13 +197,14 @@ pub fn save_channel_installation(
         config.bot_open_id = None;
         config.bot_name = None;
     }
+    drop(db);
 
     if let Some(app_secret) = input.app_secret.as_deref().map(str::trim) {
         if !app_secret.is_empty() {
-            secret::store(&app, &id, app_secret)?;
+            secret::store(app, &id, app_secret)?;
         }
     }
-    if secret::load(&app, &id).is_none() {
+    if secret::load(app, &id).is_none() {
         return Err("请填写 App Secret".to_string());
     }
 
@@ -215,12 +223,10 @@ pub fn save_channel_installation(
             .unwrap_or_else(|| "disconnected".to_string()),
         last_error: None,
     };
-    store::save_installation(&db, &installation)?;
-    drop(db);
-    supervisor::reload(&app);
-    let db = state.lock_db()?;
-    let saved = store::get_installation(&db, &id)?.ok_or_else(|| "保存失败".to_string())?;
-    Ok(view(&app, &saved))
+    store::save_installation(&*state.lock_db()?, &installation)?;
+    supervisor::reload(app);
+    let saved = store::get_installation(&*state.lock_db()?, &id)?.ok_or_else(|| "保存失败".to_string())?;
+    Ok(view(app, &saved))
 }
 
 #[tauri::command]
@@ -261,24 +267,20 @@ pub fn set_channel_enabled(
 }
 
 #[tauri::command]
-pub fn test_channel_installation(
-    id: String,
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<HashMap<String, String>, String> {
-    let (installation, api) = super::feishu::api_for(&app, &id)?;
-    let (open_id, name) = api.bot_info()?;
-    let mut config: ChannelConfig = installation.config.clone();
-    config.bot_open_id = (!open_id.is_empty()).then(|| open_id.clone());
-    config.bot_name = (!name.is_empty()).then(|| name.clone());
-    {
-        let db = state.lock_db()?;
-        store::set_config(&db, &id, &config)?;
-    }
-    let mut result = HashMap::new();
-    result.insert("openId".to_string(), open_id);
-    result.insert("name".to_string(), name);
-    Ok(result)
+pub async fn test_channel_installation(id: String, app: AppHandle) -> Result<HashMap<String, String>, String> {
+    crate::commands::off_main(app.clone(), move |state| {
+        let (installation, api) = super::feishu::api_for(&app, &id)?;
+        let (open_id, name) = api.bot_info()?;
+        let mut config: ChannelConfig = installation.config.clone();
+        config.bot_open_id = (!open_id.is_empty()).then(|| open_id.clone());
+        config.bot_name = (!name.is_empty()).then(|| name.clone());
+        store::set_config(&*state.lock_db()?, &id, &config)?;
+        let mut result = HashMap::new();
+        result.insert("openId".to_string(), open_id);
+        result.insert("name".to_string(), name);
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]

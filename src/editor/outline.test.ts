@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
-import { enclosingOutline, fileBreadcrumbs, outlineFromContent } from "./outline";
+import { OUTLINE_MAX_CHARS, OUTLINE_MAX_LINES, enclosingOutline, fileBreadcrumbs, outlineFromContent } from "./outline";
 
 describe("outline", () => {
   test("reads markdown headings and the enclosing symbol", () => {
@@ -29,5 +29,25 @@ describe("outline", () => {
     const items = outlineFromContent("html", content);
     expect(enclosingOutline(items, 1)?.label).toContain("CloseAccount.title");
     expect(enclosingOutline(items, 4)).toBeNull();
+  });
+
+  test("computes end lines for code symbols and nested headings", () => {
+    const code = ["function a() {", "  return 1;", "}", "", "function b() {", "}"].join("\n");
+    expect(outlineFromContent("typescript", code).map((item) => [item.label, item.line, item.endLine])).toEqual([
+      ["a", 1, 3],
+      ["b", 5, 6],
+    ]);
+    const markdown = "# A\n## B\ntext\n# C\nmore";
+    expect(outlineFromContent("markdown", markdown).map((item) => [item.label, item.endLine])).toEqual([
+      ["A", 3],
+      ["B", 3],
+      ["C", 5],
+    ]);
+  });
+
+  test("skips oversized files", () => {
+    const manyLines = "# A\n".repeat(OUTLINE_MAX_LINES + 1);
+    expect(outlineFromContent("markdown", manyLines)).toEqual([]);
+    expect(outlineFromContent("markdown", `# A\n${"x".repeat(OUTLINE_MAX_CHARS)}`)).toEqual([]);
   });
 });

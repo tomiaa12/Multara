@@ -14,6 +14,7 @@ import { clearLastProjectsPath } from "../views/dashboard/last-projects-path";
 import { boardStatusFromRun } from "../views/task-board";
 import { setFileIconTheme } from "../file-icons";
 import { useDiffStore } from "./diff";
+import { mergeById } from "./merge-by-id";
 import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
 import { extractQuestions } from "../components/chat/question-block";
@@ -22,6 +23,8 @@ import { t, translate } from "../i18n";
 
 // 跳过的提问按消息 id 记在本地，刷新后卡片不会再弹出来；只留最近 200 条
 const RUN_STATE_HISTORY_LIMIT = 30;
+/** 多个运行接连结束时，智能体/小队列表只拉一次 */
+const AGENTS_REFRESH_COALESCE_MS = 300;
 const DISMISSED_QUESTIONS_KEY = "multara.dismissedQuestions";
 function readDismissedQuestions(): string[] {
   try {
@@ -88,6 +91,7 @@ export const useAppStore = defineStore("app", () => {
   let eventsReady = false;
   let taskInboxRefresh: Promise<void> | undefined;
   let taskInboxRefreshQueued = false;
+  let agentsRefresh: Promise<void> | undefined;
 
   const activeSession = computed(() =>
     data.value?.sessions.find((session) => session.id === activeSessionId.value),
@@ -125,10 +129,15 @@ export const useAppStore = defineStore("app", () => {
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
         activeSessionId.value = data.value.sessions[0]?.id ?? "";
       }
+      // 当前会话消息和 diff 数据后台补齐，不挡首屏
       if (activeSessionId.value) {
-        await loadMessages(activeSessionId.value);
+        void loadMessages(activeSessionId.value).catch((cause) => {
+          console.error("[app] initial messages load failed", cause);
+        });
       }
-      await useDiffStore().loadActive();
+      void useDiffStore().loadActive().catch((cause) => {
+        console.error("[app] initial diff load failed", cause);
+      });
       // MCP 工具列表：先灌缓存，再后台串行刷新，不挡启动
       void import("./mcp-tools").then(async ({ useMcpToolsStore }) => {
         const mcpTools = useMcpToolsStore();
@@ -651,9 +660,9 @@ export const useAppStore = defineStore("app", () => {
         taskInboxRefreshQueued = false;
         const next = await backend.listTaskInboxSurfaces();
         if (!data.value) return;
-        data.value.tasks = next.tasks;
-        data.value.sessions = next.sessions;
-        data.value.inbox = next.inbox;
+        data.value.tasks = mergeById(data.value.tasks, next.tasks);
+        data.value.sessions = mergeById(data.value.sessions, next.sessions);
+        data.value.inbox = mergeById(data.value.inbox, next.inbox);
       } while (taskInboxRefreshQueued);
     })().finally(() => {
       taskInboxRefresh = undefined;
@@ -663,11 +672,18 @@ export const useAppStore = defineStore("app", () => {
   }
 
   /** CLI（如对话里 `multara agent create`）只写库，需主动拉回前端缓存。 */
-  async function refreshAgentsAndSquads() {
-    const next = await backend.listAgentsAndSquads();
-    if (!data.value) return;
-    data.value.agents = next.agents;
-    data.value.squads = next.squads;
+  function refreshAgentsAndSquads(): Promise<void> {
+    agentsRefresh ??= new Promise<void>((resolve, reject) => {
+      window.setTimeout(() => {
+        agentsRefresh = undefined;
+        backend.listAgentsAndSquads().then((next) => {
+          if (!data.value) return;
+          data.value.agents = mergeById(data.value.agents, next.agents);
+          data.value.squads = mergeById(data.value.squads, next.squads);
+        }).then(resolve, reject);
+      }, AGENTS_REFRESH_COALESCE_MS);
+    });
+    return agentsRefresh;
   }
 
   async function captureInboxNotice(payload: RunEvent) {
@@ -821,8 +837,8 @@ export const useAppStore = defineStore("app", () => {
     await backend.setMessageFeedback(messageId, feedback);
   }
 
-  async function resolvePermission(requestId: string, optionId: string) {
-    await backend.resolvePermission(requestId, optionId);
+  async function resolvePermission(requestId: string, optionId: string, runId?: string | null) {
+    await backend.resolvePermission(requestId, optionId, runId);
   }
 
   async function loadMessages(sessionId: string) {

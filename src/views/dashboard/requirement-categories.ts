@@ -1,3 +1,5 @@
+import { ref, type Ref } from "vue";
+
 export const REQUIREMENT_CATEGORY_KEY = "multara.requirement-categories";
 
 export const TAG_COLORS = [
@@ -76,7 +78,27 @@ export function loadRequirementCategories(storage: Pick<Storage, "getItem"> | nu
 }
 
 export function saveRequirementCategories(storage: Pick<Storage, "setItem">, state: RequirementCategoryState) {
-  storage.setItem(REQUIREMENT_CATEGORY_KEY, JSON.stringify(state));
+  try {
+    storage.setItem(REQUIREMENT_CATEGORY_KEY, JSON.stringify(state));
+  } catch {
+    // 配额满或存储被禁用时保留内存中的状态
+  }
+}
+
+let sharedState: Ref<RequirementCategoryState> | null = null;
+
+/** 所有视图共用一份，避免各自持有的旧副本在保存时互相覆盖。 */
+export function sharedRequirementCategories(): Ref<RequirementCategoryState> {
+  sharedState ??= ref(loadRequirementCategories(safeLocalStorage()));
+  return sharedState;
+}
+
+function safeLocalStorage(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export function addRequirementCategory(

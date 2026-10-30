@@ -229,6 +229,13 @@ fn walk_declarations(root: &Path, directory: &Path, depth: usize, output: &mut V
 /// Node 的查找规则：从 `from` 起逐级向上找 `node_modules/<name>`。
 /// pnpm 的依赖装在 `.pnpm/<pkg>/node_modules` 下彼此相邻，从真实目录出发才能找到。
 fn resolve_package(from: &Path, name: &str) -> Option<PathBuf> {
+    // 依赖名来自 package.json，`../x` 或绝对路径会跳出 node_modules。
+    if !Path::new(name)
+        .components()
+        .all(|component| matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
     for directory in from.ancestors() {
         let candidate = directory.join("node_modules").join(name);
         if candidate.join("package.json").is_file() {

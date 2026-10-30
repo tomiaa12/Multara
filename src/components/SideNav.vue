@@ -13,6 +13,7 @@ import {
   SETTINGS_NAV_MIN_WIDTH,
 } from "./side-nav";
 import UiCountBadge from "./ui/UiCountBadge.vue";
+import { readStorage, writeStorage } from "../utils/safe-storage";
 
 export type SideNavItem = {
   id: string;
@@ -56,14 +57,14 @@ function clampWidth(width: number) {
 
 function readStoredWidth() {
   if (!props.widthKey) return defaultW.value;
-  const raw = Number(localStorage.getItem(props.widthKey));
+  const raw = Number(readStorage(props.widthKey));
   if (!Number.isFinite(raw)) return defaultW.value;
   return clampWidth(raw);
 }
 
 function readStoredCollapsed() {
   if (!props.widthKey) return false;
-  return localStorage.getItem(SETTINGS_NAV_COLLAPSED_KEY) === "true";
+  return readStorage(SETTINGS_NAV_COLLAPSED_KEY) === "true";
 }
 
 const ownWidth = ref(readStoredWidth());
@@ -81,8 +82,8 @@ const rootStyle = computed(() => {
 
 function persistOwn() {
   if (!props.widthKey) return;
-  localStorage.setItem(props.widthKey, String(ownWidth.value));
-  localStorage.setItem(SETTINGS_NAV_COLLAPSED_KEY, String(ownCollapsed.value));
+  writeStorage(props.widthKey, String(ownWidth.value));
+  writeStorage(SETTINGS_NAV_COLLAPSED_KEY, String(ownCollapsed.value));
 }
 
 function beginOwnResize(event: PointerEvent) {
