@@ -374,6 +374,7 @@ async function create() {
       <ChatComposer
         ref="composer"
         embedded
+        dictation
         :placeholder="t('tasks.addDescription')"
         :initial-nodes="[]"
         :contexts="contexts"

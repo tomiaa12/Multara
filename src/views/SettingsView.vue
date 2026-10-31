@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Download, FolderTree, GitBranch, Info, MessageSquare, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
+import { Download, FolderTree, GitBranch, Info, MessageSquare, Mic, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
 import {
   DEFAULT_EXPLORER_SETTINGS,
   filesExcludeFromText,
@@ -13,6 +13,7 @@ import {
 import { appVersion } from "../services/backend";
 import { setUpdateProxy } from "../services/update";
 import { useAppStore } from "../stores/app";
+import { useDictationStore } from "../stores/dictation";
 import { useUpdaterStore } from "../stores/updater";
 import {
   defaultBranchPrompt,
@@ -37,7 +38,7 @@ const WEBHOOK_PORT_MAX = 65535;
 const defaultBranch = computed(() => defaultBranchPrompt());
 const defaultCommit = computed(() => defaultCommitPrompt());
 
-const SECTION_IDS = ["general", "explorer", "git", "branch", "commit", "automation", "updates", "about"] as const;
+const SECTION_IDS = ["general", "dictation", "explorer", "git", "branch", "commit", "automation", "updates", "about"] as const;
 type SectionId = (typeof SECTION_IDS)[number];
 
 const SECTION_META: Array<{
@@ -49,6 +50,7 @@ const SECTION_META: Array<{
   descKey: string;
 }> = [
   { id: "general", icon: SlidersHorizontal, groupKey: null, labelKey: "settings.section.general", titleKey: "settings.section.general", descKey: "settings.section.generalDesc" },
+  { id: "dictation", icon: Mic, groupKey: null, labelKey: "settings.section.dictation", titleKey: "settings.section.dictation", descKey: "settings.section.dictationDesc" },
   { id: "explorer", icon: FolderTree, groupKey: null, labelKey: "settings.section.explorer", titleKey: "settings.section.explorer", descKey: "settings.section.explorerDesc" },
   { id: "git", icon: GitBranch, groupKey: "settings.group.git", labelKey: "settings.section.git", titleKey: "settings.section.gitTitle", descKey: "settings.section.gitDesc" },
   { id: "branch", icon: GitBranch, groupKey: "settings.group.git", labelKey: "settings.section.branch", titleKey: "settings.section.branch", descKey: "settings.section.branchDesc" },
@@ -57,6 +59,13 @@ const SECTION_META: Array<{
   { id: "updates", icon: Shield, groupKey: null, labelKey: "settings.section.updates", titleKey: "settings.section.updates", descKey: "settings.section.updatesDesc" },
   { id: "about", icon: Info, groupKey: null, labelKey: "settings.section.about", titleKey: "settings.section.aboutTitle", descKey: "settings.section.aboutDesc" },
 ];
+const dictationStore = useDictationStore();
+const dictationReasonKey = computed(() => {
+  const reason = dictationStore.unsupportedReason;
+  return reason === "devBuild" || reason === "noBundle" || reason === "missingUsageDescription"
+    ? (`settings.dictation.reason.${reason}` as const)
+    : null;
+});
 
 const store = useAppStore();
 const updater = useUpdaterStore();
@@ -74,6 +83,8 @@ const form = reactive({
   stickyScroll: true,
   runTimeoutMinutes: 0,
   permissionMode: "bypass",
+  dictationEnabled: true,
+  dictationLanguage: "auto",
   webhookPort: 43127,
   branchGenMode: GEN_MODE_AGENT,
   branchAgentId: "",
@@ -174,6 +185,8 @@ watch(
     form.stickyScroll = settings.stickyScroll !== "false";
     form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 0);
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
+    form.dictationEnabled = settings.dictationEnabled !== "false";
+    form.dictationLanguage = settings.dictationLanguage ?? "auto";
     form.webhookPort = Number(settings.webhookPort ?? 43127);
     form.branchGenMode = normalizeGenMode(settings.branchGenMode);
     form.branchAgentId = settings.branchAgentId ?? "";
@@ -218,6 +231,8 @@ watch(
     form.stickyScroll,
     form.runTimeoutMinutes,
     form.permissionMode,
+    form.dictationEnabled,
+    form.dictationLanguage,
     form.webhookPort,
     form.branchGenMode,
     form.branchAgentId,
@@ -264,6 +279,8 @@ function settingsPayload() {
     stickyScroll: String(form.stickyScroll),
     ...integerSettingEntry("runTimeoutMinutes", form.runTimeoutMinutes, RUN_TIMEOUT_MIN_MINUTES, RUN_TIMEOUT_MAX_MINUTES),
     permissionMode: form.permissionMode,
+    dictationEnabled: String(form.dictationEnabled),
+    dictationLanguage: form.dictationLanguage,
     ...integerSettingEntry("webhookPort", form.webhookPort, WEBHOOK_PORT_MIN, WEBHOOK_PORT_MAX),
     branchGenMode: normalizeGenMode(form.branchGenMode),
     branchAgentId: form.branchAgentId.trim(),
@@ -458,6 +475,33 @@ onBeforeUnmount(() => {
             <div><strong>{{ t("settings.stickyScroll") }}</strong><p>{{ t("settings.stickyScrollHint") }}</p></div>
             <UiInput v-model="form.stickyScroll" class="ds-switch" type="checkbox" />
           </label>
+        </section>
+
+        <section v-else-if="section === 'dictation'" class="settings-card">
+          <p v-if="!dictationStore.supported" class="settings-hint">
+            {{ dictationReasonKey ? t(dictationReasonKey) : t("settings.dictation.unsupported") }}
+          </p>
+          <template v-else>
+            <label class="settings-row">
+              <div><strong>{{ t("settings.dictation.enabled") }}</strong></div>
+              <UiInput v-model="form.dictationEnabled" class="ds-switch" type="checkbox" />
+            </label>
+            <div class="settings-row">
+              <div><strong>{{ t("settings.dictation.language") }}</strong></div>
+              <UiSelect
+                v-model="form.dictationLanguage"
+                :options="[
+                  { value: 'auto', label: t('settings.dictation.lang.auto') },
+                  { value: 'zh-CN', label: t('settings.lang.zhCN') },
+                  { value: 'zh-TW', label: t('settings.lang.zhTW') },
+                  { value: 'en-US', label: t('settings.dictation.lang.enUS') },
+                  { value: 'ja-JP', label: t('settings.lang.ja') },
+                  { value: 'ko-KR', label: t('settings.lang.ko') },
+                ]"
+              />
+            </div>
+            <p class="settings-hint">{{ t("dictation.privacyNote") }}</p>
+          </template>
         </section>
 
         <section v-else-if="section === 'explorer'" class="settings-card">
