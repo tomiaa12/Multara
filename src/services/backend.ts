@@ -881,6 +881,18 @@ export async function openMessageAttachment(attachmentId: string): Promise<void>
 // eslint-disable-next-line no-control-regex
 const UNSAFE_URL_CHARS = /[\s"<>^|`\u0000-\u001f\u007f]/;
 
+export type DictationEnvironment = { supported: boolean; reason: string | null };
+
+/** macOS 上从终端 / 编辑器启动的开发构建一点麦克风就会被系统（TCC）杀掉，先问后端能不能用。 */
+export async function dictationEnvironment(): Promise<DictationEnvironment> {
+  if (!inTauri()) return { supported: true, reason: null };
+  try {
+    return await invoke<DictationEnvironment>("dictation_environment");
+  } catch {
+    return { supported: false, reason: "unknown" };
+  }
+}
+
 export async function openExternalUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url) || UNSAFE_URL_CHARS.test(url)) return;
   if (!inTauri()) {
