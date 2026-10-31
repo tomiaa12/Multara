@@ -93,8 +93,13 @@ use commands::{
     update_chunk_state, update_project, update_task, update_task_meta, update_task_status,
     upsert_inbox_item, write_skill_file, write_workspace_file,
 };
-use tauri::Manager;
-use tauri_plugin_window_state::{StateFlags, WindowExt};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Duration;
+use tauri::{Manager, WindowEvent};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 const RESTORED_WINDOW_FLAGS: StateFlags = StateFlags::from_bits_truncate(
     StateFlags::SIZE.bits()
@@ -118,9 +123,37 @@ fn reveal_main_window(app: &tauri::App) -> tauri::Result<()> {
     // maximize()/zoom 动画中途再次 set_size + maximize，表现为白窗从左上角
     // 放大到一半又重来几次（新系统上更明显）。
     let _ = window.restore_state(RESTORED_WINDOW_FLAGS);
+    persist_main_window_state(&window);
     window.show()?;
     let _ = window.set_focus();
     Ok(())
+}
+
+/// 插件默认只在进程 Exit 时写盘；`tauri:dev` 热重载会直接杀掉进程，位置大小就丢了。
+/// 移动 / 缩放后防抖落盘，关闭前再写一次。
+fn persist_main_window_state(window: &tauri::WebviewWindow) {
+    let app = window.app_handle().clone();
+    let scheduled = Arc::new(AtomicBool::new(false));
+    window.on_window_event(move |event| {
+        match event {
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                if scheduled.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                let app = app.clone();
+                let scheduled = Arc::clone(&scheduled);
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(400));
+                    scheduled.store(false, Ordering::SeqCst);
+                    let _ = app.save_window_state(RESTORED_WINDOW_FLAGS);
+                });
+            }
+            WindowEvent::CloseRequested { .. } => {
+                let _ = app.save_window_state(RESTORED_WINDOW_FLAGS);
+            }
+            _ => {}
+        }
+    });
 }
 
 pub fn run() {
