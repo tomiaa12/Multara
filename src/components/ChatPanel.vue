@@ -23,7 +23,7 @@ import ChatMessageItem from "./ChatMessageItem.vue";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
-import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
+import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput, RunMode } from "../domain/types";
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
@@ -1103,8 +1103,13 @@ function cancelReask() {
   restoreNonce.value += 1;
 }
 
-async function applyFailedDraft(failure: { content: string; attachments: MessageAttachmentInput[] }) {
+async function applyFailedDraft(failure: { content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode | null }) {
   if (!session.value) return;
+  if (failure.requestedMode) {
+    store.setSessionMode(session.value.id, failure.requestedMode).catch((cause: unknown) => {
+      composerError.value = t("chat.mode.switchFailed", { message: cause instanceof Error ? cause.message : String(cause) });
+    });
+  }
   const nodes = parseUserPromptNodes(failure.content);
   drafts.value[session.value.id] = nodes;
   pendingAttachments.value[session.value.id] = [...failure.attachments];
@@ -1528,6 +1533,8 @@ defineExpose({
               :allow-target-change="allowTargetChange"
               :enable-replay="!preview && !historyViewOnly"
               :view-only="historyViewOnly"
+              :default-collapse-subagents="embedded || historyViewOnly"
+              :compact="compact"
               :allow-continue="!historyViewOnly && allowContinueFor(message)"
               :allow-fork="sessionCommands && !preview"
               :restore-nonce="restoreNonce"
@@ -1649,6 +1656,7 @@ defineExpose({
         :can-send="canSend"
         :disabled="composerLocked"
         :session-commands="sessionCommands"
+        :mode-session-id="preview || historyViewOnly ? '' : session?.id"
         @change="onComposerChange"
         @submit="submit"
         @paste-image="pasteImages"

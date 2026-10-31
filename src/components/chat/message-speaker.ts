@@ -96,6 +96,10 @@ export function resolveTurnTarget(
   return null;
 }
 
+/** 没有 messageKind 的旧派活消息只能按当时写死的中文前缀识别。 */
+const LEGACY_SQUAD_ASSIGNMENT_PREFIXES = ["请按刚才的拆分", "请按用户这句话处理"];
+const LEGACY_ASSIGNMENT_PREFIXES = [...LEGACY_SQUAD_ASSIGNMENT_PREFIXES, "请处理子任务"];
+
 export function isLeaderAssignment(
   message: ChatMessage,
   squads: Squad[],
@@ -109,23 +113,17 @@ export function isLeaderAssignment(
   if (roleInSquad(message.agentId, squads, target.id) !== "lead") return false;
   if (roleInSquad(message.audienceId, squads, target.id) !== "member") return false;
   const text = message.content.trim();
-  return !text
-    || text.startsWith("请按刚才的拆分")
-    || text.startsWith("请按用户这句话处理");
+  return !text || LEGACY_SQUAD_ASSIGNMENT_PREFIXES.some((prefix) => text.startsWith(prefix));
 }
 
-export function assignmentVisibleText(content: string): string {
+export function assignmentVisibleText(content: string, kind?: ChatMessage["messageKind"]): string {
   const text = content.trim();
-  if (!text) return "请按刚才的拆分处理你负责的部分，完成后向我汇报。";
+  if (!text) return t("chat.assignmentFallback");
   const first = text.split(/\n/)[0]?.trim() || text;
-  if (
-    first.startsWith("请按刚才的拆分")
-    || first.startsWith("请按用户这句话处理")
-    || first.startsWith("请处理子任务")
-  ) {
+  if (kind === "assignment" || LEGACY_ASSIGNMENT_PREFIXES.some((prefix) => first.startsWith(prefix))) {
     return first;
   }
-  return "请按刚才的拆分处理你负责的部分，完成后向我汇报。";
+  return t("chat.assignmentFallback");
 }
 
 export function speakerForMessage(

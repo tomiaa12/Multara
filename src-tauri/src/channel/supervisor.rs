@@ -22,11 +22,9 @@ fn active() -> &'static Mutex<Registry> {
 }
 
 pub fn start(app: AppHandle) {
-    thread::spawn(move || {
-        loop {
-            sync(&app);
-            thread::sleep(Duration::from_secs(3));
-        }
+    thread::spawn(move || loop {
+        sync(&app);
+        thread::sleep(Duration::from_secs(3));
     });
 }
 
@@ -58,7 +56,10 @@ fn sync(app: &AppHandle) {
     let mut wanted: HashMap<String, (String, Installation)> = HashMap::new();
     for installation in installations {
         if installation.enabled {
-            wanted.insert(installation.id.clone(), (fingerprint(&installation), installation));
+            wanted.insert(
+                installation.id.clone(),
+                (fingerprint(&installation), installation),
+            );
         }
     }
 
@@ -101,11 +102,16 @@ fn run_loop(app: AppHandle, installation: Installation, stop: Arc<AtomicBool>) {
     let mut backoff = 1u64;
     while !stop.load(Ordering::SeqCst) {
         // panic 不能杀掉这个线程：注册表项还在，指纹不变就永远不会重启
-        let connected = panic::catch_unwind(AssertUnwindSafe(|| feishu::run(&app, &installation.id, &stop)))
-            .unwrap_or_else(|_| {
-                crate::diag::write(&format!("CHANNEL feishu {} 接收线程 panic，稍后重连", installation.id));
-                false
-            });
+        let connected = panic::catch_unwind(AssertUnwindSafe(|| {
+            feishu::run(&app, &installation.id, &stop)
+        }))
+        .unwrap_or_else(|_| {
+            crate::diag::write(&format!(
+                "CHANNEL feishu {} 接收线程 panic，稍后重连",
+                installation.id
+            ));
+            false
+        });
         if stop.load(Ordering::SeqCst) {
             break;
         }

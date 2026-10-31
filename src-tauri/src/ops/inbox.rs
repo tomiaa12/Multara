@@ -61,11 +61,8 @@ pub fn mark_read(db: &Connection, id: &str, message_id: Option<&str>) -> Result<
 }
 
 pub fn mark_unread(db: &Connection, id: &str) -> Result<(), String> {
-    db.execute(
-        "UPDATE inbox_items SET read=0 WHERE id=?1",
-        [id],
-    )
-    .map_err(|error| error.to_string())?;
+    db.execute("UPDATE inbox_items SET read=0 WHERE id=?1", [id])
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -103,11 +100,11 @@ pub fn upsert(db: &Connection, input: InboxInput) -> Result<InboxItem, String> {
         input.status.as_str(),
         "completed" | "failed" | "stopped" | "needs_input" | "needs_permission"
     ) {
-        return Err("无效的收件箱状态".to_string());
+        return Err(tr!("无效的收件箱状态"));
     }
     let title = input.title.trim();
     if title.is_empty() {
-        return Err("收件箱标题不能为空".to_string());
+        return Err(tr!("收件箱标题不能为空"));
     }
     let preview = shorten_preview(&input.preview);
     let now = Utc::now().to_rfc3339();
@@ -131,8 +128,16 @@ pub fn upsert(db: &Connection, input: InboxInput) -> Result<InboxItem, String> {
         params![
             id,
             input.session_id,
-            input.project_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
-            input.task_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+            input
+                .project_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+            input
+                .task_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
             title,
             preview,
             input.status,
@@ -140,18 +145,18 @@ pub fn upsert(db: &Connection, input: InboxInput) -> Result<InboxItem, String> {
         ],
     )
     .map_err(|error| error.to_string())?;
-    db.query_row(
-        &format!("{SELECT_ITEM} WHERE i.id=?1"),
-        [&id],
-        map_item,
-    )
-    .map_err(|error| error.to_string())
+    db.query_row(&format!("{SELECT_ITEM} WHERE i.id=?1"), [&id], map_item)
+        .map_err(|error| error.to_string())
 }
 
 pub fn shorten_preview(source: &str) -> String {
-    let preview = source.replace('\n', " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    let preview = source
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     if preview.is_empty() {
-        return "对话已结束".to_string();
+        return tr!("对话已结束");
     }
     let shortened: String = preview.chars().take(120).collect();
     if shortened.chars().count() < preview.chars().count() {

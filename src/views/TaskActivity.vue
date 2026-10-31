@@ -282,6 +282,7 @@ watch(
           :speaker="speaker(message)"
           :running="messageRunning(message)"
           :allow-continue="false"
+          :default-collapse-subagents="thread || historyViewOnly"
         />
       </template>
       <div
@@ -343,6 +344,7 @@ watch(
       :allow-target-change="false"
       :show-context-usage="false"
       :can-send="canSend"
+      :mode-session-id="historyViewOnly ? '' : sessionId"
       @change="onChange"
       @submit="submit"
       @paste-image="pasteImages"

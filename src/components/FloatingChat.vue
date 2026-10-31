@@ -27,6 +27,10 @@ watch(
 /** host 已在 hidden 时整体 v-show=false；此处只区分面板 / FAB */
 const panelOpen = computed(() => store.chatOpen);
 const fabVisible = computed(() => !store.chatOpen);
+/** 收起时有待确认的计划就在气泡按钮上亮点，只看已加载过消息的会话 */
+const pendingPlan = computed(() =>
+  store.openedSessionIds(projectId.value).some((sessionId) => Boolean(store.planStates(sessionId).latestAwaitingKey)),
+);
 </script>
 
 <template>
@@ -55,8 +59,14 @@ const fabVisible = computed(() => !store.chatOpen);
       </section>
     </Transition>
 
-    <UiButton v-show="fabVisible" class="chat-fab" :tip="t('chat.floatOpen')" @click="store.chatOpen = true">
+    <UiButton
+      v-show="fabVisible"
+      class="chat-fab"
+      :tip="pendingPlan ? t('chat.plan.pendingBadge') : t('chat.floatOpen')"
+      @click="store.chatOpen = true"
+    >
       <MessageCircle :size="22" />
+      <span v-if="pendingPlan" class="chat-fab-dot" aria-hidden="true" />
     </UiButton>
   </div>
 </template>

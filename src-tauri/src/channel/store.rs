@@ -121,7 +121,10 @@ pub fn delete_installation(db: &Connection, id: &str) -> Result<(), String> {
         "channel_run_deliveries",
         "channel_outbound_messages",
     ] {
-        let _ = db.execute(&format!("DELETE FROM {table} WHERE installation_id=?1"), [id]);
+        let _ = db.execute(
+            &format!("DELETE FROM {table} WHERE installation_id=?1"),
+            [id],
+        );
     }
     Ok(())
 }
@@ -322,10 +325,7 @@ pub fn retire_binding(db: &Connection, binding_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn insert_delivery(
-    db: &Connection,
-    delivery: &Delivery,
-) -> Result<(), String> {
+pub fn insert_delivery(db: &Connection, delivery: &Delivery) -> Result<(), String> {
     db.execute(
         "INSERT OR REPLACE INTO channel_run_deliveries
          (run_id, session_id, binding_id, installation_id, chat_id, chat_type,
@@ -432,11 +432,7 @@ pub fn is_outbound_message(db: &Connection, installation_id: &str, message_id: &
 }
 
 /// 卡片回调靠出站消息找回它属于哪次运行。
-pub fn outbound_run(
-    db: &Connection,
-    installation_id: &str,
-    message_id: &str,
-) -> Option<String> {
+pub fn outbound_run(db: &Connection, installation_id: &str, message_id: &str) -> Option<String> {
     db.query_row(
         "SELECT run_id FROM channel_outbound_messages
          WHERE installation_id=?1 AND message_id=?2 AND run_id IS NOT NULL",
@@ -517,14 +513,20 @@ mod tests {
         };
         let first = create_binding(&db, "inst", "c1", &message, "s1").unwrap();
         assert_eq!(
-            active_binding(&db, "inst", "c1").unwrap().unwrap().session_id,
+            active_binding(&db, "inst", "c1")
+                .unwrap()
+                .unwrap()
+                .session_id,
             "s1"
         );
         retire_binding(&db, &first.id).unwrap();
         assert!(active_binding(&db, "inst", "c1").unwrap().is_none());
         create_binding(&db, "inst", "c1", &message, "s2").unwrap();
         assert_eq!(
-            active_binding(&db, "inst", "c1").unwrap().unwrap().session_id,
+            active_binding(&db, "inst", "c1")
+                .unwrap()
+                .unwrap()
+                .session_id,
             "s2"
         );
     }

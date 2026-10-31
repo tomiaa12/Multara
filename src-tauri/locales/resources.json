@@ -1,0 +1,752 @@
+{
+  "目标工具不受支持": {
+    "en": "The target tool isn't supported",
+    "zh-TW": "不支援目標工具",
+    "ja": "移行先のツールはサポートされていません",
+    "ko": "대상 도구는 지원되지 않습니다"
+  },
+  "资源不存在，请重新扫描": {
+    "en": "Resource not found. Rescan and try again.",
+    "zh-TW": "資源不存在，請重新掃描",
+    "ja": "リソースが見つかりません。再スキャンしてください",
+    "ko": "리소스를 찾을 수 없습니다. 다시 스캔하세요"
+  },
+  "来源与目标相同": {
+    "en": "Source and target are the same",
+    "zh-TW": "來源與目標相同",
+    "ja": "移行元と移行先が同じです",
+    "ko": "원본과 대상이 같습니다"
+  },
+  "未知资源类型": {
+    "en": "Unknown resource type",
+    "zh-TW": "未知的資源類型",
+    "ja": "不明なリソースの種類です",
+    "ko": "알 수 없는 리소스 유형입니다"
+  },
+  "MCP 资源 ID 无效": {
+    "en": "Invalid MCP resource ID",
+    "zh-TW": "MCP 資源 ID 無效",
+    "ja": "MCP リソース ID が無効です",
+    "ko": "MCP 리소스 ID가 올바르지 않습니다"
+  },
+  "用户创建的 Skill。": {
+    "en": "A user-created Skill.",
+    "zh-TW": "使用者建立的 Skill。",
+    "ja": "ユーザーが作成した Skill。",
+    "ko": "사용자가 만든 Skill입니다."
+  },
+  "在这里写具体步骤。": {
+    "en": "Write the steps here.",
+    "zh-TW": "在這裡寫下具體步驟。",
+    "ja": "ここに具体的な手順を書きます。",
+    "ko": "여기에 구체적인 단계를 작성하세요."
+  },
+  "移到回收站失败：{error}": {
+    "en": "Couldn't move to Trash: {error}",
+    "zh-TW": "移到資源回收筒失敗：{error}",
+    "ja": "ゴミ箱に移動できませんでした：{error}",
+    "ko": "휴지통으로 이동하지 못했습니다: {error}"
+  },
+  "无法定位用户目录": {
+    "en": "Couldn't locate the home directory",
+    "zh-TW": "無法定位使用者目錄",
+    "ja": "ユーザーディレクトリが見つかりません",
+    "ko": "사용자 디렉터리를 찾을 수 없습니다"
+  },
+  "只能转换 .prompt.md 文件": {
+    "en": "Only .prompt.md files can be converted",
+    "zh-TW": "只能轉換 .prompt.md 檔案",
+    "ja": "変換できるのは .prompt.md ファイルのみです",
+    "ko": ".prompt.md 파일만 변환할 수 있습니다"
+  },
+  "读取提示文件失败：{error}": {
+    "en": "Couldn't read the prompt file: {error}",
+    "zh-TW": "讀取提示檔案失敗：{error}",
+    "ja": "プロンプトファイルを読み込めませんでした：{error}",
+    "ko": "프롬프트 파일을 읽지 못했습니다: {error}"
+  },
+  "由提示文件 {name} 转换": {
+    "en": "Converted from prompt file {name}",
+    "zh-TW": "由提示檔案 {name} 轉換",
+    "ja": "プロンプトファイル {name} から変換",
+    "ko": "프롬프트 파일 {name}에서 변환됨"
+  },
+  "Skills.sh 地址应为 skills.sh/{owner}/{repo}/{skill}": {
+    "en": "A Skills.sh URL should look like skills.sh/{owner}/{repo}/{skill}",
+    "zh-TW": "Skills.sh 網址應為 skills.sh/{owner}/{repo}/{skill}",
+    "ja": "Skills.sh の URL は skills.sh/{owner}/{repo}/{skill} の形式にしてください",
+    "ko": "Skills.sh 주소는 skills.sh/{owner}/{repo}/{skill} 형식이어야 합니다"
+  },
+  "GitHub 地址应为 github.com/{owner}/{repo}": {
+    "en": "A GitHub URL should look like github.com/{owner}/{repo}",
+    "zh-TW": "GitHub 網址應為 github.com/{owner}/{repo}",
+    "ja": "GitHub の URL は github.com/{owner}/{repo} の形式にしてください",
+    "ko": "GitHub 주소는 github.com/{owner}/{repo} 형식이어야 합니다"
+  },
+  "目前支持 GitHub 和 Skills.sh 地址，例如 github.com/anthropics/skills 或 skills.sh/owner/repo/skill": {
+    "en": "Only GitHub and Skills.sh URLs are supported, e.g. github.com/anthropics/skills or skills.sh/owner/repo/skill",
+    "zh-TW": "目前支援 GitHub 與 Skills.sh 網址，例如 github.com/anthropics/skills 或 skills.sh/owner/repo/skill",
+    "ja": "現在サポートしているのは GitHub と Skills.sh の URL です（例：github.com/anthropics/skills、skills.sh/owner/repo/skill）",
+    "ko": "현재 GitHub와 Skills.sh 주소만 지원합니다. 예: github.com/anthropics/skills 또는 skills.sh/owner/repo/skill"
+  },
+  "Skill 地址无效": {
+    "en": "Invalid Skill URL",
+    "zh-TW": "Skill 網址無效",
+    "ja": "Skill の URL が無効です",
+    "ko": "Skill 주소가 올바르지 않습니다"
+  },
+  "Skill 名称无效": {
+    "en": "Invalid Skill name",
+    "zh-TW": "Skill 名稱無效",
+    "ja": "Skill 名が無効です",
+    "ko": "Skill 이름이 올바르지 않습니다"
+  },
+  "这个来源不支持 Skills": {
+    "en": "This source doesn't support Skills",
+    "zh-TW": "這個來源不支援 Skills",
+    "ja": "このソースは Skills に対応していません",
+    "ko": "이 소스는 Skills를 지원하지 않습니다"
+  },
+  "同名 Skill 太多，请换一个名称": {
+    "en": "Too many Skills with this name. Choose a different name.",
+    "zh-TW": "同名 Skill 太多，請換一個名稱",
+    "ja": "同じ名前の Skill が多すぎます。別の名前にしてください",
+    "ko": "같은 이름의 Skill이 너무 많습니다. 다른 이름을 사용하세요"
+  },
+  "所选目录没有 SKILL.md": {
+    "en": "The selected folder has no SKILL.md",
+    "zh-TW": "所選目錄沒有 SKILL.md",
+    "ja": "選択したフォルダに SKILL.md がありません",
+    "ko": "선택한 폴더에 SKILL.md가 없습니다"
+  },
+  "Skill 路径无效": {
+    "en": "Invalid Skill path",
+    "zh-TW": "Skill 路徑無效",
+    "ja": "Skill のパスが無効です",
+    "ko": "Skill 경로가 올바르지 않습니다"
+  },
+  "Skill 路径超出了所选目录": {
+    "en": "The Skill path is outside the selected folder",
+    "zh-TW": "Skill 路徑超出了所選目錄",
+    "ja": "Skill のパスが選択したフォルダの外にあります",
+    "ko": "Skill 경로가 선택한 폴더를 벗어났습니다"
+  },
+  "没有找到 SKILL.md，确认这是一个 Agent Skill 目录": {
+    "en": "No SKILL.md found. Make sure this is an Agent Skill folder.",
+    "zh-TW": "找不到 SKILL.md，請確認這是 Agent Skill 目錄",
+    "ja": "SKILL.md が見つかりません。Agent Skill のフォルダか確認してください",
+    "ko": "SKILL.md를 찾을 수 없습니다. Agent Skill 폴더인지 확인하세요"
+  },
+  "仓库里有多个 Skill，请把地址指到具体目录，例如 .../tree/main/pdf": {
+    "en": "The repository has multiple Skills. Point the URL to a specific folder, e.g. .../tree/main/pdf",
+    "zh-TW": "儲存庫中有多個 Skill，請將網址指向具體目錄，例如 .../tree/main/pdf",
+    "ja": "リポジトリに複数の Skill があります。URL を特定のフォルダに向けてください（例：.../tree/main/pdf）",
+    "ko": "저장소에 Skill이 여러 개 있습니다. 주소를 특정 폴더로 지정하세요. 예: .../tree/main/pdf"
+  },
+  "克隆 GitHub 仓库失败：{error}": {
+    "en": "Couldn't clone the GitHub repository: {error}",
+    "zh-TW": "複製 GitHub 儲存庫失敗：{error}",
+    "ja": "GitHub リポジトリをクローンできませんでした：{error}",
+    "ko": "GitHub 저장소를 복제하지 못했습니다: {error}"
+  },
+  "目标不支持 Skills": {
+    "en": "The target doesn't support Skills",
+    "zh-TW": "目標不支援 Skills",
+    "ja": "移行先は Skills に対応していません",
+    "ko": "대상은 Skills를 지원하지 않습니다"
+  },
+  "目标已存在同名 Skill：{name}": {
+    "en": "The target already has a Skill named {name}",
+    "zh-TW": "目標已存在同名 Skill：{name}",
+    "ja": "移行先に同じ名前の Skill があります：{name}",
+    "ko": "대상에 같은 이름의 Skill이 이미 있습니다: {name}"
+  },
+  "写入目标 Skill 失败：{error}": {
+    "en": "Couldn't write the target Skill: {error}",
+    "zh-TW": "寫入目標 Skill 失敗：{error}",
+    "ja": "移行先の Skill を書き込めませんでした：{error}",
+    "ko": "대상 Skill을 쓰지 못했습니다: {error}"
+  },
+  "移动后清理来源失败，已回滚目标：{error}": {
+    "en": "Couldn't clean up the source after moving; the target was rolled back: {error}",
+    "zh-TW": "移動後清理來源失敗，已回復目標：{error}",
+    "ja": "移動後に移行元を削除できなかったため、移行先を元に戻しました：{error}",
+    "ko": "이동 후 원본을 정리하지 못해 대상을 되돌렸습니다: {error}"
+  },
+  "清理来源 MCP 失败，已回滚目标：{error}": {
+    "en": "Couldn't remove the source MCP; the target was rolled back: {error}",
+    "zh-TW": "清理來源 MCP 失敗，已回復目標：{error}",
+    "ja": "移行元の MCP を削除できなかったため、移行先を元に戻しました：{error}",
+    "ko": "원본 MCP를 정리하지 못해 대상을 되돌렸습니다: {error}"
+  },
+  "来源不支持 MCP": {
+    "en": "The source doesn't support MCP",
+    "zh-TW": "來源不支援 MCP",
+    "ja": "移行元は MCP に対応していません",
+    "ko": "원본은 MCP를 지원하지 않습니다"
+  },
+  "MCP 配置不存在": {
+    "en": "MCP config not found",
+    "zh-TW": "MCP 設定不存在",
+    "ja": "MCP 設定が見つかりません",
+    "ko": "MCP 설정을 찾을 수 없습니다"
+  },
+  "这个来源不支持 MCP": {
+    "en": "This source doesn't support MCP",
+    "zh-TW": "這個來源不支援 MCP",
+    "ja": "このソースは MCP に対応していません",
+    "ko": "이 소스는 MCP를 지원하지 않습니다"
+  },
+  "配置文件正在被其它程序修改，请稍后再试": {
+    "en": "The config file is being modified by another program. Try again later.",
+    "zh-TW": "設定檔正在被其他程式修改，請稍後再試",
+    "ja": "設定ファイルが別のプログラムで変更中です。しばらくしてから再試行してください",
+    "ko": "다른 프로그램이 설정 파일을 수정하고 있습니다. 잠시 후 다시 시도하세요"
+  },
+  "配置不是有效的 TOML：{error}": {
+    "en": "The config isn't valid TOML: {error}",
+    "zh-TW": "設定不是有效的 TOML：{error}",
+    "ja": "設定が有効な TOML ではありません：{error}",
+    "ko": "설정이 올바른 TOML이 아닙니다: {error}"
+  },
+  "mcp_servers 配置格式无效": {
+    "en": "Invalid mcp_servers config format",
+    "zh-TW": "mcp_servers 設定格式無效",
+    "ja": "mcp_servers の設定形式が無効です",
+    "ko": "mcp_servers 설정 형식이 올바르지 않습니다"
+  },
+  "{path} 不是有效的 JSON，请先修好再保存": {
+    "en": "{path} isn't valid JSON. Fix it before saving.",
+    "zh-TW": "{path} 不是有效的 JSON，請先修正再儲存",
+    "ja": "{path} は有効な JSON ではありません。修正してから保存してください",
+    "ko": "{path}은(는) 올바른 JSON이 아닙니다. 먼저 수정한 뒤 저장하세요"
+  },
+  "MCP 配置不是 JSON 对象": {
+    "en": "The MCP config isn't a JSON object",
+    "zh-TW": "MCP 設定不是 JSON 物件",
+    "ja": "MCP 設定が JSON オブジェクトではありません",
+    "ko": "MCP 설정이 JSON 객체가 아닙니다"
+  },
+  "MCP 服务器列表格式无效": {
+    "en": "Invalid MCP server list format",
+    "zh-TW": "MCP 伺服器清單格式無效",
+    "ja": "MCP サーバー一覧の形式が無効です",
+    "ko": "MCP 서버 목록 형식이 올바르지 않습니다"
+  },
+  "mcp 配置格式无效": {
+    "en": "Invalid mcp config format",
+    "zh-TW": "mcp 設定格式無效",
+    "ja": "mcp の設定形式が無効です",
+    "ko": "mcp 설정 형식이 올바르지 않습니다"
+  },
+  "mcp.servers 配置格式无效": {
+    "en": "Invalid mcp.servers config format",
+    "zh-TW": "mcp.servers 設定格式無效",
+    "ja": "mcp.servers の設定形式が無効です",
+    "ko": "mcp.servers 설정 형식이 올바르지 않습니다"
+  },
+  "目标已存在同名 MCP：{name}": {
+    "en": "The target already has an MCP named {name}",
+    "zh-TW": "目標已存在同名 MCP：{name}",
+    "ja": "移行先に同じ名前の MCP があります：{name}",
+    "ko": "대상에 같은 이름의 MCP가 이미 있습니다: {name}"
+  },
+  "MCP 不存在": {
+    "en": "MCP not found",
+    "zh-TW": "MCP 不存在",
+    "ja": "MCP が見つかりません",
+    "ko": "MCP를 찾을 수 없습니다"
+  },
+  "MCP 名称不能为空，也不能包含冒号": {
+    "en": "MCP name can't be empty or contain a colon",
+    "zh-TW": "MCP 名稱不能為空，也不能包含冒號",
+    "ja": "MCP 名は空にできず、コロンも使えません",
+    "ko": "MCP 이름은 비워 둘 수 없으며 콜론을 포함할 수 없습니다"
+  },
+  "已存在同名 MCP：{name}": {
+    "en": "An MCP named {name} already exists",
+    "zh-TW": "已存在同名 MCP：{name}",
+    "ja": "同じ名前の MCP がすでにあります：{name}",
+    "ko": "같은 이름의 MCP가 이미 있습니다: {name}"
+  },
+  "找不到用户目录": {
+    "en": "Home directory not found",
+    "zh-TW": "找不到使用者目錄",
+    "ja": "ユーザーディレクトリが見つかりません",
+    "ko": "사용자 디렉터리를 찾을 수 없습니다"
+  },
+  "MCP 配置必须是对象": {
+    "en": "MCP config must be an object",
+    "zh-TW": "MCP 設定必須是物件",
+    "ja": "MCP 設定はオブジェクトである必要があります",
+    "ko": "MCP 설정은 객체여야 합니다"
+  },
+  "这个 MCP 没有 HTTP 地址，不能授权": {
+    "en": "This MCP has no HTTP URL, so it can't be authorized",
+    "zh-TW": "這個 MCP 沒有 HTTP 網址，無法授權",
+    "ja": "この MCP には HTTP の URL がないため認可できません",
+    "ko": "이 MCP에는 HTTP 주소가 없어 인증할 수 없습니다"
+  },
+  "已禁用": {
+    "en": "Disabled",
+    "zh-TW": "已停用",
+    "ja": "無効",
+    "ko": "비활성화됨"
+  },
+  "远程 MCP 需要填写 URL": {
+    "en": "A remote MCP needs a URL",
+    "zh-TW": "遠端 MCP 需要填寫 URL",
+    "ja": "リモート MCP には URL が必要です",
+    "ko": "원격 MCP에는 URL이 필요합니다"
+  },
+  "Codex 不支持旧版 SSE 传输，请改用 HTTP": {
+    "en": "Codex doesn't support the legacy SSE transport. Use HTTP instead.",
+    "zh-TW": "Codex 不支援舊版 SSE 傳輸，請改用 HTTP",
+    "ja": "Codex は旧来の SSE トランスポートに対応していません。HTTP を使用してください",
+    "ko": "Codex는 이전 SSE 전송을 지원하지 않습니다. HTTP를 사용하세요"
+  },
+  "本地 MCP 需要填写命令": {
+    "en": "A local MCP needs a command",
+    "zh-TW": "本機 MCP 需要填寫命令",
+    "ja": "ローカル MCP にはコマンドが必要です",
+    "ko": "로컬 MCP에는 명령이 필요합니다"
+  },
+  "无法解析这一行：{line}": {
+    "en": "Couldn't parse this line: {line}",
+    "zh-TW": "無法解析這一行：{line}",
+    "ja": "この行を解析できません：{line}",
+    "ko": "이 줄을 해석할 수 없습니다: {line}"
+  },
+  "技能不存在，请重新扫描": {
+    "en": "Skill not found. Rescan and try again.",
+    "zh-TW": "Skill 不存在，請重新掃描",
+    "ja": "Skill が見つかりません。再スキャンしてください",
+    "ko": "Skill을 찾을 수 없습니다. 다시 스캔하세요"
+  },
+  "技能目录不存在": {
+    "en": "Skill folder not found",
+    "zh-TW": "Skill 目錄不存在",
+    "ja": "Skill フォルダが見つかりません",
+    "ko": "Skill 폴더를 찾을 수 없습니다"
+  },
+  "全局 Skill": {
+    "en": "Global Skill",
+    "zh-TW": "全域 Skill",
+    "ja": "グローバル Skill",
+    "ko": "전역 Skill"
+  },
+  "配置路径无效": {
+    "en": "Invalid config path",
+    "zh-TW": "設定路徑無效",
+    "ja": "設定のパスが無効です",
+    "ko": "설정 경로가 올바르지 않습니다"
+  },
+  "Skill 包含符号链接，已阻止迁移": {
+    "en": "The Skill contains symbolic links, so the migration was blocked",
+    "zh-TW": "Skill 包含符號連結，已阻止遷移",
+    "ja": "Skill にシンボリックリンクが含まれているため、移行を中止しました",
+    "ko": "Skill에 심볼릭 링크가 있어 마이그레이션을 차단했습니다"
+  },
+  "Skill 目录过大（超过 {files} 个文件或 {size} MB），请选择具体的 Skill 目录": {
+    "en": "The Skill folder is too large (over {files} files or {size} MB). Choose a specific Skill folder.",
+    "zh-TW": "Skill 目錄過大（超過 {files} 個檔案或 {size} MB），請選擇具體的 Skill 目錄",
+    "ja": "Skill フォルダが大きすぎます（{files} ファイルまたは {size} MB を超えています）。特定の Skill フォルダを選択してください",
+    "ko": "Skill 폴더가 너무 큽니다({files}개 파일 또는 {size}MB 초과). 특정 Skill 폴더를 선택하세요"
+  },
+  "商店类型无效": {
+    "en": "Invalid store type",
+    "zh-TW": "商店類型無效",
+    "ja": "ストアの種類が無効です",
+    "ko": "스토어 유형이 올바르지 않습니다"
+  },
+  "Skills 商店 HTTP {status}": {
+    "en": "Skills store returned HTTP {status}",
+    "zh-TW": "Skills 商店 HTTP {status}",
+    "ja": "Skills ストア HTTP {status}",
+    "ko": "Skills 스토어 HTTP {status}"
+  },
+  "MCP 商店 HTTP {status}": {
+    "en": "MCP store returned HTTP {status}",
+    "zh-TW": "MCP 商店 HTTP {status}",
+    "ja": "MCP ストア HTTP {status}",
+    "ko": "MCP 스토어 HTTP {status}"
+  },
+  "PDF 处理：提取、创建和编辑 PDF。": {
+    "en": "PDF processing: extract, create, and edit PDFs.",
+    "zh-TW": "PDF 處理：擷取、建立和編輯 PDF。",
+    "ja": "PDF 処理：PDF の抽出・作成・編集。",
+    "ko": "PDF 처리: PDF 추출, 생성, 편집."
+  },
+  "Word 文档读写。": {
+    "en": "Read and write Word documents.",
+    "zh-TW": "Word 文件讀寫。",
+    "ja": "Word 文書の読み書き。",
+    "ko": "Word 문서 읽기/쓰기."
+  },
+  "电子表格读写。": {
+    "en": "Read and write spreadsheets.",
+    "zh-TW": "試算表讀寫。",
+    "ja": "スプレッドシートの読み書き。",
+    "ko": "스프레드시트 읽기/쓰기."
+  },
+  "演示文稿创建。": {
+    "en": "Create presentations.",
+    "zh-TW": "簡報建立。",
+    "ja": "プレゼンテーションの作成。",
+    "ko": "프레젠테이션 만들기."
+  },
+  "编写新的 Agent Skill。": {
+    "en": "Write a new Agent Skill.",
+    "zh-TW": "撰寫新的 Agent Skill。",
+    "ja": "新しい Agent Skill を作成します。",
+    "ko": "새 Agent Skill을 작성합니다."
+  },
+  "删除授权失败：{error}": {
+    "en": "Couldn't remove the authorization: {error}",
+    "zh-TW": "刪除授權失敗：{error}",
+    "ja": "認可を削除できませんでした：{error}",
+    "ko": "인증 정보를 삭제하지 못했습니다: {error}"
+  },
+  "没有 refresh token": {
+    "en": "No refresh token",
+    "zh-TW": "沒有 refresh token",
+    "ja": "refresh token がありません",
+    "ko": "refresh token이 없습니다"
+  },
+  "刷新 token 失败：HTTP {status}": {
+    "en": "Couldn't refresh the token: HTTP {status}",
+    "zh-TW": "重新整理 token 失敗：HTTP {status}",
+    "ja": "token を更新できませんでした：HTTP {status}",
+    "ko": "token을 갱신하지 못했습니다: HTTP {status}"
+  },
+  "无法监听本地授权回调：{error}": {
+    "en": "Couldn't listen for the local authorization callback: {error}",
+    "zh-TW": "無法監聽本機授權回呼：{error}",
+    "ja": "ローカルの認可コールバックを待ち受けできません：{error}",
+    "ko": "로컬 인증 콜백을 수신할 수 없습니다: {error}"
+  },
+  "受保护资源元数据和 MCP 地址不一致": {
+    "en": "The protected resource metadata doesn't match the MCP URL",
+    "zh-TW": "受保護資源中繼資料與 MCP 網址不一致",
+    "ja": "保護されたリソースのメタデータが MCP の URL と一致しません",
+    "ko": "보호된 리소스 메타데이터가 MCP 주소와 일치하지 않습니다"
+  },
+  "受保护资源没有声明授权服务器": {
+    "en": "The protected resource doesn't declare an authorization server",
+    "zh-TW": "受保護資源沒有宣告授權伺服器",
+    "ja": "保護されたリソースに認可サーバーが宣言されていません",
+    "ko": "보호된 리소스에 인증 서버가 선언되어 있지 않습니다"
+  },
+  "授权服务器不支持 PKCE S256": {
+    "en": "The authorization server doesn't support PKCE S256",
+    "zh-TW": "授權伺服器不支援 PKCE S256",
+    "ja": "認可サーバーが PKCE S256 に対応していません",
+    "ko": "인증 서버가 PKCE S256을 지원하지 않습니다"
+  },
+  "找不到授权服务器元数据": {
+    "en": "Authorization server metadata not found",
+    "zh-TW": "找不到授權伺服器中繼資料",
+    "ja": "認可サーバーのメタデータが見つかりません",
+    "ko": "인증 서버 메타데이터를 찾을 수 없습니다"
+  },
+  "授权服务器需要预先注册的客户端，当前还不能自动授权": {
+    "en": "The authorization server requires a pre-registered client, so automatic authorization isn't available yet",
+    "zh-TW": "授權伺服器需要預先註冊的用戶端，目前還無法自動授權",
+    "ja": "認可サーバーは事前登録済みのクライアントを必要とするため、現時点では自動で認可できません",
+    "ko": "인증 서버가 사전 등록된 클라이언트를 요구하므로 아직 자동으로 인증할 수 없습니다"
+  },
+  "注册响应无法解析：{error}": {
+    "en": "Couldn't parse the registration response: {error}",
+    "zh-TW": "無法解析註冊回應：{error}",
+    "ja": "登録レスポンスを解析できません：{error}",
+    "ko": "등록 응답을 해석할 수 없습니다: {error}"
+  },
+  "动态注册没有返回 client id": {
+    "en": "Dynamic registration didn't return a client id",
+    "zh-TW": "動態註冊沒有回傳 client id",
+    "ja": "動的登録で client id が返されませんでした",
+    "ko": "동적 등록에서 client id가 반환되지 않았습니다"
+  },
+  "Figma 远程 MCP 仅允许官方目录内的客户端完成 OAuth（如 Cursor、VS Code），Multara 尚未在目录中，因此无法打开授权浏览器。可改用 Figma 桌面端本地 MCP，或向 Figma 申请将 Multara 加入 MCP 客户端目录。": {
+    "en": "Figma's remote MCP only allows clients in its official catalog (such as Cursor and VS Code) to complete OAuth. Multara isn't in the catalog yet, so the authorization browser can't be opened. Use the local MCP in the Figma desktop app instead, or ask Figma to add Multara to its MCP client catalog.",
+    "zh-TW": "Figma 遠端 MCP 僅允許官方目錄內的用戶端完成 OAuth（如 Cursor、VS Code），Multara 尚未列入目錄，因此無法開啟授權瀏覽器。可改用 Figma 桌面版的本機 MCP，或向 Figma 申請將 Multara 加入 MCP 用戶端目錄。",
+    "ja": "Figma のリモート MCP は、公式カタログに掲載されたクライアント（Cursor、VS Code など）のみ OAuth を完了できます。Multara はまだカタログに掲載されていないため、認可用のブラウザを開けません。Figma デスクトップアプリのローカル MCP を使うか、Multara を MCP クライアントカタログに追加するよう Figma に申請してください。",
+    "ko": "Figma 원격 MCP는 공식 디렉터리에 등록된 클라이언트(Cursor, VS Code 등)만 OAuth를 완료할 수 있습니다. Multara는 아직 디렉터리에 없으므로 인증 브라우저를 열 수 없습니다. Figma 데스크톱 앱의 로컬 MCP를 사용하거나, Figma에 Multara를 MCP 클라이언트 디렉터리에 추가해 달라고 요청하세요."
+  },
+  "授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。": {
+    "en": "The authorization server rejected dynamic client registration (HTTP {status}), so the browser can't be opened. This service may only allow allowlisted clients.",
+    "zh-TW": "授權伺服器拒絕了用戶端動態註冊（HTTP {status}），無法開啟瀏覽器。該服務可能只允許白名單用戶端。",
+    "ja": "認可サーバーがクライアントの動的登録を拒否したため（HTTP {status}）、ブラウザを開けません。このサービスは許可リストのクライアントのみ受け付けている可能性があります。",
+    "ko": "인증 서버가 클라이언트 동적 등록을 거부해(HTTP {status}) 브라우저를 열 수 없습니다. 이 서비스는 허용 목록에 있는 클라이언트만 허용할 수 있습니다."
+  },
+  "授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。响应：{short}": {
+    "en": "The authorization server rejected dynamic client registration (HTTP {status}), so the browser can't be opened. This service may only allow allowlisted clients. Response: {short}",
+    "zh-TW": "授權伺服器拒絕了用戶端動態註冊（HTTP {status}），無法開啟瀏覽器。該服務可能只允許白名單用戶端。回應：{short}",
+    "ja": "認可サーバーがクライアントの動的登録を拒否したため（HTTP {status}）、ブラウザを開けません。このサービスは許可リストのクライアントのみ受け付けている可能性があります。レスポンス：{short}",
+    "ko": "인증 서버가 클라이언트 동적 등록을 거부해(HTTP {status}) 브라우저를 열 수 없습니다. 이 서비스는 허용 목록에 있는 클라이언트만 허용할 수 있습니다. 응답: {short}"
+  },
+  "换取 token 失败：HTTP {status}": {
+    "en": "Couldn't exchange for a token: HTTP {status}",
+    "zh-TW": "換取 token 失敗：HTTP {status}",
+    "ja": "token を取得できませんでした：HTTP {status}",
+    "ko": "token을 교환하지 못했습니다: HTTP {status}"
+  },
+  "token 响应无法解析：{error}": {
+    "en": "Couldn't parse the token response: {error}",
+    "zh-TW": "無法解析 token 回應：{error}",
+    "ja": "token レスポンスを解析できません：{error}",
+    "ko": "token 응답을 해석할 수 없습니다: {error}"
+  },
+  "等待授权超时，请重试": {
+    "en": "Authorization timed out. Try again.",
+    "zh-TW": "等待授權逾時，請重試",
+    "ja": "認可の待機がタイムアウトしました。もう一度お試しください",
+    "ko": "인증 대기 시간이 초과되었습니다. 다시 시도하세요"
+  },
+  "授权没有完成，可以关闭这个页面。": {
+    "en": "Authorization wasn't completed. You can close this page.",
+    "zh-TW": "授權未完成，可以關閉這個頁面。",
+    "ja": "認可は完了しませんでした。このページは閉じてかまいません。",
+    "ko": "인증이 완료되지 않았습니다. 이 페이지를 닫아도 됩니다."
+  },
+  "授权完成，可以关闭这个页面。": {
+    "en": "Authorization complete. You can close this page.",
+    "zh-TW": "授權完成，可以關閉這個頁面。",
+    "ja": "認可が完了しました。このページは閉じてかまいません。",
+    "ko": "인증이 완료되었습니다. 이 페이지를 닫아도 됩니다."
+  },
+  "回调响应失败": {
+    "en": "Couldn't respond to the callback",
+    "zh-TW": "回呼回應失敗",
+    "ja": "コールバックに応答できませんでした",
+    "ko": "콜백에 응답하지 못했습니다"
+  },
+  "授权被拒绝：{error}": {
+    "en": "Authorization denied: {error}",
+    "zh-TW": "授權遭拒：{error}",
+    "ja": "認可が拒否されました：{error}",
+    "ko": "인증이 거부되었습니다: {error}"
+  },
+  "授权回调的 state 不一致": {
+    "en": "The authorization callback state doesn't match",
+    "zh-TW": "授權回呼的 state 不一致",
+    "ja": "認可コールバックの state が一致しません",
+    "ko": "인증 콜백의 state가 일치하지 않습니다"
+  },
+  "授权回调没有 code": {
+    "en": "The authorization callback has no code",
+    "zh-TW": "授權回呼沒有 code",
+    "ja": "認可コールバックに code がありません",
+    "ko": "인증 콜백에 code가 없습니다"
+  },
+  "无法定位授权文件": {
+    "en": "Couldn't locate the authorization file",
+    "zh-TW": "無法定位授權檔案",
+    "ja": "認可ファイルの場所を特定できません",
+    "ko": "인증 파일 위치를 찾을 수 없습니다"
+  },
+  "JSON 无法解析：{error}": {
+    "en": "Couldn't parse JSON: {error}",
+    "zh-TW": "無法解析 JSON：{error}",
+    "ja": "JSON を解析できません：{error}",
+    "ko": "JSON을 해석할 수 없습니다: {error}"
+  },
+  "无法调用 curl：{error}": {
+    "en": "Couldn't run curl: {error}",
+    "zh-TW": "無法呼叫 curl：{error}",
+    "ja": "curl を実行できません：{error}",
+    "ko": "curl을 실행할 수 없습니다: {error}"
+  },
+  "请求授权服务器失败": {
+    "en": "Request to the authorization server failed",
+    "zh-TW": "請求授權伺服器失敗",
+    "ja": "認可サーバーへのリクエストに失敗しました",
+    "ko": "인증 서버 요청에 실패했습니다"
+  },
+  "授权响应过大": {
+    "en": "The authorization response is too large",
+    "zh-TW": "授權回應過大",
+    "ja": "認可レスポンスが大きすぎます",
+    "ko": "인증 응답이 너무 큽니다"
+  },
+  "授权元数据缺少 {field}": {
+    "en": "Authorization metadata is missing {field}",
+    "zh-TW": "授權中繼資料缺少 {field}",
+    "ja": "認可メタデータに {field} がありません",
+    "ko": "인증 메타데이터에 {field}이(가) 없습니다"
+  },
+  "授权地址必须是不带账号和片段的 HTTPS": {
+    "en": "The authorization URL must be HTTPS without credentials or a fragment",
+    "zh-TW": "授權網址必須是不含帳號與片段的 HTTPS",
+    "ja": "認可 URL は、アカウント情報やフラグメントを含まない HTTPS である必要があります",
+    "ko": "인증 주소는 계정 정보와 프래그먼트가 없는 HTTPS여야 합니다"
+  },
+  "本地回调地址无效": {
+    "en": "Invalid local callback address",
+    "zh-TW": "本機回呼位址無效",
+    "ja": "ローカルのコールバックアドレスが無効です",
+    "ko": "로컬 콜백 주소가 올바르지 않습니다"
+  },
+  "授权地址无效": {
+    "en": "Invalid authorization URL",
+    "zh-TW": "授權網址無效",
+    "ja": "認可 URL が無効です",
+    "ko": "인증 주소가 올바르지 않습니다"
+  },
+  "缺少输入：{inputs}": {
+    "en": "Missing inputs: {inputs}",
+    "zh-TW": "缺少輸入：{inputs}",
+    "ja": "入力が不足しています：{inputs}",
+    "ko": "입력값이 없습니다: {inputs}"
+  },
+  "未知错误": {
+    "en": "Unknown error",
+    "zh-TW": "未知錯誤",
+    "ja": "不明なエラー",
+    "ko": "알 수 없는 오류"
+  },
+  "{method} 失败：{message}": {
+    "en": "{method} failed: {message}",
+    "zh-TW": "{method} 失敗：{message}",
+    "ja": "{method} に失敗しました：{message}",
+    "ko": "{method} 실패: {message}"
+  },
+  "没有填写启动命令": {
+    "en": "No start command provided",
+    "zh-TW": "未填寫啟動命令",
+    "ja": "起動コマンドが入力されていません",
+    "ko": "시작 명령이 입력되지 않았습니다"
+  },
+  "找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。": {
+    "en": "Command {program} not found. Make sure it's installed and runs in a terminal, or use an absolute path in the MCP config.",
+    "zh-TW": "找不到命令 {program}。請確認已安裝且可在終端機中執行，或在 MCP 設定中填寫絕對路徑。",
+    "ja": "コマンド {program} が見つかりません。インストール済みでターミナルから実行できるか確認するか、MCP 設定に絶対パスを指定してください。",
+    "ko": "{program} 명령을 찾을 수 없습니다. 설치되어 있고 터미널에서 실행되는지 확인하거나, MCP 설정에 절대 경로를 입력하세요."
+  },
+  "无法启动 MCP 服务器：{error}": {
+    "en": "Couldn't start the MCP server: {error}",
+    "zh-TW": "無法啟動 MCP 伺服器：{error}",
+    "ja": "MCP サーバーを起動できません：{error}",
+    "ko": "MCP 서버를 시작할 수 없습니다: {error}"
+  },
+  "无法写入子进程": {
+    "en": "Couldn't write to the child process",
+    "zh-TW": "無法寫入子處理程序",
+    "ja": "子プロセスに書き込めません",
+    "ko": "하위 프로세스에 쓸 수 없습니다"
+  },
+  "无法读取子进程输出": {
+    "en": "Couldn't read the child process output",
+    "zh-TW": "無法讀取子處理程序輸出",
+    "ja": "子プロセスの出力を読み取れません",
+    "ko": "하위 프로세스 출력을 읽을 수 없습니다"
+  },
+  "写入失败：{error}": {
+    "en": "Write failed: {error}",
+    "zh-TW": "寫入失敗：{error}",
+    "ja": "書き込みに失敗しました：{error}",
+    "ko": "쓰기 실패: {error}"
+  },
+  "等待服务器响应超时": {
+    "en": "Timed out waiting for the server to respond",
+    "zh-TW": "等待伺服器回應逾時",
+    "ja": "サーバーの応答待ちがタイムアウトしました",
+    "ko": "서버 응답 대기 시간이 초과되었습니다"
+  },
+  "服务器进程已退出（退出码 {code}）": {
+    "en": "The server process exited (exit code {code})",
+    "zh-TW": "伺服器處理程序已結束（結束代碼 {code}）",
+    "ja": "サーバープロセスが終了しました（終了コード {code}）",
+    "ko": "서버 프로세스가 종료되었습니다(종료 코드 {code})"
+  },
+  "服务器进程已退出": {
+    "en": "The server process exited",
+    "zh-TW": "伺服器處理程序已結束",
+    "ja": "サーバープロセスが終了しました",
+    "ko": "서버 프로세스가 종료되었습니다"
+  },
+  "服务器要求授权（HTTP {status}）": {
+    "en": "The server requires authorization (HTTP {status})",
+    "zh-TW": "伺服器要求授權（HTTP {status}）",
+    "ja": "サーバーが認可を要求しています（HTTP {status}）",
+    "ko": "서버에서 인증을 요구합니다(HTTP {status})"
+  },
+  "服务器没有返回结果": {
+    "en": "The server returned no result",
+    "zh-TW": "伺服器沒有回傳結果",
+    "ja": "サーバーから結果が返されませんでした",
+    "ko": "서버가 결과를 반환하지 않았습니다"
+  },
+  "地址无效：{url}": {
+    "en": "Invalid URL: {url}",
+    "zh-TW": "網址無效：{url}",
+    "ja": "URL が無効です：{url}",
+    "ko": "주소가 올바르지 않습니다: {url}"
+  },
+  "无法读取 SSE 流": {
+    "en": "Couldn't read the SSE stream",
+    "zh-TW": "無法讀取 SSE 串流",
+    "ja": "SSE ストリームを読み取れません",
+    "ko": "SSE 스트림을 읽을 수 없습니다"
+  },
+  "服务器返回的端点无效：{data}": {
+    "en": "The server returned an invalid endpoint: {data}",
+    "zh-TW": "伺服器回傳的端點無效：{data}",
+    "ja": "サーバーが無効なエンドポイントを返しました：{data}",
+    "ko": "서버가 올바르지 않은 엔드포인트를 반환했습니다: {data}"
+  },
+  "SSE 连接失败（HTTP {status}）": {
+    "en": "SSE connection failed (HTTP {status})",
+    "zh-TW": "SSE 連線失敗（HTTP {status}）",
+    "ja": "SSE 接続に失敗しました（HTTP {status}）",
+    "ko": "SSE 연결 실패(HTTP {status})"
+  },
+  "等待 SSE 端点超时": {
+    "en": "Timed out waiting for the SSE endpoint",
+    "zh-TW": "等待 SSE 端點逾時",
+    "ja": "SSE エンドポイントの待機がタイムアウトしました",
+    "ko": "SSE 엔드포인트 대기 시간이 초과되었습니다"
+  },
+  "SSE 连接已断开（HTTP {status}）": {
+    "en": "SSE connection closed (HTTP {status})",
+    "zh-TW": "SSE 連線已中斷（HTTP {status}）",
+    "ja": "SSE 接続が切断されました（HTTP {status}）",
+    "ko": "SSE 연결이 끊어졌습니다(HTTP {status})"
+  },
+  "文件路径无效": {
+    "en": "Invalid file path",
+    "zh-TW": "檔案路徑無效",
+    "ja": "ファイルパスが無効です",
+    "ko": "파일 경로가 올바르지 않습니다"
+  },
+  "探测时发生内部错误": {
+    "en": "An internal error occurred while probing",
+    "zh-TW": "偵測時發生內部錯誤",
+    "ja": "検出中に内部エラーが発生しました",
+    "ko": "검사 중 내부 오류가 발생했습니다"
+  },
+  "找不到 Cursor 状态库（state.vscdb）": {
+    "en": "Cursor state database (state.vscdb) not found",
+    "zh-TW": "找不到 Cursor 狀態資料庫（state.vscdb）",
+    "ja": "Cursor の状態データベース（state.vscdb）が見つかりません",
+    "ko": "Cursor 상태 데이터베이스(state.vscdb)를 찾을 수 없습니다"
+  },
+  "打开 Cursor 状态库失败：{error}": {
+    "en": "Couldn't open the Cursor state database: {error}",
+    "zh-TW": "開啟 Cursor 狀態資料庫失敗：{error}",
+    "ja": "Cursor の状態データベースを開けませんでした：{error}",
+    "ko": "Cursor 상태 데이터베이스를 열지 못했습니다: {error}"
+  },
+  "Cursor 状态库正忙，请稍后再试：{error}": {
+    "en": "The Cursor state database is busy. Try again later: {error}",
+    "zh-TW": "Cursor 狀態資料庫忙碌中，請稍後再試：{error}",
+    "ja": "Cursor の状態データベースが使用中です。しばらくしてから再試行してください：{error}",
+    "ko": "Cursor 상태 데이터베이스가 사용 중입니다. 잠시 후 다시 시도하세요: {error}"
+  },
+  "写入 Cursor MCP 启停失败：{error}": {
+    "en": "Couldn't save the Cursor MCP enabled state: {error}",
+    "zh-TW": "寫入 Cursor MCP 啟用狀態失敗：{error}",
+    "ja": "Cursor MCP の有効/無効を保存できませんでした：{error}",
+    "ko": "Cursor MCP 활성화 상태를 저장하지 못했습니다: {error}"
+  }
+}

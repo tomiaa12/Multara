@@ -115,7 +115,10 @@ mod tests {
     fn loads_shared_catalog() {
         assert!(entry("cursor").is_some());
         assert!(entry("dsh").is_some());
-        assert_eq!(entry("dsh").and_then(|item| item.skills_home.as_deref()), Some(".dsh/skills"));
+        assert_eq!(
+            entry("dsh").and_then(|item| item.skills_home.as_deref()),
+            Some(".dsh/skills")
+        );
         assert!(skill_owners().contains(&"opencode"));
         assert!(skill_owners().contains(&"dsh"));
         assert!(skill_owners().contains(&"kimi"));

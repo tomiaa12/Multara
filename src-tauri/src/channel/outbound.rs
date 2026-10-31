@@ -132,7 +132,9 @@ fn deliver_pending(app: &AppHandle, session_id: &str) -> bool {
         let state = app.state::<AppState>();
         let marked = state.lock_db().is_ok_and(|db| match &result {
             Ok(()) => store::mark_delivery(&db, &delivery.run_id, "sent", None).is_ok(),
-            Err(error) => store::mark_delivery(&db, &delivery.run_id, "failed", Some(error)).is_ok(),
+            Err(error) => {
+                store::mark_delivery(&db, &delivery.run_id, "failed", Some(error)).is_ok()
+            }
         });
         all_marked &= marked;
     }
@@ -151,7 +153,7 @@ fn send_one(
         }
     }
     let Some(content) = content.filter(|value| !value.trim().is_empty()) else {
-        return Err("运行没有产生可回发的文本".to_string());
+        return Err(tr!("运行没有产生可回发的文本"));
     };
     let (body, questions) = split_questions(content);
     let text = format_outbound(&installation, delivery, &body);
@@ -170,12 +172,74 @@ fn send_one(
             Ok(sent) => sent,
             Err(first_error) => api
                 .send_message_raw(&delivery.chat_id, msg_type, &payload)
-                .map_err(|second| format!("{first_error}；降级发送也失败：{second}"))?,
+                .map_err(|second| {
+                    tr!(
+                        "{first_error}；降级发送也失败：{second}",
+                        first_error = first_error,
+                        second = second
+                    )
+                })?,
         };
         first = false;
         let state = app.state::<AppState>();
         if let Ok(db) = state.lock_db() {
-            store::record_outbound(&db, &installation.id, &sent, Some(&delivery.run_id), "reply");
+            store::record_outbound(
+                &db,
+                &installation.id,
+                &sent,
+                Some(&delivery.run_id),
+                "reply",
+            );
+        };
+    }
+    let plan = {
+        let state = app.state::<AppState>();
+        state.lock_db().ok().and_then(|db| {
+            db.query_row(
+                "SELECT input_json FROM run_events
+                 WHERE run_id=?1 AND event_type='plan' ORDER BY seq DESC LIMIT 1",
+                [&delivery.run_id],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        })
+    };
+    if let Some(plan) = plan {
+        let plan_id = plan
+            .get("planId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let revision = plan
+            .get("revision")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(1);
+        let locale = app
+            .state::<AppState>()
+            .lock_db()
+            .map(|db| crate::app_locale::from_db(&db))
+            .unwrap_or("zh-CN");
+        let payload = card::plan_card(
+            &delivery.run_id,
+            plan_id,
+            revision,
+            plan.get("title")
+                .and_then(serde_json::Value::as_str)
+                .filter(|title| !title.is_empty())
+                .unwrap_or_else(|| crate::plan_prompts::untitled(locale)),
+            plan.get("summary")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default(),
+            locale,
+        )
+        .to_string();
+        let sent = send_target(&api, delivery, "interactive", &payload, first)
+            .or_else(|_| api.send_message_raw(&delivery.chat_id, "interactive", &payload))
+            .map_err(|error| tr!("计划卡片发送失败：{error}", error = error))?;
+        let state = app.state::<AppState>();
+        if let Ok(db) = state.lock_db() {
+            store::record_outbound(&db, &installation.id, &sent, Some(&delivery.run_id), "plan");
         };
     }
     if !questions.is_empty() {
@@ -184,7 +248,7 @@ fn send_one(
             Ok(sent) => sent,
             Err(_) => api
                 .send_message_raw(&delivery.chat_id, "interactive", &payload)
-                .map_err(|error| format!("题目卡片发送失败：{error}"))?,
+                .map_err(|error| tr!("题目卡片发送失败：{error}", error = error))?,
         };
         let state = app.state::<AppState>();
         if let Ok(db) = state.lock_db() {
@@ -197,7 +261,7 @@ fn send_one(
             );
         };
     } else if body.trim().is_empty() {
-        return Err("运行没有产生可回发的文本".to_string());
+        return Err(tr!("运行没有产生可回发的文本"));
     }
     Ok(())
 }
@@ -267,7 +331,11 @@ pub fn format_outbound(
     let _ = installation;
     let mut text = content.trim().to_string();
     if delivery.chat_type == ChatType::Group {
-        if let Some(sender) = delivery.sender_id.as_deref().filter(|value| !value.is_empty()) {
+        if let Some(sender) = delivery
+            .sender_id
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
             // 仅第一段加 @；后续分段保持正文干净。
             text = format!("<at user_id=\"{sender}\"></at> {text}");
         }
@@ -287,7 +355,10 @@ fn split_message(text: &str, limit: usize) -> Vec<String> {
     for line in text.lines() {
         let mut rest = line;
         loop {
-            let cut = rest.char_indices().nth(piece_limit).map_or(rest.len(), |(index, _)| index);
+            let cut = rest
+                .char_indices()
+                .nth(piece_limit)
+                .map_or(rest.len(), |(index, _)| index);
             let (piece, tail) = rest.split_at(cut);
             let piece_len = piece.chars().count();
             if current_len + piece_len + 1 > limit && !current.is_empty() {
@@ -313,7 +384,7 @@ fn split_message(text: &str, limit: usize) -> Vec<String> {
     if total > 1 {
         for (index, chunk) in chunks.iter_mut().enumerate() {
             if index + 1 == total {
-                chunk.push_str("\n\n（内容较长，已拆分发送；完整内容见 Multara。）");
+                chunk.push_str(&tr!("\n\n（内容较长，已拆分发送；完整内容见 Multara。）"));
             }
         }
     }
@@ -350,8 +421,8 @@ pub fn on_permission_request(
                 .or_else(|| call.get("name"))
         })
         .and_then(serde_json::Value::as_str)
-        .unwrap_or("工具调用")
-        .to_string();
+        .map(str::to_string)
+        .unwrap_or_else(|| tr!("工具调用"));
     let options: Vec<(String, String)> = params
         .get("options")
         .and_then(serde_json::Value::as_array)
@@ -392,13 +463,7 @@ pub fn on_permission_request(
             };
             let state = app.state::<AppState>();
             if let Ok(db) = state.lock_db() {
-                store::record_outbound(
-                    &db,
-                    &installation.id,
-                    &sent,
-                    Some(&run_id),
-                    "permission",
-                );
+                store::record_outbound(&db, &installation.id, &sent, Some(&run_id), "permission");
             };
         }
     });
@@ -411,9 +476,9 @@ pub fn recover_pending(app: &AppHandle) {
         let Ok(db) = state.lock_db() else {
             return;
         };
-        let mut statement = match db.prepare(
-            "SELECT DISTINCT session_id FROM channel_run_deliveries WHERE state='pending'",
-        ) {
+        let mut statement = match db
+            .prepare("SELECT DISTINCT session_id FROM channel_run_deliveries WHERE state='pending'")
+        {
             Ok(statement) => statement,
             Err(_) => return,
         };
@@ -452,7 +517,10 @@ mod tests {
 
     #[test]
     fn splits_long_messages_on_line_boundaries() {
-        let text = (0..40).map(|index| format!("line {index}")).collect::<Vec<_>>().join("\n");
+        let text = (0..40)
+            .map(|index| format!("line {index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let chunks = split_message(&text, 60);
         assert!(chunks.len() > 1);
         assert!(chunks.last().unwrap().contains("内容较长"));
@@ -464,7 +532,10 @@ mod tests {
         let chunks = split_message(&text, 100);
         assert_eq!(chunks.len(), 3);
         assert!(chunks[..2].iter().all(|chunk| chunk.chars().count() <= 100));
-        let joined: String = chunks.iter().map(|chunk| chunk.split('\n').next().unwrap()).collect();
+        let joined: String = chunks
+            .iter()
+            .map(|chunk| chunk.split('\n').next().unwrap())
+            .collect();
         assert_eq!(joined, text);
     }
 }

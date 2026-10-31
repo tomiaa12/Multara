@@ -51,7 +51,7 @@ pub fn get(db: &Connection, automation_id: &str) -> Result<Automation, String> {
     load(db)?
         .into_iter()
         .find(|item| item.id == automation_id)
-        .ok_or_else(|| "自动化不存在".to_string())
+        .ok_or_else(|| tr!("自动化不存在"))
 }
 
 /// 自动化会话挂到任务看板。会话已存在时不会重复建。
@@ -69,8 +69,16 @@ pub fn ensure_task(
 
 /// 跑完后写入收件箱，并补上可能缺失的任务行（旧记录回填也走这里）。
 pub fn publish_result(db: &Connection, session_id: &str, status: &str) -> Result<Task, String> {
-    let inbox_status = if status == "completed" { "completed" } else { "failed" };
-    let task_status = if status == "completed" { "in_review" } else { "todo" };
+    let inbox_status = if status == "completed" {
+        "completed"
+    } else {
+        "failed"
+    };
+    let task_status = if status == "completed" {
+        "in_review"
+    } else {
+        "todo"
+    };
     let now = chrono::Utc::now().to_rfc3339();
     let task = match existing_task(db, session_id)? {
         Some(task) => task,
@@ -120,7 +128,9 @@ pub fn backfill_results(db: &Connection) -> Result<u32, String> {
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
@@ -167,7 +177,7 @@ fn attach_from_session(
             [session_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
-        .map_err(|_| "会话不存在".to_string())?;
+        .map_err(|_| tr!("会话不存在"))?;
     let (name, prompt): (Option<String>, Option<String>) = db
         .query_row(
             "SELECT a.name, a.prompt
@@ -275,7 +285,12 @@ mod tests {
             )
             .unwrap();
         assert!(preview.contains("长沙今天晴"));
-        assert_eq!(publish_result(&db, "automation-run:run1", "completed").unwrap().id, task.id);
+        assert_eq!(
+            publish_result(&db, "automation-run:run1", "completed")
+                .unwrap()
+                .id,
+            task.id
+        );
     }
 
     #[test]
@@ -284,7 +299,11 @@ mod tests {
         assert_eq!(backfill_results(&db).unwrap(), 1);
         assert_eq!(backfill_results(&db).unwrap(), 0);
         let count: i64 = db
-            .query_row("SELECT COUNT(*) FROM tasks WHERE session_id='automation-run:run1'", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE session_id='automation-run:run1'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(count, 1);
     }
@@ -313,7 +332,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first.id, second.id);
-        let count: i64 = db.query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0)).unwrap();
+        let count: i64 = db
+            .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, 1);
     }
 }

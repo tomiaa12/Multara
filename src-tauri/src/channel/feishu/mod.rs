@@ -26,20 +26,28 @@ const EVENT_QUEUE_CAPACITY: usize = 256;
 const MAX_CHUNKS: usize = 64;
 const CHUNK_TTL: Duration = Duration::from_secs(60);
 
-pub fn api_for(app: &AppHandle, installation_id: &str) -> Result<(Installation, FeishuApi), String> {
+pub fn api_for(
+    app: &AppHandle,
+    installation_id: &str,
+) -> Result<(Installation, FeishuApi), String> {
     let installation = {
         let state = app.state::<AppState>();
         let db = state.lock_db()?;
         store::get_installation(&db, installation_id)?
     }
-    .ok_or_else(|| "渠道连接不存在".to_string())?;
+    .ok_or_else(|| tr!("渠道连接不存在"))?;
     let secret = super::secret::load(app, installation_id)
-        .ok_or_else(|| "渠道凭据缺失，请重新填写 App Secret".to_string())?;
+        .ok_or_else(|| tr!("渠道凭据缺失，请重新填写 App Secret"))?;
     let api = FeishuApi::new(&installation, &secret);
     Ok((installation, api))
 }
 
-pub fn emit_status(app: &AppHandle, installation: &Installation, status: &str, error: Option<&str>) {
+pub fn emit_status(
+    app: &AppHandle,
+    installation: &Installation,
+    status: &str,
+    error: Option<&str>,
+) {
     let _ = app.emit(
         "channel-status",
         json!({
@@ -83,11 +91,13 @@ fn run_inner(
     connected: &mut bool,
 ) -> Result<(), String> {
     let (installation, api) = api_for(app, installation_id)?;
-    if installation.channel_type != super::TYPE_FEISHU && installation.channel_type != super::TYPE_LARK {
-        return Err("暂不支持这个渠道类型".to_string());
+    if installation.channel_type != super::TYPE_FEISHU
+        && installation.channel_type != super::TYPE_LARK
+    {
+        return Err(tr!("暂不支持这个渠道类型"));
     }
     if installation.target_id.is_empty() {
-        return Err("渠道未绑定智能体".to_string());
+        return Err(tr!("渠道未绑定智能体"));
     }
 
     let (url, ping_secs) = api.ws_endpoint()?;
@@ -192,7 +202,10 @@ fn run_inner(
 
 /// 入站事件交给固定数量的工作线程处理，队列满了就丢弃，陌生人刷消息不会起无上限的线程。
 /// 连接结束时发送端被丢弃，工作线程处理完队列里剩下的事件后退出。
-fn spawn_event_workers(app: &AppHandle, installation: &Installation) -> mpsc::SyncSender<super::InboundEvent> {
+fn spawn_event_workers(
+    app: &AppHandle,
+    installation: &Installation,
+) -> mpsc::SyncSender<super::InboundEvent> {
     let (sender, receiver) = mpsc::sync_channel::<super::InboundEvent>(EVENT_QUEUE_CAPACITY);
     let receiver = Arc::new(Mutex::new(receiver));
     for _ in 0..EVENT_WORKERS {
@@ -200,10 +213,16 @@ fn spawn_event_workers(app: &AppHandle, installation: &Installation) -> mpsc::Sy
         let installation = installation.clone();
         let receiver = receiver.clone();
         std::thread::spawn(move || loop {
-            let Ok(event) = receiver.lock().unwrap_or_else(PoisonError::into_inner).recv() else {
+            let Ok(event) = receiver
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .recv()
+            else {
                 break;
             };
-            let _ = panic::catch_unwind(AssertUnwindSafe(|| router::handle_event(&app, &installation, event)));
+            let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+                router::handle_event(&app, &installation, event)
+            }));
         });
     }
     sender

@@ -48,7 +48,10 @@ impl FeishuApi {
             "app_secret": self.app_secret,
         });
         let value = post_json(
-            &format!("{}/open-apis/auth/v3/tenant_access_token/internal", self.base),
+            &format!(
+                "{}/open-apis/auth/v3/tenant_access_token/internal",
+                self.base
+            ),
             None,
             &body,
             30,
@@ -59,15 +62,15 @@ impl FeishuApi {
             .unwrap_or_default()
             .to_string();
         if token.is_empty() {
-            return Err("飞书没有返回 tenant_access_token".to_string());
+            return Err(tr!("飞书没有返回 tenant_access_token"));
         }
-        let expire = value
-            .get("expire")
-            .and_then(Value::as_u64)
-            .unwrap_or(7200);
+        let expire = value.get("expire").and_then(Value::as_u64).unwrap_or(7200);
         let ttl = Duration::from_secs(expire.saturating_sub(300).max(60));
         if let Ok(mut cache) = tokens().lock() {
-            cache.insert(self.cache_key.clone(), (token.clone(), Instant::now() + ttl));
+            cache.insert(
+                self.cache_key.clone(),
+                (token.clone(), Instant::now() + ttl),
+            );
         }
         Ok(token)
     }
@@ -104,7 +107,10 @@ impl FeishuApi {
     ) -> Result<String, String> {
         let token = self.tenant_token()?;
         let value = post_json(
-            &format!("{}/open-apis/im/v1/messages?receive_id_type=chat_id", self.base),
+            &format!(
+                "{}/open-apis/im/v1/messages?receive_id_type=chat_id",
+                self.base
+            ),
             Some(&token),
             &json!({
                 "receive_id": chat_id,
@@ -125,10 +131,7 @@ impl FeishuApi {
     ) -> Result<String, String> {
         let token = self.tenant_token()?;
         let value = post_json(
-            &format!(
-                "{}/open-apis/im/v1/messages/{message_id}/reply",
-                self.base
-            ),
+            &format!("{}/open-apis/im/v1/messages/{message_id}/reply", self.base),
             Some(&token),
             &json!({
                 "msg_type": msg_type,
@@ -199,15 +202,10 @@ impl FeishuApi {
             "{}/open-apis/im/v1/messages/{message_id}/resources/{file_key}?type={resource_type}",
             self.base
         );
-        let mut response = http_client::request_stream(
-            "GET",
-            &url,
-            &bearer_headers(&token),
-            None,
-            120,
-        )?;
+        let mut response =
+            http_client::request_stream("GET", &url, &bearer_headers(&token), None, 120)?;
         if response.status != 200 {
-            return Err(format!("下载飞书资源失败：HTTP {}", response.status));
+            return Err(tr!("下载飞书资源失败：HTTP {status}", status = response.status));
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -216,7 +214,9 @@ impl FeishuApi {
         let mut buffer = [0u8; 32 * 1024];
         let mut total = 0usize;
         loop {
-            let read = response.read(&mut buffer).map_err(|error| error.to_string())?;
+            let read = response
+                .read(&mut buffer)
+                .map_err(|error| error.to_string())?;
             if read == 0 {
                 break;
             }
@@ -224,7 +224,7 @@ impl FeishuApi {
             if total > 25 * 1024 * 1024 {
                 let _ = file.flush();
                 let _ = fs::remove_file(dest);
-                return Err("飞书附件超过 25 MB".to_string());
+                return Err(tr!("飞书附件超过 25 MB"));
             }
             file.write_all(&buffer[..read])
                 .map_err(|error| error.to_string())?;
@@ -261,7 +261,7 @@ impl FeishuApi {
             .unwrap_or_default()
             .to_string();
         if url.is_empty() {
-            return Err("飞书没有返回长连接地址".to_string());
+            return Err(tr!("飞书没有返回长连接地址"));
         }
         let ping = data
             .get("ClientConfig")
@@ -279,12 +279,7 @@ fn bearer_headers(token: &str) -> Vec<(String, String)> {
     ]
 }
 
-fn post_json(
-    url: &str,
-    token: Option<&str>,
-    body: &Value,
-    timeout: u32,
-) -> Result<Value, String> {
+fn post_json(url: &str, token: Option<&str>, body: &Value, timeout: u32) -> Result<Value, String> {
     let headers = match token {
         Some(token) => bearer_headers(token),
         None => vec![("Content-Type".to_string(), "application/json".to_string())],
@@ -296,8 +291,9 @@ fn post_json(
         let message = value
             .get("msg")
             .and_then(Value::as_str)
-            .unwrap_or("飞书接口返回错误");
-        return Err(format!("飞书接口错误 {code}：{message}"));
+            .map(str::to_string)
+            .unwrap_or_else(|| tr!("飞书接口返回错误"));
+        return Err(tr!("飞书接口错误 {code}：{message}", code = code, message = message));
     }
     Ok(value)
 }
@@ -305,7 +301,7 @@ fn post_json(
 fn parse_response(body: &str) -> Result<Value, String> {
     serde_json::from_str(body).map_err(|error| {
         let clipped: String = body.chars().take(200).collect();
-        format!("无法解析飞书响应（{error}）：{clipped}")
+        tr!("无法解析飞书响应（{error}）：{body}", error = error, body = clipped)
     })
 }
 

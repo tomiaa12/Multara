@@ -6,8 +6,6 @@ use tauri::{AppHandle, Manager};
 
 use crate::database::AppState;
 
-const ROLLBACK_NOTE: &str = "回退说明：用户刚刚确认把工作区文件恢复到这条提问之前。那些改动是有意丢弃的。不要从 agent-transcripts、旧对话、git 历史或其他日志里把它们找回来再套用。只根据当前工作区文件和本轮任务重新实现。";
-
 pub const CONTINUE_ASSIGNMENT: &str =
     "上一次运行中断了。从停下的地方继续完成原来的任务，不要重头再做一遍。";
 
@@ -81,7 +79,11 @@ pub fn build_prompt(
     if resume_id.is_some() && resumes_via_cli(runtime_id) {
         return assignment.to_string();
     }
-    format!("{brief}\n\n--- 以下为本轮 ---\n{history}用户任务：{assignment}")
+    format!(
+        "{brief}\n\n{}\n{history}{}{assignment}",
+        tr!("--- 以下为本轮 ---"),
+        tr!("用户任务：")
+    )
 }
 
 pub fn load_id(
@@ -179,7 +181,11 @@ pub fn take_rollback_note(db: &Connection, session_id: &str) -> Result<Option<St
     }
     db.execute("DELETE FROM app_settings WHERE key=?1", [&key])
         .map_err(|error| error.to_string())?;
-    Ok(Some(ROLLBACK_NOTE.to_string()))
+    Ok(Some(tr!(
+        "回退说明：用户刚刚确认把工作区文件恢复到这条提问之前。那些改动是有意丢弃的。\
+         不要从 agent-transcripts、旧对话、git 历史或其他日志里把它们找回来再套用。\
+         只根据当前工作区文件和本轮任务重新实现。"
+    )))
 }
 
 pub fn cursor_project_slug(path: &str) -> String {
@@ -223,7 +229,10 @@ pub fn clear_runtime_transcripts(
         let transcripts = cursor_project_dir(home, path).join("agent-transcripts");
         for id in &ids {
             let dir = transcripts.join(id);
-            if dir.is_dir() && is_strictly_inside(&dir, &transcripts) && fs::remove_dir_all(&dir).is_ok() {
+            if dir.is_dir()
+                && is_strictly_inside(&dir, &transcripts)
+                && fs::remove_dir_all(&dir).is_ok()
+            {
                 removed += 1;
             }
         }
@@ -341,11 +350,11 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
             continue;
         }
         let label = if role == "assistant" {
-            "助手"
+            tr!("助手：")
         } else {
-            "用户"
+            tr!("用户：")
         };
-        let entry = format!("{label}：\n{text}");
+        let entry = format!("{label}\n{text}");
         let size = entry.chars().count();
         if used + size > HISTORY_CHAR_LIMIT && !selected.is_empty() {
             break;
@@ -365,13 +374,13 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
         .filter(|value| !value.trim().is_empty());
     if selected.is_empty() {
         return Ok(compact
-            .map(|summary| format!("对话摘要：\n{}\n\n", summary.trim()))
+            .map(|summary| format!("{}\n{}\n\n", tr!("对话摘要："), summary.trim()))
             .unwrap_or_default());
     }
     selected.reverse();
-    let history = format!("对话历史：\n{}\n\n", selected.join("\n\n"));
+    let history = format!("{}\n{}\n\n", tr!("对话历史："), selected.join("\n\n"));
     Ok(match compact {
-        Some(summary) => format!("对话摘要：\n{}\n\n{history}", summary.trim()),
+        Some(summary) => format!("{}\n{}\n\n{history}", tr!("对话摘要："), summary.trim()),
         None => history,
     })
 }
@@ -465,7 +474,11 @@ mod tests {
             db.execute(
                 "INSERT INTO messages (id, session_id, role, content, created_at)
                  VALUES (?1, 'sess', 'assistant', ?2, ?3)",
-                rusqlite::params![format!("a{index}"), format!("{index}{big}"), format!("t{index}")],
+                rusqlite::params![
+                    format!("a{index}"),
+                    format!("{index}{big}"),
+                    format!("t{index}")
+                ],
             )
             .unwrap();
         }

@@ -1,0 +1,1 @@
+Please set an Auth method in your ~/.gemini/settings.json or specify GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, or GOOGLE_GENAI_USE_GCA before running.

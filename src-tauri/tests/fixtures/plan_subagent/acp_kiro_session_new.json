@@ -1,0 +1,47 @@
+{
+ "summary": {
+  "runtime": "kiro",
+  "cmd": [
+   "kiro-cli",
+   "acp",
+   "--trust-all-tools"
+  ],
+  "initialize": "EOF",
+  "session_new": "TIMEOUT",
+  "stderr_head": "error: You are not logged in, please log in with kiro-cli login\n"
+ },
+ "traffic": [
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "protocolVersion": 1,
+     "clientCapabilities": {},
+     "clientInfo": {
+      "name": "multara",
+      "version": "0.1.0"
+     }
+    }
+   }
+  },
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "session/new",
+    "params": {
+     "cwd": "/private/var/folders/yx/rpctnck94dvfnh5k59fk0py80000gn/T/multara-acp-qaya481h",
+     "mcpServers": []
+    }
+   }
+  },
+  {
+   "dir": "xx",
+   "note": "broken pipe: process exited"
+  }
+ ]
+}

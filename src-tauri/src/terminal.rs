@@ -35,7 +35,8 @@ impl Drop for Session {
     }
 }
 
-static SESSIONS: LazyLock<Mutex<HashMap<String, Session>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static SESSIONS: LazyLock<Mutex<HashMap<String, Session>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Clone, Serialize)]
 struct TerminalChunk {
@@ -83,10 +84,15 @@ const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
 const OUTPUT_QUEUE_CHUNKS: usize = 64;
 const READ_CHUNK_BYTES: usize = 8192;
 
-pub fn open(app: AppHandle, app_data: Option<&Path>, cwd: &str, profile_id: Option<&str>) -> Result<OpenedTerminal, String> {
+pub fn open(
+    app: AppHandle,
+    app_data: Option<&Path>,
+    cwd: &str,
+    profile_id: Option<&str>,
+) -> Result<OpenedTerminal, String> {
     let directory = Path::new(cwd);
     if !directory.is_dir() {
-        return Err("终端目录不存在".to_string());
+        return Err(tr!("终端目录不存在"));
     }
     let all = profiles();
     let profile = profile_id
@@ -94,7 +100,7 @@ pub fn open(app: AppHandle, app_data: Option<&Path>, cwd: &str, profile_id: Opti
         .or_else(|| all.iter().find(|item| item.is_default))
         .or_else(|| all.first())
         .cloned()
-        .ok_or_else(|| "没有可用的 shell".to_string())?;
+        .ok_or_else(|| tr!("没有可用的 shell"))?;
 
     let system = native_pty_system();
     let pair = system
@@ -224,7 +230,7 @@ pub fn write(id: &str, data: &[u8]) -> Result<(), String> {
     let writer = sessions()
         .get(id)
         .map(|session| Arc::clone(&session.writer))
-        .ok_or_else(|| "终端已关闭".to_string())?;
+        .ok_or_else(|| tr!("终端已关闭"))?;
     let mut writer = writer.lock().unwrap_or_else(|error| error.into_inner());
     writer.write_all(data).map_err(|error| error.to_string())?;
     writer.flush().map_err(|error| error.to_string())
@@ -232,7 +238,7 @@ pub fn write(id: &str, data: &[u8]) -> Result<(), String> {
 
 pub fn resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
     let sessions = sessions();
-    let session = sessions.get(id).ok_or_else(|| "终端已关闭".to_string())?;
+    let session = sessions.get(id).ok_or_else(|| tr!("终端已关闭"))?;
     session
         .master
         .resize(PtySize {
@@ -257,7 +263,11 @@ pub fn close(id: &str) -> Result<(), String> {
 // shell 配置
 
 pub fn profiles() -> Vec<TerminalProfile> {
-    let mut list = if cfg!(windows) { windows_profiles() } else { unix_profiles() };
+    let mut list = if cfg!(windows) {
+        windows_profiles()
+    } else {
+        unix_profiles()
+    };
     if let Some(first) = list.first_mut() {
         first.is_default = true;
     }
@@ -287,21 +297,35 @@ fn windows_profiles() -> Vec<TerminalProfile> {
         ["ProgramFiles", "ProgramW6432"]
             .iter()
             .filter_map(|key| std::env::var_os(key))
-            .map(|base| PathBuf::from(base).join("PowerShell").join("7").join("pwsh.exe"))
+            .map(|base| {
+                PathBuf::from(base)
+                    .join("PowerShell")
+                    .join("7")
+                    .join("pwsh.exe")
+            })
             .find(|path| path.is_file())
     });
     if let Some(path) = pwsh {
         list.push(profile("pwsh", "PowerShell", path, &[], "pwsh"));
     }
-    let powershell = system32.join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+    let powershell = system32
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
     if powershell.is_file() {
-        list.push(profile("powershell", "Windows PowerShell", powershell, &[], "pwsh"));
+        list.push(profile(
+            "powershell",
+            "Windows PowerShell",
+            powershell,
+            &[],
+            "pwsh",
+        ));
     }
     let cmd = std::env::var_os("COMSPEC")
         .map(PathBuf::from)
         .filter(|path| path.is_file())
         .unwrap_or_else(|| system32.join("cmd.exe"));
-    list.push(profile("cmd", "命令提示符", cmd, &[], "cmd"));
+    list.push(profile("cmd", &tr!("命令提示符"), cmd, &[], "cmd"));
     if let Some(path) = git_bash() {
         list.push(profile("git-bash", "Git Bash", path, &[], "git-bash"));
     }
@@ -319,7 +343,13 @@ fn git_bash() -> Option<PathBuf> {
         .map(|base| PathBuf::from(base).join("Git").join("bin").join("bash.exe"))
         .collect();
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        candidates.push(PathBuf::from(local).join("Programs").join("Git").join("bin").join("bash.exe"));
+        candidates.push(
+            PathBuf::from(local)
+                .join("Programs")
+                .join("Git")
+                .join("bin")
+                .join("bash.exe"),
+        );
     }
     if let Ok(git) = which::which("git") {
         // <Git>\cmd\git.exe 或 <Git>\bin\git.exe
@@ -333,7 +363,11 @@ fn git_bash() -> Option<PathBuf> {
 fn unix_profiles() -> Vec<TerminalProfile> {
     let mut list = Vec::new();
     let mut seen = HashSet::new();
-    let login: &[&str] = if cfg!(target_os = "macos") { &["-l"] } else { &[] };
+    let login: &[&str] = if cfg!(target_os = "macos") {
+        &["-l"]
+    } else {
+        &[]
+    };
     let mut push = |path: PathBuf, list: &mut Vec<TerminalProfile>| {
         let Ok(canonical) = fs::canonicalize(&path) else {
             return;
@@ -341,12 +375,19 @@ fn unix_profiles() -> Vec<TerminalProfile> {
         if !seen.insert(canonical) {
             return;
         }
-        let name = path.file_name().map(|item| item.to_string_lossy().to_string()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|item| item.to_string_lossy().to_string())
+            .unwrap_or_default();
         let kind = match name.as_str() {
             "zsh" | "bash" | "fish" => name.as_str(),
             _ => "other",
         };
-        let args = if kind == "zsh" || kind == "bash" { login } else { &[] };
+        let args = if kind == "zsh" || kind == "bash" {
+            login
+        } else {
+            &[]
+        };
         let mut id = name.clone();
         let mut suffix = 2;
         while list.iter().any(|item| item.id == id) {
@@ -518,11 +559,20 @@ end
 /// cmd 没有执行前钩子，只能通过 PROMPT 报告目录和提示符边界，没有退出码。
 const CMD_PROMPT: &str = "$E]633;D$E\\$E]633;P;Cwd=$P$E\\$E]633;A$E\\$P$G$E]633;B$E\\";
 
-fn apply_shell_integration(command: &mut CommandBuilder, profile: &TerminalProfile, app_data: &Path) -> bool {
+fn apply_shell_integration(
+    command: &mut CommandBuilder,
+    profile: &TerminalProfile,
+    app_data: &Path,
+) -> bool {
     let dir = app_data.join(INTEGRATION_DIR);
     match profile.kind.as_str() {
         "pwsh" => {
-            command.args(["-NoLogo", "-NoExit", "-EncodedCommand", &encode_powershell(POWERSHELL_INTEGRATION)]);
+            command.args([
+                "-NoLogo",
+                "-NoExit",
+                "-EncodedCommand",
+                &encode_powershell(POWERSHELL_INTEGRATION),
+            ]);
             true
         }
         "bash" | "git-bash" => {
@@ -530,7 +580,12 @@ fn apply_shell_integration(command: &mut CommandBuilder, profile: &TerminalProfi
                 return false;
             };
             // `--login` 会让 bash 跳过 --init-file，登录配置改由脚本自己读取。
-            let args: Vec<String> = profile.args.iter().filter(|arg| *arg != "-l" && *arg != "--login").cloned().collect();
+            let args: Vec<String> = profile
+                .args
+                .iter()
+                .filter(|arg| *arg != "-l" && *arg != "--login")
+                .cloned()
+                .collect();
             let mut rebuilt = CommandBuilder::new(&profile.path);
             if profile.kind == "git-bash" || args.len() != profile.args.len() {
                 rebuilt.env("MULTARA_SHELL_LOGIN", "1");
@@ -601,21 +656,23 @@ pub struct ResolvedPath {
 
 /// 把终端输出里出现的路径按 cwd 解析成绝对路径，不存在的返回 None。
 pub fn resolve_paths(cwd: &str, candidates: &[String]) -> Vec<Option<ResolvedPath>> {
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    let home =
+        std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
     candidates
         .iter()
         .take(RESOLVE_LIMIT)
         .map(|raw| {
-            let path = if let Some(rest) = raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
-                home.as_ref()?.join(rest)
-            } else {
-                let candidate = PathBuf::from(raw);
-                if candidate.is_absolute() {
-                    candidate
+            let path =
+                if let Some(rest) = raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
+                    home.as_ref()?.join(rest)
                 } else {
-                    Path::new(cwd).join(candidate)
-                }
-            };
+                    let candidate = PathBuf::from(raw);
+                    if candidate.is_absolute() {
+                        candidate
+                    } else {
+                        Path::new(cwd).join(candidate)
+                    }
+                };
             let metadata = fs::metadata(&path).ok()?;
             let path = fs::canonicalize(&path).map(strip_verbatim).unwrap_or(path);
             Some(ResolvedPath {
@@ -658,7 +715,7 @@ pub fn clipboard_text() -> Result<String, String> {
             }
         }
     }
-    Err("无法读取剪贴板".to_string())
+    Err(tr!("无法读取剪贴板"))
 }
 
 // ---------------------------------------------------------------------------
@@ -721,7 +778,9 @@ fn command_name(file: &str, extensions: Option<&[String]>) -> Option<String> {
         return Some(file.to_string());
     };
     let lower = file.to_lowercase();
-    let extension = extensions.iter().find(|ext| lower.ends_with(ext.as_str()))?;
+    let extension = extensions
+        .iter()
+        .find(|ext| lower.ends_with(ext.as_str()))?;
     let stem = &file[..file.len() - extension.len()];
     (!stem.is_empty()).then(|| stem.to_string())
 }
@@ -778,7 +837,7 @@ pub fn publish_snapshot(
 /// id 会拼进文件名，只接受 UUID 字符集，防止 `../` 写到快照目录之外。
 fn validate_snapshot_id(id: &str) -> Result<(), String> {
     if id.is_empty() || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
-        return Err("无效的终端 id".to_string());
+        return Err(tr!("无效的终端 id"));
     }
     Ok(())
 }
@@ -791,7 +850,11 @@ pub fn remove_snapshot(app_data: &Path, id: &str) -> Result<(), String> {
     let mut index = read_index(&dir);
     index.sessions.retain(|item| item.id != id);
     if index.active_id == id {
-        index.active_id = index.sessions.first().map(|item| item.id.clone()).unwrap_or_default();
+        index.active_id = index
+            .sessions
+            .first()
+            .map(|item| item.id.clone())
+            .unwrap_or_default();
     }
     if index.sessions.is_empty() {
         let _ = fs::remove_file(dir.join("index.json"));
@@ -827,9 +890,13 @@ pub fn read_snapshot(
     let index = read_index(&dir);
     let meta = match id {
         Some(id) => index.sessions.iter().find(|item| item.id == id),
-        None => index.sessions.iter().find(|item| item.id == index.active_id).or_else(|| index.sessions.first()),
+        None => index
+            .sessions
+            .iter()
+            .find(|item| item.id == index.active_id)
+            .or_else(|| index.sessions.first()),
     }
-    .ok_or_else(|| "没有打开的终端".to_string())?;
+    .ok_or_else(|| tr!("没有打开的终端"))?;
     let text = fs::read_to_string(dir.join(format!("{}.txt", meta.id))).unwrap_or_default();
     let (start_line, end_line, slice) = slice_terminal_text(&text, meta.line_offset, start, end)?;
     Ok(serde_json::json!({
@@ -848,14 +915,24 @@ pub fn slice_terminal_text(
     start: Option<usize>,
     end: Option<usize>,
 ) -> Result<(usize, usize, String), String> {
-    let lines: Vec<&str> = if text.is_empty() { Vec::new() } else { text.split('\n').collect() };
+    let lines: Vec<&str> = if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split('\n').collect()
+    };
     let offset = line_offset.max(1);
     let last = offset + lines.len().saturating_sub(1);
     let start_line = start.unwrap_or(offset).max(offset);
-    let end_line = end.unwrap_or(last).min(if lines.is_empty() { offset } else { last });
+    let end_line = end
+        .unwrap_or(last)
+        .min(if lines.is_empty() { offset } else { last });
     if let Some(start) = start {
         if start > last {
-            return Err(format!("起始行 {start} 超出终端内容（最后一行 {last}）"));
+            return Err(tr!(
+                "起始行 {start} 超出终端内容（最后一行 {last}）",
+                start = start,
+                last = last
+            ));
         }
     }
     if end_line < start_line {
@@ -863,7 +940,11 @@ pub fn slice_terminal_text(
     }
     let from = start_line - offset;
     let to = (end_line - offset).saturating_add(1).min(lines.len());
-    Ok((start_line, end_line, lines.get(from..to).unwrap_or(&[]).join("\n")))
+    Ok((
+        start_line,
+        end_line,
+        lines.get(from..to).unwrap_or(&[]).join("\n"),
+    ))
 }
 
 fn snapshot_io() -> std::sync::MutexGuard<'static, ()> {
@@ -900,16 +981,24 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const PROBE_POLL: Duration = Duration::from_millis(20);
 
 static SERVICES_RUNNING: AtomicBool = AtomicBool::new(false);
-static LAST_SERVICES: LazyLock<Mutex<Vec<TerminalService>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+static LAST_SERVICES: LazyLock<Mutex<Vec<TerminalService>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// 前端定时轮询；上一轮还没跑完时直接返回上一轮的结果，不叠加子进程。
 pub fn services() -> Vec<TerminalService> {
-    let last = || LAST_SERVICES.lock().unwrap_or_else(|error| error.into_inner()).clone();
+    let last = || {
+        LAST_SERVICES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    };
     if SERVICES_RUNNING.swap(true, Ordering::AcqRel) {
         return last();
     }
     let found = collect_services();
-    *LAST_SERVICES.lock().unwrap_or_else(|error| error.into_inner()) = found.clone();
+    *LAST_SERVICES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = found.clone();
     SERVICES_RUNNING.store(false, Ordering::Release);
     found
 }
@@ -957,15 +1046,19 @@ pub fn free_port(port: u16) -> Result<usize, String> {
         .filter(|pid| *pid != 0 && *pid != std::process::id())
         .collect();
     if owners.is_empty() {
-        return Err(format!("终端里没有进程在监听端口 {port}"));
+        return Err(tr!("终端里没有进程在监听端口 {port}", port = port));
     }
     let killed = owners
         .iter()
         .filter(|pid| {
             let status = if cfg!(windows) {
-                crate::process::command("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).status()
+                crate::process::command("taskkill")
+                    .args(["/PID", &pid.to_string(), "/T", "/F"])
+                    .status()
             } else {
-                crate::process::command("kill").args(["-9", &pid.to_string()]).status()
+                crate::process::command("kill")
+                    .args(["-9", &pid.to_string()])
+                    .status()
             };
             status.is_ok_and(|status| status.success())
         })
@@ -1024,7 +1117,10 @@ fn alive_sessions() -> Vec<(String, u32)> {
 fn process_children() -> HashMap<u32, Vec<u32>> {
     use windows_sys::Win32::{
         Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
-        System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS},
+        System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        },
     };
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     // SAFETY: 标准的 Toolhelp 快照遍历，句柄在函数末尾关闭。
@@ -1038,7 +1134,10 @@ fn process_children() -> HashMap<u32, Vec<u32>> {
         if Process32FirstW(snapshot, &mut entry) != 0 {
             loop {
                 if entry.th32ProcessID != 0 {
-                    children.entry(entry.th32ParentProcessID).or_default().push(entry.th32ProcessID);
+                    children
+                        .entry(entry.th32ParentProcessID)
+                        .or_default()
+                        .push(entry.th32ProcessID);
                 }
                 if Process32NextW(snapshot, &mut entry) == 0 {
                     break;
@@ -1062,7 +1161,9 @@ fn listen_ports() -> HashMap<u32, Vec<u16>> {
     let mut ports = probe_output(crate::process::command("netstat").args(["-ano", "-p", "TCP"]))
         .map(|text| parse_netstat(&text))
         .unwrap_or_default();
-    if let Some(text) = probe_output(crate::process::command("netstat").args(["-ano", "-p", "TCPv6"])) {
+    if let Some(text) =
+        probe_output(crate::process::command("netstat").args(["-ano", "-p", "TCPv6"]))
+    {
         for (pid, list) in parse_netstat(&text) {
             let merged = ports.entry(pid).or_default();
             for port in list {
@@ -1078,9 +1179,15 @@ fn listen_ports() -> HashMap<u32, Vec<u16>> {
 
 #[cfg(not(windows))]
 fn listen_ports() -> HashMap<u32, Vec<u16>> {
-    probe_output(crate::process::command(lsof_program()).args(["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"]))
-        .map(|text| parse_listen_ports(&text))
-        .unwrap_or_default()
+    probe_output(crate::process::command(lsof_program()).args([
+        "-nP",
+        "-iTCP",
+        "-sTCP:LISTEN",
+        "-F",
+        "pn",
+    ]))
+    .map(|text| parse_listen_ports(&text))
+    .unwrap_or_default()
 }
 
 #[cfg(not(windows))]
@@ -1177,7 +1284,11 @@ fn parse_netstat(output: &str) -> HashMap<u32, Vec<u16>> {
         if !parts[2].ends_with(":0") {
             continue;
         }
-        let Some(port) = parts[1].rsplit(':').next().and_then(|value| value.parse::<u16>().ok()) else {
+        let Some(port) = parts[1]
+            .rsplit(':')
+            .next()
+            .and_then(|value| value.parse::<u16>().ok())
+        else {
             continue;
         };
         let Some(pid) = parts[parts.len() - 1].parse::<u32>().ok() else {
@@ -1201,8 +1312,8 @@ fn sessions() -> std::sync::MutexGuard<'static, HashMap<String, Session>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_name, descendant_pids, parse_listen_ports, parse_netstat, parse_process_tree, publish_snapshot,
-        remove_snapshot, slice_terminal_text,
+        command_name, descendant_pids, parse_listen_ports, parse_netstat, parse_process_tree,
+        publish_snapshot, remove_snapshot, slice_terminal_text,
     };
 
     #[test]
@@ -1245,7 +1356,10 @@ mod tests {
     #[test]
     fn listen_ports_keep_numeric_ports_for_each_pid() {
         let ports = parse_listen_ports("p42\nn127.0.0.1:8080\nn*:5173\np7\nn[::1]:3000\n");
-        assert_eq!(ports.get(&42).map(Vec::as_slice), Some([5173, 8080].as_slice()));
+        assert_eq!(
+            ports.get(&42).map(Vec::as_slice),
+            Some([5173, 8080].as_slice())
+        );
         assert_eq!(ports.get(&7).map(Vec::as_slice), Some([3000].as_slice()));
     }
 

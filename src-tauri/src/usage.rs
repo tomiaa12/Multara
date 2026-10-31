@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::collections::HashSet;
 
 /// 一次运行解析到的 token / 费用。费用优先用 CLI 上报的数字，没有再按模型单价估算。
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -14,10 +15,7 @@ pub struct TokenUsage {
 
 impl TokenUsage {
     pub fn total_tokens(&self) -> i64 {
-        self.input_tokens
-            + self.output_tokens
-            + self.cache_read_tokens
-            + self.cache_write_tokens
+        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
     }
 
     fn is_empty(&self) -> bool {
@@ -36,6 +34,7 @@ pub struct UsageAccumulator {
     runtime_id: String,
     result: Option<TokenUsage>,
     steps: TokenUsage,
+    step_message_ids: HashSet<String>,
 }
 
 impl UsageAccumulator {
@@ -45,6 +44,7 @@ impl UsageAccumulator {
             runtime_id: runtime_id.into(),
             result: None,
             steps: TokenUsage::default(),
+            step_message_ids: HashSet::new(),
         }
     }
 
@@ -59,6 +59,23 @@ impl UsageAccumulator {
         let Some(parsed) = parse_value(value) else {
             return false;
         };
+        if parsed.kind == UsageKind::Step {
+            if value
+                .get("parent_tool_use_id")
+                .is_some_and(|parent| !parent.is_null())
+            {
+                return false;
+            }
+            if let Some(message_id) = value
+                .pointer("/message/id")
+                .or_else(|| value.get("id"))
+                .and_then(Value::as_str)
+            {
+                if !self.step_message_ids.insert(message_id.to_string()) {
+                    return false;
+                }
+            }
+        }
         let mut usage = parsed.usage;
         if usage.model.is_empty() {
             usage.model = self.configured_model.clone();
@@ -123,6 +140,25 @@ fn usage_kind(value: &Value) -> UsageKind {
 }
 
 fn extract_usage(value: &Value) -> Option<TokenUsage> {
+    if let Some(models) = value.get("modelUsage").and_then(Value::as_object) {
+        let mut total = TokenUsage::default();
+        for (model, object) in models {
+            let Some(usage) = tokens_from_object(object) else {
+                continue;
+            };
+            if total.model.is_empty() {
+                total.model = model.clone();
+            }
+            total = add_usage(total, usage);
+        }
+        if !total.is_empty() {
+            if let Some(cost) = cost_from(value) {
+                total.cost_usd = cost;
+                total.has_authoritative_cost = true;
+            }
+            return Some(total);
+        }
+    }
     let objects = [
         value.get("usage"),
         value.pointer("/message/usage"),
@@ -156,12 +192,7 @@ fn extract_usage(value: &Value) -> Option<TokenUsage> {
 fn tokens_from_object(object: &Value) -> Option<TokenUsage> {
     let input = int_field(
         object,
-        &[
-            "input_tokens",
-            "inputTokens",
-            "input",
-            "prompt_tokens",
-        ],
+        &["input_tokens", "inputTokens", "input", "prompt_tokens"],
     );
     let output = int_field(
         object,
@@ -177,6 +208,7 @@ fn tokens_from_object(object: &Value) -> Option<TokenUsage> {
         &[
             "cache_read_tokens",
             "cacheReadTokens",
+            "cacheReadInputTokens",
             "cached_input_tokens",
             "cachedInputTokens",
             "cache_read_input_tokens",
@@ -290,7 +322,9 @@ fn json_i64(value: &Value) -> Option<i64> {
 }
 
 fn json_f64(value: &Value) -> Option<f64> {
-    value.as_f64().or_else(|| value.as_i64().map(|number| number as f64))
+    value
+        .as_f64()
+        .or_else(|| value.as_i64().map(|number| number as f64))
 }
 
 #[derive(Clone, Copy)]
@@ -436,7 +470,9 @@ mod tests {
 
     #[test]
     fn prefilter_skips_lines_without_usage_keywords() {
-        assert!(!mentions_usage(r#"{"type":"assistant","message":{"content":"hi"}}"#));
+        assert!(!mentions_usage(
+            r#"{"type":"assistant","message":{"content":"hi"}}"#
+        ));
         assert!(mentions_usage(r#"{"usage":{"input_tokens":1}}"#));
         assert!(mentions_usage(r#"{"inputTokens":1}"#));
         let mut acc = UsageAccumulator::new("gpt-5", "codex");
@@ -467,5 +503,29 @@ mod tests {
         assert_eq!(usage.cache_read_tokens, 300);
         assert_eq!(usage.output_tokens, 50);
         assert!(usage.cost_usd > 0.0);
+    }
+
+    #[test]
+    fn claude_model_usage_includes_nested_agents_without_double_counting() {
+        let fixture = include_str!("../tests/fixtures/plan_subagent/claude_nested_task.jsonl");
+        let mut acc = UsageAccumulator::new("claude-sonnet-5-5", "claude");
+        for line in fixture.lines() {
+            acc.ingest(line);
+        }
+        let usage = acc.finalize();
+        assert_eq!(usage.total_tokens(), 77_637);
+        assert_ne!(usage.total_tokens(), 32_971);
+    }
+
+    #[test]
+    fn fallback_deduplicates_root_message_ids_and_ignores_children() {
+        let mut acc = UsageAccumulator::new("claude-sonnet-5-5", "claude");
+        let root = r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":2}},"parent_tool_use_id":null}"#;
+        assert!(acc.ingest(root));
+        assert!(!acc.ingest(root));
+        assert!(!acc.ingest(
+            r#"{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":100,"output_tokens":20}},"parent_tool_use_id":"task"}"#,
+        ));
+        assert_eq!(acc.finalize().total_tokens(), 12);
     }
 }

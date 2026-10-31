@@ -91,7 +91,9 @@ fn generate_pairing_code() -> String {
 
 /// 钥匙串访问（`security` 子进程，可能弹授权框）不能在主线程，也不能持有数据库锁。
 #[tauri::command]
-pub async fn list_channel_installations(app: AppHandle) -> Result<Vec<ChannelInstallationView>, String> {
+pub async fn list_channel_installations(
+    app: AppHandle,
+) -> Result<Vec<ChannelInstallationView>, String> {
     crate::commands::off_main(app.clone(), move |state| {
         let installations = store::list_installations(&*state.lock_db()?)?;
         Ok(installations.iter().map(|item| view(&app, item)).collect())
@@ -104,7 +106,10 @@ pub async fn save_channel_installation(
     input: ChannelInstallationInput,
     app: AppHandle,
 ) -> Result<ChannelInstallationView, String> {
-    crate::commands::off_main(app.clone(), move |state| save_installation_blocking(input, &app, state)).await
+    crate::commands::off_main(app.clone(), move |state| {
+        save_installation_blocking(input, &app, state)
+    })
+    .await
 }
 
 fn save_installation_blocking(
@@ -115,19 +120,19 @@ fn save_installation_blocking(
     let name = input.name.trim();
     let app_id = input.app_id.trim();
     if name.is_empty() {
-        return Err("请填写名称".to_string());
+        return Err(tr!("请填写名称"));
     }
     if app_id.is_empty() {
-        return Err("请填写 App ID".to_string());
+        return Err(tr!("请填写 App ID"));
     }
     if !matches!(input.target_type.as_str(), "agent" | "squad") {
-        return Err("目标类型无效".to_string());
+        return Err(tr!("目标类型无效"));
     }
     if !matches!(
         input.channel_type.as_str(),
         super::TYPE_FEISHU | super::TYPE_LARK
     ) {
-        return Err("暂不支持这个渠道类型".to_string());
+        return Err(tr!("暂不支持这个渠道类型"));
     }
     let db = state.lock_db()?;
     if input.target_type == "agent" {
@@ -139,7 +144,7 @@ fn save_installation_blocking(
             )
             .map_err(|error| error.to_string())?;
         if !exists {
-            return Err("选择的智能体不存在".to_string());
+            return Err(tr!("选择的智能体不存在"));
         }
     } else {
         let exists: bool = db
@@ -150,10 +155,14 @@ fn save_installation_blocking(
             )
             .map_err(|error| error.to_string())?;
         if !exists {
-            return Err("选择的小队不存在".to_string());
+            return Err(tr!("选择的小队不存在"));
         }
     }
-    if let Some(project_id) = input.project_id.as_deref().filter(|value| !value.is_empty()) {
+    if let Some(project_id) = input
+        .project_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         let exists: bool = db
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
@@ -162,7 +171,7 @@ fn save_installation_blocking(
             )
             .map_err(|error| error.to_string())?;
         if !exists {
-            return Err("选择的需求不存在".to_string());
+            return Err(tr!("选择的需求不存在"));
         }
     }
 
@@ -205,7 +214,7 @@ fn save_installation_blocking(
         }
     }
     if secret::load(app, &id).is_none() {
-        return Err("请填写 App Secret".to_string());
+        return Err(tr!("请填写 App Secret"));
     }
 
     let installation = Installation {
@@ -225,7 +234,8 @@ fn save_installation_blocking(
     };
     store::save_installation(&*state.lock_db()?, &installation)?;
     supervisor::reload(app);
-    let saved = store::get_installation(&*state.lock_db()?, &id)?.ok_or_else(|| "保存失败".to_string())?;
+    let saved =
+        store::get_installation(&*state.lock_db()?, &id)?.ok_or_else(|| tr!("保存失败"))?;
     Ok(view(app, &saved))
 }
 
@@ -267,7 +277,10 @@ pub fn set_channel_enabled(
 }
 
 #[tauri::command]
-pub async fn test_channel_installation(id: String, app: AppHandle) -> Result<HashMap<String, String>, String> {
+pub async fn test_channel_installation(
+    id: String,
+    app: AppHandle,
+) -> Result<HashMap<String, String>, String> {
     crate::commands::off_main(app.clone(), move |state| {
         let (installation, api) = super::feishu::api_for(&app, &id)?;
         let (open_id, name) = api.bot_info()?;
@@ -316,7 +329,8 @@ pub fn rotate_channel_pairing_code(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
     let db = state.lock_db()?;
-    let installation = store::get_installation(&db, &id)?.ok_or_else(|| "渠道连接不存在".to_string())?;
+    let installation =
+        store::get_installation(&db, &id)?.ok_or_else(|| tr!("渠道连接不存在"))?;
     let mut config = installation.config.clone();
     config.pairing_code = generate_pairing_code();
     store::set_config(&db, &id, &config)?;

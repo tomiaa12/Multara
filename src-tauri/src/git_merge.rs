@@ -70,10 +70,14 @@ pub fn resolve_target(git: &str, root: &str, target: &str) -> Result<MergeTarget
     }
     validate_branch(git, root, target)?;
     // 本地分支优先用它配置的上游远程，没有时退回 origin / 第一个远程。
-    let configured = output(git, root, &["config", "--get", &format!("branch.{target}.remote")])
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty() && value != ".");
+    let configured = output(
+        git,
+        root,
+        &["config", "--get", &format!("branch.{target}.remote")],
+    )
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty() && value != ".");
     let remote = configured.or_else(|| {
         remotes
             .iter()
@@ -92,7 +96,12 @@ pub fn rev(git: &str, root: &str, reference: &str) -> Option<String> {
     output(
         git,
         root,
-        &["rev-parse", "--verify", "--quiet", &format!("{reference}^{{commit}}")],
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{reference}^{{commit}}"),
+        ],
     )
     .ok()
     .map(|value| value.trim().to_string())
@@ -100,7 +109,7 @@ pub fn rev(git: &str, root: &str, reference: &str) -> Option<String> {
 }
 
 pub fn head_commit(git: &str, root: &str) -> Result<String, String> {
-    rev(git, root, "HEAD").ok_or_else(|| "当前分支还没有任何提交".to_string())
+    rev(git, root, "HEAD").ok_or_else(|| tr!("当前分支还没有任何提交"))
 }
 
 /// 当前分支名；分离 HEAD 时用短提交号。
@@ -118,8 +127,12 @@ pub fn head_label(git: &str, root: &str) -> String {
 }
 
 pub fn is_ancestor(git: &str, root: &str, ancestor: &str, descendant: &str) -> bool {
-    exec(git, root, &["merge-base", "--is-ancestor", ancestor, descendant])
-        .is_ok_and(|result| result.status.success())
+    exec(
+        git,
+        root,
+        &["merge-base", "--is-ancestor", ancestor, descendant],
+    )
+    .is_ok_and(|result| result.status.success())
 }
 
 /// 只拉取目标分支，避免大仓库 fetch 全部远程分支太慢。
@@ -141,20 +154,30 @@ pub fn fetch_target(git: &str, root: &str, target: &MergeTarget) -> Result<(), S
 }
 
 /// 合并的基准提交：要推送时以远程为准，否则以本地分支为准（本地没有就用远程）。
-pub fn target_base(git: &str, root: &str, target: &MergeTarget, push: bool) -> Result<String, String> {
-    let remote = target.remote_ref().and_then(|reference| rev(git, root, &reference));
+pub fn target_base(
+    git: &str,
+    root: &str,
+    target: &MergeTarget,
+    push: bool,
+) -> Result<String, String> {
+    let remote = target
+        .remote_ref()
+        .and_then(|reference| rev(git, root, &reference));
     let local = rev(git, root, &target.local_ref());
     if push {
         if target.remote.is_none() {
-            return Err(format!("{} 没有关联远程仓库，无法推送，请取消「推送到远程」", target.branch));
+            return Err(tr!(
+                "{branch} 没有关联远程仓库，无法推送，请取消「推送到远程」",
+                branch = target.branch
+            ));
         }
         return remote
             .or(local)
-            .ok_or_else(|| format!("找不到目标分支 {}", target.display()));
+            .ok_or_else(|| tr!("找不到目标分支 {branch}", branch = target.display()));
     }
     local
         .or(remote)
-        .ok_or_else(|| format!("找不到目标分支 {}", target.branch))
+        .ok_or_else(|| tr!("找不到目标分支 {branch}", branch = target.branch))
 }
 
 pub fn plan_merge(
@@ -175,11 +198,24 @@ pub fn plan_merge(
     let mut records = stdout.split('\0').filter(|record| !record.is_empty());
     match result.status.code() {
         Some(0) => {
-            let tree = records.next().ok_or("Git 没有返回合并结果")?.trim().to_string();
+            let tree = records
+                .next()
+                .ok_or_else(|| tr!("Git 没有返回合并结果"))?
+                .trim()
+                .to_string();
             let commit = output(
                 git,
                 root,
-                &["commit-tree", &tree, "-p", base, "-p", source, "-m", message],
+                &[
+                    "commit-tree",
+                    &tree,
+                    "-p",
+                    base,
+                    "-p",
+                    source,
+                    "-m",
+                    message,
+                ],
             )?;
             Ok(MergePlan::Merged(commit.trim().to_string()))
         }
@@ -187,7 +223,7 @@ pub fn plan_merge(
         _ => {
             let stderr = &result.stderr;
             if stderr.contains("unknown option") || stderr.contains("usage:") {
-                return Err("当前 Git 版本过低（需要 2.38 及以上）才能在后台预合并".to_string());
+                return Err(tr!("当前 Git 版本过低（需要 2.38 及以上）才能在后台预合并"));
             }
             Err(stderr.trim().to_string())
         }
@@ -236,7 +272,7 @@ pub fn outlook(git: &str, root: &str, base: &str, source: &str) -> Result<MergeO
         _ => {
             let stderr = &result.stderr;
             if stderr.contains("unknown option") || stderr.contains("usage:") {
-                return Err("当前 Git 版本过低（需要 2.38 及以上）才能在后台预合并".to_string());
+                return Err(tr!("当前 Git 版本过低（需要 2.38 及以上）才能在后台预合并"));
             }
             Err(stderr.trim().to_string())
         }
@@ -244,11 +280,24 @@ pub fn outlook(git: &str, root: &str, base: &str, source: &str) -> Result<MergeO
 }
 
 /// `-z`：树 id 与冲突文件名各占一条记录，文件名不加引号，中文路径原样返回。
-fn merge_tree(git: &str, root: &str, base: &str, source: &str) -> Result<crate::git::Captured, String> {
+fn merge_tree(
+    git: &str,
+    root: &str,
+    base: &str,
+    source: &str,
+) -> Result<crate::git::Captured, String> {
     exec(
         git,
         root,
-        &["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", base, source],
+        &[
+            "merge-tree",
+            "--write-tree",
+            "--name-only",
+            "--no-messages",
+            "-z",
+            base,
+            source,
+        ],
     )
 }
 
@@ -273,19 +322,28 @@ pub fn apply(
 ) -> Result<ApplyOutcome, String> {
     let mut outcome = ApplyOutcome::default();
     if push {
-        let remote = target.remote.as_deref().ok_or("目标分支没有关联远程仓库")?;
+        let remote = target
+            .remote
+            .as_deref()
+            .ok_or_else(|| tr!("目标分支没有关联远程仓库"))?;
         let refspec = format!("{commit}:refs/heads/{}", target.branch);
-        run_with_timeout(git, root, &["push", remote, &refspec], Duration::from_secs(180), true)
-            .map_err(|detail| explain_push_failure(target, &detail))?;
+        run_with_timeout(
+            git,
+            root,
+            &["push", remote, &refspec],
+            Duration::from_secs(180),
+            true,
+        )
+        .map_err(|detail| explain_push_failure(target, &detail))?;
         outcome.pushed = true;
     }
     match rev(git, root, &target.local_ref()) {
         Some(local) if local == commit => outcome.local_updated = true,
         Some(local) => {
             if !is_ancestor(git, root, &local, commit) {
-                outcome.notes.push(format!(
-                    "本地 {} 有远程没有的提交，没有自动更新本地分支",
-                    target.branch
+                outcome.notes.push(tr!(
+                    "本地 {branch} 有远程没有的提交，没有自动更新本地分支",
+                    branch = target.branch
                 ));
             } else if let Some(path) = checked_out_path(git, root, &target.branch) {
                 // 目标分支正被某个目录检出时直接改引用会让那个目录看起来全是改动，只在它干净时快进。
@@ -295,13 +353,18 @@ pub fn apply(
                 if clean && run_strings(git, &path, &["merge", "--ff-only", commit]).is_ok() {
                     outcome.local_updated = true;
                 } else {
-                    outcome.notes.push(format!(
-                        "本地 {} 正在 {path} 检出且有未提交的改动，请在那里自行拉取",
-                        target.branch
+                    outcome.notes.push(tr!(
+                        "本地 {branch} 正在 {path} 检出且有未提交的改动，请在那里自行拉取",
+                        branch = target.branch,
+                        path = path
                     ));
                 }
             } else {
-                run_strings(git, root, &["update-ref", &target.local_ref(), commit, &local])?;
+                run_strings(
+                    git,
+                    root,
+                    &["update-ref", &target.local_ref(), commit, &local],
+                )?;
                 outcome.local_updated = true;
             }
         }
@@ -316,10 +379,20 @@ pub fn apply(
 
 fn explain_push_failure(target: &MergeTarget, detail: &str) -> String {
     let lower = detail.to_lowercase();
-    if lower.contains("non-fast-forward") || lower.contains("fetch first") || lower.contains("rejected") {
-        return format!("推送被拒绝：{} 有新提交，请先拉取最新再完成合并。", target.display());
+    if lower.contains("non-fast-forward")
+        || lower.contains("fetch first")
+        || lower.contains("rejected")
+    {
+        return tr!(
+            "推送被拒绝：{branch} 有新提交，请先拉取最新再完成合并。",
+            branch = target.display()
+        );
     }
-    format!("推送到 {} 失败：{}", target.display(), detail.trim())
+    tr!(
+        "推送到 {branch} 失败：{detail}",
+        branch = target.display(),
+        detail = detail.trim()
+    )
 }
 
 /// 找到检出了该分支的工作目录（主仓库或任意 Worktree）。
@@ -350,18 +423,26 @@ pub fn start_conflict_worktree(
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let dir_text = dir.to_string_lossy().to_string();
-    run_strings(git, repository, &["worktree", "add", "--detach", &dir_text, base])
-        .map_err(|detail| format!("创建合并工作区失败：{detail}"))?;
+    run_strings(
+        git,
+        repository,
+        &["worktree", "add", "--detach", &dir_text, base],
+    )
+    .map_err(|detail| tr!("创建合并工作区失败：{detail}", detail = detail))?;
     crate::hook_runtime::link_worktree_runtime(Path::new(repository), dir);
     // 有冲突时 git merge 以非零退出，这是预期的，之后用 MERGE_HEAD 判断是否真的进入了合并状态。
-    let merged = exec(git, dir, &["merge", "--no-ff", "--no-commit", "-m", message, source]);
+    let merged = exec(
+        git,
+        dir,
+        &["merge", "--no-ff", "--no-commit", "-m", message, source],
+    );
     let in_merge = rev(git, &dir_text, "MERGE_HEAD").is_some();
     if !in_merge {
         let detail = merged
             .map(|result| result.stderr.trim().to_string())
             .unwrap_or_else(|error| error);
         remove_worktree(git, repository, &dir_text);
-        return Err(format!("在合并工作区里执行合并失败：{detail}"));
+        return Err(tr!("在合并工作区里执行合并失败：{detail}", detail = detail));
     }
     Ok(conflict_files(git, &dir_text))
 }
@@ -416,17 +497,20 @@ pub fn incorporate_remote(
 ) -> Result<RemoteUpdate, String> {
     let unresolved = files_with_markers(dir, &conflict_files(git, dir));
     if !unresolved.is_empty() {
-        return Err(format!("这些文件还有冲突标记：{}", unresolved.join("、")));
+        return Err(tr!(
+            "这些文件还有冲突标记：{files}",
+            files = unresolved.join(&tr!("、"))
+        ));
     }
     if rev(git, dir, "MERGE_HEAD").is_some() {
         commit_resolution(git, dir, commit_message)?;
     }
     let remote = target
         .remote_ref()
-        .ok_or_else(|| format!("{} 没有关联远程仓库", target.branch))?;
+        .ok_or_else(|| tr!("{branch} 没有关联远程仓库", branch = target.branch))?;
     fetch_target(git, dir, target)?;
     if rev(git, dir, &remote).is_none() {
-        return Err(format!("找不到远程分支 {}", target.display()));
+        return Err(tr!("找不到远程分支 {branch}", branch = target.display()));
     }
     if is_ancestor(git, dir, &remote, "HEAD") {
         return Ok(RemoteUpdate::UpToDate);
@@ -446,10 +530,19 @@ pub fn commit_resolution(git: &str, dir: &str, message: &str) -> Result<String, 
     if rev(git, dir, "MERGE_HEAD").is_some() {
         let unresolved = files_with_markers(dir, &conflict_files(git, dir));
         if !unresolved.is_empty() {
-            return Err(format!("这些文件还有冲突标记：{}", unresolved.join("、")));
+            return Err(tr!(
+                "这些文件还有冲突标记：{files}",
+                files = unresolved.join(&tr!("、"))
+            ));
         }
         run_strings(git, dir, &["add", "-A"])?;
-        run_with_timeout(git, dir, &["commit", "-m", message], Duration::from_secs(120), false)?;
+        run_with_timeout(
+            git,
+            dir,
+            &["commit", "-m", message],
+            Duration::from_secs(120),
+            false,
+        )?;
     }
     head_commit(git, dir)
 }
@@ -464,13 +557,21 @@ pub fn remove_worktree(git: &str, repository: &str, dir: &str) {
 
 /// 「将合入 N 个提交 · M 个文件」：只用本地已有的引用，不联网。
 pub fn compare(git: &str, root: &str, target_commit: &str, head: &str) -> (u32, u32) {
-    let commits = output(git, root, &["rev-list", "--count", &format!("{target_commit}..{head}")])
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(0);
-    let files = output(git, root, &["diff", "--name-only", &format!("{target_commit}...{head}")])
-        .map(|value| value.lines().filter(|line| !line.trim().is_empty()).count() as u32)
-        .unwrap_or(0);
+    let commits = output(
+        git,
+        root,
+        &["rev-list", "--count", &format!("{target_commit}..{head}")],
+    )
+    .ok()
+    .and_then(|value| value.trim().parse().ok())
+    .unwrap_or(0);
+    let files = output(
+        git,
+        root,
+        &["diff", "--name-only", &format!("{target_commit}...{head}")],
+    )
+    .map(|value| value.lines().filter(|line| !line.trim().is_empty()).count() as u32)
+    .unwrap_or(0);
     (commits, files)
 }
 
@@ -481,7 +582,12 @@ mod tests {
     use super::*;
 
     fn git(dir: &Path, args: &[&str]) -> String {
-        let result = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+        let result = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
         assert!(
             result.status.success(),
             "git {args:?} failed: {}",
@@ -525,7 +631,9 @@ mod tests {
         let target = resolve_target("git", root, "sit").unwrap();
         let base = target_base("git", root, &target, false).unwrap();
         let head = head_commit("git", root).unwrap();
-        let MergePlan::Merged(commit) = plan_merge("git", root, &base, &head, "Merge feat into sit").unwrap() else {
+        let MergePlan::Merged(commit) =
+            plan_merge("git", root, &base, &head, "Merge feat into sit").unwrap()
+        else {
             panic!("expected a clean merge");
         };
         let outcome = apply("git", root, &target, &commit, false).unwrap();
@@ -554,7 +662,10 @@ mod tests {
             plan_merge("git", root, &base, &head, "m").unwrap(),
             MergePlan::FastForward(commit) if commit == head
         ));
-        assert_eq!(outlook("git", root, &base, &head).unwrap().kind, "fast_forward");
+        assert_eq!(
+            outlook("git", root, &base, &head).unwrap().kind,
+            "fast_forward"
+        );
     }
 
     #[test]
@@ -576,7 +687,13 @@ mod tests {
         commit_file(dir, "a.txt", "sit\n", "sit change");
         git(dir, &["switch", "-q", "feat"]);
         let conflict_base = rev("git", root, "refs/heads/sit").unwrap();
-        let conflict = outlook("git", root, &conflict_base, &head_commit("git", root).unwrap()).unwrap();
+        let conflict = outlook(
+            "git",
+            root,
+            &conflict_base,
+            &head_commit("git", root).unwrap(),
+        )
+        .unwrap();
         assert_eq!(conflict.kind, "conflict");
         assert_eq!(conflict.conflict_files, vec!["a.txt".to_string()]);
     }
@@ -602,7 +719,8 @@ mod tests {
         let merge_dir = temp.path().join(".merge");
         let merge_root = merge_dir.to_str().unwrap();
         let conflicts =
-            start_conflict_worktree("git", root, &merge_dir, &base, &head, "Merge feat into sit").unwrap();
+            start_conflict_worktree("git", root, &merge_dir, &base, &head, "Merge feat into sit")
+                .unwrap();
         assert_eq!(conflicts, vec!["a.txt".to_string()]);
         assert_eq!(git(dir, &["branch", "--show-current"]), "feat");
 
@@ -613,7 +731,12 @@ mod tests {
         remove_worktree("git", root, merge_root);
 
         assert_eq!(git(dir, &["show", "sit:a.txt"]), "feat + sit");
-        assert_eq!(git(dir, &["rev-list", "--parents", "-n", "1", "sit"]).split(' ').count(), 3);
+        assert_eq!(
+            git(dir, &["rev-list", "--parents", "-n", "1", "sit"])
+                .split(' ')
+                .count(),
+            3
+        );
         assert!(!merge_dir.exists());
         assert_eq!(git(dir, &["branch", "--show-current"]), "feat");
     }
@@ -625,7 +748,10 @@ mod tests {
         let root = dir.to_str().unwrap();
         commit_file(dir, "a.txt", "feat\n", "feat change");
         let other = temp.path().join(".sit");
-        git(dir, &["worktree", "add", "-q", other.to_str().unwrap(), "sit"]);
+        git(
+            dir,
+            &["worktree", "add", "-q", other.to_str().unwrap(), "sit"],
+        );
         fs::write(other.join("b.txt"), "dirty\n").unwrap();
         let before = git(dir, &["rev-parse", "sit"]);
 
@@ -651,11 +777,18 @@ mod tests {
         commit_file(dir, "a.txt", "feat\n", "feat change");
 
         let target = resolve_target("git", root, "origin/sit").unwrap();
-        assert_eq!(target, MergeTarget { branch: "sit".into(), remote: Some("origin".into()) });
+        assert_eq!(
+            target,
+            MergeTarget {
+                branch: "sit".into(),
+                remote: Some("origin".into())
+            }
+        );
         fetch_target("git", root, &target).unwrap();
         let base = target_base("git", root, &target, true).unwrap();
         let head = head_commit("git", root).unwrap();
-        let MergePlan::FastForward(commit) = plan_merge("git", root, &base, &head, "m").unwrap() else {
+        let MergePlan::FastForward(commit) = plan_merge("git", root, &base, &head, "m").unwrap()
+        else {
             panic!("expected a fast-forward");
         };
         let outcome = apply("git", root, &target, &commit, true).unwrap();
@@ -674,7 +807,9 @@ mod tests {
 
     #[test]
     fn conflict_markers_need_to_start_the_line() {
-        assert!(has_conflict_markers("a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> feat\n"));
+        assert!(has_conflict_markers(
+            "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> feat\n"
+        ));
         assert!(!has_conflict_markers("text with <<<<<<< inside\n=======\n"));
     }
 }

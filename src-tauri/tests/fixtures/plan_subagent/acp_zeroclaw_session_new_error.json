@@ -1,0 +1,124 @@
+{
+ "summary": {
+  "runtime": "zeroclaw",
+  "cmd": [
+   "zeroclaw",
+   "acp"
+  ],
+  "initialize": {
+   "_meta": {
+    "zeroclaw": {
+     "maxSessions": 10,
+     "sessionTimeoutSecs": 3600
+    }
+   },
+   "agentCapabilities": {
+    "loadSession": true,
+    "mcpCapabilities": {
+     "http": false,
+     "sse": false
+    },
+    "promptCapabilities": {
+     "audio": false,
+     "embeddedContext": true,
+     "image": false
+    },
+    "sessionCapabilities": {
+     "close": {},
+     "resume": {}
+    }
+   },
+   "agentInfo": {
+    "name": "zeroclaw-acp",
+    "title": "ZeroClaw ACP",
+    "version": "0.8.6"
+   },
+   "authMethods": [],
+   "protocolVersion": 1
+  },
+  "session_new": {
+   "code": -32602,
+   "message": "session/new requires `agentAlias` (alias of a configured [agents.<alias>] entry)"
+  },
+  "stderr_head": ""
+ },
+ "traffic": [
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "protocolVersion": 1,
+     "clientCapabilities": {},
+     "clientInfo": {
+      "name": "multara",
+      "version": "0.1.0"
+     }
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "result": {
+     "_meta": {
+      "zeroclaw": {
+       "maxSessions": 10,
+       "sessionTimeoutSecs": 3600
+      }
+     },
+     "agentCapabilities": {
+      "loadSession": true,
+      "mcpCapabilities": {
+       "http": false,
+       "sse": false
+      },
+      "promptCapabilities": {
+       "audio": false,
+       "embeddedContext": true,
+       "image": false
+      },
+      "sessionCapabilities": {
+       "close": {},
+       "resume": {}
+      }
+     },
+     "agentInfo": {
+      "name": "zeroclaw-acp",
+      "title": "ZeroClaw ACP",
+      "version": "0.8.6"
+     },
+     "authMethods": [],
+     "protocolVersion": 1
+    },
+    "id": 1
+   }
+  },
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "session/new",
+    "params": {
+     "cwd": "/private/var/folders/yx/rpctnck94dvfnh5k59fk0py80000gn/T/multara-acp-fdlpoq14",
+     "mcpServers": []
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "error": {
+     "code": -32602,
+     "message": "session/new requires `agentAlias` (alias of a configured [agents.<alias>] entry)"
+    },
+    "id": 2
+   }
+  }
+ ]
+}

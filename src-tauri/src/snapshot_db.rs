@@ -410,7 +410,7 @@ pub fn get_snapshot_content(
     if let Some(bytes) = exact {
         return decompress_utf8(&bytes);
     }
-    Err("没有该文件快照".to_string())
+    Err(tr!("没有该文件快照"))
 }
 
 pub fn message_ids_from(
@@ -464,7 +464,7 @@ pub fn get_turn_snapshots(
                 |row| row.get(0),
             )
         })
-        .map_err(|_| "没有该轮快照".to_string())?;
+        .map_err(|_| tr!("没有该轮快照"))?;
     let later_ids = serde_json::to_string(&message_ids_from(db, message_id, &session_id)?)
         .map_err(|error| error.to_string())?;
     // 一次查询拿到所有后续轮次；每个文件取最早的一版（ROW_NUMBER 只排元数据，再回表取 content）。
@@ -804,7 +804,9 @@ mod tests {
 
         let sessions: Vec<String> = {
             let mut statement = db
-                .prepare("SELECT session_id FROM turn_file_snapshots WHERE session_id IN ('s0','s1')")
+                .prepare(
+                    "SELECT session_id FROM turn_file_snapshots WHERE session_id IN ('s0','s1')",
+                )
                 .unwrap();
             statement
                 .query_map([], |row| row.get(0))
@@ -814,7 +816,9 @@ mod tests {
         };
         assert_eq!(sessions, vec!["s0".to_string()]);
         let total: i64 = db
-            .query_row("SELECT COUNT(*) FROM turn_file_snapshots", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM turn_file_snapshots", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(total, super::KEEP_SESSIONS as i64 + 1);
     }

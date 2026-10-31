@@ -52,20 +52,24 @@ fn disabled_global_ids_at(path: &Path) -> HashSet<String> {
     if conn.busy_timeout(STATE_DB_BUSY_TIMEOUT).is_err() {
         return HashSet::new();
     }
-    read_disabled_list(&conn).unwrap_or_default().into_iter().collect()
+    read_disabled_list(&conn)
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
 }
 
 fn set_user_server_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<(), String> {
     if !path.is_file() {
-        return Err("找不到 Cursor 状态库（state.vscdb）".to_string());
+        return Err(tr!("找不到 Cursor 状态库（state.vscdb）"));
     }
-    let mut conn = Connection::open(path).map_err(|error| format!("打开 Cursor 状态库失败：{error}"))?;
+    let mut conn = Connection::open(path)
+        .map_err(|error| tr!("打开 Cursor 状态库失败：{error}", error = error))?;
     conn.busy_timeout(STATE_DB_BUSY_TIMEOUT)
         .map_err(|error| error.to_string())?;
     // 读和写放在同一个写事务里，中间不会插进 Cursor 的写入
     let conn = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|error| format!("Cursor 状态库正忙，请稍后再试：{error}"))?;
+        .map_err(|error| tr!("Cursor 状态库正忙，请稍后再试：{error}", error = error))?;
     let id = user_server_id(name);
     let mut list = read_disabled_list(&conn).unwrap_or_default();
     let changed = if enabled {
@@ -87,8 +91,9 @@ fn set_user_server_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<
         "INSERT INTO ItemTable(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         params![DISABLED_KEY, value],
     )
-    .map_err(|error| format!("写入 Cursor MCP 启停失败：{error}"))?;
-    conn.commit().map_err(|error| format!("写入 Cursor MCP 启停失败：{error}"))
+    .map_err(|error| tr!("写入 Cursor MCP 启停失败：{error}", error = error))?;
+    conn.commit()
+        .map_err(|error| tr!("写入 Cursor MCP 启停失败：{error}", error = error))
 }
 
 fn read_disabled_list(conn: &Connection) -> Result<Vec<String>, String> {

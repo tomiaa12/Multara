@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","cwd":"/tmp/cursor-plan","session_id":"fixture-session","model":"Auto","permissionMode":"default"}
+{"type":"tool_call","subtype":"completed","call_id":"edit-1","tool_call":{"editToolCall":{"args":{"path":"/tmp/cursor-plan/hello.txt","streamContent":"base\nadded\n"},"result":{"error":{"error":"Cannot edit non markdown files in plan mode","modelVisibleError":"Cannot edit non markdown files in plan mode"}}}}
+{"type":"tool_call","subtype":"started","call_id":"plan-1","tool_call":{"createPlanToolCall":{"args":{"plan":"# 给 hello.txt 加一行\n\n1. 读取 hello.txt。\n2. 追加一行并复核。","overview":"给 hello.txt 追加一行。","name":"追加一行"}}}}
+{"type":"tool_call","subtype":"completed","call_id":"plan-1","tool_call":{"createPlanToolCall":{"args":{"plan":"# 给 hello.txt 加一行\n\n1. 读取 hello.txt。\n2. 追加一行并复核。","overview":"给 hello.txt 追加一行。","name":"追加一行"},"result":{"success":{},"planUri":""}}}
+{"type":"result","subtype":"success","is_error":false,"result":"已生成计划，工作区未修改。","session_id":"fixture-session"}

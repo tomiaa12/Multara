@@ -27,9 +27,9 @@ pub fn prepare(
 ) -> Result<PreparedWorkspace, String> {
     let requested = Path::new(source_path)
         .canonicalize()
-        .map_err(|error| format!("无法打开目录：{error}"))?;
+        .map_err(|error| tr!("无法打开目录：{error}", error = error))?;
     if !requested.is_dir() {
-        return Err("只能添加文件夹".to_string());
+        return Err(tr!("只能添加文件夹"));
     }
 
     let workspace_id = Uuid::new_v4().to_string();
@@ -135,9 +135,9 @@ const MAX_DISCOVER_DIRECTORIES: usize = 100;
 pub fn discover(source_path: &str, git_command: &str) -> Result<Vec<WorkspaceCandidate>, String> {
     let root = Path::new(source_path)
         .canonicalize()
-        .map_err(|error| format!("无法打开目录：{error}"))?;
+        .map_err(|error| tr!("无法打开目录：{error}", error = error))?;
     if !root.is_dir() {
-        return Err("只能扫描文件夹".to_string());
+        return Err(tr!("只能扫描文件夹"));
     }
     if find_git_root(&root, git_command).as_deref() == Some(root.as_path()) {
         return Ok(vec![candidate(&root, true, git_command)]);
@@ -147,12 +147,18 @@ pub fn discover(source_path: &str, git_command: &str) -> Result<Vec<WorkspaceCan
         .filter_map(Result::ok)
         .filter(|entry| {
             let visible = !entry.file_name().to_string_lossy().starts_with('.');
-            visible && entry.file_type().is_ok_and(|kind| kind.is_dir() && !kind.is_symlink())
+            visible
+                && entry
+                    .file_type()
+                    .is_ok_and(|kind| kind.is_dir() && !kind.is_symlink())
         })
         .map(|entry| entry.path())
         .collect::<Vec<_>>();
     // 每个子目录要起 2~3 个 git 进程，选到 ~/code 这类大目录时只看按名字排序的前若干个。
-    directories.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()));
+    directories.sort_by_key(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+    });
     directories.truncate(MAX_DISCOVER_DIRECTORIES);
     let mut candidates = directories
         .into_iter()
@@ -264,7 +270,7 @@ pub fn drop_worktree_checkout(workspace: &Workspace, git_command: &str) -> Resul
             &workspace.work_path,
         ])
         .output()
-        .map_err(|error| format!("无法删除 Worktree：{error}"))?;
+        .map_err(|error| tr!("无法删除 Worktree：{error}", error = error))?;
     if output.status.success() || !Path::new(&workspace.work_path).exists() {
         let _ = git_cmd(git_command)
             .args(["-C", &workspace.source_path, "worktree", "prune"])
@@ -272,9 +278,9 @@ pub fn drop_worktree_checkout(workspace: &Workspace, git_command: &str) -> Resul
         return Ok(());
     }
     let detail = String::from_utf8_lossy(&output.stderr);
-    Err(format!(
-        "Worktree 目录还在，没有从需求里移除：{}",
-        detail.trim()
+    Err(tr!(
+        "Worktree 目录还在，没有从需求里移除：{detail}",
+        detail = detail.trim()
     ))
 }
 
@@ -338,7 +344,7 @@ fn create_worktree(
     }
     let output = command
         .output()
-        .map_err(|error| format!("无法启动 Git：{error}"))?;
+        .map_err(|error| tr!("无法启动 Git：{error}", error = error))?;
     if output.status.success() {
         crate::hook_runtime::link_worktree_runtime(source, target);
         return Ok(());
@@ -356,9 +362,9 @@ fn create_worktree(
             .args(["branch", "-D", branch])
             .output();
     }
-    Err(format!(
-        "创建隔离工作区失败：{}",
-        String::from_utf8_lossy(&output.stderr).trim()
+    Err(tr!(
+        "创建隔离工作区失败：{detail}",
+        detail = String::from_utf8_lossy(&output.stderr).trim()
     ))
 }
 

@@ -34,7 +34,7 @@ pub fn permission_card(
 ) -> Value {
     let mut elements = vec![json!({
         "tag": "markdown",
-        "content": format!("**需要确认**\n工具：`{tool}`")
+        "content": tr!("**需要确认**\n工具：`{tool}`", tool = tool)
     })];
     let mut actions = Vec::new();
     for (option_id, label) in options {
@@ -69,7 +69,8 @@ pub fn questions_card(run_id: &str, questions: &[Value]) -> Value {
         let header = question
             .get("header")
             .and_then(Value::as_str)
-            .unwrap_or("确认");
+            .map(str::to_string)
+            .unwrap_or_else(|| tr!("确认"));
         let text = question
             .get("question")
             .and_then(Value::as_str)
@@ -110,5 +111,53 @@ pub fn questions_card(run_id: &str, questions: &[Value]) -> Value {
         "schema": "2.0",
         "config": { "update_multi": true },
         "body": { "elements": elements }
+    })
+}
+
+pub fn plan_card(
+    run_id: &str,
+    plan_id: &str,
+    revision: u32,
+    title: &str,
+    summary: &str,
+    locale: &str,
+) -> Value {
+    let text = crate::plan_prompts::plan_card_text(locale);
+    let button = |label: &str, action: &str, primary: bool| {
+        json!({
+            "tag": "button",
+            "text": { "tag": "plain_text", "content": label },
+            "type": if primary { "primary" } else { "default" },
+            "behaviors": [{
+                "type": "callback",
+                "value": {
+                    "kind": "plan",
+                    "runId": run_id,
+                    "planId": plan_id,
+                    "revision": revision,
+                    "action": action,
+                }
+            }]
+        })
+    };
+    json!({
+        "schema": "2.0",
+        "config": { "update_multi": true },
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": format!("**{}{title}**\n{summary}", text.heading)
+                },
+                {
+                    "tag": "action",
+                    "actions": [
+                        button(text.approve, "approve", true),
+                        button(text.refine, "refine", false),
+                        button(text.reject, "reject", false)
+                    ]
+                }
+            ]
+        }
     })
 }
