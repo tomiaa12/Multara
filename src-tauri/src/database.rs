@@ -70,7 +70,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -169,7 +169,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           target_type TEXT NOT NULL CHECK(target_type IN ('agent', 'squad')),
           target_id TEXT NOT NULL,
           created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
+          updated_at TEXT NOT NULL,
+          default_mode TEXT NOT NULL DEFAULT 'auto'
         );
         CREATE TABLE IF NOT EXISTS tasks (
           id TEXT PRIMARY KEY,
@@ -181,7 +182,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
             'backlog', 'todo', 'in_progress', 'in_review', 'done', 'blocked', 'cancelled'
           )),
           created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
+          updated_at TEXT NOT NULL,
+          default_mode TEXT NOT NULL DEFAULT 'auto'
         );
         CREATE TABLE IF NOT EXISTS messages (
           id TEXT PRIMARY KEY,
@@ -193,7 +195,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           elapsed_ms INTEGER,
           message_kind TEXT NOT NULL DEFAULT 'message',
           quick_actions_json TEXT NOT NULL DEFAULT '[]',
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          requested_mode TEXT
         );
         CREATE TABLE IF NOT EXISTS message_attachments (
           id TEXT PRIMARY KEY,
@@ -223,7 +226,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           session_id TEXT NOT NULL,
           seq INTEGER NOT NULL,
           event_type TEXT NOT NULL CHECK(event_type IN (
-            'text', 'thinking', 'tool_use', 'tool_result', 'error', 'plan', 'permission'
+            'text', 'thinking', 'tool_use', 'tool_result', 'error', 'permission',
+            'mode_change', 'plan', 'todo', 'agent_start', 'agent_end', 'plan_action'
           )),
           call_id TEXT,
           tool TEXT,
@@ -455,7 +459,12 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "cache_write_tokens",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
-    ensure_column(&columns, "agent_runs", "cost_usd", "REAL NOT NULL DEFAULT 0")?;
+    ensure_column(
+        &columns,
+        "agent_runs",
+        "cost_usd",
+        "REAL NOT NULL DEFAULT 0",
+    )?;
     ensure_column(&columns, "agent_runs", "usage_model", "TEXT")?;
     ensure_column(&columns, "messages", "run_id", "TEXT")?;
     ensure_column(&columns, "messages", "failure_reason", "TEXT")?;
@@ -496,7 +505,12 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "TEXT REFERENCES projects(id) ON DELETE CASCADE",
     )?;
     ensure_column(&columns, "agents", "system_key", "TEXT")?;
-    ensure_column(&columns, "squads", "instructions", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        &columns,
+        "squads",
+        "instructions",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
     ensure_column(
         &columns,
         "custom_runtimes",
@@ -509,8 +523,18 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "protocol",
         "TEXT NOT NULL DEFAULT ''",
     )?;
-    ensure_column(&columns, "custom_runtimes", "api_url", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(&columns, "custom_runtimes", "api_key", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        &columns,
+        "custom_runtimes",
+        "api_url",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &columns,
+        "custom_runtimes",
+        "api_key",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
     ensure_column(
         &columns,
         "custom_runtimes",
@@ -613,17 +637,45 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     ensure_column(&columns, "run_events", "parent_call_id", "TEXT")?;
     ensure_column(&columns, "run_events", "status", "TEXT")?;
     ensure_column(&columns, "messages", "feedback", "TEXT")?;
+    ensure_column(&columns, "messages", "requested_mode", "TEXT")?;
     ensure_column(&columns, "agent_runs", "model_override", "TEXT")?;
     ensure_column(&columns, "agent_runs", "mode", "TEXT")?;
     ensure_column(&columns, "agent_runs", "effort", "TEXT")?;
     ensure_column(&columns, "chat_sessions", "compact_summary", "TEXT")?;
     ensure_column(&columns, "chat_sessions", "compact_message_id", "TEXT")?;
+    ensure_column(
+        &columns,
+        "chat_sessions",
+        "default_mode",
+        "TEXT NOT NULL DEFAULT 'auto'",
+    )?;
     migrate_task_statuses(db)?;
     ensure_column(&columns, "tasks", "parent_task_id", "TEXT")?;
-    ensure_column(&columns, "tasks", "priority", "TEXT NOT NULL DEFAULT 'none'")?;
-    ensure_column(&columns, "tasks", "labels_json", "TEXT NOT NULL DEFAULT '[]'")?;
-    ensure_column(&columns, "tasks", "checklist_json", "TEXT NOT NULL DEFAULT '[]'")?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "priority",
+        "TEXT NOT NULL DEFAULT 'none'",
+    )?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "labels_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "checklist_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
     ensure_column(&columns, "tasks", "pr_url", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "default_mode",
+        "TEXT NOT NULL DEFAULT 'auto'",
+    )?;
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;
     migrate_run_event_types(db)?;
@@ -667,12 +719,14 @@ pub(crate) fn recover_interrupted_runs(db: &Connection) -> rusqlite::Result<()> 
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows
     };
-    let reason = "Multara 退出时这次运行还没写完，已中断。";
+    // 启动时在 app_locale::set_current 之前执行，tr! 还拿不到语言，直接读设置
+    let locale = crate::app_locale::from_db(db);
+    let reason = crate::i18n::tr_in(locale, "Multara 退出时这次运行还没写完，已中断。");
     for (run_id, session_id, agent_id) in interrupted {
         // 先把已流式落库的 run_events 收成 messages，否则重启后任务详情只剩标题/描述。
         let text = salvage_run_text(db, &run_id).unwrap_or_default();
         let content = if text.trim().is_empty() {
-            reason.to_string()
+            reason.clone()
         } else {
             text
         };
@@ -708,9 +762,9 @@ pub(crate) fn recover_interrupted_runs(db: &Connection) -> rusqlite::Result<()> 
     )?;
     db.execute(
         "UPDATE automation_runs SET status='failed', completed_at=?1,
-         reason_code='app_restarted', failure_reason='Multara 在任务完成前退出'
+         reason_code='app_restarted', failure_reason=?2
          WHERE status IN ('pending', 'running')",
-        [&now],
+        params![now, crate::i18n::tr_in(locale, "Multara 在任务完成前退出")],
     )?;
     Ok(())
 }
@@ -933,7 +987,7 @@ fn migrate_optional_automation_project(db: &Connection) -> rusqlite::Result<()> 
     )
 }
 
-/// 旧库的 CHECK 只允许五种事件，ACP / dsh 的 plan、permission 写不进去。
+/// SQLite 不能修改 CHECK；保留全部旧类型并一次放开规范事件。
 fn migrate_run_event_types(db: &Connection) -> rusqlite::Result<()> {
     let schema: Option<String> = db
         .query_row(
@@ -942,7 +996,10 @@ fn migrate_run_event_types(db: &Connection) -> rusqlite::Result<()> {
             |row| row.get(0),
         )
         .optional()?;
-    if schema.as_deref().map_or(true, |sql| sql.contains("'plan'")) {
+    if schema
+        .as_deref()
+        .map_or(true, |sql| sql.contains("'plan_action'"))
+    {
         return Ok(());
     }
     rebuild_in_transaction(
@@ -953,7 +1010,8 @@ fn migrate_run_event_types(db: &Connection) -> rusqlite::Result<()> {
            session_id TEXT NOT NULL,
            seq INTEGER NOT NULL,
            event_type TEXT NOT NULL CHECK(event_type IN (
-             'text', 'thinking', 'tool_use', 'tool_result', 'error', 'plan', 'permission'
+             'text', 'thinking', 'tool_use', 'tool_result', 'error', 'permission',
+             'mode_change', 'plan', 'todo', 'agent_start', 'agent_end', 'plan_action'
            )),
            call_id TEXT,
            tool TEXT,
@@ -1373,7 +1431,12 @@ mod tests {
         assert_eq!(api_format, "chat");
     }
 
-    fn insert_event(db: &Connection, id: &str, seq: i64, event_type: &str) -> rusqlite::Result<usize> {
+    fn insert_event(
+        db: &Connection,
+        id: &str,
+        seq: i64,
+        event_type: &str,
+    ) -> rusqlite::Result<usize> {
         db.execute(
             "INSERT INTO run_events (id, run_id, session_id, seq, event_type, created_at)
              VALUES (?1, 'run', 'session', ?2, ?3, 'now')",
@@ -1382,12 +1445,29 @@ mod tests {
     }
 
     #[test]
-    fn new_database_accepts_plan_and_permission_events() {
+    fn new_database_accepts_all_normalized_events() {
         let db = Connection::open_in_memory().unwrap();
         migrate(&db).unwrap();
-        insert_event(&db, "plan", 1, "plan").unwrap();
-        insert_event(&db, "permission", 2, "permission").unwrap();
-        assert!(insert_event(&db, "bogus", 3, "bogus").is_err());
+        for (seq, event_type) in [
+            "text",
+            "thinking",
+            "tool_use",
+            "tool_result",
+            "error",
+            "permission",
+            "mode_change",
+            "plan",
+            "todo",
+            "agent_start",
+            "agent_end",
+            "plan_action",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            insert_event(&db, event_type, seq as i64 + 1, event_type).unwrap();
+        }
+        assert!(insert_event(&db, "bogus", 99, "bogus").is_err());
     }
 
     #[test]
@@ -1415,9 +1495,24 @@ mod tests {
             })
             .unwrap();
         assert_eq!(content, "旧正文");
-        insert_event(&db, "plan", 2, "plan").unwrap();
-        insert_event(&db, "permission", 3, "permission").unwrap();
-        assert!(insert_event(&db, "dup", 1, "text").is_err(), "UNIQUE(run_id, seq) 丢了");
+        for (offset, event_type) in [
+            "permission",
+            "mode_change",
+            "plan",
+            "todo",
+            "agent_start",
+            "agent_end",
+            "plan_action",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            insert_event(&db, event_type, offset as i64 + 2, event_type).unwrap();
+        }
+        assert!(
+            insert_event(&db, "dup", 1, "text").is_err(),
+            "UNIQUE(run_id, seq) 丢了"
+        );
         let indexes: Vec<String> = db
             .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='run_events'")
             .unwrap()
@@ -1466,7 +1561,9 @@ mod tests {
         migrate(&db).unwrap();
 
         let triggers: i64 = db
-            .query_row("SELECT COUNT(*) FROM automation_triggers", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM automation_triggers", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(triggers, 1, "重建 automations 时级联删掉了触发器");
         let foreign_keys: i64 = db
@@ -1491,7 +1588,9 @@ mod tests {
         drop(db);
         let db = super::open_file_light(&path).unwrap();
         let miku: i64 = db
-            .query_row("SELECT COUNT(*) FROM agents WHERE id='miku'", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM agents WHERE id='miku'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(miku, 1);
     }

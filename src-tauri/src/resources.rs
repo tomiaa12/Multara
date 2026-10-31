@@ -76,16 +76,25 @@ fn workspace_owners(keys: &[(&str, &str)]) -> Vec<String> {
         return Vec::new();
     };
     list.iter()
-        .flat_map(|root| keys.iter().map(move |(key, _)| format!("ws/{}/{key}", root.id)))
+        .flat_map(|root| {
+            keys.iter()
+                .map(move |(key, _)| format!("ws/{}/{key}", root.id))
+        })
         .collect()
 }
 
 fn skill_owners() -> Vec<String> {
-    cli_catalog::skill_owners().into_iter().map(str::to_string).collect()
+    cli_catalog::skill_owners()
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 fn mcp_owners() -> Vec<String> {
-    let mut owners: Vec<String> = cli_catalog::mcp_owners().into_iter().map(str::to_string).collect();
+    let mut owners: Vec<String> = cli_catalog::mcp_owners()
+        .into_iter()
+        .map(str::to_string)
+        .collect();
     owners.extend(workspace_owners(WORKSPACE_MCP_KEYS));
     owners
 }
@@ -123,7 +132,11 @@ pub fn sources() -> Vec<ResourceSource> {
     let mut output = Vec::new();
     for (kind, owners) in [("skill", skill_owners()), ("mcp", mcp_owners())] {
         for owner in owners {
-            let path = if kind == "skill" { skill_root(&owner) } else { mcp_path(&owner) };
+            let path = if kind == "skill" {
+                skill_root(&owner)
+            } else {
+                mcp_path(&owner)
+            };
             let Some(path) = path else { continue };
             output.push(ResourceSource {
                 kind,
@@ -159,7 +172,9 @@ pub fn scan() -> Vec<GlobalResource> {
 }
 
 fn find_resource(resource_id: &str) -> Option<GlobalResource> {
-    scan().into_iter().find(|resource| resource.id == resource_id)
+    scan()
+        .into_iter()
+        .find(|resource| resource.id == resource_id)
 }
 
 fn scan_uncached() -> Vec<GlobalResource> {
@@ -178,18 +193,19 @@ fn scan_uncached() -> Vec<GlobalResource> {
 }
 
 pub fn transfer(resource_id: &str, target_owner: &str, copy: bool) -> Result<(), String> {
-    let known = cli_catalog::entry(target_owner).is_some() || workspace_part(target_owner).is_some();
+    let known =
+        cli_catalog::entry(target_owner).is_some() || workspace_part(target_owner).is_some();
     if !known {
-        return Err("目标工具不受支持".to_string());
+        return Err(tr!("目标工具不受支持"));
     }
-    let resource = find_resource(resource_id).ok_or_else(|| "资源不存在，请重新扫描".to_string())?;
+    let resource = find_resource(resource_id).ok_or_else(|| tr!("资源不存在，请重新扫描"))?;
     if resource.owner == target_owner {
-        return Err("来源与目标相同".to_string());
+        return Err(tr!("来源与目标相同"));
     }
     let result = match resource.kind {
         "skill" => transfer_skill(&resource, target_owner, copy),
         "mcp" => transfer_mcp(&resource, target_owner, copy),
-        _ => Err("未知资源类型".to_string()),
+        _ => Err(tr!("未知资源类型")),
     };
     invalidate_scan_cache();
     result
@@ -202,15 +218,18 @@ pub fn selected_mcp_config(resource_ids: &[String]) -> Result<Value, String> {
         if parts.next() != Some("mcp") {
             continue;
         }
-        let owner = parts.next().ok_or_else(|| "MCP 资源 ID 无效".to_string())?;
-        let name = parts.next().ok_or_else(|| "MCP 资源 ID 无效".to_string())?;
+        let owner = parts.next().ok_or_else(|| tr!("MCP 资源 ID 无效"))?;
+        let name = parts.next().ok_or_else(|| tr!("MCP 资源 ID 无效"))?;
         let entry = read_mcp_entry(owner, name)?;
         if !mcp_profile_for(owner, name, &entry).enabled {
             continue;
         }
         let prepared = crate::mcp_vars::prepare(name, &entry);
         if !prepared.missing.is_empty() {
-            eprintln!("[mcp] 跳过 {name}：缺少输入 {}", prepared.missing.join(", "));
+            eprintln!(
+                "[mcp] 跳过 {name}：缺少输入 {}",
+                prepared.missing.join(", ")
+            );
             continue;
         }
         servers.insert(name.to_string(), prepared.entry);
@@ -293,7 +312,8 @@ fn missing_inputs(name: &str, entry: &Value) -> Vec<String> {
 
 /// VS Code 的 mcp.json 用 `servers`，其余工具用 `mcpServers`。
 fn servers_key(owner: &str) -> &'static str {
-    let vscode = owner == "vscode" || workspace_part(owner).is_some_and(|(_, _, key)| key == "vscode");
+    let vscode =
+        owner == "vscode" || workspace_part(owner).is_some_and(|(_, _, key)| key == "vscode");
     if vscode {
         "servers"
     } else {
@@ -380,7 +400,9 @@ fn toml_table_to_entries(table: Option<&toml::Table>) -> Vec<(String, Value)> {
             table
                 .iter()
                 .filter_map(|(name, value)| {
-                    serde_json::to_value(value).ok().map(|entry| (name.clone(), entry))
+                    serde_json::to_value(value)
+                        .ok()
+                        .map(|entry| (name.clone(), entry))
                 })
                 .collect()
         })
@@ -390,15 +412,24 @@ fn toml_table_to_entries(table: Option<&toml::Table>) -> Vec<(String, Value)> {
 /// 从 JSON 根取出服务器表：`mcpServers` / `servers` / `mcp.servers` / 扁平 `mcp`。
 fn json_mcp_server_map(value: &Value, owner: &str) -> Vec<(String, Value)> {
     if let Some(servers) = value.get(servers_key(owner)).and_then(Value::as_object) {
-        return servers.iter().map(|(name, entry)| (name.clone(), entry.clone())).collect();
+        return servers
+            .iter()
+            .map(|(name, entry)| (name.clone(), entry.clone()))
+            .collect();
     }
     if let Some(mcp) = value.get("mcp") {
         if let Some(servers) = mcp.get("servers").and_then(Value::as_object) {
-            return servers.iter().map(|(name, entry)| (name.clone(), entry.clone())).collect();
+            return servers
+                .iter()
+                .map(|(name, entry)| (name.clone(), entry.clone()))
+                .collect();
         }
         // QwenPaw：`mcp.clients`
         if let Some(clients) = mcp.get("clients").and_then(Value::as_object) {
-            return clients.iter().map(|(name, entry)| (name.clone(), entry.clone())).collect();
+            return clients
+                .iter()
+                .map(|(name, entry)| (name.clone(), entry.clone()))
+                .collect();
         }
         if let Some(servers) = mcp.as_object() {
             return servers
@@ -414,10 +445,7 @@ fn json_mcp_server_map(value: &Value, owner: &str) -> Vec<(String, Value)> {
             let entries: Vec<_> = root
                 .iter()
                 .filter(|(key, entry)| {
-                    *key != "mcpServers"
-                        && *key != "servers"
-                        && *key != "mcp"
-                        && entry.is_object()
+                    *key != "mcpServers" && *key != "servers" && *key != "mcp" && entry.is_object()
                 })
                 .map(|(name, entry)| (name.clone(), entry.clone()))
                 .collect();
@@ -441,8 +469,8 @@ fn mcp_profile(entry: &Value) -> McpProfile {
         .unwrap_or("");
     let (command, command_args) = mcp_command_parts(entry);
     let type_name = entry.get("type").and_then(Value::as_str).unwrap_or("");
-    let http = !url.is_empty()
-        || matches!(type_name, "http" | "sse" | "streamable-http" | "remote");
+    let http =
+        !url.is_empty() || matches!(type_name, "http" | "sse" | "streamable-http" | "remote");
     let transport = if type_name == "sse" {
         "sse"
     } else if http {
@@ -471,7 +499,11 @@ fn mcp_profile(entry: &Value) -> McpProfile {
         format!("{command} {args}")
     };
     let needs_auth = entry.get("oauth").is_some() || entry.get("authentication").is_some();
-    let incomplete = if http { url.is_empty() } else { command.is_empty() };
+    let incomplete = if http {
+        url.is_empty()
+    } else {
+        command.is_empty()
+    };
     let config_status = if disabled {
         "disabled"
     } else if incomplete {
@@ -501,8 +533,8 @@ fn entry_incomplete(entry: &Value) -> bool {
         .unwrap_or("");
     let (command, _) = mcp_command_parts(entry);
     let type_name = entry.get("type").and_then(Value::as_str).unwrap_or("");
-    let http = !url.is_empty()
-        || matches!(type_name, "http" | "sse" | "streamable-http" | "remote");
+    let http =
+        !url.is_empty() || matches!(type_name, "http" | "sse" | "streamable-http" | "remote");
     if http {
         url.is_empty()
     } else {
@@ -536,9 +568,16 @@ fn mcp_profile_for(owner: &str, name: &str, entry: &Value) -> McpProfile {
 
 fn looks_secret(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    ["token", "secret", "password", "api_key", "apikey", "authorization"]
-        .iter()
-        .any(|part| lower.contains(part))
+    [
+        "token",
+        "secret",
+        "password",
+        "api_key",
+        "apikey",
+        "authorization",
+    ]
+    .iter()
+    .any(|part| lower.contains(part))
 }
 
 /// OpenCode / CodeArts 等把 command 写成字符串数组：`["npx", "-y", "pkg"]`。
@@ -563,7 +602,12 @@ fn mcp_command_parts(entry: &Value) -> (String, String) {
     )
 }
 
-pub fn create_skill(owner: &str, name: &str, description: &str, body: &str) -> Result<GlobalResource, String> {
+pub fn create_skill(
+    owner: &str,
+    name: &str,
+    description: &str,
+    body: &str,
+) -> Result<GlobalResource, String> {
     let root = ensure_skill_root(owner)?;
     let folder = unique_skill_folder(&root, &skill_folder_name(name)?)?;
     let target = root.join(&folder);
@@ -574,18 +618,26 @@ pub fn create_skill(owner: &str, name: &str, description: &str, body: &str) -> R
         "---\nname: {folder}\ndescription: {description}\n---\n\n# {name}\n\n{body}\n",
         name = name.trim(),
         description = if description.is_empty() {
-            "用户创建的 Skill。".to_string()
+            tr!("用户创建的 Skill。")
         } else {
             yaml_single_line(description)
         },
-        body = if body.is_empty() { "在这里写具体步骤。" } else { body },
+        body = if body.is_empty() {
+            tr!("在这里写具体步骤。")
+        } else {
+            body.to_string()
+        },
     );
     fs::write(target.join("SKILL.md"), markdown).map_err(|error| error.to_string())?;
     skill_resource_at(owner, &folder, &target)
 }
 
 /// 把完整的 SKILL.md 内容（例如 AI 生成的）写进新 Skill，名称取 frontmatter 的 name。
-pub fn create_skill_from_markdown(owner: &str, fallback_name: &str, markdown: &str) -> Result<GlobalResource, String> {
+pub fn create_skill_from_markdown(
+    owner: &str,
+    fallback_name: &str,
+    markdown: &str,
+) -> Result<GlobalResource, String> {
     let root = ensure_skill_root(owner)?;
     let name = parse_skill_name(markdown).unwrap_or_else(|| fallback_name.to_string());
     let folder = unique_skill_folder(&root, &skill_folder_name(&name)?)?;
@@ -594,15 +646,20 @@ pub fn create_skill_from_markdown(owner: &str, fallback_name: &str, markdown: &s
     let content = if markdown.trim_start().starts_with("---") {
         markdown.trim().to_string()
     } else {
-        format!("---\nname: {folder}\ndescription: {}\n---\n\n{}", yaml_single_line(fallback_name), markdown.trim())
+        format!(
+            "---\nname: {folder}\ndescription: {}\n---\n\n{}",
+            yaml_single_line(fallback_name),
+            markdown.trim()
+        )
     };
-    fs::write(target.join("SKILL.md"), format!("{content}\n")).map_err(|error| error.to_string())?;
+    fs::write(target.join("SKILL.md"), format!("{content}\n"))
+        .map_err(|error| error.to_string())?;
     skill_resource_at(owner, &folder, &target)
 }
 
 pub fn delete_skill(resource_id: &str) -> Result<(), String> {
     let path = skill_directory(resource_id)?;
-    trash::delete(&path).map_err(|error| format!("移到回收站失败：{error}"))?;
+    trash::delete(&path).map_err(|error| tr!("移到回收站失败：{error}", error = error))?;
     invalidate_scan_cache();
     let mut state = read_skill_state();
     state.remove(resource_id);
@@ -630,18 +687,29 @@ fn read_skill_state() -> HashSet<String> {
         .map(|home| home.join(".multara/skill-state.json"))
         .and_then(|path| read_json(&path))
         .and_then(|value| value.get("disabled").and_then(Value::as_array).cloned())
-        .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn write_skill_state(state: &HashSet<String>) -> Result<(), String> {
-    let path = home().ok_or_else(|| "无法定位用户目录".to_string())?.join(".multara/skill-state.json");
+    let path = home()
+        .ok_or_else(|| tr!("无法定位用户目录"))?
+        .join(".multara/skill-state.json");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let mut disabled: Vec<&String> = state.iter().collect();
     disabled.sort();
-    atomic_write(&path, &serde_json::to_string_pretty(&serde_json::json!({ "disabled": disabled })).map_err(|error| error.to_string())?)
+    atomic_write(
+        &path,
+        &serde_json::to_string_pretty(&serde_json::json!({ "disabled": disabled }))
+            .map_err(|error| error.to_string())?,
+    )
 }
 
 /// 找出可以转换成 Skill 的提示文件：工作区 `.github/prompts` 和 VS Code 用户目录的 prompts。
@@ -649,7 +717,10 @@ pub fn prompt_files() -> Vec<PromptFile> {
     let mut folders: Vec<(String, PathBuf)> = Vec::new();
     if let Ok(list) = WORKSPACES.lock() {
         for root in list.iter() {
-            folders.push((format!("{} · .github/prompts", root.name), root.path.join(".github/prompts")));
+            folders.push((
+                format!("{} · .github/prompts", root.name),
+                root.path.join(".github/prompts"),
+            ));
         }
     }
     if let Some(user) = vscode_user_dir() {
@@ -657,11 +728,15 @@ pub fn prompt_files() -> Vec<PromptFile> {
     }
     let mut output = Vec::new();
     for (label, folder) in folders {
-        let Ok(entries) = fs::read_dir(&folder) else { continue };
+        let Ok(entries) = fs::read_dir(&folder) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let file_name = entry.file_name().to_string_lossy().to_string();
-            let Some(name) = file_name.strip_suffix(".prompt.md") else { continue };
+            let Some(name) = file_name.strip_suffix(".prompt.md") else {
+                continue;
+            };
             let content = fs::read_to_string(&path).unwrap_or_default();
             output.push(PromptFile {
                 path: path.to_string_lossy().to_string(),
@@ -677,10 +752,17 @@ pub fn prompt_files() -> Vec<PromptFile> {
 
 pub fn convert_prompt_to_skill(prompt_path: &str, owner: &str) -> Result<GlobalResource, String> {
     let path = Path::new(prompt_path);
-    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-    let name = file_name.strip_suffix(".prompt.md").ok_or_else(|| "只能转换 .prompt.md 文件".to_string())?;
-    let content = fs::read_to_string(path).map_err(|error| format!("读取提示文件失败：{error}"))?;
-    let description = parse_skill_description(&content).unwrap_or_else(|| format!("由提示文件 {name} 转换"));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let name = file_name
+        .strip_suffix(".prompt.md")
+        .ok_or_else(|| tr!("只能转换 .prompt.md 文件"))?;
+    let content = fs::read_to_string(path)
+        .map_err(|error| tr!("读取提示文件失败：{error}", error = error))?;
+    let description = parse_skill_description(&content)
+        .unwrap_or_else(|| tr!("由提示文件 {name} 转换", name = name));
     let body = strip_frontmatter(&content);
     let root = ensure_skill_root(owner)?;
     let folder = unique_skill_folder(&root, &skill_folder_name(name)?)?;
@@ -718,7 +800,11 @@ pub fn import_skill_from_folder(path: &str, owner: &str) -> Result<GlobalResourc
     install_skill_dir(&source, owner)
 }
 
-pub fn import_skill_from_url(url: &str, git_command: &str, owner: &str) -> Result<GlobalResource, String> {
+pub fn import_skill_from_url(
+    url: &str,
+    git_command: &str,
+    owner: &str,
+) -> Result<GlobalResource, String> {
     let source = parse_skill_source_url(url)?;
     let tmp = tempfile::tempdir().map_err(|error| error.to_string())?;
     clone_github(
@@ -744,7 +830,7 @@ pub fn parse_skill_source_url(raw: &str) -> Result<SkillSourceUrl, String> {
     let (host, parts) = host_and_path(raw)?;
     if matches!(host.as_str(), "skills.sh" | "www.skills.sh") {
         if parts.len() < 3 {
-            return Err("Skills.sh 地址应为 skills.sh/{owner}/{repo}/{skill}".to_string());
+            return Err(tr!("Skills.sh 地址应为 skills.sh/{owner}/{repo}/{skill}"));
         }
         return Ok(SkillSourceUrl {
             owner: parts[0].clone(),
@@ -755,11 +841,15 @@ pub fn parse_skill_source_url(raw: &str) -> Result<SkillSourceUrl, String> {
     }
     if matches!(host.as_str(), "github.com" | "www.github.com") {
         if parts.len() < 2 {
-            return Err("GitHub 地址应为 github.com/{owner}/{repo}".to_string());
+            return Err(tr!("GitHub 地址应为 github.com/{owner}/{repo}"));
         }
         let owner = parts[0].clone();
         let repo = parts[1].trim_end_matches(".git").to_string();
-        if parts.get(2).is_some_and(|item| item == "tree" || item == "blob") && parts.len() >= 4 {
+        if parts
+            .get(2)
+            .is_some_and(|item| item == "tree" || item == "blob")
+            && parts.len() >= 4
+        {
             return Ok(SkillSourceUrl {
                 owner,
                 repo,
@@ -774,13 +864,13 @@ pub fn parse_skill_source_url(raw: &str) -> Result<SkillSourceUrl, String> {
             subdir: None,
         });
     }
-    Err("目前支持 GitHub 和 Skills.sh 地址，例如 github.com/anthropics/skills 或 skills.sh/owner/repo/skill".to_string())
+    Err(tr!("目前支持 GitHub 和 Skills.sh 地址，例如 github.com/anthropics/skills 或 skills.sh/owner/repo/skill"))
 }
 
 fn host_and_path(raw: &str) -> Result<(String, Vec<String>), String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err("Skill 地址无效".to_string());
+        return Err(tr!("Skill 地址无效"));
     }
     let rest = trimmed
         .strip_prefix("https://")
@@ -790,7 +880,7 @@ fn host_and_path(raw: &str) -> Result<(String, Vec<String>), String> {
     let mut parts = rest.split('/');
     let host = parts.next().unwrap_or("").trim().to_ascii_lowercase();
     if host.is_empty() {
-        return Err("Skill 地址无效".to_string());
+        return Err(tr!("Skill 地址无效"));
     }
     Ok((
         host,
@@ -806,7 +896,10 @@ fn skill_subdir_from_segments(parts: &[String]) -> Option<String> {
         return None;
     }
     let mut segments = parts.to_vec();
-    if segments.last().is_some_and(|item| item.eq_ignore_ascii_case("SKILL.md")) {
+    if segments
+        .last()
+        .is_some_and(|item| item.eq_ignore_ascii_case("SKILL.md"))
+    {
         segments.pop();
     }
     if segments.is_empty() {
@@ -819,7 +912,11 @@ fn skill_subdir_from_segments(parts: &[String]) -> Option<String> {
 fn percent_decode(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
-    let hex = |index: usize| bytes.get(index).and_then(|byte| (*byte as char).to_digit(16));
+    let hex = |index: usize| {
+        bytes
+            .get(index)
+            .and_then(|byte| (*byte as char).to_digit(16))
+    };
     let mut index = 0;
     while index < bytes.len() {
         if let (b'%', Some(high), Some(low)) = (bytes[index], hex(index + 1), hex(index + 2)) {
@@ -848,13 +945,13 @@ fn skill_folder_name(name: &str) -> Result<String, String> {
     }
     let out = out.trim_matches('-').to_string();
     if out.is_empty() {
-        return Err("Skill 名称无效".to_string());
+        return Err(tr!("Skill 名称无效"));
     }
     Ok(out)
 }
 
 fn ensure_skill_root(owner: &str) -> Result<PathBuf, String> {
-    let root = skill_root(owner).ok_or_else(|| "这个来源不支持 Skills".to_string())?;
+    let root = skill_root(owner).ok_or_else(|| tr!("这个来源不支持 Skills"))?;
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     Ok(root)
 }
@@ -869,12 +966,12 @@ fn unique_skill_folder(root: &Path, name: &str) -> Result<String, String> {
             return Ok(candidate);
         }
     }
-    Err("同名 Skill 太多，请换一个名称".to_string())
+    Err(tr!("同名 Skill 太多，请换一个名称"))
 }
 
 fn install_skill_dir(source: &Path, owner: &str) -> Result<GlobalResource, String> {
     if !source.join("SKILL.md").is_file() {
-        return Err("所选目录没有 SKILL.md".to_string());
+        return Err(tr!("所选目录没有 SKILL.md"));
     }
     let fallback = source
         .file_name()
@@ -882,7 +979,10 @@ fn install_skill_dir(source: &Path, owner: &str) -> Result<GlobalResource, Strin
         .unwrap_or("skill");
     let parsed = parse_skill_name(&fs::read_to_string(source.join("SKILL.md")).unwrap_or_default());
     let root = ensure_skill_root(owner)?;
-    let folder = unique_skill_folder(&root, &skill_folder_name(parsed.as_deref().unwrap_or(fallback))?)?;
+    let folder = unique_skill_folder(
+        &root,
+        &skill_folder_name(parsed.as_deref().unwrap_or(fallback))?,
+    )?;
     let target = root.join(&folder);
     copy_directory(source, &target)?;
     skill_resource_at(owner, &folder, &target)
@@ -943,13 +1043,13 @@ fn parse_skill_name(content: &str) -> Option<String> {
 /// 解析出的目录（含符号链接）也必须仍在 `root` 之内。
 fn find_skill_dir(root: &Path, preferred: Option<&str>) -> Result<PathBuf, String> {
     if preferred.is_some_and(|name| !is_plain_relative(name)) {
-        return Err("Skill 路径无效".to_string());
+        return Err(tr!("Skill 路径无效"));
     }
     let found = locate_skill_dir(root, preferred)?;
     let canonical_root = root.canonicalize().map_err(|error| error.to_string())?;
     let canonical = found.canonicalize().map_err(|error| error.to_string())?;
     if !canonical.starts_with(&canonical_root) {
-        return Err("Skill 路径超出了所选目录".to_string());
+        return Err(tr!("Skill 路径超出了所选目录"));
     }
     Ok(found)
 }
@@ -992,12 +1092,18 @@ fn locate_skill_dir(root: &Path, preferred: Option<&str>) -> Result<PathBuf, Str
         return Ok(found.remove(0));
     }
     if found.is_empty() {
-        return Err("没有找到 SKILL.md，确认这是一个 Agent Skill 目录".to_string());
+        return Err(tr!("没有找到 SKILL.md，确认这是一个 Agent Skill 目录"));
     }
-    Err("仓库里有多个 Skill，请把地址指到具体目录，例如 .../tree/main/pdf".to_string())
+    Err(tr!(
+        "仓库里有多个 Skill，请把地址指到具体目录，例如 .../tree/main/pdf"
+    ))
 }
 
-fn collect_skill_dirs(directory: &Path, depth: usize, output: &mut Vec<PathBuf>) -> Result<(), String> {
+fn collect_skill_dirs(
+    directory: &Path,
+    depth: usize,
+    output: &mut Vec<PathBuf>,
+) -> Result<(), String> {
     if depth > 3 {
         return Ok(());
     }
@@ -1019,27 +1125,35 @@ fn collect_skill_dirs(directory: &Path, depth: usize, output: &mut Vec<PathBuf>)
     Ok(())
 }
 
-fn clone_github(git: &str, owner: &str, repo: &str, branch: &str, dest: &Path) -> Result<(), String> {
+fn clone_github(
+    git: &str,
+    owner: &str,
+    repo: &str,
+    branch: &str,
+    dest: &Path,
+) -> Result<(), String> {
     let url = format!("https://github.com/{owner}/{repo}.git");
     let dest_text = dest.to_string_lossy().to_string();
-    let mut args = vec!["clone", "--depth", "1", "--branch", branch, "--", &url, &dest_text];
+    let mut args = vec![
+        "clone", "--depth", "1", "--branch", branch, "--", &url, &dest_text,
+    ];
     let first = crate::git::run_with_timeout(git, &dest_text, &args, GIT_CLONE_TIMEOUT, true);
     if first.is_ok() || (branch != "main" && branch != "master") {
-        return first.map_err(|error| format!("克隆 GitHub 仓库失败：{error}"));
+        return first.map_err(|error| tr!("克隆 GitHub 仓库失败：{error}", error = error));
     }
     let _ = fs::remove_dir_all(dest);
     fs::create_dir_all(dest).map_err(|error| error.to_string())?;
     args.retain(|item| *item != "--branch" && *item != branch);
     crate::git::run_with_timeout(git, &dest_text, &args, GIT_CLONE_TIMEOUT, true)
-        .map_err(|error| format!("克隆 GitHub 仓库失败：{error}"))
+        .map_err(|error| tr!("克隆 GitHub 仓库失败：{error}", error = error))
 }
 
 fn transfer_skill(resource: &GlobalResource, target_owner: &str, copy: bool) -> Result<(), String> {
-    let root = skill_root(target_owner).ok_or_else(|| "目标不支持 Skills".to_string())?;
+    let root = skill_root(target_owner).ok_or_else(|| tr!("目标不支持 Skills"))?;
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let target = root.join(&resource.name);
     if target.exists() {
-        return Err(format!("目标已存在同名 Skill：{}", resource.name));
+        return Err(tr!("目标已存在同名 Skill：{name}", name = resource.name));
     }
     let temporary = root.join(format!(".{}.multara-import", resource.name));
     if temporary.exists() {
@@ -1048,12 +1162,12 @@ fn transfer_skill(resource: &GlobalResource, target_owner: &str, copy: bool) -> 
     copy_directory(Path::new(&resource.source_path), &temporary)?;
     fs::rename(&temporary, &target).map_err(|error| {
         let _ = fs::remove_dir_all(&temporary);
-        format!("写入目标 Skill 失败：{error}")
+        tr!("写入目标 Skill 失败：{error}", error = error)
     })?;
     if !copy {
         fs::remove_dir_all(&resource.source_path).map_err(|error| {
             let _ = fs::remove_dir_all(&target);
-            format!("移动后清理来源失败，已回滚目标：{error}")
+            tr!("移动后清理来源失败，已回滚目标：{error}", error = error)
         })?;
     }
     Ok(())
@@ -1065,19 +1179,19 @@ fn transfer_mcp(resource: &GlobalResource, target_owner: &str, copy: bool) -> Re
     if !copy {
         if let Err(error) = remove_mcp_entry(&resource.owner, &resource.name) {
             let _ = remove_mcp_entry(target_owner, &resource.name);
-            return Err(format!("清理来源 MCP 失败，已回滚目标：{error}"));
+            return Err(tr!("清理来源 MCP 失败，已回滚目标：{error}", error = error));
         }
     }
     Ok(())
 }
 
 fn read_mcp_entry(owner: &str, name: &str) -> Result<Value, String> {
-    let path = mcp_path(owner).ok_or_else(|| "来源不支持 MCP".to_string())?;
+    let path = mcp_path(owner).ok_or_else(|| tr!("来源不支持 MCP"))?;
     mcp_entries(owner, &path)
         .into_iter()
         .find(|(existing, _)| existing == name)
         .map(|(_, entry)| entry)
-        .ok_or_else(|| "MCP 配置不存在".to_string())
+        .ok_or_else(|| tr!("MCP 配置不存在"))
 }
 
 /// 读出某个来源的全部服务器交给 `change` 修改，再原子写回。Codex 是 TOML，其余是 JSON。
@@ -1087,7 +1201,7 @@ fn update_servers(
     owner: &str,
     mut change: impl FnMut(&mut Map<String, Value>) -> Result<(), String>,
 ) -> Result<(), String> {
-    let path = mcp_path(owner).ok_or_else(|| "这个来源不支持 MCP".to_string())?;
+    let path = mcp_path(owner).ok_or_else(|| tr!("这个来源不支持 MCP"))?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -1098,7 +1212,7 @@ fn update_servers(
             return atomic_write(&path, &output);
         }
     }
-    Err("配置文件正在被其它程序修改，请稍后再试".to_string())
+    Err(tr!("配置文件正在被其它程序修改，请稍后再试"))
 }
 
 fn read_existing(path: &Path) -> Result<Option<String>, String> {
@@ -1117,7 +1231,10 @@ fn apply_servers_change(
 ) -> Result<String, String> {
     if uses_toml_mcp_servers_map(owner) {
         let mut table = original
-            .map(|text| text.parse::<toml::Table>().map_err(|error| format!("配置不是有效的 TOML：{error}")))
+            .map(|text| {
+                text.parse::<toml::Table>()
+                    .map_err(|error| tr!("配置不是有效的 TOML：{error}", error = error))
+            })
             .transpose()?
             .unwrap_or_default();
         let mut servers = match table.get("mcp_servers") {
@@ -1125,7 +1242,7 @@ fn apply_servers_change(
                 .map_err(|error| error.to_string())?
                 .as_object()
                 .cloned()
-                .ok_or_else(|| "mcp_servers 配置格式无效".to_string())?,
+                .ok_or_else(|| tr!("mcp_servers 配置格式无效"))?,
             None => Map::new(),
         };
         change(&mut servers)?;
@@ -1137,7 +1254,12 @@ fn apply_servers_change(
     }
     let mut root = original
         .map(|text| {
-            parse_json_text(text).ok_or_else(|| format!("{} 不是有效的 JSON，请先修好再保存", path.display()))
+            parse_json_text(text).ok_or_else(|| {
+                tr!(
+                    "{path} 不是有效的 JSON，请先修好再保存",
+                    path = path.display()
+                )
+            })
         })
         .transpose()?
         .unwrap_or_else(|| Value::Object(Map::new()));
@@ -1146,22 +1268,25 @@ fn apply_servers_change(
     serde_json::to_string_pretty(&root).map_err(|error| error.to_string())
 }
 
-fn json_mcp_servers_mut<'a>(root: &'a mut Value, owner: &str) -> Result<&'a mut Map<String, Value>, String> {
+fn json_mcp_servers_mut<'a>(
+    root: &'a mut Value,
+    owner: &str,
+) -> Result<&'a mut Map<String, Value>, String> {
     let object = root
         .as_object_mut()
-        .ok_or_else(|| "MCP 配置不是 JSON 对象".to_string())?;
+        .ok_or_else(|| tr!("MCP 配置不是 JSON 对象"))?;
     if !uses_nested_mcp_object(owner) {
         return object
             .entry(servers_key(owner).to_string())
             .or_insert_with(|| Value::Object(Map::new()))
             .as_object_mut()
-            .ok_or_else(|| "MCP 服务器列表格式无效".to_string());
+            .ok_or_else(|| tr!("MCP 服务器列表格式无效"));
     }
     let mcp = object
         .entry("mcp".to_string())
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "mcp 配置格式无效".to_string())?;
+        .ok_or_else(|| tr!("mcp 配置格式无效"))?;
     // 已有扁平 mcp 服务时继续写扁平；否则写 mcp.servers
     let has_flat = mcp
         .iter()
@@ -1172,13 +1297,13 @@ fn json_mcp_servers_mut<'a>(root: &'a mut Value, owner: &str) -> Result<&'a mut 
     mcp.entry("servers".to_string())
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "mcp.servers 配置格式无效".to_string())
+        .ok_or_else(|| tr!("mcp.servers 配置格式无效"))
 }
 
 fn write_mcp_entry(owner: &str, name: &str, entry: Value) -> Result<(), String> {
     update_servers(owner, |servers| {
         if servers.contains_key(name) {
-            return Err(format!("目标已存在同名 MCP：{name}"));
+            return Err(tr!("目标已存在同名 MCP：{name}", name = name));
         }
         servers.insert(name.to_string(), entry.clone());
         Ok(())
@@ -1190,25 +1315,40 @@ fn remove_mcp_entry(owner: &str, name: &str) -> Result<(), String> {
         servers
             .remove(name)
             .map(|_| ())
-            .ok_or_else(|| "MCP 不存在".to_string())
+            .ok_or_else(|| tr!("MCP 不存在"))
     })
 }
 
 /// 表单管理的字段。保存时只替换这些，其余字段（timeout、自定义扩展等）原样保留。
 const MANAGED_MCP_KEYS: &[&str] = &[
-    "type", "url", "serverUrl", "headers", "http_headers", "oauth", "command", "args", "env", "cwd",
-    "envFile", "disabled", "enabled",
+    "type",
+    "url",
+    "serverUrl",
+    "headers",
+    "http_headers",
+    "oauth",
+    "command",
+    "args",
+    "env",
+    "cwd",
+    "envFile",
+    "disabled",
+    "enabled",
 ];
 
 fn input_owner(owner: Option<&str>) -> String {
-    owner.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("multara").to_string()
+    owner
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("multara")
+        .to_string()
 }
 
 pub fn save_mcp(input: McpInput) -> Result<(), String> {
     let owner = input_owner(input.owner.as_deref());
     let name = input.name.trim().to_string();
     if name.is_empty() || name.contains(':') {
-        return Err("MCP 名称不能为空，也不能包含冒号".to_string());
+        return Err(tr!("MCP 名称不能为空，也不能包含冒号"));
     }
     let previous = input
         .previous_name
@@ -1220,10 +1360,14 @@ pub fn save_mcp(input: McpInput) -> Result<(), String> {
     let codex = owner == "codex";
     update_servers(&owner, |servers| {
         if servers.contains_key(&name) && previous.as_deref() != Some(name.as_str()) {
-            return Err(format!("已存在同名 MCP：{name}"));
+            return Err(tr!("已存在同名 MCP：{name}", name = name));
         }
-        let base = previous.as_deref().and_then(|previous| servers.remove(previous));
-        let mut entry = base.and_then(|value| value.as_object().cloned()).unwrap_or_default();
+        let base = previous
+            .as_deref()
+            .and_then(|previous| servers.remove(previous));
+        let mut entry = base
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
         for key in MANAGED_MCP_KEYS {
             entry.remove(*key);
         }
@@ -1240,13 +1384,13 @@ pub fn save_mcp(input: McpInput) -> Result<(), String> {
         Ok(())
     })?;
     if owner == "cursor" {
-        let home_dir = home().ok_or_else(|| "找不到用户目录".to_string())?;
+        let home_dir = home().ok_or_else(|| tr!("找不到用户目录"))?;
         crate::cursor_mcp_state::set_user_server_enabled(&home_dir, &name, input.enabled)?;
     }
     if let Some(previous) = previous.filter(|previous| *previous != name) {
         crate::mcp_vars::rename_inputs(&previous, &name)?;
         if owner == "cursor" {
-            let home_dir = home().ok_or_else(|| "找不到用户目录".to_string())?;
+            let home_dir = home().ok_or_else(|| tr!("找不到用户目录"))?;
             let _ = crate::cursor_mcp_state::set_user_server_enabled(&home_dir, &previous, true);
         }
     }
@@ -1258,10 +1402,10 @@ pub fn save_mcp(input: McpInput) -> Result<(), String> {
 pub fn install_mcp(owner: &str, name: &str, entry: Value) -> Result<(), String> {
     let name = name.trim();
     if name.is_empty() || name.contains(':') {
-        return Err("MCP 名称不能为空，也不能包含冒号".to_string());
+        return Err(tr!("MCP 名称不能为空，也不能包含冒号"));
     }
     if !entry.is_object() {
-        return Err("MCP 配置必须是对象".to_string());
+        return Err(tr!("MCP 配置必须是对象"));
     }
     write_mcp_entry(&input_owner(Some(owner)), name, entry)
 }
@@ -1278,14 +1422,14 @@ pub fn authorize_mcp(owner: &str, name: &str) -> Result<(), String> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "这个 MCP 没有 HTTP 地址，不能授权".to_string())?;
+        .ok_or_else(|| tr!("这个 MCP 没有 HTTP 地址，不能授权"))?;
     crate::mcp_oauth::authorize(name, url)
 }
 
 pub fn set_mcp_enabled(owner: &str, name: &str, enabled: bool) -> Result<(), String> {
     let owner = input_owner(Some(owner));
     if owner == "cursor" {
-        let home_dir = home().ok_or_else(|| "找不到用户目录".to_string())?;
+        let home_dir = home().ok_or_else(|| tr!("找不到用户目录"))?;
         // 确认配置里存在该服务器
         let _ = read_mcp_entry(&owner, name)?;
         return crate::cursor_mcp_state::set_user_server_enabled(&home_dir, name, enabled)
@@ -1296,7 +1440,7 @@ pub fn set_mcp_enabled(owner: &str, name: &str, enabled: bool) -> Result<(), Str
         let object = servers
             .get_mut(name)
             .and_then(Value::as_object_mut)
-            .ok_or_else(|| "MCP 不存在".to_string())?;
+            .ok_or_else(|| tr!("MCP 不存在"))?;
         object.remove("disabled");
         object.remove("enabled");
         if !enabled {
@@ -1314,7 +1458,13 @@ pub fn mcp_form(owner: &str, name: &str) -> Result<McpForm, String> {
     let owner = input_owner(Some(owner));
     let entry = read_mcp_entry(&owner, name)?;
     let profile = mcp_profile_for(&owner, name, &entry);
-    let text = |key: &str| entry.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+    let text = |key: &str| {
+        entry
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
     Ok(McpForm {
         name: name.to_string(),
         owner,
@@ -1325,7 +1475,12 @@ pub fn mcp_form(owner: &str, name: &str) -> Result<McpForm, String> {
         args: entry
             .get("args")
             .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default(),
         url: entry
             .get("url")
@@ -1334,7 +1489,10 @@ pub fn mcp_form(owner: &str, name: &str) -> Result<McpForm, String> {
             .unwrap_or("")
             .to_string(),
         env_text: pairs_text(entry.get("env"), "="),
-        headers_text: pairs_text(entry.get("headers").or_else(|| entry.get("http_headers")), ": "),
+        headers_text: pairs_text(
+            entry.get("headers").or_else(|| entry.get("http_headers")),
+            ": ",
+        ),
         needs_auth: entry.get("oauth").is_some(),
         enabled: profile.enabled,
     })
@@ -1352,7 +1510,7 @@ pub fn probe_mcp(owner: &str, name: &str) -> Result<crate::mcp_probe::McpProbe, 
     if !mcp_profile_for(&owner, name, &entry).enabled {
         let mut result = crate::mcp_probe::McpProbe::default();
         result.status = "disabled".into();
-        result.error = "已禁用".into();
+        result.error = tr!("已禁用");
         return Ok(result);
     }
     Ok(crate::mcp_probe::probe(name, &entry))
@@ -1381,10 +1539,10 @@ fn mcp_fields_from_input(input: &McpInput, owner: &str) -> Result<Map<String, Va
     if matches!(input.transport.as_str(), "http" | "sse") {
         let url = input.url.trim();
         if url.is_empty() {
-            return Err("远程 MCP 需要填写 URL".to_string());
+            return Err(tr!("远程 MCP 需要填写 URL"));
         }
         if codex && input.transport == "sse" {
-            return Err("Codex 不支持旧版 SSE 传输，请改用 HTTP".to_string());
+            return Err(tr!("Codex 不支持旧版 SSE 传输，请改用 HTTP"));
         }
         if !codex {
             object.insert("type".to_string(), Value::String(input.transport.clone()));
@@ -1401,7 +1559,7 @@ fn mcp_fields_from_input(input: &McpInput, owner: &str) -> Result<Map<String, Va
     } else {
         let command = input.command.trim();
         if command.is_empty() {
-            return Err("本地 MCP 需要填写命令".to_string());
+            return Err(tr!("本地 MCP 需要填写命令"));
         }
         object.insert("command".to_string(), Value::String(command.to_string()));
         let args: Vec<Value> = input
@@ -1419,10 +1577,16 @@ fn mcp_fields_from_input(input: &McpInput, owner: &str) -> Result<Map<String, Va
             object.insert("env".to_string(), Value::Object(env));
         }
         if !input.cwd.trim().is_empty() {
-            object.insert("cwd".to_string(), Value::String(input.cwd.trim().to_string()));
+            object.insert(
+                "cwd".to_string(),
+                Value::String(input.cwd.trim().to_string()),
+            );
         }
         if !input.env_file.trim().is_empty() && !codex {
-            object.insert("envFile".to_string(), Value::String(input.env_file.trim().to_string()));
+            object.insert(
+                "envFile".to_string(),
+                Value::String(input.env_file.trim().to_string()),
+            );
         }
     }
     Ok(object)
@@ -1436,11 +1600,11 @@ fn parse_pairs(text: &str, separator: &str) -> Result<Map<String, Value>, String
             continue;
         }
         let Some((key, value)) = line.split_once(separator) else {
-            return Err(format!("无法解析这一行：{line}"));
+            return Err(tr!("无法解析这一行：{line}", line = line));
         };
         let key = key.trim();
         if key.is_empty() {
-            return Err(format!("无法解析这一行：{line}"));
+            return Err(tr!("无法解析这一行：{line}", line = line));
         }
         pairs.insert(key.to_string(), Value::String(value.trim().to_string()));
     }
@@ -1453,7 +1617,9 @@ fn pairs_text(value: Option<&Value>, separator: &str) -> String {
         .map(|object| {
             object
                 .iter()
-                .filter_map(|(key, item)| item.as_str().map(|text| format!("{key}{separator}{text}")))
+                .filter_map(|(key, item)| {
+                    item.as_str().map(|text| format!("{key}{separator}{text}"))
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -1461,18 +1627,22 @@ fn pairs_text(value: Option<&Value>, separator: &str) -> String {
 }
 
 pub fn resource_path(resource_id: &str) -> Result<PathBuf, String> {
-    let resource = find_resource(resource_id).ok_or_else(|| "资源不存在，请重新扫描".to_string())?;
+    let resource = find_resource(resource_id).ok_or_else(|| tr!("资源不存在，请重新扫描"))?;
     let path = PathBuf::from(&resource.source_path);
-    Ok(if resource.kind == "skill" { path.join("SKILL.md") } else { path })
+    Ok(if resource.kind == "skill" {
+        path.join("SKILL.md")
+    } else {
+        path
+    })
 }
 
 pub fn skill_directory(resource_id: &str) -> Result<PathBuf, String> {
     let resource = find_resource(resource_id)
         .filter(|item| item.kind == "skill")
-        .ok_or_else(|| "技能不存在，请重新扫描".to_string())?;
+        .ok_or_else(|| tr!("技能不存在，请重新扫描"))?;
     let path = PathBuf::from(&resource.source_path);
     if !path.is_dir() {
-        return Err("技能目录不存在".to_string());
+        return Err(tr!("技能目录不存在"));
     }
     Ok(path)
 }
@@ -1519,7 +1689,7 @@ fn vscode_user_dir() -> Option<PathBuf> {
 
 fn skill_description(path: &Path) -> String {
     let content = fs::read_to_string(path).unwrap_or_default();
-    parse_skill_description(&content).unwrap_or_else(|| "全局 Skill".to_string())
+    parse_skill_description(&content).unwrap_or_else(|| tr!("全局 Skill"))
 }
 
 /// 从 SKILL.md 的 frontmatter 里取 description。
@@ -1536,7 +1706,9 @@ fn parse_skill_description(content: &str) -> Option<String> {
         if in_frontmatter && line.trim() == "---" {
             break;
         }
-        let Some(value) = line.trim().strip_prefix("description:") else { continue };
+        let Some(value) = line.trim().strip_prefix("description:") else {
+            continue;
+        };
         let value = value.trim();
         let block = value.chars().next().filter(|c| *c == '>' || *c == '|');
         let Some(style) = block else {
@@ -1648,15 +1820,20 @@ fn strip_jsonc(text: &str) -> String {
 /// 目标是符号链接（如 stow 管理的点文件）时写到链接指向的真实文件，链接本身保留。
 fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let parent = target.parent().ok_or_else(|| "配置路径无效".to_string())?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    let parent = target.parent().ok_or_else(|| tr!("配置路径无效"))?;
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
     temporary
         .write_all(content.as_bytes())
         .map_err(|error| error.to_string())?;
     if let Ok(metadata) = fs::metadata(&target) {
-        fs::set_permissions(temporary.path(), metadata.permissions()).map_err(|error| error.to_string())?;
+        fs::set_permissions(temporary.path(), metadata.permissions())
+            .map_err(|error| error.to_string())?;
     }
-    temporary.as_file().sync_all().map_err(|error| error.to_string())?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|error| error.to_string())?;
     temporary
         .persist(&target)
         .map_err(|error| error.error.to_string())?;
@@ -1690,7 +1867,7 @@ fn copy_tree(source: &Path, target: &Path, budget: &mut CopyBudget) -> Result<()
         let entry = entry.map_err(|error| error.to_string())?;
         let file_type = entry.file_type().map_err(|error| error.to_string())?;
         if file_type.is_symlink() {
-            return Err("Skill 包含符号链接，已阻止迁移".to_string());
+            return Err(tr!("Skill 包含符号链接，已阻止迁移"));
         }
         let file_name = entry.file_name();
         if file_type.is_dir() && SKILL_COPY_SKIP_DIRS.iter().any(|skip| file_name == *skip) {
@@ -1703,9 +1880,10 @@ fn copy_tree(source: &Path, target: &Path, budget: &mut CopyBudget) -> Result<()
             budget.files += 1;
             budget.bytes += entry.metadata().map_err(|error| error.to_string())?.len();
             if budget.files > SKILL_COPY_MAX_FILES || budget.bytes > SKILL_COPY_MAX_BYTES {
-                return Err(format!(
-                    "Skill 目录过大（超过 {SKILL_COPY_MAX_FILES} 个文件或 {} MB），请选择具体的 Skill 目录",
-                    SKILL_COPY_MAX_BYTES / 1024 / 1024
+                return Err(tr!(
+                    "Skill 目录过大（超过 {files} 个文件或 {size} MB），请选择具体的 Skill 目录",
+                    files = SKILL_COPY_MAX_FILES,
+                    size = SKILL_COPY_MAX_BYTES / 1024 / 1024
                 ));
             }
             fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
@@ -1728,10 +1906,16 @@ mod tests {
             Some("新建 Agent 时，标题必须使用简体中文。适用于 Task 工具的 description、New Agent。每次创建或恢复 Agent 时都要应用。"),
         );
         let literal = "---\ndescription: |\n  第一行\n  第二行\nname: x\n---\n";
-        assert_eq!(parse_skill_description(literal).as_deref(), Some("第一行\n第二行"));
+        assert_eq!(
+            parse_skill_description(literal).as_deref(),
+            Some("第一行\n第二行")
+        );
         let inline = "---\nname: x\ndescription: \"单行描述\"\n---\n";
         assert_eq!(parse_skill_description(inline).as_deref(), Some("单行描述"));
-        assert_eq!(parse_skill_description("---\nname: x\n---\ndescription: 正文\n"), None);
+        assert_eq!(
+            parse_skill_description("---\nname: x\n---\ndescription: 正文\n"),
+            None
+        );
     }
 
     #[test]
@@ -1757,9 +1941,15 @@ mod tests {
         fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap();
         symlink(&real, &link).unwrap();
         atomic_write(&link, "after").unwrap();
-        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         assert_eq!(fs::read_to_string(&real).unwrap(), "after");
-        assert_eq!(fs::metadata(&real).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&real).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]
@@ -1849,7 +2039,10 @@ mod tests {
 
     #[test]
     fn slugs_skill_folder_names() {
-        assert_eq!(super::skill_folder_name("Code Review").unwrap(), "Code-Review");
+        assert_eq!(
+            super::skill_folder_name("Code Review").unwrap(),
+            "Code-Review"
+        );
         assert_eq!(super::skill_folder_name("代码审查").unwrap(), "代码审查");
         assert!(super::skill_folder_name("   ").is_err());
     }

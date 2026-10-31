@@ -18,8 +18,9 @@ pub fn decode(
         .and_then(Value::as_str)
         .unwrap_or_default();
     match event_type {
-        "im.message.receive_v1" => decode_message(&value, installation_id, bot_open_id, bot_name)
-            .map(Some),
+        "im.message.receive_v1" => {
+            decode_message(&value, installation_id, bot_open_id, bot_name).map(Some)
+        }
         "card.action.trigger" => decode_card_action(&value, installation_id),
         // 心跳和其它未订阅事件：ACK 掉但不上报。
         _ => Ok(None),
@@ -102,7 +103,10 @@ fn decode_message(
                 .and_then(|id| id.get("open_id"))
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let name = mention.get("name").and_then(Value::as_str).unwrap_or_default();
+            let name = mention
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             bot_open_id.is_some_and(|bot| bot == open_id)
                 || bot_name.is_some_and(|bot| !bot.is_empty() && bot == name)
         });
@@ -168,7 +172,7 @@ fn decode_message(
                 String::new()
             }
         }
-        "merge_forward" => "（收到一条合并转发消息，暂不支持展开）".to_string(),
+        "merge_forward" => tr!("（收到一条合并转发消息，暂不支持展开）"),
         "sticker" => String::new(),
         _ => String::new(),
     };
@@ -275,11 +279,17 @@ fn replace_mentions(
 ) -> String {
     let mut out = text.to_string();
     for mention in mentions {
-        let key = mention.get("key").and_then(Value::as_str).unwrap_or_default();
+        let key = mention
+            .get("key")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if key.is_empty() {
             continue;
         }
-        let name = mention.get("name").and_then(Value::as_str).unwrap_or_default();
+        let name = mention
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let open_id = mention
             .get("id")
             .and_then(|id| id.get("open_id"))

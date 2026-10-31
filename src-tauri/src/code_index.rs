@@ -20,11 +20,37 @@ const MAX_PACKAGE_TYPINGS: usize = 600;
 const MAX_DEPTH: usize = 16;
 /// 构建产物里的 .js/.d.ts 会和源码重复声明，跳转时出现一堆无用候选。
 const BUILD_DIRS: &[&str] = &[
-    "dist", "build", "out", "out-build", "target", ".next", ".nuxt", ".output", "coverage", ".turbo", ".vite", ".cache", ".codeoss-build", ".pnpm-store",
+    "dist",
+    "build",
+    "out",
+    "out-build",
+    "target",
+    ".next",
+    ".nuxt",
+    ".output",
+    "coverage",
+    ".turbo",
+    ".vite",
+    ".cache",
+    ".codeoss-build",
+    ".pnpm-store",
 ];
-const DEPENDENCY_FIELDS: &[&str] = &["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+const DEPENDENCY_FIELDS: &[&str] = &[
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+];
 const TRANSITIVE_FIELDS: &[&str] = &["dependencies", "peerDependencies"];
-const MANIFEST_KEYS: &[&str] = &["name", "version", "types", "typings", "main", "module", "typesVersions"];
+const MANIFEST_KEYS: &[&str] = &[
+    "name",
+    "version",
+    "types",
+    "typings",
+    "main",
+    "module",
+    "typesVersions",
+];
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,7 +88,10 @@ pub fn collect_sources(
         .iter()
         .map(|item| item.trim_start_matches('.').to_ascii_lowercase())
         .collect();
-    let mut batch = SourceBatch { files: Vec::new(), truncated: false };
+    let mut batch = SourceBatch {
+        files: Vec::new(),
+        truncated: false,
+    };
     let mut total = 0;
     let walker = WalkBuilder::new(&root)
         .hidden(false)
@@ -110,8 +139,14 @@ pub fn collect_sources(
                 None => continue,
             }
         };
-        total += content.as_ref().map_or(metadata.len(), |text| text.len() as u64);
-        batch.files.push(SourceFile { path: relative, mtime, content });
+        total += content
+            .as_ref()
+            .map_or(metadata.len(), |text| text.len() as u64);
+        batch.files.push(SourceFile {
+            path: relative,
+            mtime,
+            content,
+        });
     }
     Ok(batch)
 }
@@ -171,7 +206,10 @@ pub fn collect_typings(root: &str) -> Result<Vec<TypingFile>, String> {
             if output.len() >= MAX_TYPING_FILES || total >= MAX_TYPING_TOTAL_BYTES {
                 break;
             }
-            let Some(content) = read_limited(path, MAX_TYPING_FILE_BYTES.min(MAX_TYPING_TOTAL_BYTES - total)) else {
+            let Some(content) = read_limited(
+                path,
+                MAX_TYPING_FILE_BYTES.min(MAX_TYPING_TOTAL_BYTES - total),
+            ) else {
                 continue;
             };
             total += content.len() as u64;
@@ -219,7 +257,11 @@ fn walk_declarations(root: &Path, directory: &Path, depth: usize, output: &mut V
         if !is_declaration(&name) {
             continue;
         }
-        if entry.metadata().map(|meta| meta.len() > MAX_TYPING_FILE_BYTES).unwrap_or(true) {
+        if entry
+            .metadata()
+            .map(|meta| meta.len() > MAX_TYPING_FILE_BYTES)
+            .unwrap_or(true)
+        {
             continue;
         }
         output.push(entry.path());
@@ -294,7 +336,7 @@ fn has_extension(name: &str, extensions: &HashSet<String>) -> bool {
 fn canonical(root: &str) -> Result<PathBuf, String> {
     Path::new(root)
         .canonicalize()
-        .map_err(|error| format!("工作区不可用：{error}"))
+        .map_err(|error| tr!("工作区不可用：{error}", error = error))
 }
 
 fn relative_path(root: &Path, path: &Path) -> String {
@@ -340,7 +382,10 @@ mod tests {
         let first = collect_sources(root.to_str().unwrap(), &extensions, &HashMap::new()).unwrap();
         assert_eq!(first.files.len(), 1);
         assert_eq!(first.files[0].path, "src/a.ts");
-        assert_eq!(first.files[0].content.as_deref(), Some("export const a = 1;"));
+        assert_eq!(
+            first.files[0].content.as_deref(),
+            Some("export const a = 1;")
+        );
 
         let known = HashMap::from([("src/a.ts".to_string(), first.files[0].mtime)]);
         let second = collect_sources(root.to_str().unwrap(), &extensions, &known).unwrap();
@@ -354,12 +399,23 @@ mod tests {
         let root = dir.path();
         write(&root.join(".gitignore"), "generated/\n*.generated.ts\n");
         write(&root.join("src/.gitignore"), "*.ts\n!keep.ts\n");
-        write(&root.join("generated/large.ts"), "export const generated = 1;");
+        write(
+            &root.join("generated/large.ts"),
+            "export const generated = 1;",
+        );
         write(&root.join("a.generated.ts"), "export const generated = 2;");
         write(&root.join("src/ignored.ts"), "export const ignored = 1;");
         write(&root.join("src/keep.ts"), "export const keep = 1;");
-        let batch = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
-        assert_eq!(batch.files.iter().map(|file| file.path.as_str()).collect::<Vec<_>>(), ["src/keep.ts"]);
+        let batch =
+            collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        assert_eq!(
+            batch
+                .files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            ["src/keep.ts"]
+        );
         assert!(!batch.truncated);
     }
 
@@ -367,11 +423,19 @@ mod tests {
     fn sources_skip_build_caches_even_without_gitignore() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        for directory in [".codeoss-build", ".pnpm-store", "out-build", "node_modules", "dist", "target"] {
+        for directory in [
+            ".codeoss-build",
+            ".pnpm-store",
+            "out-build",
+            "node_modules",
+            "dist",
+            "target",
+        ] {
             write(&root.join(directory).join("nested/index.ts"), "export {};");
         }
         write(&root.join("src/index.ts"), "export {};");
-        let batch = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        let batch =
+            collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
         assert_eq!(batch.files.len(), 1);
         assert_eq!(batch.files[0].path, "src/index.ts");
     }
@@ -386,14 +450,37 @@ mod tests {
             write(&root.join(format!("{i:03}.ts")), &content);
         }
         write(&root.join("zzz-small.ts"), "export {};");
-        let first = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        let first =
+            collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
         assert!(first.truncated);
         assert_eq!(first.files.len(), limit);
-        assert_eq!(first.files.iter().map(|file| file.content.as_ref().unwrap().len() as u64).sum::<u64>(), MAX_SOURCE_TOTAL_BYTES);
-        let known = first.files.iter().map(|file| (file.path.clone(), file.mtime)).collect();
+        assert_eq!(
+            first
+                .files
+                .iter()
+                .map(|file| file.content.as_ref().unwrap().len() as u64)
+                .sum::<u64>(),
+            MAX_SOURCE_TOTAL_BYTES
+        );
+        let known = first
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.mtime))
+            .collect();
         let second = collect_sources(root.to_str().unwrap(), &["ts".into()], &known).unwrap();
         assert!(second.truncated);
-        assert_eq!(second.files.iter().map(|file| &file.path).collect::<Vec<_>>(), first.files.iter().map(|file| &file.path).collect::<Vec<_>>());
+        assert_eq!(
+            second
+                .files
+                .iter()
+                .map(|file| &file.path)
+                .collect::<Vec<_>>(),
+            first
+                .files
+                .iter()
+                .map(|file| &file.path)
+                .collect::<Vec<_>>()
+        );
         assert!(second.files.iter().all(|file| file.content.is_none()));
     }
 
@@ -401,9 +488,13 @@ mod tests {
     fn sources_skip_oversized_files_but_keep_small_neighbors() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("large.ts"), &"x".repeat(MAX_SOURCE_BYTES as usize + 1));
+        write(
+            &root.join("large.ts"),
+            &"x".repeat(MAX_SOURCE_BYTES as usize + 1),
+        );
         write(&root.join("small.ts"), "export {};");
-        let batch = collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
+        let batch =
+            collect_sources(root.to_str().unwrap(), &["ts".into()], &HashMap::new()).unwrap();
         assert!(batch.truncated);
         assert_eq!(batch.files.len(), 1);
         assert_eq!(batch.files[0].path, "small.ts");
@@ -422,18 +513,30 @@ mod tests {
     fn typings_trim_manifests_and_skip_nested_node_modules() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("package.json"), r#"{"devDependencies":{"vue":"3"}}"#);
+        write(
+            &root.join("package.json"),
+            r#"{"devDependencies":{"vue":"3"}}"#,
+        );
         write(
             &root.join("node_modules/vue/package.json"),
             r#"{"name":"vue","types":"dist/vue.d.ts","scripts":{"x":"y"}}"#,
         );
         write(&root.join("node_modules/vue/dist/vue.d.ts"), "export {};");
         write(&root.join("node_modules/vue/dist/vue.js"), "");
-        write(&root.join("node_modules/vue/node_modules/x/index.d.ts"), "export {};");
+        write(
+            &root.join("node_modules/vue/node_modules/x/index.d.ts"),
+            "export {};",
+        );
 
         let typings = collect_typings(root.to_str().unwrap()).unwrap();
         let paths: Vec<&str> = typings.iter().map(|item| item.path.as_str()).collect();
-        assert_eq!(paths, vec!["node_modules/vue/package.json", "node_modules/vue/dist/vue.d.ts"]);
+        assert_eq!(
+            paths,
+            vec![
+                "node_modules/vue/package.json",
+                "node_modules/vue/dist/vue.d.ts"
+            ]
+        );
         assert!(!typings[0].content.contains("scripts"));
         assert!(typings[0].content.contains("dist/vue.d.ts"));
     }
@@ -442,11 +545,20 @@ mod tests {
     fn typings_resolve_pnpm_siblings_from_real_package_directory() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("package.json"), r#"{"dependencies":{"vue":"3"}}"#);
+        write(
+            &root.join("package.json"),
+            r#"{"dependencies":{"vue":"3"}}"#,
+        );
         let store = root.join("node_modules/.pnpm/vue@3/node_modules");
-        write(&store.join("vue/package.json"), r#"{"name":"vue","dependencies":{"@vue/core":"3"}}"#);
+        write(
+            &store.join("vue/package.json"),
+            r#"{"name":"vue","dependencies":{"@vue/core":"3"}}"#,
+        );
         write(&store.join("vue/index.d.ts"), "export {};");
-        write(&store.join("@vue/core/package.json"), r#"{"name":"@vue/core"}"#);
+        write(
+            &store.join("@vue/core/package.json"),
+            r#"{"name":"@vue/core"}"#,
+        );
         write(&store.join("@vue/core/index.d.ts"), "export {};");
         // 顶层的 vue 在 pnpm 下是符号链接；用 resolve_package 从真实目录出发验证相邻查找。
         let core = resolve_package(&store.join("vue"), "@vue/core").unwrap();
@@ -457,21 +569,33 @@ mod tests {
     fn typings_follow_transitive_dependencies() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("package.json"), r#"{"dependencies":{"vue":"3"}}"#);
+        write(
+            &root.join("package.json"),
+            r#"{"dependencies":{"vue":"3"}}"#,
+        );
         write(
             &root.join("node_modules/vue/package.json"),
             r#"{"name":"vue","dependencies":{"@vue/core":"3"}}"#,
         );
         write(&root.join("node_modules/vue/index.d.ts"), "export {};");
-        write(&root.join("node_modules/@vue/core/package.json"), r#"{"name":"@vue/core"}"#);
-        write(&root.join("node_modules/@vue/core/index.d.ts"), "export {};");
+        write(
+            &root.join("node_modules/@vue/core/package.json"),
+            r#"{"name":"@vue/core"}"#,
+        );
+        write(
+            &root.join("node_modules/@vue/core/index.d.ts"),
+            "export {};",
+        );
 
         let typings = collect_typings(root.to_str().unwrap()).unwrap();
         let core = typings
             .iter()
             .find(|item| item.path == "node_modules/@vue/core/index.d.ts")
             .unwrap();
-        assert_eq!(core.disk_path.as_deref(), Some("node_modules/@vue/core/index.d.ts"));
+        assert_eq!(
+            core.disk_path.as_deref(),
+            Some("node_modules/@vue/core/index.d.ts")
+        );
     }
 
     #[test]

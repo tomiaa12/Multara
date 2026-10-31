@@ -8,6 +8,8 @@ import ComposerSuggestMenu, {
   type ComposerSuggestItem,
 } from "./ComposerSuggestMenu.vue";
 import ContextUsageButton from "./ContextUsageButton.vue";
+import ChatModePicker from "./ChatModePicker.vue";
+import ComposerPlanHint from "./ComposerPlanHint.vue";
 import type { EditorSelectionContext } from "../../domain/types";
 import type { SelectOption } from "../ui/select-types";
 import type { ComposerNode } from "./composer-content";
@@ -52,7 +54,10 @@ const props = withDefaults(defineProps<{
   sessionCommands?: boolean;
   /** 是否在级联一级菜单展示系统文件/文件夹选择入口。 */
   allowFilePicker?: boolean;
+  /** 传入会话 id 时显示模式选择与计划提示行（只读 / 预览场景不传）。 */
+  modeSessionId?: string;
 }>(), {
+  modeSessionId: "",
   targetValue: "",
   targetOptions: () => [],
   allowTargetChange: true,
@@ -346,6 +351,7 @@ defineExpose({
     @drop.capture="onDrop"
   >
     <slot />
+    <ComposerPlanHint v-if="modeSessionId" :session-id="modeSessionId" />
     <div v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
       <span>{{ t("chat.dropToAttach") }}</span>
     </div>
@@ -388,6 +394,7 @@ defineExpose({
           <span>{{ targetLabel }}</span>
         </template>
       </label>
+      <ChatModePicker v-if="modeSessionId" :session-id="modeSessionId" />
       <slot name="tools" />
       <div class="composer-actions">
         <ContextUsageButton v-if="showContextUsage" :placement="usagePlacement" />

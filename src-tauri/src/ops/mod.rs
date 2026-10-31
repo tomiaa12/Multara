@@ -26,7 +26,7 @@ pub fn require_agent(db: &Connection, agent_id: &str) -> Result<(), String> {
     if exists {
         Ok(())
     } else {
-        Err("指定的智能体不存在".to_string())
+        Err(tr!("指定的智能体不存在"))
     }
 }
 
@@ -41,7 +41,7 @@ pub fn require_project(db: &Connection, project_id: &str) -> Result<(), String> 
     if exists {
         Ok(())
     } else {
-        Err("需求不存在".to_string())
+        Err(tr!("需求不存在"))
     }
 }
 
@@ -60,5 +60,5 @@ pub fn parse_task_status(status: &str) -> Result<&'static str, String> {
         .iter()
         .copied()
         .find(|item| *item == status)
-        .ok_or_else(|| "任务状态无效".to_string())
+        .ok_or_else(|| tr!("任务状态无效"))
 }

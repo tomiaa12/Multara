@@ -38,13 +38,13 @@ pub fn get(db: &Connection, project_id: &str) -> Result<Project, String> {
     list(db)?
         .into_iter()
         .find(|project| project.id == project_id)
-        .ok_or_else(|| "需求不存在".to_string())
+        .ok_or_else(|| tr!("需求不存在"))
 }
 
 pub fn create(db: &Connection, name: &str, note: &str) -> Result<Project, String> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("需求名称不能为空".to_string());
+        return Err(tr!("需求名称不能为空"));
     }
     let now = Utc::now().to_rfc3339();
     let project = Project {

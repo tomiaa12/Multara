@@ -30,7 +30,7 @@ pub fn sign_out(name: &str) -> Result<(), String> {
         return Ok(());
     };
     if path.is_file() {
-        fs::remove_file(path).map_err(|error| format!("删除授权失败：{error}"))?;
+        fs::remove_file(path).map_err(|error| tr!("删除授权失败：{error}", error = error))?;
         crate::resources::invalidate_scan_cache();
     }
     Ok(())
@@ -42,12 +42,18 @@ pub fn access_token(name: &str) -> Option<String> {
     let path = token_path(name)?;
     let stored = read_token(&path)?;
     if !needs_refresh(&stored) {
-        return stored.get("access_token").and_then(Value::as_str).map(str::to_string);
+        return stored
+            .get("access_token")
+            .and_then(Value::as_str)
+            .map(str::to_string);
     }
     let _guard = REFRESH_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     // 等锁期间别的线程可能已经刷新过
     let stored = read_token(&path)?;
-    let token = stored.get("access_token").and_then(Value::as_str)?.to_string();
+    let token = stored
+        .get("access_token")
+        .and_then(Value::as_str)?
+        .to_string();
     if !needs_refresh(&stored) {
         return Some(token);
     }
@@ -59,19 +65,31 @@ fn read_token(path: &PathBuf) -> Option<Value> {
 }
 
 fn needs_refresh(stored: &Value) -> bool {
-    let obtained = stored.get("obtained_at").and_then(Value::as_u64).unwrap_or(0);
+    let obtained = stored
+        .get("obtained_at")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     let Some(expires_in) = stored.get("expires_in").and_then(Value::as_u64) else {
         return false;
     };
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or(0);
     obtained + expires_in <= now + REFRESH_MARGIN_SECS
 }
 
 fn refresh(path: &PathBuf, stored: &Value) -> Result<String, String> {
-    let field = |key: &str| stored.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+    let field = |key: &str| {
+        stored
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
     let refresh_token = field("refresh_token");
     if refresh_token.is_empty() {
-        return Err("没有 refresh token".to_string());
+        return Err(tr!("没有 refresh token"));
     }
     let mut pairs = vec![
         ("grant_type".to_string(), "refresh_token".to_string()),
@@ -88,22 +106,34 @@ fn refresh(path: &PathBuf, stored: &Value) -> Result<String, String> {
         Some("application/x-www-form-urlencoded"),
     )?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("刷新 token 失败：HTTP {}", response.status));
+        return Err(tr!(
+            "刷新 token 失败：HTTP {status}",
+            status = response.status
+        ));
     }
-    let token: TokenResponse = serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
+    let token: TokenResponse =
+        serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
     let mut next = stored.clone();
     if let Some(object) = next.as_object_mut() {
         object.insert("access_token".into(), json!(token.access_token));
-        object.insert("refresh_token".into(), json!(token.refresh_token.unwrap_or(refresh_token)));
+        object.insert(
+            "refresh_token".into(),
+            json!(token.refresh_token.unwrap_or(refresh_token)),
+        );
         object.insert("expires_in".into(), json!(token.expires_in));
         object.insert(
             "obtained_at".into(),
-            json!(SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0)),
+            json!(SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|value| value.as_secs())
+                .unwrap_or(0)),
         );
     }
     crate::mcp_vars::write_private_atomic(
         path,
-        serde_json::to_string(&next).map_err(|error| error.to_string())?.as_bytes(),
+        serde_json::to_string(&next)
+            .map_err(|error| error.to_string())?
+            .as_bytes(),
     )?;
     Ok(token.access_token)
 }
@@ -112,14 +142,21 @@ pub fn authorize(name: &str, endpoint: &str) -> Result<(), String> {
     let endpoint = https_url(endpoint)?;
     let metadata = discover(&endpoint)?;
     let server = tiny_http::Server::http("127.0.0.1:0")
-        .map_err(|error| format!("无法监听本地授权回调：{error}"))?;
+        .map_err(|error| tr!("无法监听本地授权回调：{error}", error = error))?;
     let port = callback_port(&server)?;
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
     let registration = register(&metadata, &redirect_uri)?;
     let verifier = pkce_verifier();
     let state = pkce_verifier();
     let scope = metadata.scopes.join(" ");
-    let url = authorization_url(&metadata, &registration.client_id, &redirect_uri, &state, &verifier, &scope)?;
+    let url = authorization_url(
+        &metadata,
+        &registration.client_id,
+        &redirect_uri,
+        &state,
+        &verifier,
+        &scope,
+    )?;
     crate::commands::open_external_url(url)?;
     let code = wait_for_code(&server, &state)?;
     let token = exchange_code(&metadata, &registration, &redirect_uri, &code, &verifier)?;
@@ -130,16 +167,19 @@ fn discover(endpoint: &str) -> Result<OAuthMetadata, String> {
     let probe = http_exchange(
         "POST",
         endpoint,
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": { "name": CLIENT_NAME, "version": "1" }
-            }
-        }).to_string()),
+        Some(
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": { "name": CLIENT_NAME, "version": "1" }
+                }
+            })
+            .to_string(),
+        ),
         Some("application/json"),
     );
     let metadata_url = probe
@@ -148,20 +188,23 @@ fn discover(endpoint: &str) -> Result<OAuthMetadata, String> {
         .and_then(|response| resource_metadata_url(&response.headers))
         .unwrap_or_else(|| protected_resource_metadata_url(endpoint));
     let resource = http_json(&metadata_url)?;
-    let advertised = resource.get("resource").and_then(Value::as_str).unwrap_or("");
+    let advertised = resource
+        .get("resource")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if !advertised.is_empty() && !same_resource(advertised, endpoint) {
-        return Err("受保护资源元数据和 MCP 地址不一致".to_string());
+        return Err(tr!("受保护资源元数据和 MCP 地址不一致"));
     }
     let issuer = resource
         .get("authorization_servers")
         .and_then(Value::as_array)
         .and_then(|items| items.first())
         .and_then(Value::as_str)
-        .ok_or_else(|| "受保护资源没有声明授权服务器".to_string())?;
+        .ok_or_else(|| tr!("受保护资源没有声明授权服务器"))?;
     let server = authorization_server(issuer)?;
     let methods = string_list(server.get("code_challenge_methods_supported"));
     if !methods.is_empty() && !methods.iter().any(|item| item == "S256") {
-        return Err("授权服务器不支持 PKCE S256".to_string());
+        return Err(tr!("授权服务器不支持 PKCE S256"));
     }
     let authorization_endpoint = required_https(&server, "authorization_endpoint")?;
     let token_endpoint = required_https(&server, "token_endpoint")?;
@@ -183,7 +226,7 @@ fn discover(endpoint: &str) -> Result<OAuthMetadata, String> {
 
 fn authorization_server(issuer: &str) -> Result<Value, String> {
     let issuer = https_url(issuer)?;
-    let mut last = "找不到授权服务器元数据".to_string();
+    let mut last = tr!("找不到授权服务器元数据");
     for url in authorization_metadata_urls(&issuer) {
         match http_json(&url) {
             Ok(value) => return Ok(value),
@@ -197,7 +240,7 @@ fn register(metadata: &OAuthMetadata, redirect_uri: &str) -> Result<ClientRegist
     let endpoint = metadata
         .registration_endpoint
         .as_deref()
-        .ok_or_else(|| "授权服务器需要预先注册的客户端，当前还不能自动授权".to_string())?;
+        .ok_or_else(|| tr!("授权服务器需要预先注册的客户端，当前还不能自动授权"))?;
     let response = http_exchange(
         "POST",
         endpoint,
@@ -214,15 +257,20 @@ fn register(metadata: &OAuthMetadata, redirect_uri: &str) -> Result<ClientRegist
         Some("application/json"),
     )?;
     if !(200..300).contains(&response.status) {
-        return Err(registration_denied(endpoint, response.status, &response.body));
+        return Err(registration_denied(
+            endpoint,
+            response.status,
+            &response.body,
+        ));
     }
-    let payload: Value = serde_json::from_str(&response.body).map_err(|error| format!("注册响应无法解析：{error}"))?;
+    let payload: Value = serde_json::from_str(&response.body)
+        .map_err(|error| tr!("注册响应无法解析：{error}", error = error))?;
     let client_id = payload
         .get("client_id")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "动态注册没有返回 client id".to_string())?
+        .ok_or_else(|| tr!("动态注册没有返回 client id"))?
         .to_string();
     Ok(ClientRegistration { client_id })
 }
@@ -234,14 +282,14 @@ fn registration_denied(endpoint: &str, status: u16, body: &str) -> String {
         .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
         .unwrap_or_default();
     if host.contains("figma.com") {
-        return "Figma 远程 MCP 仅允许官方目录内的客户端完成 OAuth（如 Cursor、VS Code），Multara 尚未在目录中，因此无法打开授权浏览器。可改用 Figma 桌面端本地 MCP，或向 Figma 申请将 Multara 加入 MCP 客户端目录。".to_string();
+        return tr!("Figma 远程 MCP 仅允许官方目录内的客户端完成 OAuth（如 Cursor、VS Code），Multara 尚未在目录中，因此无法打开授权浏览器。可改用 Figma 桌面端本地 MCP，或向 Figma 申请将 Multara 加入 MCP 客户端目录。");
     }
     let detail = body.trim();
     if detail.is_empty() {
-        format!("授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。")
+        tr!("授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。", status = status)
     } else {
         let short: String = detail.chars().take(120).collect();
-        format!("授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。响应：{short}")
+        tr!("授权服务器拒绝了客户端动态注册（HTTP {status}），无法打开浏览器。该服务可能只允许白名单客户端。响应：{short}", status = status, short = short)
     }
 }
 
@@ -294,35 +342,40 @@ fn exchange_code(
         Some("application/x-www-form-urlencoded"),
     )?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("换取 token 失败：HTTP {}", response.status));
+        return Err(tr!(
+            "换取 token 失败：HTTP {status}",
+            status = response.status
+        ));
     }
-    serde_json::from_str(&response.body).map_err(|error| format!("token 响应无法解析：{error}"))
+    serde_json::from_str(&response.body)
+        .map_err(|error| tr!("token 响应无法解析：{error}", error = error))
 }
 
 fn wait_for_code(server: &tiny_http::Server, expected_state: &str) -> Result<String, String> {
     let request = server
         .recv_timeout(CALLBACK_WAIT)
-        .map_err(|_| "等待授权超时，请重试".to_string())?
-        .ok_or_else(|| "等待授权超时，请重试".to_string())?;
+        .map_err(|_| tr!("等待授权超时，请重试"))?
+        .ok_or_else(|| tr!("等待授权超时，请重试"))?;
     let url = request.url().to_string();
     let code = query_value(&url, "code");
     let state = query_value(&url, "state");
     let error = query_value(&url, "error");
     let page = if error.is_some() || state.as_deref() != Some(expected_state) || code.is_none() {
-        "授权没有完成，可以关闭这个页面。"
+        tr!("授权没有完成，可以关闭这个页面。")
     } else {
-        "授权完成，可以关闭这个页面。"
+        tr!("授权完成，可以关闭这个页面。")
     };
-    let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..])
-        .map_err(|_| "回调响应失败".to_string())?;
+    let header =
+        tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..])
+            .map_err(|_| tr!("回调响应失败"))?;
     let _ = request.respond(tiny_http::Response::from_string(page).with_header(header));
     if let Some(error) = error {
-        return Err(format!("授权被拒绝：{error}"));
+        return Err(tr!("授权被拒绝：{error}", error = error));
     }
     if state.as_deref() != Some(expected_state) {
-        return Err("授权回调的 state 不一致".to_string());
+        return Err(tr!("授权回调的 state 不一致"));
     }
-    code.ok_or_else(|| "授权回调没有 code".to_string())
+    code.ok_or_else(|| tr!("授权回调没有 code"))
 }
 
 fn write_token(
@@ -331,7 +384,7 @@ fn write_token(
     registration: &ClientRegistration,
     token: &TokenResponse,
 ) -> Result<(), String> {
-    let path = token_path(name).ok_or_else(|| "无法定位授权文件".to_string())?;
+    let path = token_path(name).ok_or_else(|| tr!("无法定位授权文件"))?;
     let payload = json!({
         "access_token": token.access_token,
         "refresh_token": token.refresh_token,
@@ -344,7 +397,9 @@ fn write_token(
     });
     crate::mcp_vars::write_private_atomic(
         &path,
-        serde_json::to_string(&payload).map_err(|error| error.to_string())?.as_bytes(),
+        serde_json::to_string(&payload)
+            .map_err(|error| error.to_string())?
+            .as_bytes(),
     )?;
     crate::resources::invalidate_scan_cache();
     Ok(())
@@ -353,8 +408,15 @@ fn write_token(
 fn token_path(name: &str) -> Option<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     let digest = Sha256::digest(name.as_bytes());
-    let file = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    Some(PathBuf::from(home).join(".multara/mcp-oauth").join(format!("{file}.json")))
+    let file = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Some(
+        PathBuf::from(home)
+            .join(".multara/mcp-oauth")
+            .join(format!("{file}.json")),
+    )
 }
 
 struct OAuthMetadata {
@@ -395,7 +457,8 @@ fn json_body(response: &HttpResponse) -> Result<Value, String> {
     if !(200..300).contains(&response.status) {
         return Err(format!("HTTP {}", response.status));
     }
-    serde_json::from_str(&response.body).map_err(|error| format!("JSON 无法解析：{error}"))
+    serde_json::from_str(&response.body)
+        .map_err(|error| tr!("JSON 无法解析：{error}", error = error))
 }
 
 fn http_exchange(
@@ -428,22 +491,32 @@ fn http_exchange(
     if let Some(content_type) = content_type {
         command.args(["-H", &format!("Content-Type: {content_type}")]);
     }
-    let payload = body.as_ref().map(|_| tempfile::NamedTempFile::new()).transpose().map_err(|error| error.to_string())?;
+    let payload = body
+        .as_ref()
+        .map(|_| tempfile::NamedTempFile::new())
+        .transpose()
+        .map_err(|error| error.to_string())?;
     if let (Some(text), Some(file)) = (body.as_ref(), payload.as_ref()) {
         fs::write(file.path(), text).map_err(|error| error.to_string())?;
         command.arg("--data-binary");
         command.arg(format!("@{}", file.path().display()));
     }
     command.arg(url);
-    let output = command.output().map_err(|error| format!("无法调用 curl：{error}"))?;
+    let output = command
+        .output()
+        .map_err(|error| tr!("无法调用 curl：{error}", error = error))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if detail.is_empty() { "请求授权服务器失败".to_string() } else { detail });
+        return Err(if detail.is_empty() {
+            tr!("请求授权服务器失败")
+        } else {
+            detail
+        });
     }
     let headers = fs::read(header_file.path()).map_err(|error| error.to_string())?;
     let body = fs::read(body_file.path()).map_err(|error| error.to_string())?;
     if body.len() > MAX_RESPONSE_BYTES {
-        return Err("授权响应过大".to_string());
+        return Err(tr!("授权响应过大"));
     }
     Ok(HttpResponse {
         status: status_code(&headers).unwrap_or(0),
@@ -476,7 +549,9 @@ fn resource_metadata_url(headers: &[(String, String)]) -> Option<String> {
         if !name.eq_ignore_ascii_case("www-authenticate") {
             return None;
         }
-        pattern.captures(value).and_then(|caps| caps.get(1).map(|item| item.as_str().to_string()))
+        pattern
+            .captures(value)
+            .and_then(|caps| caps.get(1).map(|item| item.as_str().to_string()))
     })
 }
 
@@ -485,7 +560,11 @@ fn protected_resource_metadata_url(endpoint: &str) -> String {
         return String::new();
     };
     let path = url.path().trim_end_matches('/');
-    format!("{}://{}/.well-known/oauth-protected-resource{path}", url.scheme(), host_port(&url))
+    format!(
+        "{}://{}/.well-known/oauth-protected-resource{path}",
+        url.scheme(),
+        host_port(&url)
+    )
 }
 
 fn authorization_metadata_urls(issuer: &str) -> Vec<String> {
@@ -495,7 +574,13 @@ fn authorization_metadata_urls(issuer: &str) -> Vec<String> {
     let path = url.path().trim_end_matches('/');
     ["oauth-authorization-server", "openid-configuration"]
         .into_iter()
-        .map(|name| format!("{}://{}/.well-known/{name}{path}", url.scheme(), host_port(&url)))
+        .map(|name| {
+            format!(
+                "{}://{}/.well-known/{name}{path}",
+                url.scheme(),
+                host_port(&url)
+            )
+        })
         .collect()
 }
 
@@ -510,14 +595,19 @@ fn required_https(value: &Value, field: &str) -> Result<String, String> {
     let raw = value
         .get(field)
         .and_then(Value::as_str)
-        .ok_or_else(|| format!("授权元数据缺少 {field}"))?;
+        .ok_or_else(|| tr!("授权元数据缺少 {field}", field = field))?;
     https_url(raw)
 }
 
 fn https_url(raw: &str) -> Result<String, String> {
     let url = reqwest_free_parse(raw.trim())?;
-    if url.scheme() != "https" || url.host_str().unwrap_or("").is_empty() || url.username() != "" || url.password().is_some() || url.fragment().is_some() {
-        return Err("授权地址必须是不带账号和片段的 HTTPS".to_string());
+    if url.scheme() != "https"
+        || url.host_str().unwrap_or("").is_empty()
+        || url.username() != ""
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(tr!("授权地址必须是不带账号和片段的 HTTPS"));
     }
     Ok(url.to_string())
 }
@@ -529,7 +619,13 @@ fn same_resource(left: &str, right: &str) -> bool {
 fn string_list(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -557,7 +653,9 @@ fn form_item(value: &str) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -587,11 +685,11 @@ fn callback_port(server: &tiny_http::Server) -> Result<u16, String> {
         .server_addr()
         .to_ip()
         .map(|addr| addr.port())
-        .ok_or_else(|| "本地回调地址无效".to_string())
+        .ok_or_else(|| tr!("本地回调地址无效"))
 }
 
 fn reqwest_free_parse(raw: &str) -> Result<url::Url, String> {
-    url::Url::parse(raw).map_err(|_| "授权地址无效".to_string())
+    url::Url::parse(raw).map_err(|_| tr!("授权地址无效"))
 }
 
 #[cfg(test)]
@@ -601,7 +699,10 @@ mod tests {
     #[test]
     fn protected_resource_keeps_the_mcp_path() {
         let url = protected_resource_metadata_url("https://project.feishu.cn/mcp_server/v1");
-        assert_eq!(url, "https://project.feishu.cn/.well-known/oauth-protected-resource/mcp_server/v1");
+        assert_eq!(
+            url,
+            "https://project.feishu.cn/.well-known/oauth-protected-resource/mcp_server/v1"
+        );
     }
 
     #[test]
@@ -626,7 +727,11 @@ mod tests {
 
     #[test]
     fn figma_registration_denial_explains_catalog() {
-        let message = registration_denied("https://api.figma.com/v1/oauth/mcp/register", 403, "Forbidden");
+        let message = registration_denied(
+            "https://api.figma.com/v1/oauth/mcp/register",
+            403,
+            "Forbidden",
+        );
         assert!(message.contains("Figma"));
         assert!(message.contains("目录"));
         assert!(!message.starts_with("HTTP "));

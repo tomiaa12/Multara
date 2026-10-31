@@ -81,10 +81,10 @@ pub fn upsert_chunk_state(
     status: &str,
 ) -> Result<(), String> {
     if !matches!(status, "pending" | "accepted" | "undone") {
-        return Err("无效的 chunk 状态".to_string());
+        return Err(tr!("无效的 chunk 状态"));
     }
     if chunk_key.trim().is_empty() {
-        return Err("无效的 chunk key".to_string());
+        return Err(tr!("无效的 chunk key"));
     }
     let now = chrono::Utc::now().timestamp();
     db.execute(

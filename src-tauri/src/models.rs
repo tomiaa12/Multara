@@ -1,5 +1,51 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunMode {
+    #[default]
+    Auto,
+    Plan,
+    Agent,
+}
+
+impl RunMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Plan => "plan",
+            Self::Agent => "agent",
+        }
+    }
+}
+
+impl std::str::FromStr for RunMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" | "" => Ok(Self::Auto),
+            "plan" => Ok(Self::Plan),
+            "agent" => Ok(Self::Agent),
+            _ => Err(tr!("无效运行模式：{value}", value = value)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeCapabilities {
+    pub requested_modes: Vec<RunMode>,
+    pub auto_plan: bool,
+    pub observable_mode_changes: bool,
+    pub interactive_mode_switch: bool,
+    pub structured_plan: bool,
+    pub native_subagents: bool,
+    pub nested_subagents: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_unsupported_reason: Option<String>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -163,6 +209,7 @@ pub struct Runtime {
     pub kind: String,
     #[serde(default)]
     pub description: String,
+    pub capabilities: RuntimeCapabilities,
 }
 
 #[derive(Deserialize)]
@@ -321,6 +368,7 @@ pub struct ChatSession {
     pub target_id: String,
     pub created_at: String,
     pub updated_at: String,
+    pub default_mode: RunMode,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -352,6 +400,7 @@ pub struct Task {
     pub checklist: Vec<TaskChecklistItem>,
     #[serde(default)]
     pub pr_url: String,
+    pub default_mode: RunMode,
 }
 
 #[derive(Deserialize)]
@@ -370,6 +419,8 @@ pub struct TaskInput {
     pub source_session_id: Option<String>,
     #[serde(default)]
     pub parent_task_id: Option<String>,
+    #[serde(default)]
+    pub requested_mode: RunMode,
 }
 
 #[derive(Deserialize)]
@@ -449,6 +500,8 @@ pub struct ChatMessage {
     pub message_kind: &'static str,
     pub quick_actions: Vec<QuickAction>,
     pub timeline: Vec<TimelineItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated_before: Option<usize>,
     pub attachments: Vec<MessageAttachment>,
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -458,6 +511,10 @@ pub struct ChatMessage {
     pub source_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_meta: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_mode: Option<RunMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_mode: Option<RunMode>,
 }
 
 #[derive(Clone, Serialize)]
@@ -638,6 +695,8 @@ pub struct AutomationInput {
     pub cron_expression: Option<String>,
     pub timezone: Option<String>,
     pub signing_secret: Option<String>,
+    #[serde(default)]
+    pub mode: Option<RunMode>,
 }
 
 #[derive(Serialize)]

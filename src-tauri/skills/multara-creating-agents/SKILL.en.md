@@ -5,7 +5,7 @@ description: Create and update agents. Use when the user mentions a specialist, 
 
 # Agents
 
-An agent is an assignable executor. The coordinator Miku cannot be deleted, and `system_key` cannot be forged through the CLI.
+An agent is an assignable executor. The steward Miku cannot be deleted, and `system_key` cannot be forged through the CLI.
 
 ## Create
 
@@ -30,4 +30,4 @@ Miku may change the display name, workspace notes (`instructions`), runtime, and
 ## Rules
 
 - Before creating or substantially changing an agent: show a preview and wait for a person to confirm.
-- Turn recurring capabilities into specialists rather than piling all the work onto the coordinator.
+- Turn recurring capabilities into specialists rather than piling all the work onto the steward.

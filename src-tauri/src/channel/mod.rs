@@ -65,7 +65,12 @@ impl ChannelConfig {
     }
 
     pub fn api_base(&self) -> String {
-        if let Some(base) = self.api_base.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(base) = self
+            .api_base
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
             return base.trim_end_matches('/').to_string();
         }
         if self.region() == TYPE_LARK {

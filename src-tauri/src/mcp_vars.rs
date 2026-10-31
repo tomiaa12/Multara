@@ -60,7 +60,9 @@ pub fn rename_inputs(previous: &str, next: &str) -> Result<(), String> {
 /// 解析变量、合并 envFile、补上 OAuth token，去掉运行时不认识的字段。
 pub fn prepare(server: &str, entry: &Value) -> Prepared {
     let inputs = stored_inputs(server);
-    let home = home().map(|path| path.to_string_lossy().to_string()).unwrap_or_default();
+    let home = home()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default();
     let mut missing = Vec::new();
     let mut resolved = entry.clone();
     map_strings(&mut resolved, &mut |text| {
@@ -93,10 +95,17 @@ pub fn prepare(server: &str, entry: &Value) -> Prepared {
                 object.insert("headers".into(), headers);
             }
         }
-        if object.get("oauth").and_then(Value::as_object).is_some_and(Map::is_empty) {
+        if object
+            .get("oauth")
+            .and_then(Value::as_object)
+            .is_some_and(Map::is_empty)
+        {
             object.remove("oauth");
         }
-        if let Some(file) = object.remove("envFile").and_then(|value| value.as_str().map(str::to_string)) {
+        if let Some(file) = object
+            .remove("envFile")
+            .and_then(|value| value.as_str().map(str::to_string))
+        {
             let env = object
                 .entry("env")
                 .or_insert_with(|| Value::Object(Map::new()));
@@ -106,25 +115,36 @@ pub fn prepare(server: &str, entry: &Value) -> Prepared {
                 }
             }
         }
-        let remote = object.get("url").and_then(Value::as_str).is_some_and(|url| !url.is_empty());
+        let remote = object
+            .get("url")
+            .and_then(Value::as_str)
+            .is_some_and(|url| !url.is_empty());
         if remote && !has_authorization(object.get("headers")) {
             if let Some(token) = crate::mcp_oauth::access_token(server) {
                 let headers = object
                     .entry("headers")
                     .or_insert_with(|| Value::Object(Map::new()));
                 if let Some(headers) = headers.as_object_mut() {
-                    headers.insert("Authorization".into(), Value::String(format!("Bearer {token}")));
+                    headers.insert(
+                        "Authorization".into(),
+                        Value::String(format!("Bearer {token}")),
+                    );
                 }
             }
         }
     }
-    Prepared { entry: resolved, missing }
+    Prepared {
+        entry: resolved,
+        missing,
+    }
 }
 
 fn has_authorization(headers: Option<&Value>) -> bool {
-    headers
-        .and_then(Value::as_object)
-        .is_some_and(|object| object.keys().any(|key| key.eq_ignore_ascii_case("authorization")))
+    headers.and_then(Value::as_object).is_some_and(|object| {
+        object
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case("authorization"))
+    })
 }
 
 fn read_env_file(path: &str) -> Vec<(String, String)> {
@@ -138,7 +158,10 @@ fn read_env_file(path: &str) -> Vec<(String, String)> {
             }
             let line = line.strip_prefix("export ").unwrap_or(line);
             let (key, value) = line.split_once('=')?;
-            Some((key.trim().to_string(), value.trim().trim_matches(['"', '\'']).to_string()))
+            Some((
+                key.trim().to_string(),
+                value.trim().trim_matches(['"', '\'']).to_string(),
+            ))
         })
         .collect()
 }
@@ -204,10 +227,12 @@ fn read_store() -> Map<String, Value> {
 }
 
 fn write_store(store: &Map<String, Value>) -> Result<(), String> {
-    let path = store_path().ok_or_else(|| "无法定位用户目录".to_string())?;
+    let path = store_path().ok_or_else(|| tr!("无法定位用户目录"))?;
     write_private_atomic(
         &path,
-        serde_json::to_string_pretty(store).map_err(|error| error.to_string())?.as_bytes(),
+        serde_json::to_string_pretty(store)
+            .map_err(|error| error.to_string())?
+            .as_bytes(),
     )?;
     crate::resources::invalidate_scan_cache();
     Ok(())
@@ -216,11 +241,17 @@ fn write_store(store: &Map<String, Value>) -> Result<(), String> {
 /// 存密钥的文件：同目录临时文件（tempfile 在 Unix 上创建即 0600）写入、fsync 后一次 rename 覆盖，
 /// 没有“先建 0644 再 chmod”的窗口，崩溃也不会留下截断的文件。
 pub(crate) fn write_private_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
-    let parent = path.parent().ok_or_else(|| "文件路径无效".to_string())?;
+    let parent = path.parent().ok_or_else(|| tr!("文件路径无效"))?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
-    temporary.write_all(content).map_err(|error| error.to_string())?;
-    temporary.as_file().sync_all().map_err(|error| error.to_string())?;
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    temporary
+        .write_all(content)
+        .map_err(|error| error.to_string())?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|error| error.to_string())?;
     temporary
         .persist(path)
         .map(|_| ())
@@ -247,7 +278,10 @@ mod tests {
 
     #[test]
     fn prepare_strips_host_only_fields() {
-        let prepared = super::prepare("__multara_test__", &json!({ "command": "x", "disabled": false, "oauth": {} }));
+        let prepared = super::prepare(
+            "__multara_test__",
+            &json!({ "command": "x", "disabled": false, "oauth": {} }),
+        );
         assert_eq!(prepared.entry, json!({ "command": "x" }));
         assert!(prepared.missing.is_empty());
     }

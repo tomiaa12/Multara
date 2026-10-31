@@ -1,8 +1,23 @@
 //! 应用界面 / 内置提示词语言。与前端 `src/i18n` 的 Locale 对齐。
 
+use std::sync::RwLock;
+
 use rusqlite::Connection;
 
 pub const LOCALES: &[&str] = &["zh-CN", "en", "zh-TW", "ja", "ko"];
+
+/// 后端报错与 `tr!` 用的当前语言；启动、CLI 打开数据库、保存语言设置时刷新
+static CURRENT: RwLock<&'static str> = RwLock::new("zh-CN");
+
+pub fn current() -> &'static str {
+    CURRENT.read().map(|locale| *locale).unwrap_or("zh-CN")
+}
+
+pub fn set_current(locale: &'static str) {
+    if let Ok(mut current) = CURRENT.write() {
+        *current = locale;
+    }
+}
 
 /// 从设置值（含 `system`）解析为具体 locale id。
 pub fn resolve(setting: &str) -> &'static str {
@@ -113,11 +128,7 @@ pub fn branch_name_wrapper(locale: &str, prefix: &str, requirement: &str) -> Str
 
 fn normalize(raw: &str) -> &'static str {
     let lower = raw.to_ascii_lowercase().replace('_', "-");
-    if lower == "zh-tw"
-        || lower == "zh-hk"
-        || lower == "zh-mo"
-        || lower.starts_with("zh-hant")
-    {
+    if lower == "zh-tw" || lower == "zh-hk" || lower == "zh-mo" || lower.starts_with("zh-hant") {
         return "zh-TW";
     }
     if lower == "zh-cn" || lower.starts_with("zh") {

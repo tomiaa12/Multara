@@ -11,7 +11,7 @@ use std::{
 #[cfg(unix)]
 use std::process::Command;
 
-use crate::models::Runtime;
+use crate::models::{RunMode, Runtime, RuntimeCapabilities};
 
 struct RuntimeSpec {
     id: String,
@@ -120,6 +120,95 @@ const PROVIDERS: &[&str] = &[
     "zeroclaw",
     "omp",
 ];
+
+fn acp_plan_modes() -> &'static Mutex<HashMap<String, String>> {
+    static MODES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    MODES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn cache_acp_plan_mode(runtime_id: &str, mode_id: Option<&str>) {
+    let Ok(mut modes) = acp_plan_modes().lock() else {
+        return;
+    };
+    if let Some(mode_id) = mode_id {
+        modes.insert(runtime_id.to_string(), mode_id.to_string());
+    } else {
+        modes.remove(runtime_id);
+    }
+}
+
+pub fn acp_plan_mode(runtime_id: &str) -> Option<String> {
+    acp_plan_modes().lock().ok()?.get(runtime_id).cloned()
+}
+
+pub fn load_acp_mode_cache(settings: &HashMap<String, String>) {
+    for (key, value) in settings {
+        if let Some(runtime_id) = key.strip_prefix("acpModes:") {
+            let modes = serde_json::from_str::<Vec<serde_json::Value>>(value).unwrap_or_default();
+            cache_acp_plan_mode(runtime_id, find_plan_mode(&modes).as_deref());
+        }
+    }
+}
+
+pub fn find_plan_mode(modes: &[serde_json::Value]) -> Option<String> {
+    modes.iter().find_map(|mode| {
+        let id = mode.get("id").and_then(serde_json::Value::as_str)?;
+        let name = mode
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        (id.eq_ignore_ascii_case("plan") || name.eq_ignore_ascii_case("plan"))
+            .then(|| id.to_string())
+    })
+}
+
+pub fn capabilities(runtime_id: &str, provider: &str) -> RuntimeCapabilities {
+    let acp = protocol_driver(provider) == Some("acp");
+    let plan_supported = matches!(
+        provider,
+        "claude"
+            | "cursor"
+            | "codex"
+            | "gemini"
+            | "qwen"
+            | "opencode"
+            | "codebuddy"
+            | "codearts"
+            | "deveco"
+            | "copilot"
+            | "pi"
+            | "omp"
+    ) || (acp && acp_plan_mode(runtime_id).is_some());
+    RuntimeCapabilities {
+        requested_modes: if plan_supported {
+            vec![RunMode::Auto, RunMode::Plan, RunMode::Agent]
+        } else {
+            vec![RunMode::Auto, RunMode::Agent]
+        },
+        auto_plan: provider == "claude",
+        observable_mode_changes: provider == "claude" || acp,
+        interactive_mode_switch: acp && plan_supported,
+        structured_plan: plan_supported,
+        native_subagents: provider == "claude",
+        nested_subagents: provider == "claude",
+        plan_unsupported_reason: (!plan_supported).then(|| {
+            if acp {
+                "acpModesUnknown"
+            } else {
+                "runtimeNoNativePlan"
+            }
+            .to_string()
+        }),
+    }
+}
+
+pub fn ensure_mode_supported(runtime: &Runtime, mode: RunMode) -> Result<(), String> {
+    if runtime.capabilities.requested_modes.contains(&mode) {
+        Ok(())
+    } else {
+        Err(tr!("当前智能体不支持规划模式"))
+    }
+}
 
 pub fn provider_supported(provider: &str) -> bool {
     PROVIDERS.contains(&provider)
@@ -273,6 +362,7 @@ fn detect_spec(spec: &RuntimeSpec) -> Runtime {
         models: Vec::new(),
         kind: "builtin".into(),
         description: String::new(),
+        capabilities: capabilities(&spec.id, &spec.provider),
     }
 }
 
@@ -296,6 +386,7 @@ pub fn detect_custom(
     };
     let path = resolve_runtime_command(&command, &provider);
     let version = path.as_deref().and_then(cli_version);
+    let runtime_capabilities = capabilities(&id, &provider);
     Runtime {
         id,
         name,
@@ -319,6 +410,7 @@ pub fn detect_custom(
             "profile".into()
         },
         description,
+        capabilities: runtime_capabilities,
     }
 }
 
@@ -479,8 +571,9 @@ pub fn compose_args(
     api_url: &str,
     model: &str,
     wire_api: &str,
+    mode: RunMode,
 ) -> Vec<String> {
-    let builtin = build_args(provider, assignment);
+    let builtin = build_args(provider, assignment, mode);
     let extra = if gateway {
         gateway_args(provider, api_url, model, wire_api)
     } else {
@@ -500,98 +593,175 @@ pub fn compose_args(
 }
 
 pub fn stdin_prompt(provider: &str, prompt: &str) -> Option<Vec<u8>> {
+    stdin_prompt_for_mode(provider, prompt, RunMode::Agent)
+}
+
+pub fn stdin_prompt_for_mode(provider: &str, prompt: &str, mode: RunMode) -> Option<Vec<u8>> {
     if !prompt_via_stdin(provider) {
         return None;
     }
     if provider == "claude" || provider == "codebuddy" {
-        let mut payload = serde_json::json!({
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{ "type": "text", "text": prompt }]
-            }
-        })
-        .to_string()
-        .into_bytes();
+        let mut payload = Vec::new();
+        if provider == "claude" && mode == RunMode::Auto {
+            payload.extend(
+                serde_json::json!({
+                    "type": "control_request",
+                    "request_id": "multara-initialize",
+                    "request": { "subtype": "initialize" }
+                })
+                .to_string()
+                .as_bytes(),
+            );
+            payload.push(b'\n');
+        }
+        payload.extend(
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{ "type": "text", "text": prompt }]
+                }
+            })
+            .to_string()
+            .as_bytes(),
+        );
         payload.push(b'\n');
         return Some(payload);
     }
     Some(prompt.as_bytes().to_vec())
 }
 
-pub fn execution(runtime_id: &str, assignment: &str) -> Result<(PathBuf, Vec<String>, u8), String> {
+pub fn execution(
+    runtime_id: &str,
+    assignment: &str,
+    mode: RunMode,
+) -> Result<(PathBuf, Vec<String>, u8), String> {
     let spec = runtime_specs()
         .iter()
         .find(|item| item.id == runtime_id)
-        .ok_or_else(|| format!("未知运行时：{runtime_id}"))?;
+        .ok_or_else(|| tr!("未知运行时：{runtime_id}", runtime_id = runtime_id))?;
     let path = spec
         .commands
         .iter()
         .find_map(|command| resolve_runtime_command(command, &spec.provider))
-        .ok_or_else(|| format!("未找到 {} CLI", spec.name))?;
+        .ok_or_else(|| tr!("未找到 {name} CLI", name = spec.name))?;
     Ok((
         path,
-        build_args(runtime_id, assignment),
+        build_args(runtime_id, assignment, mode),
         spec.default_concurrency.min(6),
     ))
 }
 
-pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
+pub(crate) fn build_args(runtime_id: &str, assignment: &str, mode: RunMode) -> Vec<String> {
     match runtime_id {
-        "claude" => vec![
-            "-p".into(),
-            "--output-format".into(),
-            "stream-json".into(),
-            "--input-format".into(),
-            "stream-json".into(),
-            "--verbose".into(),
-            "--permission-mode".into(),
-            "bypassPermissions".into(),
-            "--disallowedTools".into(),
-            "AskUserQuestion".into(),
-        ],
+        "claude" => {
+            let mut args = vec![
+                "-p".into(),
+                "--output-format".into(),
+                "stream-json".into(),
+                "--input-format".into(),
+                "stream-json".into(),
+                "--verbose".into(),
+                "--permission-mode".into(),
+                if mode == RunMode::Plan {
+                    "plan"
+                } else {
+                    "bypassPermissions"
+                }
+                .into(),
+            ];
+            if mode == RunMode::Auto {
+                args.extend([
+                    "--permission-prompt-tool".into(),
+                    "stdio".into(),
+                    "--permission-prompts".into(),
+                    "host".into(),
+                ]);
+            }
+            args.extend(["--disallowedTools".into(), "AskUserQuestion".into()]);
+            args
+        }
         // 需求 / 任务 / 收件箱 / 右下角聊天都可能没有 Git（临时工作区或纯文件夹）。
         // Codex exec 默认要求仓库根，否则直接退出；由 Multara 管 cwd，统一跳过该检查。
         // 默认 sandbox 是只读且常断网，模型会自称「只读、离线」只给复制命令；
         // 与 Claude bypassPermissions / Cursor --yolo 对齐，无头跑通改文件与装依赖。
-        "codex" => vec![
-            "exec".into(),
-            "--json".into(),
-            "--skip-git-repo-check".into(),
-            "--dangerously-bypass-approvals-and-sandbox".into(),
-            assignment.into(),
-        ],
-        "cursor" => vec![
-            "-p".into(),
-            "--output-format".into(),
-            "stream-json".into(),
-            "--yolo".into(),
-        ],
-        "qwen" => vec![
-            "--output-format".into(),
-            "stream-json".into(),
-            "--yolo".into(),
-        ],
-        "gemini" => vec![
-            "-p".into(),
-            assignment.into(),
-            "--output-format".into(),
-            "stream-json".into(),
-        ],
-        "copilot" => vec![
-            "-p".into(),
-            assignment.into(),
-            "--output-format".into(),
-            "json".into(),
-            "--allow-all".into(),
-            "--no-ask-user".into(),
-        ],
-        "opencode" => vec![
-            "run".into(),
-            "--format".into(),
-            "json".into(),
-            "--dangerously-skip-permissions".into(),
-        ],
+        "codex" => {
+            let mut args = vec![
+                "exec".into(),
+                "--json".into(),
+                "--skip-git-repo-check".into(),
+            ];
+            if mode == RunMode::Plan {
+                args.extend([
+                    "--sandbox".into(),
+                    "read-only".into(),
+                    "--ask-for-approval".into(),
+                    "never".into(),
+                ]);
+            } else {
+                args.push("--dangerously-bypass-approvals-and-sandbox".into());
+            }
+            args.push(assignment.into());
+            args
+        }
+        "cursor" => {
+            let mut args = vec!["-p".into(), "--output-format".into(), "stream-json".into()];
+            if mode == RunMode::Plan {
+                args.extend(["--trust".into(), "--mode".into(), "plan".into()]);
+            } else {
+                args.push("--yolo".into());
+            }
+            args
+        }
+        "qwen" => {
+            let mut args = vec!["--output-format".into(), "stream-json".into()];
+            if mode == RunMode::Plan {
+                args.extend(["--approval-mode".into(), "plan".into()]);
+            } else {
+                args.push("--yolo".into());
+            }
+            args
+        }
+        "gemini" => {
+            let mut args = vec![
+                "-p".into(),
+                assignment.into(),
+                "--output-format".into(),
+                "stream-json".into(),
+            ];
+            if mode == RunMode::Plan {
+                args.extend([
+                    "--approval-mode".into(),
+                    "plan".into(),
+                    "--skip-trust".into(),
+                ]);
+            }
+            args
+        }
+        "copilot" => {
+            let mut args = vec![
+                "-p".into(),
+                assignment.into(),
+                "--output-format".into(),
+                "json".into(),
+                "--allow-all".into(),
+                "--no-ask-user".into(),
+            ];
+            if mode == RunMode::Plan {
+                // --plan 只拦截工作区写入，shell 与 MCP 写工具仍会放行，所以再用白名单收窄到只读工具。
+                args.extend(["--plan".into(), "--available-tools=view,grep,glob".into()]);
+            }
+            args
+        }
+        "opencode" => {
+            let mut args = vec!["run".into(), "--format".into(), "json".into()];
+            if mode == RunMode::Plan {
+                args.extend(["--agent".into(), "plan".into()]);
+            } else {
+                args.push("--dangerously-skip-permissions".into());
+            }
+            args
+        }
         "codebuddy" => vec![
             "-p".into(),
             "--output-format".into(),
@@ -600,7 +770,12 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
             "stream-json".into(),
             "--verbose".into(),
             "--permission-mode".into(),
-            "bypassPermissions".into(),
+            if mode == RunMode::Plan {
+                "plan"
+            } else {
+                "bypassPermissions"
+            }
+            .into(),
             "--disallowedTools".into(),
             "AskUserQuestion".into(),
             "--disallowedTools".into(),
@@ -608,19 +783,25 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
             "--disallowedTools".into(),
             "ExitPlanMode".into(),
         ],
-        "codearts" => vec![
-            "run".into(),
-            "--format".into(),
-            "json".into(),
-            "--auto".into(),
-        ],
-        "deveco" => vec![
-            "run".into(),
-            "--format".into(),
-            "json".into(),
-            "--dangerously-skip-permissions".into(),
-            assignment.into(),
-        ],
+        "codearts" => {
+            let mut args = vec!["run".into(), "--format".into(), "json".into()];
+            if mode == RunMode::Plan {
+                args.extend(["--agent".into(), "plan".into()]);
+            } else {
+                args.push("--auto".into());
+            }
+            args
+        }
+        "deveco" => {
+            let mut args = vec!["run".into(), "--format".into(), "json".into()];
+            if mode == RunMode::Plan {
+                args.extend(["--agent".into(), "plan".into()]);
+            } else {
+                args.push("--dangerously-skip-permissions".into());
+            }
+            args.push(assignment.into());
+            args
+        }
         "openclaw" => vec![
             "agent".into(),
             "--local".into(),
@@ -636,7 +817,25 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str) -> Vec<String> {
             "--message".into(),
             assignment.into(),
         ],
-        "pi" | "omp" => vec!["-p".into(), "--mode".into(), "json".into()],
+        // Pi / Omp 没有可无头使用的 plan 模式，只开放只读工具即为原生只读约束。
+        "pi" => {
+            let mut args = vec!["-p".into(), "--mode".into(), "json".into()];
+            if mode == RunMode::Plan {
+                args.extend([
+                    "--tools".into(),
+                    "read,grep,find,ls".into(),
+                    "--no-mcp".into(),
+                ]);
+            }
+            args
+        }
+        "omp" => {
+            let mut args = vec!["-p".into(), "--mode".into(), "json".into()];
+            if mode == RunMode::Plan {
+                args.extend(["--tools".into(), "read,grep,glob".into()]);
+            }
+            args
+        }
         "antigravity" => vec!["-p".into(), assignment.into()],
         "hermes" | "kimi" | "reasonix" | "dim" | "qwenpaw" | "mcode" | "zeroclaw" => {
             vec!["acp".into()]
@@ -1200,11 +1399,12 @@ mod tests {
     use std::{collections::HashSet, fs};
 
     use super::{
-        build_args, compose_args, detect, execution, extract_version_line, gateway_client_model,
-        gateway_env, gateway_local_base_url, gateway_settings_args, native_api_format,
-        resolve_runtime_command, runtime_specs, CODEX_BUNDLE_OVERRIDE, CODEX_FIXTURE,
-        PATH_LOOKUP_DISABLED, SUPPLEMENTAL_PATH_OVERRIDE,
+        build_args, capabilities, compose_args, detect, execution, extract_version_line,
+        gateway_client_model, gateway_env, gateway_local_base_url, gateway_settings_args,
+        native_api_format, resolve_runtime_command, runtime_specs, CODEX_BUNDLE_OVERRIDE,
+        CODEX_FIXTURE, PATH_LOOKUP_DISABLED, SUPPLEMENTAL_PATH_OVERRIDE,
     };
+    use crate::models::RunMode;
 
     #[test]
     fn concurrency_never_exceeds_six() {
@@ -1252,15 +1452,178 @@ mod tests {
 
     #[test]
     fn cursor_and_qwen_read_prompts_from_stdin() {
-        let cursor = build_args("cursor", "never put this prompt in argv");
+        let cursor = build_args("cursor", "never put this prompt in argv", RunMode::Auto);
         assert_eq!(cursor, ["-p", "--output-format", "stream-json", "--yolo"]);
-        let qwen = build_args("qwen", "never put this prompt in argv");
+        let qwen = build_args("qwen", "never put this prompt in argv", RunMode::Auto);
         assert_eq!(qwen, ["--output-format", "stream-json", "--yolo"]);
     }
 
     #[test]
+    fn provider_capabilities_match_launch_modes() {
+        let claude = capabilities("claude", "claude");
+        assert!(claude.requested_modes.contains(&RunMode::Plan));
+        assert!(claude.auto_plan);
+        assert!(super::PROVIDERS
+            .iter()
+            .filter(|provider| **provider != "claude")
+            .all(|provider| !capabilities(provider, provider).auto_plan));
+        assert!(build_args("claude", "prompt", RunMode::Auto)
+            .windows(2)
+            .any(|args| args == ["--permission-prompt-tool", "stdio"]));
+        assert!(!build_args("claude", "prompt", RunMode::Agent)
+            .iter()
+            .any(|arg| arg == "--permission-prompt-tool"));
+        assert!(build_args("claude", "prompt", RunMode::Plan)
+            .windows(2)
+            .any(|args| args == ["--permission-mode", "plan"]));
+        assert!(build_args("claude", "prompt", RunMode::Agent)
+            .windows(2)
+            .any(|args| args == ["--permission-mode", "bypassPermissions"]));
+
+        let native_plan_providers = [
+            "claude",
+            "cursor",
+            "codex",
+            "gemini",
+            "qwen",
+            "opencode",
+            "codebuddy",
+            "codearts",
+            "deveco",
+            "copilot",
+            "pi",
+            "omp",
+        ];
+        for provider in super::PROVIDERS {
+            if native_plan_providers.contains(provider)
+                || super::protocol_driver(provider) == Some("acp")
+            {
+                continue;
+            }
+            let capability = capabilities(provider, provider);
+            assert!(
+                !capability.requested_modes.contains(&RunMode::Plan),
+                "{provider}"
+            );
+        }
+        for provider in native_plan_providers {
+            assert!(
+                capabilities(provider, provider)
+                    .requested_modes
+                    .contains(&RunMode::Plan),
+                "{provider}"
+            );
+        }
+        assert_eq!(
+            build_args("cursor", "prompt", RunMode::Plan),
+            [
+                "-p",
+                "--output-format",
+                "stream-json",
+                "--trust",
+                "--mode",
+                "plan"
+            ]
+        );
+        assert_eq!(
+            build_args("qwen", "prompt", RunMode::Plan),
+            ["--output-format", "stream-json", "--approval-mode", "plan"]
+        );
+        assert!(build_args("gemini", "prompt", RunMode::Plan)
+            .windows(2)
+            .any(|args| args == ["--approval-mode", "plan"]));
+        assert!(build_args("gemini", "prompt", RunMode::Plan)
+            .iter()
+            .any(|arg| arg == "--skip-trust"));
+        assert!(build_args("codex", "prompt", RunMode::Plan)
+            .windows(4)
+            .any(|args| args == ["--sandbox", "read-only", "--ask-for-approval", "never"]));
+        for provider in ["opencode", "codearts", "deveco"] {
+            let args = build_args(provider, "prompt", RunMode::Plan);
+            assert!(args.windows(2).any(|args| args == ["--agent", "plan"]));
+            assert!(!args.iter().any(|arg| {
+                matches!(arg.as_str(), "--auto" | "--dangerously-skip-permissions")
+            }));
+        }
+        let codebuddy = build_args("codebuddy", "prompt", RunMode::Plan);
+        assert!(codebuddy
+            .windows(2)
+            .any(|args| args == ["--permission-mode", "plan"]));
+        assert!(codebuddy.iter().any(|arg| arg == "EnterPlanMode"));
+        assert!(codebuddy.iter().any(|arg| arg == "ExitPlanMode"));
+    }
+
+    #[test]
+    fn copilot_pi_omp_plan_only_exposes_read_only_tools() {
+        for provider in ["copilot", "pi", "omp"] {
+            let plan = build_args(provider, "prompt", RunMode::Plan);
+            for mode in [RunMode::Auto, RunMode::Agent] {
+                let args = build_args(provider, "prompt", mode);
+                assert!(
+                    !args.iter().any(|arg| {
+                        arg == "--plan" || arg == "--tools" || arg.starts_with("--available-tools")
+                    }),
+                    "{provider}"
+                );
+                assert!(plan.starts_with(&args), "{provider}");
+            }
+            assert!(!plan.iter().any(|arg| {
+                matches!(
+                    arg.as_str(),
+                    "--plan-yolo" | "--autopilot" | "--auto-approve"
+                )
+            }));
+        }
+        let copilot = build_args("copilot", "prompt", RunMode::Plan);
+        assert!(copilot.iter().any(|arg| arg == "--plan"));
+        assert!(copilot
+            .iter()
+            .any(|arg| arg == "--available-tools=view,grep,glob"));
+        assert!(build_args("copilot", "prompt", RunMode::Agent)
+            .iter()
+            .any(|arg| arg == "--allow-all"));
+        assert!(build_args("pi", "prompt", RunMode::Plan)
+            .windows(2)
+            .any(|args| args == ["--tools", "read,grep,find,ls"]));
+        assert!(build_args("omp", "prompt", RunMode::Plan)
+            .windows(2)
+            .any(|args| args == ["--tools", "read,grep,glob"]));
+        for provider in ["openclaw", "antigravity"] {
+            assert!(
+                !capabilities(provider, provider)
+                    .requested_modes
+                    .contains(&RunMode::Plan),
+                "{provider}"
+            );
+        }
+    }
+
+    #[test]
+    fn claude_auto_initializes_the_control_channel_before_the_prompt() {
+        let payload = super::stdin_prompt_for_mode("claude", "hello", RunMode::Auto).unwrap();
+        let lines = String::from_utf8(payload).unwrap();
+        let mut lines = lines.lines();
+        assert!(lines.next().unwrap().contains(r#""subtype":"initialize""#));
+        assert!(lines.next().unwrap().contains(r#""text":"hello""#));
+        assert!(lines.next().is_none());
+    }
+
+    #[test]
+    fn acp_plan_capability_requires_protocol_reported_mode() {
+        super::cache_acp_plan_mode("custom:acp-test", None);
+        assert!(!capabilities("custom:acp-test", "kimi")
+            .requested_modes
+            .contains(&RunMode::Plan));
+        super::cache_acp_plan_mode("custom:acp-test", Some("planning"));
+        assert!(capabilities("custom:acp-test", "kimi")
+            .requested_modes
+            .contains(&RunMode::Plan));
+        super::cache_acp_plan_mode("custom:acp-test", None);
+    }
+
+    #[test]
     fn codex_skips_git_repo_check_for_non_repo_chats() {
-        let args = build_args("codex", "hello");
+        let args = build_args("codex", "hello", RunMode::Auto);
         assert_eq!(
             args,
             [
@@ -1283,6 +1646,7 @@ mod tests {
             "",
             "",
             "",
+            RunMode::Auto,
         );
         assert_eq!(&args[..2], ["--model", "composer-2.5"]);
         assert!(args
@@ -1303,6 +1667,7 @@ mod tests {
             "https://gw.example/v1/",
             "gpt-4.1",
             "chat",
+            RunMode::Auto,
         );
         assert_eq!(&args[..2], ["--profile", "team"]);
         let prompt_at = args.iter().position(|arg| arg == "do the task").unwrap();
@@ -1465,7 +1830,7 @@ mod tests {
 
     #[test]
     fn unknown_runtime_does_not_scan_every_cli() {
-        let error = execution("missing-runtime", "prompt").unwrap_err();
+        let error = execution("missing-runtime", "prompt", RunMode::Auto).unwrap_err();
         assert!(error.contains("未知运行时"));
     }
 

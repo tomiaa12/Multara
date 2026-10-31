@@ -9,6 +9,7 @@ import { fileToBase64 } from "../utils/file-base64";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
+import { agentRuntime, modeSupported, modeUnsupportedReason } from "../components/chat/run-mode";
 import {
   formatAgentPrompt,
   type ComposerNode,
@@ -106,6 +107,11 @@ const statusOptions = computed(() =>
 );
 const projectOptions = computed(() => projects.value.map((item) => ({ value: item.id, label: item.name })));
 const canCreate = computed(() => Boolean(form.title.trim() && assigneeId.value && !busy.value));
+const planFirst = ref(false);
+/** 小队按队长的运行时判断能否先出计划 */
+const assigneeRuntime = computed(() => agentRuntime(store.data, assigneeId.value));
+const planSupported = computed(() => modeSupported(assigneeRuntime.value, "plan"));
+const requestedMode = computed(() => (planFirst.value && planSupported.value ? "plan" : "auto"));
 
 watch(agents, (list) => {
   if (form.agentId && targetOptions.value.some((item) => item.value === form.agentId)) return;
@@ -324,12 +330,13 @@ async function create() {
       projectId: form.projectIds[0] ?? null,
       projectIds: [...form.projectIds],
       status: createStatus,
+      requestedMode: requestedMode.value,
     });
     if (task) {
       writeTaskMeta(task.id, { priority: "none", labels: [...form.labels] });
       await store.updateTaskMeta({ taskId: task.id, labels: [...form.labels] });
       if (attachments.length) {
-        store.send(description || form.title.trim(), task.sessionId, attachments);
+        store.send(description || form.title.trim(), task.sessionId, attachments, { mode: requestedMode.value });
       }
     }
     form.title = "";
@@ -415,6 +422,12 @@ async function create() {
           <UiButton type="button" size="icon" variant="ghost" :tip="t('tasks.addFileOrFolder')" @click="pickFilesOrFolders">
             <Paperclip :size="16" />
           </UiButton>
+          <UiTooltip :content="planSupported ? t('tasks.planFirstHint') : modeUnsupportedReason(assigneeRuntime)">
+            <label class="task-create-keep" :class="{ 'is-disabled': !planSupported }">
+              <input v-model="planFirst" class="ui-checkbox" type="checkbox" :disabled="!planSupported" />
+              {{ t('tasks.planFirst') }}
+            </label>
+          </UiTooltip>
           <label class="task-create-keep">
             <input v-model="keepOpen" class="ui-checkbox" type="checkbox" />
             {{ t('tasks.keepOpen') }}

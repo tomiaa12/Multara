@@ -61,12 +61,13 @@ pub fn probe(server: &str, entry: &Value) -> McpProbe {
     let prepared = crate::mcp_vars::prepare(server, entry);
     if !prepared.missing.is_empty() {
         result.status = "needs_input".into();
-        result.error = format!("缺少输入：{}", prepared.missing.join(", "));
+        result.error = tr!("缺少输入：{inputs}", inputs = prepared.missing.join(", "));
         result.missing_inputs = prepared.missing;
         return result;
     }
     let log = Arc::new(Mutex::new(String::new()));
-    let outcome = connect(&prepared.entry, log.clone()).and_then(|mut connection| run(connection.as_mut(), &mut result));
+    let outcome = connect(&prepared.entry, log.clone())
+        .and_then(|mut connection| run(connection.as_mut(), &mut result));
     result.log = log.lock().map(|text| text.clone()).unwrap_or_default();
     match outcome {
         Ok(()) => {
@@ -105,7 +106,10 @@ trait Connection {
 }
 
 fn run(connection: &mut dyn Connection, result: &mut McpProbe) -> ProbeResult<()> {
-    let mut client = Client { connection, next_id: 1 };
+    let mut client = Client {
+        connection,
+        next_id: 1,
+    };
     let init = client.request(
         "initialize",
         json!({
@@ -126,7 +130,9 @@ fn run(connection: &mut dyn Connection, result: &mut McpProbe) -> ProbeResult<()
         result.tools = client.list("tools/list", "tools")?;
     }
     if capabilities.get("resources").is_some() {
-        result.resources = client.list("resources/list", "resources").unwrap_or_default();
+        result.resources = client
+            .list("resources/list", "resources")
+            .unwrap_or_default();
     }
     if capabilities.get("prompts").is_some() {
         result.prompts = client.list("prompts/list", "prompts").unwrap_or_default();
@@ -152,11 +158,17 @@ impl Client<'_> {
                 None => self.connection.receive(deadline)?,
             };
             // 服务器反过来发请求（如 roots/list、ping）时要回应，否则它会一直等。
-            if let (Some(server_method), Some(server_id)) = (reply.get("method").and_then(Value::as_str), reply.get("id")) {
+            if let (Some(server_method), Some(server_id)) =
+                (reply.get("method").and_then(Value::as_str), reply.get("id"))
+            {
                 let answer = match server_method {
-                    "roots/list" => json!({ "jsonrpc": "2.0", "id": server_id, "result": { "roots": [] } }),
+                    "roots/list" => {
+                        json!({ "jsonrpc": "2.0", "id": server_id, "result": { "roots": [] } })
+                    }
                     "ping" => json!({ "jsonrpc": "2.0", "id": server_id, "result": {} }),
-                    _ => json!({ "jsonrpc": "2.0", "id": server_id, "error": { "code": -32601, "message": "Multara 检测时不支持此请求" } }),
+                    _ => {
+                        json!({ "jsonrpc": "2.0", "id": server_id, "error": { "code": -32601, "message": "Multara 检测时不支持此请求" } })
+                    }
                 };
                 pending = self.connection.send(&answer)?;
                 continue;
@@ -165,15 +177,24 @@ impl Client<'_> {
                 continue;
             }
             if let Some(error) = reply.get("error") {
-                let message = error.get("message").and_then(Value::as_str).unwrap_or("未知错误");
-                return Err(ProbeError::Other(format!("{method} 失败：{message}")));
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| tr!("未知错误"));
+                return Err(ProbeError::Other(tr!(
+                    "{method} 失败：{message}",
+                    method = method,
+                    message = message
+                )));
             }
             return Ok(reply.get("result").cloned().unwrap_or(Value::Null));
         }
     }
 
     fn notify(&mut self, method: &str) -> ProbeResult<()> {
-        self.connection.send(&json!({ "jsonrpc": "2.0", "method": method }))?;
+        self.connection
+            .send(&json!({ "jsonrpc": "2.0", "method": method }))?;
         Ok(())
     }
 
@@ -186,8 +207,18 @@ impl Client<'_> {
                 None => json!({}),
             };
             let page = self.request(method, params, REQUEST_TIMEOUT)?;
-            for item in page.get(key).and_then(Value::as_array).into_iter().flatten() {
-                let field = |name: &str| item.get(name).and_then(Value::as_str).unwrap_or("").to_string();
+            for item in page
+                .get(key)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let field = |name: &str| {
+                    item.get(name)
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string()
+                };
                 items.push(McpCapability {
                     name: field("name"),
                     title: item
@@ -199,7 +230,10 @@ impl Client<'_> {
                     uri: field("uri"),
                 });
             }
-            cursor = page.get("nextCursor").and_then(Value::as_str).map(str::to_string);
+            cursor = page
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             if cursor.is_none() {
                 break;
             }
@@ -210,13 +244,23 @@ impl Client<'_> {
 
 fn connect(entry: &Value, log: Arc<Mutex<String>>) -> ProbeResult<Box<dyn Connection>> {
     let kind = entry.get("type").and_then(Value::as_str).unwrap_or("");
-    let url = entry.get("url").or_else(|| entry.get("serverUrl")).and_then(Value::as_str).unwrap_or("");
+    let url = entry
+        .get("url")
+        .or_else(|| entry.get("serverUrl"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let headers = string_pairs(entry.get("headers"));
     if !url.is_empty() {
         if kind == "sse" {
             return Ok(Box::new(SseConnection::open(url, headers, log)?));
         }
-        return Ok(Box::new(HttpConnection { url: url.to_string(), headers, session: None, queue: Vec::new(), log }));
+        return Ok(Box::new(HttpConnection {
+            url: url.to_string(),
+            headers,
+            session: None,
+            queue: Vec::new(),
+            log,
+        }));
     }
     Ok(Box::new(StdioConnection::spawn(entry, log)?))
 }
@@ -255,18 +299,28 @@ struct StdioConnection {
 
 impl StdioConnection {
     fn spawn(entry: &Value, log: Arc<Mutex<String>>) -> ProbeResult<Self> {
-        let program = entry.get("command").and_then(Value::as_str).unwrap_or("").trim();
+        let program = entry
+            .get("command")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
         if program.is_empty() {
-            return Err(ProbeError::Other("没有填写启动命令".into()));
+            return Err(ProbeError::Other(tr!("没有填写启动命令")));
         }
         let resolved = crate::runtime::resolve_runtime_command(program, "").ok_or_else(|| {
-            format!(
-                "找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。"
+            tr!(
+                "找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。",
+                program = program
             )
         })?;
         let mut command = crate::process::command(&resolved);
         command.env("PATH", crate::runtime::augmented_path_env());
-        for arg in entry.get("args").and_then(Value::as_array).into_iter().flatten() {
+        for arg in entry
+            .get("args")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             if let Some(arg) = arg.as_str() {
                 command.arg(arg);
             } else {
@@ -276,10 +330,17 @@ impl StdioConnection {
         for (key, value) in string_pairs(entry.get("env")) {
             command.env(key, value);
         }
-        if let Some(cwd) = entry.get("cwd").and_then(Value::as_str).filter(|cwd| !cwd.is_empty()) {
+        if let Some(cwd) = entry
+            .get("cwd")
+            .and_then(Value::as_str)
+            .filter(|cwd| !cwd.is_empty())
+        {
             command.current_dir(cwd);
         }
-        command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         // `npx` / `uvx` / `sh -c` 包装的真实服务器是孙进程，放进独立进程组才能一起清理
         #[cfg(unix)]
         {
@@ -289,15 +350,16 @@ impl StdioConnection {
         append_log(&log, &format!("启动：{program}"));
         let mut child = command.spawn().map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
-                format!(
-                    "找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。"
-                )
+                tr!("找不到命令 {program}。请确认已安装并可在终端中运行，或在 MCP 配置中填写绝对路径。", program = program)
             } else {
-                format!("无法启动 MCP 服务器：{error}")
+                tr!("无法启动 MCP 服务器：{error}", error = error)
             }
         })?;
-        let stdin = child.stdin.take().ok_or_else(|| "无法写入子进程".to_string())?;
-        let stdout = child.stdout.take().ok_or_else(|| "无法读取子进程输出".to_string())?;
+        let stdin = child.stdin.take().ok_or_else(|| tr!("无法写入子进程"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| tr!("无法读取子进程输出"))?;
         if let Some(stderr) = child.stderr.take() {
             let log = log.clone();
             thread::spawn(move || {
@@ -314,7 +376,12 @@ impl StdioConnection {
                 }
             }
         });
-        Ok(Self { child, stdin, lines, log })
+        Ok(Self {
+            child,
+            stdin,
+            lines,
+            log,
+        })
     }
 }
 
@@ -322,7 +389,7 @@ impl Connection for StdioConnection {
     fn send(&mut self, message: &Value) -> ProbeResult<Option<Value>> {
         writeln!(self.stdin, "{message}")
             .and_then(|_| self.stdin.flush())
-            .map_err(|error| format!("写入失败：{error}"))?;
+            .map_err(|error| tr!("写入失败：{error}", error = error))?;
         Ok(None)
     }
 
@@ -335,12 +402,19 @@ impl Connection for StdioConnection {
                     Err(_) if !line.trim().is_empty() => append_log(&self.log, &line),
                     Err(_) => {}
                 },
-                Err(mpsc::RecvTimeoutError::Timeout) => return Err(ProbeError::Other("等待服务器响应超时".into())),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(ProbeError::Other(tr!("等待服务器响应超时")))
+                }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let code = self.child.try_wait().ok().flatten().and_then(|status| status.code());
+                    let code = self
+                        .child
+                        .try_wait()
+                        .ok()
+                        .flatten()
+                        .and_then(|status| status.code());
                     return Err(ProbeError::Other(match code {
-                        Some(code) => format!("服务器进程已退出（退出码 {code}）"),
-                        None => "服务器进程已退出".into(),
+                        Some(code) => tr!("服务器进程已退出（退出码 {code}）", code = code),
+                        None => tr!("服务器进程已退出"),
                     }));
                 }
             }
@@ -375,25 +449,45 @@ impl Connection for HttpConnection {
     fn send(&mut self, message: &Value) -> ProbeResult<Option<Value>> {
         let mut headers = self.headers.clone();
         headers.push(("Content-Type".into(), "application/json".into()));
-        headers.push(("Accept".into(), "application/json, text/event-stream".into()));
+        headers.push((
+            "Accept".into(),
+            "application/json, text/event-stream".into(),
+        ));
         headers.push(("MCP-Protocol-Version".into(), PROTOCOL_VERSION.into()));
         if let Some(session) = &self.session {
             headers.push(("Mcp-Session-Id".into(), session.clone()));
         }
-        let response = http_client::request("POST", &self.url, &headers, Some(&message.to_string()), REQUEST_TIMEOUT.as_secs() as u32)?;
-        append_log(&self.log, &format!("POST {} → HTTP {}", self.url, response.status));
+        let response = http_client::request(
+            "POST",
+            &self.url,
+            &headers,
+            Some(&message.to_string()),
+            REQUEST_TIMEOUT.as_secs() as u32,
+        )?;
+        append_log(
+            &self.log,
+            &format!("POST {} → HTTP {}", self.url, response.status),
+        );
         if let Some(session) = response.header("mcp-session-id") {
             self.session = Some(session.to_string());
         }
         match response.status {
-            401 | 403 => return Err(ProbeError::Auth(format!("服务器要求授权（HTTP {}）", response.status))),
+            401 | 403 => {
+                return Err(ProbeError::Auth(tr!(
+                    "服务器要求授权（HTTP {status}）",
+                    status = response.status
+                )))
+            }
             200..=299 => {}
             status => {
                 let body: String = response.body.chars().take(300).collect();
                 return Err(ProbeError::Other(format!("HTTP {status}：{body}")));
             }
         }
-        let content_type = response.header("content-type").unwrap_or("").to_ascii_lowercase();
+        let content_type = response
+            .header("content-type")
+            .unwrap_or("")
+            .to_ascii_lowercase();
         if content_type.contains("text/event-stream") {
             self.queue.extend(sse_messages(&response.body));
         } else if !response.body.trim().is_empty() {
@@ -403,12 +497,16 @@ impl Connection for HttpConnection {
                 Err(_) => append_log(&self.log, &response.body),
             }
         }
-        Ok(if self.queue.is_empty() { None } else { Some(self.queue.remove(0)) })
+        Ok(if self.queue.is_empty() {
+            None
+        } else {
+            Some(self.queue.remove(0))
+        })
     }
 
     fn receive(&mut self, _deadline: Instant) -> ProbeResult<Value> {
         if self.queue.is_empty() {
-            return Err(ProbeError::Other("服务器没有返回结果".into()));
+            return Err(ProbeError::Other(tr!("服务器没有返回结果")));
         }
         Ok(self.queue.remove(0))
     }
@@ -463,18 +561,37 @@ struct SseConnection {
 }
 
 impl SseConnection {
-    fn open(url: &str, headers: Vec<(String, String)>, log: Arc<Mutex<String>>) -> ProbeResult<Self> {
-        let parsed = url::Url::parse(url).map_err(|_| format!("地址无效：{url}"))?;
+    fn open(
+        url: &str,
+        headers: Vec<(String, String)>,
+        log: Arc<Mutex<String>>,
+    ) -> ProbeResult<Self> {
+        let parsed = url::Url::parse(url).map_err(|_| tr!("地址无效：{url}", url = url))?;
         let mut command = crate::process::command("curl");
-        command.args(["--silent", "--show-error", "-N", "--proto", "=http,https", "--write-out", "\n__HTTP_STATUS__%{http_code}\n"]);
+        command.args([
+            "--silent",
+            "--show-error",
+            "-N",
+            "--proto",
+            "=http,https",
+            "--write-out",
+            "\n__HTTP_STATUS__%{http_code}\n",
+        ]);
         let mut stream_headers = headers.clone();
         stream_headers.push(("Accept".into(), "text/event-stream".into()));
         let header_file = http_client::curl_header_file(&stream_headers)?;
-        command.arg("-H").arg(format!("@{}", header_file.path().display()));
+        command
+            .arg("-H")
+            .arg(format!("@{}", header_file.path().display()));
         command.arg(parsed.as_str());
-        command.stdout(Stdio::piped()).stderr(Stdio::null()).stdin(Stdio::null());
-        let mut child = command.spawn().map_err(|error| format!("无法调用 curl：{error}"))?;
-        let mut stdout = child.stdout.take().ok_or_else(|| "无法读取 SSE 流".to_string())?;
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null());
+        let mut child = command
+            .spawn()
+            .map_err(|error| tr!("无法调用 curl：{error}", error = error))?;
+        let mut stdout = child.stdout.take().ok_or_else(|| tr!("无法读取 SSE 流"))?;
         let (sender, events) = mpsc::channel();
         thread::spawn(move || {
             let mut buffer = String::new();
@@ -503,23 +620,37 @@ impl SseConnection {
             let wait = deadline.saturating_duration_since(Instant::now());
             match events.recv_timeout(wait) {
                 Ok((event, data)) if event == "endpoint" => {
-                    let endpoint = parsed.join(data.trim()).map_err(|_| format!("服务器返回的端点无效：{data}"))?;
+                    let endpoint = parsed
+                        .join(data.trim())
+                        .map_err(|_| tr!("服务器返回的端点无效：{data}", data = data))?;
                     append_log(&log, &format!("SSE 端点：{endpoint}"));
-                    return Ok(Self { child, endpoint: endpoint.to_string(), headers, events, log, _header_file: header_file });
+                    return Ok(Self {
+                        child,
+                        endpoint: endpoint.to_string(),
+                        headers,
+                        events,
+                        log,
+                        _header_file: header_file,
+                    });
                 }
                 Ok((event, status)) if event == "__status" => {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err(match status.as_str() {
-                        "401" | "403" => ProbeError::Auth(format!("服务器要求授权（HTTP {status}）")),
-                        _ => ProbeError::Other(format!("SSE 连接失败（HTTP {status}）")),
+                        "401" | "403" => ProbeError::Auth(tr!(
+                            "服务器要求授权（HTTP {status}）",
+                            status = status
+                        )),
+                        _ => {
+                            ProbeError::Other(tr!("SSE 连接失败（HTTP {status}）", status = status))
+                        }
                     });
                 }
                 Ok(_) => {}
                 Err(_) => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(ProbeError::Other("等待 SSE 端点超时".into()));
+                    return Err(ProbeError::Other(tr!("等待 SSE 端点超时")));
                 }
             }
         }
@@ -530,11 +661,23 @@ impl Connection for SseConnection {
     fn send(&mut self, message: &Value) -> ProbeResult<Option<Value>> {
         let mut headers = self.headers.clone();
         headers.push(("Content-Type".into(), "application/json".into()));
-        let response = http_client::request("POST", &self.endpoint, &headers, Some(&message.to_string()), REQUEST_TIMEOUT.as_secs() as u32)?;
+        let response = http_client::request(
+            "POST",
+            &self.endpoint,
+            &headers,
+            Some(&message.to_string()),
+            REQUEST_TIMEOUT.as_secs() as u32,
+        )?;
         match response.status {
-            401 | 403 => Err(ProbeError::Auth(format!("服务器要求授权（HTTP {}）", response.status))),
+            401 | 403 => Err(ProbeError::Auth(tr!(
+                "服务器要求授权（HTTP {status}）",
+                status = response.status
+            ))),
             200..=299 => Ok(None),
-            status => Err(ProbeError::Other(format!("HTTP {status}：{}", response.body.chars().take(300).collect::<String>()))),
+            status => Err(ProbeError::Other(format!(
+                "HTTP {status}：{}",
+                response.body.chars().take(300).collect::<String>()
+            ))),
         }
     }
 
@@ -549,10 +692,13 @@ impl Connection for SseConnection {
                     append_log(&self.log, &data);
                 }
                 Ok((event, status)) if event == "__status" => {
-                    return Err(ProbeError::Other(format!("SSE 连接已断开（HTTP {status}）")));
+                    return Err(ProbeError::Other(tr!(
+                        "SSE 连接已断开（HTTP {status}）",
+                        status = status
+                    )));
                 }
                 Ok(_) => {}
-                Err(_) => return Err(ProbeError::Other("等待服务器响应超时".into())),
+                Err(_) => return Err(ProbeError::Other(tr!("等待服务器响应超时"))),
             }
         }
     }

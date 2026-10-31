@@ -82,8 +82,7 @@ impl BuiltinSkill {
     }
 
     pub fn description_for(&self, locale: &str) -> String {
-        frontmatter_description(self.markdown_for(locale))
-            .unwrap_or_else(|| self.name.to_string())
+        frontmatter_description(self.markdown_for(locale)).unwrap_or_else(|| self.name.to_string())
     }
 }
 
@@ -105,7 +104,8 @@ pub fn materialize(root: &Path, locale: &str) -> Result<(), String> {
         let mut file = tempfile::NamedTempFile::new_in(&dir).map_err(|error| error.to_string())?;
         file.write_all(markdown.as_bytes())
             .map_err(|error| error.to_string())?;
-        file.persist(&path).map_err(|error| error.error.to_string())?;
+        file.persist(&path)
+            .map_err(|error| error.error.to_string())?;
     }
     Ok(())
 }

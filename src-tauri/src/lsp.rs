@@ -22,17 +22,44 @@ struct ServerSpec {
     args: &'static [&'static str],
 }
 
-const RUST: &[ServerSpec] = &[ServerSpec { command: "rust-analyzer", args: &[] }];
+const RUST: &[ServerSpec] = &[ServerSpec {
+    command: "rust-analyzer",
+    args: &[],
+}];
 const PYTHON: &[ServerSpec] = &[
-    ServerSpec { command: "pyright-langserver", args: &["--stdio"] },
-    ServerSpec { command: "basedpyright-langserver", args: &["--stdio"] },
-    ServerSpec { command: "pylsp", args: &[] },
+    ServerSpec {
+        command: "pyright-langserver",
+        args: &["--stdio"],
+    },
+    ServerSpec {
+        command: "basedpyright-langserver",
+        args: &["--stdio"],
+    },
+    ServerSpec {
+        command: "pylsp",
+        args: &[],
+    },
 ];
-const GO: &[ServerSpec] = &[ServerSpec { command: "gopls", args: &[] }];
-const CPP: &[ServerSpec] = &[ServerSpec { command: "clangd", args: &[] }];
-const VUE: &[ServerSpec] = &[ServerSpec { command: "vue-language-server", args: &["--stdio"] }];
-const PHP: &[ServerSpec] = &[ServerSpec { command: "intelephense", args: &["--stdio"] }];
-const RUBY: &[ServerSpec] = &[ServerSpec { command: "solargraph", args: &["stdio"] }];
+const GO: &[ServerSpec] = &[ServerSpec {
+    command: "gopls",
+    args: &[],
+}];
+const CPP: &[ServerSpec] = &[ServerSpec {
+    command: "clangd",
+    args: &[],
+}];
+const VUE: &[ServerSpec] = &[ServerSpec {
+    command: "vue-language-server",
+    args: &["--stdio"],
+}];
+const PHP: &[ServerSpec] = &[ServerSpec {
+    command: "intelephense",
+    args: &["--stdio"],
+}];
+const RUBY: &[ServerSpec] = &[ServerSpec {
+    command: "solargraph",
+    args: &["stdio"],
+}];
 
 fn specs(language: &str) -> &'static [ServerSpec] {
     match language {
@@ -82,7 +109,8 @@ struct Server {
     child: Mutex<Child>,
 }
 
-static SERVERS: LazyLock<Mutex<HashMap<String, Arc<Server>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static SERVERS: LazyLock<Mutex<HashMap<String, Arc<Server>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 /// 让“是否已在运行”的检查和插入成为一步，避免并发 `lsp_start` 各起一个进程。
 static START_LOCK: Mutex<()> = Mutex::new(());
 
@@ -91,7 +119,10 @@ fn servers() -> std::sync::MutexGuard<'static, HashMap<String, Arc<Server>>> {
 }
 
 fn reap(server: &Server) {
-    let mut child = server.child.lock().unwrap_or_else(|error| error.into_inner());
+    let mut child = server
+        .child
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let _ = child.kill();
     let _ = child.wait();
 }
@@ -117,16 +148,16 @@ pub fn lsp_send(id: String, message: String) -> Result<(), String> {
     let server = servers()
         .get(&id)
         .cloned()
-        .ok_or_else(|| "语言服务器已退出".to_string())?;
+        .ok_or_else(|| tr!("语言服务器已退出"))?;
     let size = message.len();
     if server.pending.fetch_add(size, Ordering::AcqRel) + size > MAX_PENDING_BYTES {
         server.pending.fetch_sub(size, Ordering::AcqRel);
-        return Err("发送给语言服务器失败：服务器长时间没有读取输入".to_string());
+        return Err(tr!("发送给语言服务器失败：服务器长时间没有读取输入"));
     }
     server
         .outbox
         .send(message)
-        .map_err(|_| "语言服务器已退出".to_string())
+        .map_err(|_| tr!("语言服务器已退出"))
 }
 
 #[tauri::command]
@@ -145,7 +176,12 @@ pub fn stop_all() {
     }
 }
 
-fn start(app: AppHandle, workspace_id: &str, root: &str, language: &str) -> Result<Option<LspServerInfo>, String> {
+fn start(
+    app: AppHandle,
+    workspace_id: &str,
+    root: &str,
+    language: &str,
+) -> Result<Option<LspServerInfo>, String> {
     let _starting = START_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let key = format!("{workspace_id}\0{language}");
     if let Some(existing) = servers().values().find(|server| server.key == key) {
@@ -165,13 +201,22 @@ fn start(app: AppHandle, workspace_id: &str, root: &str, language: &str) -> Resu
             .stderr(Stdio::piped());
         let mut child = command
             .spawn()
-            .map_err(|error| format!("启动 {} 失败：{error}", spec.command))?;
+            .map_err(|error| {
+                tr!(
+                    "启动 {command} 失败：{error}",
+                    command = spec.command,
+                    error = error
+                )
+            })?;
         let (Some(mut stdin), Some(stdout), Some(mut stderr)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("{} 没有可用的标准输入输出", spec.command));
+            return Err(tr!(
+                "{command} 没有可用的标准输入输出",
+                command = spec.command
+            ));
         };
         let info = LspServerInfo {
             id: Uuid::new_v4().to_string(),
@@ -212,7 +257,11 @@ fn start(app: AppHandle, workspace_id: &str, root: &str, language: &str) -> Resu
 /// 优先用项目里安装的版本（如 `node_modules/.bin/vue-language-server`），版本和项目依赖一致。
 fn resolve_program(root: &Path, command: &str) -> Option<PathBuf> {
     let local = root.join("node_modules").join(".bin");
-    let candidates: &[&str] = if cfg!(windows) { &[".cmd", ".exe", ""] } else { &[""] };
+    let candidates: &[&str] = if cfg!(windows) {
+        &[".cmd", ".exe", ""]
+    } else {
+        &[""]
+    };
     for suffix in candidates {
         let path = local.join(format!("{command}{suffix}"));
         if path.is_file() {
@@ -237,7 +286,13 @@ fn initialization_options(language: &str, root: &Path) -> Option<Value> {
 fn read_loop(app: AppHandle, id: String, stdout: impl Read) {
     let mut reader = BufReader::new(stdout);
     while let Some(message) = read_message(&mut reader) {
-        let _ = app.emit("lsp-message", LspMessage { id: id.clone(), message });
+        let _ = app.emit(
+            "lsp-message",
+            LspMessage {
+                id: id.clone(),
+                message,
+            },
+        );
     }
     // 读失败也可能是协议损坏而进程还活着，先 kill 再 wait，否则 wait 会永远阻塞。
     let removed = servers().remove(&id);
@@ -252,7 +307,11 @@ fn read_message(reader: &mut impl BufRead) -> Option<String> {
         let mut length = None;
         loop {
             let mut line = String::new();
-            let read = reader.by_ref().take(MAX_HEADER_LINE_BYTES).read_line(&mut line).ok()?;
+            let read = reader
+                .by_ref()
+                .take(MAX_HEADER_LINE_BYTES)
+                .read_line(&mut line)
+                .ok()?;
             if read == 0 || (!line.ends_with('\n') && read as u64 >= MAX_HEADER_LINE_BYTES) {
                 return None;
             }
@@ -295,7 +354,10 @@ mod tests {
         write_message(&mut buffer, r#"{"a":"跨端"}"#).unwrap();
         write_message(&mut buffer, "{}").unwrap();
         let mut reader = Cursor::new(buffer);
-        assert_eq!(read_message(&mut reader).as_deref(), Some(r#"{"a":"跨端"}"#));
+        assert_eq!(
+            read_message(&mut reader).as_deref(),
+            Some(r#"{"a":"跨端"}"#)
+        );
         assert_eq!(read_message(&mut reader).as_deref(), Some("{}"));
         assert_eq!(read_message(&mut reader), None);
     }
@@ -311,8 +373,14 @@ mod tests {
     fn oversized_frames_and_header_lines_are_rejected() {
         let huge = format!("Content-Length: {}\r\n\r\n{{}}", MAX_MESSAGE_BYTES + 1);
         assert_eq!(read_message(&mut Cursor::new(huge.into_bytes())), None);
-        let long_header = format!("X-Junk: {}\r\n\r\n", "a".repeat(MAX_HEADER_LINE_BYTES as usize * 2));
-        assert_eq!(read_message(&mut Cursor::new(long_header.into_bytes())), None);
+        let long_header = format!(
+            "X-Junk: {}\r\n\r\n",
+            "a".repeat(MAX_HEADER_LINE_BYTES as usize * 2)
+        );
+        assert_eq!(
+            read_message(&mut Cursor::new(long_header.into_bytes())),
+            None
+        );
     }
 
     #[test]

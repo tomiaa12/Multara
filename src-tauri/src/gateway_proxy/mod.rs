@@ -21,7 +21,6 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 const MAX_CONCURRENT_REQUESTS: usize = 16;
 const ACCEPT_POLL: Duration = Duration::from_millis(100);
 const MAX_REQUEST_BYTES: u64 = 32 * 1024 * 1024;
-const INTERNAL_ERROR: &str = "本地代理内部错误";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiFormat {
@@ -127,11 +126,12 @@ impl GatewayState {
 impl GatewayProxy {
     pub fn start(config: GatewayProxyConfig) -> Result<Self, String> {
         let server =
-            Server::http("127.0.0.1:0").map_err(|error| format!("无法监听本地代理：{error}"))?;
+            Server::http("127.0.0.1:0")
+                .map_err(|error| tr!("无法监听本地代理：{error}", error = error))?;
         let address = server
             .server_addr()
             .to_ip()
-            .ok_or_else(|| "本地代理地址无效".to_string())?;
+            .ok_or_else(|| tr!("本地代理地址无效"))?;
         let token = format!("multara-{}", uuid::Uuid::new_v4());
         let thread_token: Arc<str> = token.clone().into();
         let stopped = Arc::new(AtomicBool::new(false));
@@ -152,7 +152,8 @@ impl GatewayProxy {
                         Ok(Some(request)) => {
                             active.fetch_add(1, Ordering::AcqRel);
                             let slot = ActiveSlot(active.clone());
-                            let (config, token, state) = (config.clone(), thread_token.clone(), state.clone());
+                            let (config, token, state) =
+                                (config.clone(), thread_token.clone(), state.clone());
                             let _ = thread::Builder::new()
                                 .name("multara-gateway-request".into())
                                 .spawn(move || {
@@ -205,7 +206,8 @@ impl Drop for ActiveSlot {
 
 /// 转换代码 panic 时回 502，而不是让请求在展开时被丢弃。
 fn guarded<T>(work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    panic::catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(INTERNAL_ERROR.to_string()))
+    panic::catch_unwind(AssertUnwindSafe(work))
+        .unwrap_or_else(|_| Err(tr!("本地代理内部错误")))
 }
 
 fn lock_state(state: &Mutex<GatewayState>) -> MutexGuard<'_, GatewayState> {
@@ -222,7 +224,7 @@ fn handle_request(
         respond_json(
             request,
             401,
-            &json!({ "error": { "message": "本地代理鉴权失败" } }),
+            &json!({ "error": { "message": tr!("本地代理鉴权失败") } }),
         );
         return;
     }
@@ -243,7 +245,7 @@ fn handle_request(
         return;
     }
     if request.method() != &Method::Post {
-        respond_error(request, 405, "只支持 POST 请求");
+        respond_error(request, 405, &tr!("只支持 POST 请求"));
         return;
     }
     let incoming_stream = path.contains("streamGenerateContent");
@@ -254,18 +256,23 @@ fn handle_request(
         .read_to_end(&mut raw)
         .is_err()
     {
-        respond_error(request, 400, "读取请求失败");
+        respond_error(request, 400, &tr!("读取请求失败"));
         return;
     }
     let input: Value = match serde_json::from_slice(&raw) {
         Ok(input) => input,
         Err(error) => {
-            respond_error(request, 400, &format!("请求 JSON 无效：{error}"));
+            respond_error(request, 400, &tr!("请求 JSON 无效：{error}", error = error));
             return;
         }
     };
     let rewritten = panic::catch_unwind(AssertUnwindSafe(|| {
-        transform::rewrite_request(input, config.client_format, config.upstream_format, &config.model)
+        transform::rewrite_request(
+            input,
+            config.client_format,
+            config.upstream_format,
+            &config.model,
+        )
     }));
     let (mut mapped, body_stream) = match rewritten {
         Ok(Ok(result)) => result,
@@ -274,7 +281,7 @@ fn handle_request(
             return;
         }
         Err(_) => {
-            respond_error(request, 502, INTERNAL_ERROR);
+            respond_error(request, 502, &tr!("本地代理内部错误"));
             return;
         }
     };
@@ -298,7 +305,7 @@ fn handle_request(
         ) {
             Ok(response) => response,
             Err(error) => {
-                respond_error(request, 502, &format!("上游请求失败：{error}"));
+                respond_error(request, 502, &tr!("上游请求失败：{error}", error = error));
                 return;
             }
         };
@@ -315,14 +322,23 @@ fn handle_request(
         });
         if !streaming_content {
             let mut raw = String::new();
-            if upstream.by_ref().take(MAX_REQUEST_BYTES).read_to_string(&mut raw).is_err() {
-                respond_error(request, 502, "读取上游响应失败");
+            if upstream
+                .by_ref()
+                .take(MAX_REQUEST_BYTES)
+                .read_to_string(&mut raw)
+                .is_err()
+            {
+                respond_error(request, 502, &tr!("读取上游响应失败"));
                 return;
             }
             let mut output: Value = match serde_json::from_str(&raw) {
                 Ok(output) => output,
                 Err(error) => {
-                    respond_error(request, 502, &format!("上游返回了无法解析的响应：{error}"));
+                    respond_error(
+                        request,
+                        502,
+                        &tr!("上游返回了无法解析的响应：{error}", error = error),
+                    );
                     return;
                 }
             };
@@ -372,7 +388,7 @@ fn handle_request(
     ) {
         Ok(response) => response,
         Err(error) => {
-            respond_error(request, 502, &format!("上游请求失败：{error}"));
+            respond_error(request, 502, &tr!("上游请求失败：{error}", error = error));
             return;
         }
     };
@@ -392,7 +408,7 @@ fn handle_request(
     let mut output: Value = match serde_json::from_str(&upstream.body) {
         Ok(output) => output,
         Err(error) => {
-            respond_error(request, 502, &format!("上游返回了无法解析的响应：{error}"));
+            respond_error(request, 502, &tr!("上游返回了无法解析的响应：{error}", error = error));
             return;
         }
     };
@@ -400,7 +416,12 @@ fn handle_request(
         lock_state(state).capture_gemini_response(&mut output);
     }
     let mapped_response = match guarded(|| {
-        transform::rewrite_response(output, config.upstream_format, config.client_format, &config.model)
+        transform::rewrite_response(
+            output,
+            config.upstream_format,
+            config.client_format,
+            &config.model,
+        )
     }) {
         Ok(result) => result,
         Err(error) => {

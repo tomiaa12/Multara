@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{
     builtin_agents, builtin_skills, cli, conversation,
     database::{ActiveRun, AppState},
-    models::{RunEvent, TimelineItem},
+    models::{RunEvent, RunMode, TimelineItem},
     resources, runtime, runtime_brief, session, snapshot,
     usage::{TokenUsage, UsageAccumulator},
 };
@@ -46,6 +46,7 @@ struct QueuedRun {
     user_message_id: Option<String>,
     agent_name: String,
     system_key: Option<String>,
+    mode: RunMode,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -105,8 +106,8 @@ fn reap_orphaned_runs(app: &AppHandle) {
             continue;
         };
         let detail = match exit {
-            Some(code) => format!("运行时已退出，退出码 {code}"),
-            None => "运行时已退出".to_string(),
+            Some(code) => tr!("运行时已退出，退出码 {code}", code = code),
+            None => tr!("运行时已退出"),
         };
         crate::diag::write(&format!("REAP orphan {id} {detail}"));
         finish(app, &run, "failed", "", Some(detail));
@@ -115,19 +116,26 @@ fn reap_orphaned_runs(app: &AppHandle) {
 
 pub fn generate_chat_title(app: &AppHandle, prompt: &str) -> Result<String, String> {
     let clipped: String = prompt.chars().take(800).collect();
-    let instruction = format!(
+    let instruction = tr!(
         "根据用户的第一句提问，生成一个简短对话标题。\
          只输出标题本身，不要引号、句号、解释或 Markdown。\
-         中文不超过 16 个字，英文不超过 6 个单词。\n\n{clipped}"
+         中文不超过 16 个字，英文不超过 6 个单词。\n\n{clipped}",
+        clipped = clipped
     );
-    let title = generate_plain_line(app, &instruction, "对话标题", Duration::from_secs(8), None)?;
+    let title = generate_plain_line(
+        app,
+        &instruction,
+        &tr!("对话标题"),
+        Duration::from_secs(8),
+        None,
+    )?;
     let title = title
         .trim_matches(|ch: char| {
             matches!(ch, '"' | '\'' | '“' | '”' | '‘' | '’' | '。' | '！' | '!')
         })
         .trim();
     if title.is_empty() {
-        return Err("运行时没有生成对话标题".to_string());
+        return Err(tr!("运行时没有生成对话标题"));
     }
     Ok(title.chars().take(24).collect())
 }
@@ -162,7 +170,7 @@ pub fn generate_commit_message(
     let message = generate_plain_line(
         app,
         &prompt,
-        "提交信息",
+        &tr!("提交信息"),
         Duration::from_secs(60),
         Some(source),
     )?;
@@ -199,7 +207,7 @@ pub fn generate_branch_name(
     generate_plain_line(
         app,
         &instruction,
-        "分支名",
+        &tr!("分支名"),
         Duration::from_secs(45),
         Some(source),
     )
@@ -241,7 +249,7 @@ fn generate_plain_line(
         .trim()
         .to_string();
     if line.is_empty() {
-        return Err(format!("运行时没有生成{label}"));
+        return Err(tr!("运行时没有生成{label}", label = label));
     }
     Ok(line)
 }
@@ -283,15 +291,15 @@ fn generate_text_via_api(
 ) -> Result<String, String> {
     let url = chat_completions_url(&source.api_url);
     if url.is_empty() || url == "/chat/completions" {
-        return Err("请先填写 API URL".to_string());
+        return Err(tr!("请先填写 API URL"));
     }
     let model = source.api_model.trim();
     if model.is_empty() {
-        return Err("请先填写模型".to_string());
+        return Err(tr!("请先填写模型"));
     }
     let api_key = source.api_key.trim();
     if api_key.is_empty() {
-        return Err("请先填写 API Key".to_string());
+        return Err(tr!("请先填写 API Key"));
     }
     let body = json!({
         "model": model,
@@ -311,14 +319,15 @@ fn generate_text_via_api(
         timeout.as_secs().max(1) as u32,
     )?;
     if !(200..300).contains(&response.status) {
-        return Err(format!(
-            "生成{label}失败（HTTP {}）：{}",
-            response.status,
-            truncate_error(response.body.trim(), 1_000)
+        return Err(tr!(
+            "生成{label}失败（HTTP {status}）：{detail}",
+            label = label,
+            status = response.status,
+            detail = truncate_error(response.body.trim(), 1_000)
         ));
     }
     let parsed: Value = serde_json::from_str(&response.body)
-        .map_err(|error| format!("接口返回无法解析：{error}"))?;
+        .map_err(|error| tr!("接口返回无法解析：{error}", error = error))?;
     let content = parsed
         .pointer("/choices/0/message/content")
         .and_then(message_content_text)
@@ -331,20 +340,21 @@ fn generate_text_via_api(
         .unwrap_or_default();
     let content = content.trim();
     if content.is_empty() {
-        return Err(format!("接口没有生成{label}"));
+        return Err(tr!("接口没有生成{label}", label = label));
     }
     Ok(content.to_string())
 }
 
-const SKILL_GENERATION_PROMPT: &str = "\
-根据下面的需求写一个 Agent Skill 的完整 SKILL.md。要求：\n\
-1. 以 YAML frontmatter 开头，包含 name（小写英文、数字和连字符）和 description（一句话说明做什么、什么时候用）。\n\
-2. 正文用 Markdown 写清楚适用场景、具体步骤和注意事项，语言与需求一致。\n\
-3. 只输出 SKILL.md 的内容，不要用代码块包裹，不要解释，不要调用工具。";
-
 /// 让运行时根据需求写一份 SKILL.md。
 pub fn generate_skill_markdown(app: &AppHandle, requirement: &str) -> Result<String, String> {
-    let prompt = format!("{SKILL_GENERATION_PROMPT}\n\n需求：{}", requirement.trim());
+    let prompt = tr!(
+        "根据下面的需求写一个 Agent Skill 的完整 SKILL.md。要求：\n\
+1. 以 YAML frontmatter 开头，包含 name（小写英文、数字和连字符）和 description（一句话说明做什么、什么时候用）。\n\
+2. 正文用 Markdown 写清楚适用场景、具体步骤和注意事项，语言与需求一致。\n\
+3. 只输出 SKILL.md 的内容，不要用代码块包裹，不要解释，不要调用工具。\n\n\
+需求：{requirement}",
+        requirement = requirement.trim()
+    );
     let text = generate_text(app, &prompt, "Skill", Duration::from_secs(180), None)?;
     let text = text.trim();
     let text = text
@@ -388,6 +398,7 @@ fn generate_text(
                     user_message_id: None,
                     agent_name: row.get(5)?,
                     system_key: row.get(6)?,
+                    mode: RunMode::Auto,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -403,10 +414,10 @@ fn generate_text(
         let mut agent = agents
             .into_iter()
             .find(|agent| agent.agent_id == id)
-            .ok_or_else(|| format!("找不到指定的智能体：{id}"))?;
+            .ok_or_else(|| tr!("找不到指定的智能体：{id}", id = id))?;
         agent.assignment = prompt.to_string();
         let execution = execution_for(app, &agent, prompt)
-            .map_err(|_| format!("指定的智能体暂时不可用：{id}"))?;
+            .map_err(|_| tr!("指定的智能体暂时不可用：{id}", id = id))?;
         selected = Some((agent, execution));
     } else {
         for mut agent in agents {
@@ -418,7 +429,7 @@ fn generate_text(
         }
     }
     let (agent, (program, args, _)) =
-        selected.ok_or_else(|| format!("没有可用的智能体运行时来生成{label}"))?;
+        selected.ok_or_else(|| tr!("没有可用的智能体运行时来生成{label}", label = label))?;
     let provider = provider_for(app, &agent.runtime_id);
     let final_args = apply_options(
         replace_assignment(args, &prompt, &prompt),
@@ -448,7 +459,7 @@ fn generate_text(
     }
     let mut child = command
         .spawn()
-        .map_err(|error| format!("启动{label}生成器失败：{error}"))?;
+        .map_err(|error| tr!("启动{label}生成器失败：{error}", label = label, error = error))?;
     // 先起读线程再写 stdin：大提示词时子进程边读边写，先写后读会互相卡死。
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -459,7 +470,7 @@ fn generate_text(
         let payload = runtime::stdin_prompt(&provider, prompt).unwrap_or_default();
         thread::spawn(move || {
             stdin
-                .ok_or_else(|| "运行时标准输入不可用".to_string())?
+                .ok_or_else(|| tr!("运行时标准输入不可用"))?
                 .write_all(&payload)
                 .map_err(|error| error.to_string())
         })
@@ -483,25 +494,28 @@ fn generate_text(
     // 进程组里残留的孙进程（握着管道、或单纯没退出）一并清掉。
     kill_process_group(child.id());
     if !drained {
-        crate::diag::write(&format!("GENERATE {label} readers stuck, process group killed"));
+        crate::diag::write(&format!(
+            "GENERATE {label} readers stuck, process group killed"
+        ));
     }
     let grace = Instant::now() + READER_KILL_GRACE;
     let stdout = finish_reader(stdout_reader, grace);
     let stderr = finish_reader(stderr_reader, grace);
     if timed_out {
-        return Err(format!("生成{label}超时"));
+        return Err(tr!("生成{label}超时", label = label));
     }
     let stdin_error = stdin_writer
         .filter(|writer| writer.is_finished())
         .and_then(|writer| writer.join().ok())
         .and_then(Result::err);
     if let Some(error) = stdin_error {
-        return Err(format!("发送{label}提示失败：{error}"));
+        return Err(tr!("发送{label}提示失败：{error}", label = label, error = error));
     }
     if !status.success() {
-        return Err(format!(
-            "生成{label}失败：{}",
-            truncate_error(stderr.trim(), 1_000)
+        return Err(tr!(
+            "生成{label}失败：{detail}",
+            label = label,
+            detail = truncate_error(stderr.trim(), 1_000)
         ));
     }
     let mut message = String::new();
@@ -520,7 +534,7 @@ fn generate_text(
     }
     let message = message.trim();
     if message.is_empty() {
-        return Err(format!("运行时没有生成{label}"));
+        return Err(tr!("运行时没有生成{label}", label = label));
     }
     Ok(message.to_string())
 }
@@ -547,6 +561,18 @@ pub fn notify_run(
     status: &'static str,
 ) {
     let _ = app.emit("run-event", run_event(run_id, session_id, agent_id, status));
+}
+
+pub fn emit_timeline_event(
+    app: &AppHandle,
+    run_id: &str,
+    session_id: &str,
+    agent_id: &str,
+    item: TimelineItem,
+) {
+    let mut outgoing = run_event(run_id, session_id, agent_id, "completed");
+    outgoing.timeline_item = Some(item);
+    let _ = app.emit("run-event", outgoing);
 }
 
 fn permission_prompt(app: &AppHandle) -> bool {
@@ -596,7 +622,7 @@ pub fn steer(app: &AppHandle, session_id: &str, text: &str) -> Result<bool, Stri
     };
     let mut stdin = slot
         .lock()
-        .map_err(|_| "无法写入运行中的任务".to_string())?;
+        .map_err(|_| tr!("无法写入运行中的任务"))?;
     let Some(stdin) = stdin.as_mut() else {
         return Ok(false);
     };
@@ -608,7 +634,7 @@ pub fn steer(app: &AppHandle, session_id: &str, text: &str) -> Result<bool, Stri
     stdin
         .write_all(&payload)
         .and_then(|_| stdin.flush())
-        .map_err(|error| format!("无法把后续消息发给运行中的智能体：{error}"))?;
+        .map_err(|error| tr!("无法把后续消息发给运行中的智能体：{error}", error = error))?;
     Ok(true)
 }
 
@@ -633,7 +659,7 @@ pub fn resolve_run_permission(
         let active = state
             .active_runs
             .lock()
-            .map_err(|_| "无法访问运行中的任务".to_string())?;
+            .map_err(|_| tr!("无法访问运行中的任务"))?;
         active
             .iter()
             .filter(|(id, _)| run_id.is_none_or(|run_id| run_id == id.as_str()))
@@ -651,7 +677,7 @@ pub fn resolve_run_permission(
             let _ = sender.send(option_id.to_string());
             Ok(())
         }
-        None => Err("没有等待确认的权限请求".to_string()),
+        None => Err(tr!("没有等待确认的权限请求")),
     }
 }
 
@@ -661,7 +687,7 @@ pub fn compact_session(app: &AppHandle, session_id: &str) -> Result<String, Stri
         let db = state.lock_db()?;
         crate::ops::chat::compact_history_text(&db, session_id)?
     };
-    let summary = generate_text(app, &prompt, "对话摘要", Duration::from_secs(90), None)?;
+    let summary = generate_text(app, &prompt, &tr!("对话摘要"), Duration::from_secs(90), None)?;
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
     let last = crate::ops::chat::last_message_id(&db, session_id)?;
@@ -672,7 +698,7 @@ pub fn compact_session(app: &AppHandle, session_id: &str) -> Result<String, Stri
 pub fn stop(app: &AppHandle, run_id: &str) -> Result<(), String> {
     let (status, run) = load_run(app, run_id)?;
     if status != "queued" && status != "running" {
-        return Err("任务已经结束".to_string());
+        return Err(tr!("任务已经结束"));
     }
     // 先标 stopped，让 spawn 收尾时带着已流式输出的正文 finish；不要在这里用空内容覆盖气泡。
     {
@@ -717,7 +743,8 @@ fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String
     let db = state.lock_db()?;
     db.query_row(
         "SELECT r.status, r.id, r.session_id, r.turn_id, r.agent_id, r.runtime_id, r.assignment,
-                a.instructions, a.model, a.max_concurrent_tasks, a.name, a.system_key
+                a.instructions, a.model, a.max_concurrent_tasks, a.name, a.system_key,
+                COALESCE(r.mode, 'auto')
          FROM agent_runs r
          JOIN agents a ON a.id = r.agent_id
          WHERE r.id = ?1",
@@ -738,11 +765,12 @@ fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String
                     user_message_id: None,
                     agent_name: row.get(10)?,
                     system_key: row.get(11)?,
+                    mode: row.get::<_, String>(12)?.parse().unwrap_or(RunMode::Auto),
                 },
             ))
         },
     )
-    .map_err(|_| "任务不存在".to_string())
+    .map_err(|_| tr!("任务不存在"))
 }
 
 const STOP_CHECK_INTERVAL: Duration = Duration::from_millis(500);
@@ -765,9 +793,59 @@ const STDERR_LINE_CHARS: usize = 32_000;
 /// 模型连续收到这么多次工具报错还不改正，基本是在死循环，直接停掉，避免事件无限增长。
 const MAX_CONSECUTIVE_TOOL_ERRORS: usize = 25;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ToolErrorActor {
+    Root,
+    SubAgent(String),
+}
+
+impl ToolErrorActor {
+    fn label(&self) -> String {
+        match self {
+            Self::Root => tr!("根代理"),
+            Self::SubAgent(parent_call_id) => {
+                tr!("子代理（parent_call_id: {parent_call_id}）", parent_call_id = parent_call_id)
+            }
+        }
+    }
+
+    fn parent_call_id(&self) -> Option<String> {
+        match self {
+            Self::Root => None,
+            Self::SubAgent(parent_call_id) => Some(parent_call_id.clone()),
+        }
+    }
+}
+
+#[derive(Default)]
+struct ToolErrorTracker {
+    counts: HashMap<Option<String>, usize>,
+}
+
+impl ToolErrorTracker {
+    fn record(&mut self, parent_call_id: Option<&str>, failed: bool) -> Option<ToolErrorActor> {
+        let key = parent_call_id.map(str::to_string);
+        if !failed {
+            self.counts.remove(&key);
+            return None;
+        }
+
+        let count = self.counts.entry(key.clone()).or_default();
+        *count = count.saturating_add(1);
+        if *count < MAX_CONSECUTIVE_TOOL_ERRORS {
+            return None;
+        }
+        Some(match key {
+            Some(parent_call_id) => ToolErrorActor::SubAgent(parent_call_id),
+            None => ToolErrorActor::Root,
+        })
+    }
+}
+
 /// 上游把工具参数切碎后，CLI 会产出没有工具名、input 只有 `__unparsedToolInput` 的残片。
 fn is_garbage_tool_use(event: &NormalizedEvent) -> bool {
-    if event.event_type != "tool_use" || event.tool.as_deref().is_some_and(|t| !t.trim().is_empty()) {
+    if event.event_type != "tool_use" || event.tool.as_deref().is_some_and(|t| !t.trim().is_empty())
+    {
         return false;
     }
     match &event.input {
@@ -792,8 +870,13 @@ fn abort_tool_error_loop(
     session_id: &str,
     agent_id: &str,
     event_seq: &AtomicU32,
+    actor: &ToolErrorActor,
 ) {
-    let message = format!("工具调用连续失败 {MAX_CONSECUTIVE_TOOL_ERRORS} 次，已自动停止。请检查模型或网关对工具参数的流式输出。");
+    let message = tr!(
+        "{actor}工具调用连续失败 {count} 次，已自动停止。请检查模型或网关对工具参数的流式输出。",
+        actor = actor.label(),
+        count = MAX_CONSECUTIVE_TOOL_ERRORS
+    );
     let seq = event_seq.fetch_add(1, Ordering::SeqCst) + 1;
     let item = timeline_item(
         seq,
@@ -805,7 +888,7 @@ fn abort_tool_error_loop(
             input: None,
             output: None,
             replaces_final_text: false,
-            parent_call_id: None,
+            parent_call_id: actor.parent_call_id(),
             status: None,
         },
     );
@@ -905,7 +988,8 @@ fn dispatch_pending(app: AppHandle) {
             };
             let mut statement = match db.prepare(
                 "SELECT r.id, r.session_id, r.turn_id, r.agent_id, r.runtime_id, r.assignment,
-                        a.instructions, a.model, a.max_concurrent_tasks, a.name, a.system_key
+                        a.instructions, a.model, a.max_concurrent_tasks, a.name, a.system_key,
+                        COALESCE(r.mode, 'auto')
                  FROM agent_runs r
                  JOIN agents a ON a.id = r.agent_id
                  WHERE r.status = 'queued'
@@ -940,6 +1024,7 @@ fn dispatch_pending(app: AppHandle) {
                         user_message_id: None,
                         agent_name: row.get(9)?,
                         system_key: row.get(10)?,
+                        mode: row.get::<_, String>(11)?.parse().unwrap_or(RunMode::Auto),
                     })
                 })
                 .ok()
@@ -1083,14 +1168,29 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 skill_root: &skill_root_text,
                 user_skill_context: &resource_context,
                 has_project_workspace: workspace_context.2,
+                locale,
             });
-            conversation::build_prompt(
+            let prompt = conversation::build_prompt(
                 &brief,
                 &history,
                 &run.assignment,
                 resume_id.as_deref(),
                 &launch_provider,
-            )
+            );
+            // 续接会话时 build_prompt 只回传本轮任务，规则要跟着每一轮走
+            let auto_plan = run.mode == RunMode::Auto
+                && runtime::capabilities(&run.runtime_id, &launch_provider).auto_plan;
+            if auto_plan {
+                format!(
+                    "{prompt}\n\n{}\n\n{}",
+                    crate::plan_prompts::auto_plan_rules(locale),
+                    crate::plan_prompts::reply_rules(locale)
+                )
+            } else if run.mode == RunMode::Plan {
+                format!("{prompt}\n\n{}", crate::plan_prompts::reply_rules(locale))
+            } else {
+                prompt
+            }
         };
         let mcp_path = mcp_config
             .as_ref()
@@ -1141,7 +1241,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
         let stdin_payload = if protocol.is_some() {
             None
         } else {
-            runtime::stdin_prompt(&launch_provider, &prompt)
+            runtime::stdin_prompt_for_mode(&launch_provider, &prompt, run.mode)
         };
         let parser_id = if protocol.is_some() {
             "wire".to_string()
@@ -1155,7 +1255,8 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 .current_dir(&cwd)
                 .env("CI", "1")
                 .env("MULTARA_SESSION_ID", &run.session_id)
-                .env("MULTARA_AGENT_ID", &run.agent_id);
+                .env("MULTARA_AGENT_ID", &run.agent_id)
+                .env("MULTARA_RUN_ID", &run.id);
             if let Ok(db) = app.state::<AppState>().lock_db() {
                 if let Ok(task_id) = db.query_row(
                     "SELECT id FROM tasks WHERE session_id = ?1 LIMIT 1",
@@ -1214,7 +1315,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     &run,
                     "failed",
                     "",
-                    Some(format!("启动运行时失败：{error}")),
+                    Some(tr!("启动运行时失败：{error}", error = error)),
                 );
                 return;
             }
@@ -1226,6 +1327,8 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             let stdin = child.stdin.take();
             let prompt = prompt.clone();
             let workdir = cwd.clone();
+            let protocol_runtime_id = run.runtime_id.clone();
+            let protocol_mode = run.mode;
             let (tx, rx) = mpsc::channel::<Vec<u8>>();
             let gate = crate::protocol::PermissionGate {
                 prompt: permission_prompt(&app),
@@ -1252,6 +1355,8 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 let mut writer = crate::protocol::ByteSender(tx);
                 crate::protocol::drive(
                     kind,
+                    &protocol_runtime_id,
+                    protocol_mode,
                     stdout,
                     &mut stdin,
                     &prompt,
@@ -1269,14 +1374,31 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             let stdin = child
                 .stdin
                 .take()
-                .ok_or_else(|| "运行时标准输入不可用".to_string());
-            thread::spawn(move || {
-                let mut stdin = stdin?;
-                stdin
-                    .write_all(&payload)
-                    .map_err(|error| format!("发送任务到运行时失败：{error}"))?;
-                Ok(keep_open.then_some(stdin))
-            })
+                .ok_or_else(|| tr!("运行时标准输入不可用"));
+            if keep_open {
+                if let (Ok(stdin), Ok(mut slot)) = (stdin, stdin_slot.lock()) {
+                    *slot = Some(stdin);
+                }
+                let slot = stdin_slot.clone();
+                thread::spawn(move || {
+                    let mut slot = slot
+                        .lock()
+                        .map_err(|_| tr!("运行时标准输入不可用"))?;
+                    slot.as_mut()
+                        .ok_or_else(|| tr!("运行时标准输入不可用"))?
+                        .write_all(&payload)
+                        .map_err(|error| tr!("发送任务到运行时失败：{error}", error = error))?;
+                    Ok(None)
+                })
+            } else {
+                thread::spawn(move || {
+                    let mut stdin = stdin?;
+                    stdin
+                        .write_all(&payload)
+                        .map_err(|error| tr!("发送任务到运行时失败：{error}", error = error))?;
+                    Ok(None)
+                })
+            }
         });
         let stdout = protocol_stdout
             .map(|stream| Box::new(stream) as Box<dyn Read + Send>)
@@ -1318,11 +1440,13 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 run.agent_id.clone(),
                 run.runtime_id.clone(),
                 parser_id.clone(),
+                run.mode,
                 stream,
                 output.clone(),
                 event_seq.clone(),
                 run.user_message_id.clone(),
                 usage.clone(),
+                stdin_slot.clone(),
             )
         });
         let stderr_reader = stderr.map(|stream| {
@@ -1347,7 +1471,10 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
         let pid = child.lock().map(|process| process.id()).ok();
         let status = loop {
             // stdin 写线程不在循环外 join：子进程不读大载荷时写会一直阻塞，超时和停止都得照常生效。
-            if stdin_writer.as_ref().is_some_and(thread::JoinHandle::is_finished) {
+            if stdin_writer
+                .as_ref()
+                .is_some_and(thread::JoinHandle::is_finished)
+            {
                 stdin_error = stdin_writer
                     .take()
                     .and_then(|writer| settle_stdin_writer(writer, &stdin_slot));
@@ -1375,10 +1502,19 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             }
             thread::sleep(SUPERVISOR_POLL_INTERVAL);
         };
-        let readers: Vec<_> = [stdout_reader, stderr_reader].into_iter().flatten().collect();
+        let readers: Vec<_> = [stdout_reader, stderr_reader]
+            .into_iter()
+            .flatten()
+            .collect();
         let deadline = Instant::now() + READER_JOIN_TIMEOUT;
-        if !readers.iter().all(|reader| wait_until_finished(reader, deadline)) {
-            crate::diag::write(&format!("RUN readers stuck {}, killing process group", run.id));
+        if !readers
+            .iter()
+            .all(|reader| wait_until_finished(reader, deadline))
+        {
+            crate::diag::write(&format!(
+                "RUN readers stuck {}, killing process group",
+                run.id
+            ));
             kill_child(&child);
         }
         // 正常退出也清一遍进程组：CLI 退出后它起的 MCP 服务器、后台进程不该留下来。
@@ -1401,6 +1537,8 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             .map(|value| value.clone())
             .unwrap_or_default();
         let stopped = current_status(&app, &run.id).as_deref() == Some("stopped");
+        let protocol_mode_failed =
+            run.mode == RunMode::Plan && has_protocol_mode_error(&app, &run.id);
         if timed_out {
             let minutes = timeout.map(|limit| limit.as_secs() / 60).unwrap_or(0);
             finish(
@@ -1408,28 +1546,55 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 &run,
                 "failed",
                 &text,
-                Some(format!("任务超过 {minutes} 分钟，已自动停止")),
+                Some(tr!("任务超过 {minutes} 分钟，已自动停止", minutes = minutes)),
             );
         } else if stopped {
             finish(&app, &run, "stopped", &text, None);
         } else if let Some(error) = stdin_error {
             finish(&app, &run, "failed", &text, Some(error));
+        } else if protocol_mode_failed {
+            finish(
+                &app,
+                &run,
+                "failed",
+                &text,
+                Some(tr!("当前智能体不支持规划模式")),
+            );
         } else if status.success() {
             finish(&app, &run, "completed", &text, None);
         } else {
             let detail = stderr_text.trim();
             let error = if detail.is_empty() {
-                format!("运行时退出码：{}", status.code().unwrap_or(-1))
+                tr!("运行时退出码：{code}", code = status.code().unwrap_or(-1))
             } else {
-                format!(
-                    "运行时退出码：{}\n{}",
-                    status.code().unwrap_or(-1),
-                    truncate_error(detail, 4000)
+                tr!(
+                    "运行时退出码：{code}\n{detail}",
+                    code = status.code().unwrap_or(-1),
+                    detail = truncate_error(detail, 4000)
                 )
             };
             finish(&app, &run, "failed", &text, Some(error));
         }
     });
+}
+
+fn has_protocol_mode_error(app: &AppHandle, run_id: &str) -> bool {
+    app.state::<AppState>()
+        .lock_db()
+        .ok()
+        .and_then(|db| {
+            db.query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM run_events
+                   WHERE run_id=?1 AND event_type='error'
+                     AND (status=?2 OR content LIKE 'session/%失败：%' OR content='当前智能体不支持规划模式')
+                 )",
+                params![run_id, crate::protocol::MODE_ERROR_CODE],
+                |row| row.get(0),
+            )
+            .ok()
+        })
+        .unwrap_or(false)
 }
 
 type StdinWriter = thread::JoinHandle<Result<Option<ChildStdin>, String>>;
@@ -1444,7 +1609,7 @@ fn settle_stdin_writer(writer: StdinWriter, slot: &Mutex<Option<ChildStdin>>) ->
             None
         }
         Ok(Err(error)) => Some(error),
-        Err(_) => Some("发送任务到运行时的线程异常退出".to_string()),
+        Err(_) => Some(tr!("发送任务到运行时的线程异常退出")),
     }
 }
 
@@ -1472,6 +1637,55 @@ fn close_active_stdin(app: &AppHandle, run_id: &str) {
         return;
     };
     *stdin = None;
+}
+
+fn claude_control_response(value: &Value, locale: &str) -> Option<Value> {
+    let request = value.get("request")?;
+    if value.get("type").and_then(Value::as_str) != Some("control_request")
+        || request.get("subtype").and_then(Value::as_str) != Some("can_use_tool")
+    {
+        return None;
+    }
+    let tool = request
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let response = if tool == "ExitPlanMode" {
+        json!({
+            "behavior": "deny",
+            "message": crate::plan_prompts::exit_plan_denied(locale),
+            "toolUseID": request.get("tool_use_id").cloned().unwrap_or(Value::Null)
+        })
+    } else {
+        json!({
+            "behavior": "allow",
+            "updatedInput": request.get("input").cloned().unwrap_or_else(|| json!({})),
+            "toolUseID": request.get("tool_use_id").cloned().unwrap_or(Value::Null)
+        })
+    };
+    Some(json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": value.get("request_id").cloned().unwrap_or(Value::Null),
+            "response": response
+        }
+    }))
+}
+
+fn respond_to_claude_control_request(value: &Value, stdin_slot: &StdinSlot, locale: &str) {
+    let Some(response) = claude_control_response(value, locale) else {
+        return;
+    };
+    let Ok(mut slot) = stdin_slot.lock() else {
+        return;
+    };
+    let Some(stdin) = slot.as_mut() else {
+        return;
+    };
+    let _ = serde_json::to_writer(&mut *stdin, &response)
+        .and_then(|_| stdin.write_all(b"\n").map_err(serde_json::Error::io))
+        .and_then(|_| stdin.flush().map_err(serde_json::Error::io));
 }
 
 fn truncate_error(value: &str, max_chars: usize) -> String {
@@ -1516,17 +1730,19 @@ fn read_stream<R: Read + Send + 'static>(
     agent_id: String,
     runtime_id: String,
     parser_id: String,
+    run_mode: RunMode,
     stream: R,
     output: Arc<Mutex<String>>,
     event_seq: Arc<AtomicU32>,
     message_id: Option<String>,
     usage: Arc<Mutex<UsageAccumulator>>,
+    stdin_slot: StdinSlot,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut previous: Option<TimelineItem> = None;
         let mut tool_files: HashMap<String, String> = HashMap::new();
-        let mut consecutive_tool_errors = 0usize;
-        let mut tool_error_loop = false;
+        let mut tool_error_tracker = ToolErrorTracker::default();
+        let mut tool_error_loop = None;
         let mut last_conversation_id: Option<String> = None;
         let mut usage_dirty = false;
         let mut last_usage_persist = Instant::now();
@@ -1537,8 +1753,12 @@ fn read_stream<R: Read + Send + 'static>(
         // 读线程 panic 时也要让 flusher 退出。
         let done_guard = StreamDone(Arc::clone(&stream_done));
         let flusher = {
-            let (app, run_id, session_id, agent_id) =
-                (app.clone(), run_id.clone(), session_id.clone(), agent_id.clone());
+            let (app, run_id, session_id, agent_id) = (
+                app.clone(),
+                run_id.clone(),
+                session_id.clone(),
+                agent_id.clone(),
+            );
             let (pending, stream_done) = (Arc::clone(&pending), Arc::clone(&stream_done));
             thread::spawn(move || {
                 while !stream_done.load(Ordering::Relaxed) {
@@ -1551,6 +1771,12 @@ fn read_stream<R: Read + Send + 'static>(
                 }
             })
         };
+        let locale = app
+            .state::<AppState>()
+            .lock_db()
+            .ok()
+            .map(|db| crate::app_locale::from_db(&db))
+            .unwrap_or("zh-CN");
         let mut last_stop_check = Instant::now();
         'lines: for line in crate::process::BoundedLines(BufReader::new(stream)) {
             // 每行都查一次数据库会和写事件抢全局锁；停止信号半秒内到达即可。
@@ -1562,6 +1788,13 @@ fn read_stream<R: Read + Send + 'static>(
             }
             let parsed = serde_json::from_str::<Value>(&line).ok();
             if let Some(value) = &parsed {
+                if parser_id == "claude" && run_mode == RunMode::Auto {
+                    respond_to_claude_control_request(value, &stdin_slot, locale);
+                }
+                if value.get("type").and_then(Value::as_str) == Some("acp_modes") {
+                    persist_acp_modes(&app, value);
+                    continue;
+                }
                 if let Some(id) = conversation::id_from_value(value)
                     .filter(|id| last_conversation_id.as_ref() != Some(id))
                 {
@@ -1587,14 +1820,17 @@ fn read_stream<R: Read + Send + 'static>(
                 if is_garbage_tool_use(&event) {
                     continue;
                 }
+                if run_mode == RunMode::Auto
+                    && event.event_type == "mode_change"
+                    && event.tool.as_deref() == Some("ExitPlanMode")
+                {
+                    continue;
+                }
                 if event.event_type == "tool_result" {
-                    if is_tool_use_error(&event) {
-                        consecutive_tool_errors += 1;
-                    } else {
-                        consecutive_tool_errors = 0;
-                    }
-                    if consecutive_tool_errors >= MAX_CONSECUTIVE_TOOL_ERRORS {
-                        tool_error_loop = true;
+                    if let Some(actor) = tool_error_tracker
+                        .record(event.parent_call_id.as_deref(), is_tool_use_error(&event))
+                    {
+                        tool_error_loop = Some(actor);
                         break 'lines;
                     }
                 }
@@ -1609,7 +1845,11 @@ fn read_stream<R: Read + Send + 'static>(
                         &mut tool_files,
                     );
                 }
-                if let Some(chunk) = event.content.as_deref().filter(|_| event.event_type == "text") {
+                if let Some(chunk) = event
+                    .content
+                    .as_deref()
+                    .filter(|_| event.event_type == "text")
+                {
                     if let Ok(mut full) = output.lock() {
                         if event.replaces_final_text {
                             full.clear();
@@ -1681,10 +1921,24 @@ fn read_stream<R: Read + Send + 'static>(
         if let Ok(acc) = usage.lock() {
             persist_run_usage(&app, &run_id, &acc.finalize());
         }
-        if tool_error_loop {
-            abort_tool_error_loop(&app, &run_id, &session_id, &agent_id, &event_seq);
+        if let Some(actor) = tool_error_loop {
+            abort_tool_error_loop(&app, &run_id, &session_id, &agent_id, &event_seq, &actor);
         }
     })
+}
+
+fn persist_acp_modes(app: &AppHandle, value: &Value) {
+    let Some(runtime_id) = value.get("runtimeId").and_then(Value::as_str) else {
+        return;
+    };
+    let modes = value.get("input").cloned().unwrap_or_else(|| json!([]));
+    if let Ok(db) = app.state::<AppState>().lock_db() {
+        let _ = db.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![format!("acpModes:{runtime_id}"), modes.to_string()],
+        );
+    }
 }
 
 /// stderr 不逐 token 合并，不需要 flusher；逐行归入批次，按时间或行数合并成一条 error 事件。
@@ -1723,12 +1977,26 @@ fn read_error_stream<R: Read + Send + 'static>(
             if batch_lines >= STDERR_BATCH_MAX_LINES
                 || last_emit.is_none_or(|at| at.elapsed() >= STDERR_BATCH_INTERVAL)
             {
-                emit_error_batch(&app, &run_id, &session_id, &agent_id, &event_seq, &mut batch);
+                emit_error_batch(
+                    &app,
+                    &run_id,
+                    &session_id,
+                    &agent_id,
+                    &event_seq,
+                    &mut batch,
+                );
                 batch_lines = 0;
                 last_emit = Some(Instant::now());
             }
         }
-        emit_error_batch(&app, &run_id, &session_id, &agent_id, &event_seq, &mut batch);
+        emit_error_batch(
+            &app,
+            &run_id,
+            &session_id,
+            &agent_id,
+            &event_seq,
+            &mut batch,
+        );
     })
 }
 
@@ -1810,7 +2078,8 @@ impl PendingStream {
 
     fn start(&mut self, item: TimelineItem) {
         if item.event_type == "text" {
-            self.chunk.push_str(item.content.as_deref().unwrap_or_default());
+            self.chunk
+                .push_str(item.content.as_deref().unwrap_or_default());
         }
         self.item = Some(item);
         self.dirty = true;
@@ -1821,7 +2090,9 @@ impl PendingStream {
             return;
         };
         if let Some(content) = event.content.as_deref() {
-            item.content.get_or_insert_with(String::new).push_str(content);
+            item.content
+                .get_or_insert_with(String::new)
+                .push_str(content);
             if item.event_type == "text" {
                 self.chunk.push_str(content);
             }
@@ -1904,6 +2175,7 @@ fn finish(
     let mut elapsed_ms = None;
     let mut member_runs = Vec::new();
     let mut parent_resume: Option<(String, String, String)> = None;
+    let mut plan_item = None;
     if let Ok(db) = state.lock_db() {
         elapsed_ms = db
             .query_row(
@@ -1944,6 +2216,35 @@ fn finish(
                 "UPDATE agent_runs SET completed_at=?1 WHERE id=?2 AND completed_at IS NULL",
                 params![completed_at.to_rfc3339(), run.id],
             );
+        }
+        let plan_failed: bool = db
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM run_events
+                   WHERE run_id=?1 AND event_type='error'
+                     AND (status=?2 OR content LIKE 'session/%失败：%' OR content='当前智能体不支持规划模式')
+                 )",
+                params![run.id, crate::protocol::MODE_ERROR_CODE],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        let auto_plan_submitted = run.mode == RunMode::Auto
+            && db
+                .query_row(
+                    "SELECT EXISTS(
+                       SELECT 1 FROM run_events
+                       WHERE run_id=?1 AND event_type='tool_use' AND tool='ExitPlanMode'
+                         AND COALESCE(json_extract(input_json, '$.plan'), '') != ''
+                     )",
+                    [&run.id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap_or(false);
+        if status == "completed"
+            && (run.mode == RunMode::Plan || auto_plan_submitted)
+            && !plan_failed
+        {
+            plan_item = persist_plan_artifact(&db, run, output, &completed_at.to_rfc3339()).ok();
         }
         if let Some(detail) = error.as_deref() {
             let seq: u32 = db
@@ -2071,6 +2372,11 @@ fn finish(
         let _ = session::complete_turn(app, turn_id);
     }
     emit_deleted_snapshots(app, run);
+    if let Some(item) = plan_item {
+        let mut outgoing = run_event(&run.id, &run.session_id, &run.agent_id, "running");
+        outgoing.timeline_item = Some(item);
+        let _ = app.emit("run-event", outgoing);
+    }
     if let Ok(db) = app.state::<AppState>().lock_db() {
         let _ = crate::snapshot_db::cleanup_old_snapshots(&db);
     }
@@ -2090,6 +2396,106 @@ fn finish(
     }
     crate::channel::outbound::on_run_finished(app, &run.session_id);
     dispatch(app.clone());
+}
+
+fn persist_plan_artifact(
+    db: &rusqlite::Connection,
+    run: &QueuedRun,
+    output: &str,
+    created_at: &str,
+) -> Result<TimelineItem, String> {
+    let plan_markdown = crate::plan::recorded_plan_markdown(db, &run.id, &run.runtime_id);
+    let source_meta = run
+        .user_message_id
+        .as_deref()
+        .and_then(|message_id| {
+            db.query_row(
+                "SELECT source_meta_json FROM messages WHERE id=?1",
+                [message_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten()
+        })
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
+    let changed_files = run
+        .user_message_id
+        .as_deref()
+        .map(|message_id| changed_snapshot_files(db, message_id))
+        .unwrap_or_default();
+    let artifact = crate::plan::assemble_plan_artifact(
+        plan_markdown.as_deref(),
+        output,
+        source_meta.as_ref(),
+        changed_files,
+    );
+    let input = crate::plan::artifact_input(&artifact);
+    let seq: u32 = db
+        .query_row(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM run_events WHERE run_id=?1",
+            [&run.id],
+            |row| row.get(0),
+        )
+        .unwrap_or(1);
+    db.execute(
+        "INSERT INTO run_events
+         (id, run_id, session_id, seq, event_type, input_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, 'plan', ?5, ?6)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            run.id,
+            run.session_id,
+            seq,
+            input.to_string(),
+            created_at
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(TimelineItem {
+        seq,
+        event_type: "plan",
+        call_id: None,
+        tool: None,
+        content: None,
+        input: Some(input),
+        output: None,
+        created_at: created_at.to_string(),
+        replaces_final_text: false,
+        parent_call_id: None,
+        status: None,
+    })
+}
+
+fn changed_snapshot_files(db: &rusqlite::Connection, message_id: &str) -> Vec<String> {
+    let Ok(mut statement) = db.prepare(
+        "SELECT DISTINCT s.workspace_id, s.file_path, COALESCE(w.work_path, '')
+         FROM turn_file_snapshots s
+         LEFT JOIN workspaces w ON w.id=s.workspace_id
+         WHERE s.message_id=?1 AND s.file_path != '' ORDER BY s.file_path",
+    ) else {
+        return Vec::new();
+    };
+    statement
+        .query_map([message_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|(workspace_id, file_path, work_path)| {
+            let before =
+                crate::snapshot_db::get_snapshot_content(db, message_id, &workspace_id, &file_path)
+                    .ok()?;
+            let current =
+                std::fs::read_to_string(std::path::Path::new(&work_path).join(&file_path));
+            (!matches!(current.as_deref(), Ok(content) if content == before)).then_some(file_path)
+        })
+        .collect()
 }
 
 fn save_terminal_message(
@@ -2122,12 +2528,12 @@ fn save_terminal_message(
     };
     // 停止时保留已经流式出来的正文，不要用「运行已停止。」盖掉。
     let content = match status {
-        "completed" if final_text.is_empty() => "运行已完成，但运行时没有返回文本。",
-        "completed" => final_text,
-        "stopped" if !final_text.is_empty() => final_text,
-        "stopped" => prior.as_deref().unwrap_or("运行已停止。"),
-        _ if !final_text.is_empty() => final_text,
-        _ => "这次运行没有成功完成。",
+        "completed" if final_text.is_empty() => tr!("运行已完成，但运行时没有返回文本。"),
+        "completed" => final_text.to_string(),
+        "stopped" if !final_text.is_empty() => final_text.to_string(),
+        "stopped" => prior.unwrap_or_else(|| "运行已停止。".to_string()),
+        _ if !final_text.is_empty() => final_text.to_string(),
+        _ => tr!("这次运行没有成功完成。"),
     };
     let quick_actions_json = "[]".to_string();
     let parent_agent_id: Option<String> = db
@@ -2179,20 +2585,34 @@ fn dispatch_squad_members(
     leader_output: &str,
     now: &str,
 ) -> Result<Vec<(String, String)>, String> {
-    let (session_id, turn_id, leader_id, parent_run_id, original): (
+    let (session_id, turn_id, leader_id, parent_run_id, original, mode): (
         String,
         Option<String>,
         String,
         Option<String>,
+        String,
         String,
     ) = db
         .query_row(
-            "SELECT session_id, turn_id, agent_id, parent_run_id, assignment FROM agent_runs WHERE id = ?1",
+            "SELECT session_id, turn_id, agent_id, parent_run_id, assignment, mode
+             FROM agent_runs WHERE id = ?1",
             [leader_run_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
         )
         .map_err(|error| error.to_string())?;
-    if parent_run_id.is_some() {
+    if parent_run_id.is_some()
+        || mode == "plan"
+        || crate::plan::latest_awaiting_plan(db, &session_id)?.is_some()
+    {
         return Ok(Vec::new());
     }
     let (target_type, target_id): (String, String) = db
@@ -2227,19 +2647,22 @@ fn dispatch_squad_members(
         return Ok(Vec::new());
     }
     let user_request = original
-        .split_once("用户需求：\n")
+        .split_once(&format!("{}\n", tr!("用户需求：")))
         .map(|(_, rest)| rest.trim())
         .filter(|value| !value.is_empty())
         .unwrap_or(original.trim());
     let plan = leader_output.trim();
     let spoken = if plan.is_empty() {
-        "请按用户这句话处理你负责的部分，完成后向我汇报。".to_string()
+        tr!("请按用户这句话处理你负责的部分，完成后向我汇报。")
     } else {
-        "请按刚才的拆分处理你负责的部分，完成后向我汇报。".to_string()
+        tr!("请按刚才的拆分处理你负责的部分，完成后向我汇报。")
     };
     let prompt = format!(
-        "你是小队队员，向队长汇报。请根据队长说明完成你负责的部分。\n\n队长说明：\n{}\n\n用户需求：\n{user_request}",
-        if plan.is_empty() { user_request } else { plan }
+        "{}\n\n{}\n{}\n\n{}\n{user_request}",
+        tr!("你是小队队员，向队长汇报。请根据队长说明完成你负责的部分。"),
+        tr!("队长说明："),
+        if plan.is_empty() { user_request } else { plan },
+        tr!("用户需求：")
     );
     let mut created = Vec::new();
     for member_id in &member_ids {
@@ -2268,8 +2691,8 @@ fn dispatch_squad_members(
         let id = uuid::Uuid::new_v4().to_string();
         db.execute(
             "INSERT INTO agent_runs
-             (id, session_id, turn_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'queued', ?8)",
+             (id, session_id, turn_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at, mode)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'queued', ?8, 'agent')",
             params![
                 id,
                 session_id,
@@ -2481,8 +2904,9 @@ fn workspace_context(
         return Ok((
             cwd.clone(),
             (
-                format!(
-                    "这次运行没有关联项目。文件都写在这个工作目录里，不要修改目录以外的路径：\n{cwd}"
+                tr!(
+                    "这次运行没有关联项目。文件都写在这个工作目录里，不要修改目录以外的路径：\n{cwd}",
+                    cwd = cwd
                 ),
                 vec![cwd],
                 false,
@@ -2496,13 +2920,13 @@ fn workspace_context(
     let cwd = paths
         .first()
         .cloned()
-        .ok_or_else(|| "没有可执行任务的项目目录，请先为需求添加 Git 项目或文件夹".to_string())?;
+        .ok_or_else(|| tr!("没有可执行任务的项目目录，请先为需求添加 Git 项目或文件夹"))?;
     Ok((
         cwd,
         (
-            format!(
-                "只能修改以下需求工作区目录。用户拖入或点名的工作区外文件可以阅读，不要修改那些路径：\n{}",
-                paths.join("\n")
+            tr!(
+                "只能修改以下需求工作区目录。用户拖入或点名的工作区外文件可以阅读，不要修改那些路径：\n{paths}",
+                paths = paths.join("\n")
             ),
             paths,
             true,
@@ -2514,7 +2938,7 @@ fn workspace_context(
 fn scratch_workdir(app: &AppHandle, session_id: &str) -> Result<String, String> {
     let session_id = session_id.trim();
     if session_id.is_empty() || session_id.contains(['/', '\\', '.']) || session_id.contains('\0') {
-        return Err("会话标识无效，无法准备工作目录".to_string());
+        return Err(tr!("会话标识无效，无法准备工作目录"));
     }
     let dir = app
         .path()
@@ -2522,7 +2946,7 @@ fn scratch_workdir(app: &AppHandle, session_id: &str) -> Result<String, String> 
         .map_err(|error| error.to_string())?
         .join("task-workspaces")
         .join(session_id);
-    std::fs::create_dir_all(&dir).map_err(|error| format!("无法准备工作目录：{error}"))?;
+    std::fs::create_dir_all(&dir).map_err(|error| tr!("无法准备工作目录：{error}", error = error))?;
     Ok(dir.to_string_lossy().to_string())
 }
 
@@ -2645,22 +3069,23 @@ fn resource_context(
             .map_err(|error| error.to_string())?
             .len();
         if size > 128 * 1024 || skill_bytes + size > 256 * 1024 {
-            return Err(format!("Skill 内容过大，无法安全注入：{}", resource.name));
+            return Err(tr!("Skill 内容过大，无法安全注入：{name}", name = resource.name));
         }
         let content = std::fs::read_to_string(skill_path).map_err(|error| error.to_string())?;
         skill_bytes += size;
         skill_sections.push(format!("### {}\n{}", resource.name, content));
     }
     let mut context = if skill_sections.is_empty() {
-        "本次未授权任何 Multara Skill。".to_string()
+        tr!("本次未授权任何 Multara Skill。")
     } else {
-        format!(
-            "本次只授权以下 Skills；不要调用其他 Skill：\n{}",
-            skill_sections.join("\n\n")
+        tr!(
+            "本次只授权以下 Skills；不要调用其他 Skill：\n{skills}",
+            skills = skill_sections.join("\n\n")
         )
     };
     let mcp_file = if mcp_ids.is_empty() && runtime_id != "claude" {
-        context.push_str("\n本次未由 Multara 注入任何 MCP。");
+        context.push('\n');
+        context.push_str(&tr!("本次未由 Multara 注入任何 MCP。"));
         None
     } else {
         let config = resources::selected_mcp_config(&mcp_ids)?;
@@ -2669,9 +3094,14 @@ fn resource_context(
             .filter_map(|id| id.splitn(3, ':').nth(2))
             .collect::<Vec<_>>();
         if names.is_empty() {
-            context.push_str("\n本次未授权任何 MCP。");
+            context.push('\n');
+            context.push_str(&tr!("本次未授权任何 MCP。"));
         } else {
-            context.push_str(&format!("\n本次只授权以下 MCP：{}。", names.join("、")));
+            context.push('\n');
+            context.push_str(&tr!(
+                "本次只授权以下 MCP：{names}。",
+                names = names.join(&tr!("、"))
+            ));
         }
         let mut file = tempfile::NamedTempFile::new().map_err(|error| error.to_string())?;
         file.write_all(
@@ -2698,7 +3128,7 @@ fn execution_for(
     assignment: &str,
 ) -> Result<(std::path::PathBuf, Vec<String>, u8), String> {
     if !run.runtime_id.starts_with("custom:") {
-        return runtime::execution(&run.runtime_id, assignment);
+        return runtime::execution(&run.runtime_id, assignment, run.mode);
     }
     let launch = custom_runtime_launch(app, &run.runtime_id)?;
     let detected = runtime::detect_custom(
@@ -2717,7 +3147,7 @@ fn execution_for(
     let path = detected
         .path
         .map(std::path::PathBuf::from)
-        .ok_or_else(|| format!("未找到自定义运行时命令：{}", detected.command))?;
+        .ok_or_else(|| tr!("未找到自定义运行时命令：{command}", command = detected.command))?;
     let args = runtime::compose_args(
         &launch.provider,
         &launch.args,
@@ -2726,6 +3156,7 @@ fn execution_for(
         "",
         "",
         &launch.wire_api,
+        run.mode,
     );
     Ok((path, args, launch.limit.clamp(1, 6)))
 }
@@ -2755,7 +3186,7 @@ fn prepare_gateway(launch: &CustomLaunch, selected_model: &str) -> Result<Prepar
         selected_model.trim()
     };
     if model.is_empty() {
-        return Err("自定义 API 中转站需要配置默认模型".into());
+        return Err(tr!("自定义 API 中转站需要配置默认模型"));
     }
     let client_format = ApiFormat::parse(
         runtime::native_api_format(&launch.provider),
@@ -2831,7 +3262,7 @@ struct CustomLaunch {
 
 fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaunch, String> {
     if !runtime_id.starts_with("custom:") {
-        return Err("不是自定义运行时".into());
+        return Err(tr!("不是自定义运行时"));
     }
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
@@ -2884,7 +3315,7 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
             })
         },
     )
-    .map_err(|_| "自定义运行时不存在".to_string())
+    .map_err(|_| tr!("自定义运行时不存在"))
 }
 
 fn normalize_runtime_line(runtime_id: &str, line: &str, is_error: bool) -> Vec<NormalizedEvent> {
@@ -2898,7 +3329,11 @@ fn normalize_runtime_line(runtime_id: &str, line: &str, is_error: bool) -> Vec<N
 }
 
 /// `parsed` 是调用方已经解析好的 `line`，避免同一行重复 `from_str`。
-fn normalize_runtime_value(runtime_id: &str, line: &str, parsed: Option<Value>) -> Vec<NormalizedEvent> {
+fn normalize_runtime_value(
+    runtime_id: &str,
+    line: &str,
+    parsed: Option<Value>,
+) -> Vec<NormalizedEvent> {
     // Codex 在非 TTY 下（Multara 把 stdin 接到 /dev/null）会往 stdout 打这行进度，
     // 不是模型回复；当成 text 会冒充成「报错后再出一堆身份说明」。
     if runtime_id == "codex" && is_codex_cli_noise(line) {
@@ -2955,16 +3390,16 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter_map(|block| match block.get("type").and_then(Value::as_str) {
+            .flat_map(|block| match block.get("type").and_then(Value::as_str) {
                 Some("text") => {
-                    Some(normalized("text", text_at(block, &["/text"])).with_final_replacement())
+                    vec![normalized("text", text_at(block, &["/text"])).with_final_replacement()]
                 }
-                Some("thinking") => Some(normalized(
+                Some("thinking") => vec![normalized(
                     "thinking",
                     text_at(block, &["/thinking", "/text"]),
-                )),
-                Some("tool_use") => Some(tool_use_event(block)),
-                _ => None,
+                )],
+                Some("tool_use") => normalize_claude_tool_use(block),
+                _ => Vec::new(),
             })
             .collect();
     }
@@ -2979,7 +3414,7 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
                 "thinking",
                 text_at(block, &["/thinking", "/text"]),
             )],
-            Some("tool_use") => vec![tool_use_event(block)],
+            Some("tool_use") => normalize_claude_tool_use(block),
             _ => Vec::new(),
         };
     }
@@ -3016,10 +3451,150 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
             .into_iter()
             .flatten()
             .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_result"))
-            .map(tool_result_event)
+            .flat_map(|block| {
+                let result = tool_result_event(block);
+                let mut events = vec![result.clone()];
+                if value.get("tool_use_result").is_some_and(|result| {
+                    result.get("agentId").is_some() || result.get("agentType").is_some()
+                }) {
+                    events.push(NormalizedEvent {
+                        event_type: "agent_end",
+                        call_id: result.call_id,
+                        tool: Some("Agent".into()),
+                        content: None,
+                        input: Some(json!({
+                            "callId": block.get("tool_use_id").cloned().unwrap_or(Value::Null),
+                            "status": value.pointer("/tool_use_result/status").cloned().unwrap_or(json!("completed")),
+                            "summary": value.pointer("/tool_use_result/content/1/text").cloned().unwrap_or(Value::Null)
+                        })),
+                        output: None,
+                        replaces_final_text: false,
+                        parent_call_id: None,
+                        status: None,
+                    });
+                }
+                events
+            })
             .collect();
     }
+    if event_type == "system" {
+        return normalize_claude_task_event(value);
+    }
+    if event_type == "control_request"
+        && value.pointer("/request/subtype").and_then(Value::as_str) == Some("can_use_tool")
+        && value.pointer("/request/tool_name").and_then(Value::as_str) == Some("ExitPlanMode")
+    {
+        return vec![NormalizedEvent {
+            event_type: "tool_use",
+            call_id: value
+                .pointer("/request/tool_use_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            tool: Some("ExitPlanMode".into()),
+            content: None,
+            input: value.pointer("/request/input").cloned(),
+            output: None,
+            replaces_final_text: false,
+            parent_call_id: None,
+            status: None,
+        }];
+    }
     Vec::new()
+}
+
+fn normalize_claude_tool_use(block: &Value) -> Vec<NormalizedEvent> {
+    let tool = block
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let call_id = block.get("id").and_then(Value::as_str).map(str::to_string);
+    match tool {
+        "EnterPlanMode" | "ExitPlanMode" => {
+            let mode_change = NormalizedEvent {
+                event_type: "mode_change",
+                call_id,
+                tool: Some(tool.to_string()),
+                content: None,
+                input: Some(json!({
+                    "from": if tool == "EnterPlanMode" { "agent" } else { "plan" },
+                    "to": if tool == "EnterPlanMode" { "plan" } else { "agent" },
+                    "source": "model"
+                })),
+                output: None,
+                replaces_final_text: false,
+                parent_call_id: None,
+                status: None,
+            };
+            if tool == "ExitPlanMode" {
+                vec![tool_use_event(block), mode_change]
+            } else {
+                vec![mode_change]
+            }
+        }
+        "Agent" | "Task" => {
+            let tool_event = tool_use_event(block);
+            vec![
+                tool_event.clone(),
+                NormalizedEvent {
+                    event_type: "agent_start",
+                    call_id: tool_event.call_id.clone(),
+                    tool: Some(tool.to_string()),
+                    content: None,
+                    input: Some(json!({
+                        "callId": tool_event.call_id,
+                        "name": block.pointer("/input/description"),
+                        "description": block.pointer("/input/description"),
+                        "subagentType": block.pointer("/input/subagent_type"),
+                        "status": "running"
+                    })),
+                    output: None,
+                    replaces_final_text: false,
+                    parent_call_id: None,
+                    status: None,
+                },
+            ]
+        }
+        _ => vec![tool_use_event(block)],
+    }
+}
+
+fn normalize_claude_task_event(value: &Value) -> Vec<NormalizedEvent> {
+    let subtype = value
+        .get("subtype")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(
+        subtype,
+        "task_started" | "task_progress" | "task_updated" | "task_notification"
+    ) {
+        return Vec::new();
+    }
+    let ended = subtype == "task_notification"
+        || value.pointer("/patch/status").and_then(Value::as_str) == Some("completed");
+    let call_id = text_at(value, &["/tool_use_id"]);
+    vec![NormalizedEvent {
+        event_type: if ended { "agent_end" } else { "agent_start" },
+        call_id: call_id.clone(),
+        tool: Some("Agent".into()),
+        content: None,
+        input: Some(json!({
+            "callId": call_id,
+            "name": value.get("description"),
+            "description": value.get("description"),
+            "subagentType": value.get("subagent_type"),
+            "status": value.get("status").or_else(|| value.pointer("/patch/status")).cloned().unwrap_or(json!(if ended { "completed" } else { "running" })),
+            "usage": {
+                "totalTokens": value.pointer("/usage/total_tokens"),
+                "toolUses": value.pointer("/usage/tool_uses"),
+                "durationMs": value.pointer("/usage/duration_ms")
+            },
+            "summary": value.get("summary")
+        })),
+        output: None,
+        replaces_final_text: false,
+        parent_call_id: None,
+        status: None,
+    }]
 }
 
 fn normalize_cursor(value: &Value) -> Vec<NormalizedEvent> {
@@ -3370,16 +3945,21 @@ fn normalize_pi(value: &Value) -> Vec<NormalizedEvent> {
         .and_then(Value::as_str)
         .unwrap_or_default()
     {
-        "message_update" => text_at(
-            value,
-            &[
-                "/assistantMessageEvent/delta",
-                "/assistantMessageEvent/content",
-            ],
-        )
-        .map(|text| normalized("text", Some(text)))
-        .into_iter()
-        .collect(),
+        // 只取正文 / 思考增量：text_end 会把整段正文再发一遍，toolcall_delta 是工具参数 JSON。
+        "message_update" => {
+            let kind = match value
+                .pointer("/assistantMessageEvent/type")
+                .and_then(Value::as_str)
+            {
+                Some("text_delta") => "text",
+                Some("thinking_delta") => "thinking",
+                _ => return Vec::new(),
+            };
+            text_at(value, &["/assistantMessageEvent/delta"])
+                .map(|text| normalized(kind, Some(text)))
+                .into_iter()
+                .collect()
+        }
         "tool_execution_start" => vec![NormalizedEvent {
             event_type: "tool_use",
             call_id: text_at(value, &["/toolCallId"]),
@@ -3391,7 +3971,7 @@ fn normalize_pi(value: &Value) -> Vec<NormalizedEvent> {
             parent_call_id: None,
             status: None,
         }],
-        "tool_execution_end" => text_at(value, &["/result"])
+        "tool_execution_end" => text_at(value, &["/result", "/result/content/0/text"])
             .map(|output| NormalizedEvent {
                 event_type: "tool_result",
                 call_id: text_at(value, &["/toolCallId"]),
@@ -3450,15 +4030,31 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             status: None,
         }],
         "error" => text_at(value, &["/error"])
-            .map(|text| normalized("error", Some(text)))
+            .map(|text| NormalizedEvent {
+                status: text_at(value, &["/code"]),
+                ..normalized("error", Some(text))
+            })
             .into_iter()
             .collect(),
         "plan" => vec![NormalizedEvent {
-            event_type: "plan",
+            event_type: "todo",
             call_id: None,
             tool: Some("plan".into()),
             content: None,
-            input: value.get("input").cloned(),
+            input: Some(json!({
+                "todos": value
+                    .get("input")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .map(|(index, entry)| json!({
+                        "id": entry.get("id").cloned().unwrap_or_else(|| json!(format!("todo-{}", index + 1))),
+                        "text": entry.get("content").or_else(|| entry.get("text")).or_else(|| entry.get("title")).cloned().unwrap_or(Value::Null),
+                        "status": entry.get("status").cloned().unwrap_or_else(|| json!("pending"))
+                    }))
+                    .collect::<Vec<_>>()
+            })),
             output: None,
             replaces_final_text: false,
             parent_call_id: None,
@@ -3477,6 +4073,21 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: Some("pending".into()),
+        }],
+        "mode" => vec![NormalizedEvent {
+            event_type: "mode_change",
+            call_id: None,
+            tool: None,
+            content: None,
+            input: Some(json!({
+                "from": Value::Null,
+                "to": value.get("content").cloned().unwrap_or(Value::Null),
+                "source": "runtime"
+            })),
+            output: None,
+            replaces_final_text: false,
+            parent_call_id: None,
+            status: None,
         }],
         _ => Vec::new(),
     }
@@ -3573,7 +4184,7 @@ fn tool_result_event(value: &Value) -> NormalizedEvent {
                     .get("text")
                     .and_then(Value::as_str)
                     .map(str::to_string),
-                Some("image") => Some("[图片]".to_string()),
+                Some("image") => Some(tr!("[图片]")),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -3654,7 +4265,9 @@ fn redact_secrets(value: &str) -> String {
     let mut text = value.to_string();
     for (pattern, replacement) in patterns {
         if pattern.is_match(&text) {
-            text = pattern.replace_all(&text, replacement.as_str()).into_owned();
+            text = pattern
+                .replace_all(&text, replacement.as_str())
+                .into_owned();
         }
     }
     text
@@ -3778,7 +4391,10 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
         .and_then(|value| serde_json::to_string(value).ok());
     let state = app.state::<AppState>();
     let Ok(db) = state.lock_db() else {
-        crate::diag::write(&format!("RUN_EVENT persist {run_id}:{} skipped: db lock failed", item.seq));
+        crate::diag::write(&format!(
+            "RUN_EVENT persist {run_id}:{} skipped: db lock failed",
+            item.seq
+        ));
         return;
     };
     let result = db.execute(
@@ -3807,17 +4423,22 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
         ],
     );
     if let Err(error) = result {
-        crate::diag::write(&format!("RUN_EVENT persist {run_id}:{} failed: {error}", item.seq));
+        crate::diag::write(&format!(
+            "RUN_EVENT persist {run_id}:{} failed: {error}",
+            item.seq
+        ));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        merge_timeline_item, normalize_runtime_line, push_tail, replace_assignment,
-        runtime_stdin_payload, sanitize_value, should_merge_timeline, timeline_item,
-        tool_use_event, truncate_and_redact, NormalizedEvent, PendingStream,
+        claude_control_response, merge_timeline_item, normalize_runtime_line, push_tail,
+        replace_assignment, runtime_stdin_payload, sanitize_value, should_merge_timeline,
+        timeline_item, tool_use_event, truncate_and_redact, NormalizedEvent, PendingStream,
+        ToolErrorActor, ToolErrorTracker, MAX_CONSECUTIVE_TOOL_ERRORS,
     };
+    use serde_json::{json, Value};
 
     fn text_event(text: &str, replaces: bool) -> NormalizedEvent {
         NormalizedEvent {
@@ -3831,6 +4452,34 @@ mod tests {
             parent_call_id: None,
             status: None,
         }
+    }
+
+    #[test]
+    fn tool_error_limit_is_counted_per_agent_role() {
+        let mut tracker = ToolErrorTracker::default();
+        for _ in 0..MAX_CONSECUTIVE_TOOL_ERRORS - 1 {
+            assert_eq!(tracker.record(None, true), None);
+            assert_eq!(tracker.record(Some("task-call"), true), None);
+        }
+
+        assert_eq!(
+            tracker.record(Some("task-call"), true),
+            Some(ToolErrorActor::SubAgent("task-call".to_string()))
+        );
+        assert_eq!(tracker.record(None, true), Some(ToolErrorActor::Root));
+    }
+
+    #[test]
+    fn successful_tool_result_only_resets_its_agent_role() {
+        let mut tracker = ToolErrorTracker::default();
+        for _ in 0..MAX_CONSECUTIVE_TOOL_ERRORS - 1 {
+            assert_eq!(tracker.record(None, true), None);
+            assert_eq!(tracker.record(Some("task-call"), true), None);
+        }
+
+        assert_eq!(tracker.record(Some("task-call"), false), None);
+        assert_eq!(tracker.record(None, true), Some(ToolErrorActor::Root));
+        assert_eq!(tracker.record(Some("task-call"), true), None);
     }
 
     #[test]
@@ -3872,6 +4521,220 @@ mod tests {
         assert_eq!(events[1].call_id.as_deref(), Some("call-1"));
         assert_eq!(events[2].content.as_deref(), Some("done"));
         assert!(events[2].replaces_final_text);
+    }
+
+    #[test]
+    fn replays_plan_fixture_and_assembles_artifact() {
+        let fixture = include_str!("../tests/fixtures/plan_subagent/claude_plan_mode.jsonl");
+        let mut plan_markdown = None;
+        let mut final_text = String::new();
+        for line in fixture.lines() {
+            for event in normalize_runtime_line("claude", line, false) {
+                if event.event_type == "tool_use"
+                    && event.tool.as_deref() == Some("Write")
+                    && event
+                        .input
+                        .as_ref()
+                        .and_then(|input| input.get("file_path"))
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|path| path.contains("/.claude/plans/"))
+                {
+                    plan_markdown = event
+                        .input
+                        .as_ref()
+                        .and_then(|input| input.get("content"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string);
+                }
+                if event.event_type == "text" {
+                    final_text = event.content.unwrap_or_default();
+                }
+            }
+        }
+        let artifact = crate::plan::assemble_plan_artifact(
+            plan_markdown.as_deref(),
+            &final_text,
+            None,
+            Vec::new(),
+        );
+        assert!(artifact.markdown.starts_with("# Plan:"));
+        assert!(artifact.structured);
+        assert_eq!(artifact.steps.len(), 8);
+    }
+
+    #[test]
+    fn replays_claude_auto_plan_control_requests() {
+        let fixture =
+            include_str!("../tests/fixtures/plan_subagent/claude_auto_plan_permissions.jsonl");
+        let responses = fixture
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter_map(|value| claude_control_response(&value, "zh-CN"))
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 2);
+        assert_eq!(
+            responses[0].pointer("/response/response/behavior"),
+            Some(&json!("allow"))
+        );
+        assert_eq!(
+            responses[0].pointer("/response/response/updatedInput/file_path"),
+            Some(&json!("/tmp/claude-auto-plan/auth.py"))
+        );
+        assert_eq!(
+            responses[1].pointer("/response/response/behavior"),
+            Some(&json!("deny"))
+        );
+        assert!(responses[1]
+            .pointer("/response/response/message")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("等待")));
+
+        let events = include_str!("../tests/fixtures/plan_subagent/claude_auto_plan_exit.jsonl")
+            .lines()
+            .flat_map(|line| normalize_runtime_line("claude", line, false))
+            .collect::<Vec<_>>();
+        assert!(events.iter().any(|event| {
+            event.event_type == "mode_change" && event.tool.as_deref() == Some("EnterPlanMode")
+        }));
+        let plan = events
+            .iter()
+            .find_map(|event| {
+                (event.event_type == "tool_use" && event.tool.as_deref() == Some("ExitPlanMode"))
+                    .then(|| event.input.as_ref()?.get("plan")?.as_str())
+                    .flatten()
+            })
+            .unwrap();
+        let artifact = crate::plan::assemble_plan_artifact(Some(plan), "", None, Vec::new());
+        assert!(artifact.markdown.starts_with("# 认证错误重构"));
+        assert!(artifact.structured);
+    }
+
+    #[test]
+    fn replays_cursor_and_opencode_plan_fixtures() {
+        let cursor = include_str!("../tests/fixtures/plan_subagent/cursor_plan_mode.jsonl")
+            .lines()
+            .flat_map(|line| normalize_runtime_line("cursor", line, false))
+            .collect::<Vec<_>>();
+        let plan_markdown = cursor
+            .iter()
+            .find(|event| {
+                event.event_type == "tool_use" && event.tool.as_deref() == Some("CreatePlan")
+            })
+            .and_then(|event| event.input.as_ref())
+            .and_then(|input| input.get("plan"))
+            .and_then(serde_json::Value::as_str);
+        let cursor_artifact = crate::plan::assemble_plan_artifact(
+            plan_markdown,
+            "已生成计划，工作区未修改。",
+            None,
+            Vec::new(),
+        );
+        assert!(cursor_artifact.markdown.starts_with("# 给 hello.txt"));
+        assert!(cursor_artifact.structured);
+
+        let opencode = include_str!("../tests/fixtures/plan_subagent/opencode_plan_mode.jsonl")
+            .lines()
+            .flat_map(|line| normalize_runtime_line("opencode", line, false))
+            .collect::<Vec<_>>();
+        let final_text = opencode
+            .iter()
+            .filter(|event| event.event_type == "text")
+            .filter_map(|event| event.content.as_deref())
+            .last()
+            .unwrap_or_default();
+        let opencode_artifact =
+            crate::plan::assemble_plan_artifact(None, final_text, None, Vec::new());
+        assert!(opencode_artifact.markdown.starts_with("# 修改方案"));
+        assert!(opencode_artifact.structured);
+    }
+
+    #[test]
+    fn replays_copilot_pi_omp_plan_fixtures() {
+        for (runtime, fixture) in [
+            (
+                "copilot",
+                include_str!("../tests/fixtures/plan_subagent/copilot_plan_mode.jsonl"),
+            ),
+            (
+                "pi",
+                include_str!("../tests/fixtures/plan_subagent/pi_plan_mode.jsonl"),
+            ),
+            (
+                "omp",
+                include_str!("../tests/fixtures/plan_subagent/omp_plan_mode.jsonl"),
+            ),
+        ] {
+            let events = fixture
+                .lines()
+                .flat_map(|line| normalize_runtime_line(runtime, line, false))
+                .collect::<Vec<_>>();
+            let text = events
+                .iter()
+                .filter(|event| event.event_type == "text")
+                .filter_map(|event| event.content.as_deref())
+                .collect::<String>();
+            let artifact = crate::plan::assemble_plan_artifact(None, &text, None, Vec::new());
+            assert!(artifact.markdown.starts_with("# 给 hello.txt"), "{runtime}");
+            assert_eq!(
+                artifact.markdown.matches("# 给 hello.txt").count(),
+                1,
+                "{runtime}"
+            );
+            assert!(artifact.structured, "{runtime}");
+            for kind in ["tool_use", "tool_result"] {
+                assert!(
+                    events.iter().any(|event| event.event_type == kind),
+                    "{runtime} {kind}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn replays_nested_agent_fixtures_without_leaking_prompt_as_text() {
+        let mut events = Vec::new();
+        for fixture in [
+            include_str!("../tests/fixtures/plan_subagent/claude_nested_task.jsonl"),
+            include_str!("../tests/fixtures/plan_subagent/claude_subagent_tools.jsonl"),
+        ] {
+            for line in fixture.lines() {
+                events.extend(normalize_runtime_line("claude", line, false));
+            }
+        }
+        assert!(events.iter().any(|event| event.event_type == "agent_start"));
+        assert!(events.iter().any(|event| event.event_type == "agent_end"));
+        assert!(events.iter().any(|event| event.parent_call_id.is_some()));
+        let child_text = normalize_runtime_line(
+            "claude",
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"child"}]},"parent_tool_use_id":"parent"}"#,
+            false,
+        );
+        assert_eq!(child_text[0].event_type, "thinking");
+        assert_eq!(child_text[0].parent_call_id.as_deref(), Some("parent"));
+        assert!(!events.iter().any(|event| {
+            event.event_type == "text"
+                && event
+                    .content
+                    .as_deref()
+                    .is_some_and(|text| text.starts_with("Use the Agent"))
+        }));
+    }
+
+    #[test]
+    fn wire_mode_and_plan_are_normalized() {
+        let mode = normalize_runtime_line("wire", r#"{"type":"mode","content":"plan"}"#, false);
+        assert_eq!(mode[0].event_type, "mode_change");
+        assert_eq!(mode[0].input.as_ref().unwrap()["source"], "runtime");
+        let todo = normalize_runtime_line(
+            "wire",
+            r#"{"type":"plan","input":[{"content":"Inspect","status":"in_progress"}]}"#,
+            false,
+        );
+        assert_eq!(todo[0].event_type, "todo");
+        assert_eq!(
+            todo[0].input.as_ref().unwrap()["todos"][0]["text"],
+            "Inspect"
+        );
     }
 
     #[test]

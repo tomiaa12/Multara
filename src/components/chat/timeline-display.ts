@@ -27,6 +27,10 @@ export interface PairedTool {
   use: TimelineItem;
   result?: TimelineItem;
   children?: TimelineBlock[];
+  /** 没有对应的 tool_result：仍在运行，或运行已结束但结果丢失 */
+  incomplete?: boolean;
+  /** 子代理最近一次 agent_start / agent_end，带状态、用量、耗时 */
+  lifecycle?: TimelineItem;
 }
 
 export interface PlanTodo {
@@ -46,7 +50,9 @@ export type TimelineBlock =
   | { type: "edit"; item: PairedTool }
   | { type: "shell"; item: PairedTool }
   | { type: "tool"; item: PairedTool }
+  | { type: "subagent"; item: PairedTool }
   | { type: "plan"; todos: PlanTodo[] }
+  | { type: "mode"; item: TimelineItem }
   | { type: "permission"; item: TimelineItem };
 
 export interface FileRevealTarget {
@@ -55,7 +61,7 @@ export interface FileRevealTarget {
   endLine?: number;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+export function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
@@ -78,6 +84,14 @@ export function inputRecord(item: TimelineItem | undefined): Record<string, unkn
   return resolvedInput(item);
 }
 
+/** 带 markdown 的 plan 事件是计划产物，在过程外由计划卡片渲染；旧数据只有 entries / todos 的按待办处理 */
+export function isPlanArtifactItem(item: TimelineItem): boolean {
+  return item.eventType === "plan" && typeof resolvedInput(item).markdown === "string";
+}
+
+/** 只用来推导状态、不在过程里单独成行的事件 */
+const BOOKKEEPING_EVENTS = new Set<TimelineItem["eventType"]>(["plan_action", "agent_start", "agent_end"]);
+
 export function toolKind(name: string | null | undefined): ToolKind {
   const raw = (name ?? "").trim();
   const n = raw.toLowerCase().replaceAll(/[^a-z]/g, "");
@@ -99,6 +113,12 @@ export function toolKind(name: string | null | undefined): ToolKind {
   if (["write", "writefile", "createfile"].some((tool) => n.includes(tool))) return "write";
   if (n === "run" || n === "bash" || ["shell", "terminal", "command"].some((tool) => n.includes(tool))) return "shell";
   return "other";
+}
+
+/** Claude 的 Task / Agent 等由 CLI 自己派生的子代理调用 */
+export function isSubAgentTool(item: TimelineItem): boolean {
+  const name = inferToolName(item).toLowerCase();
+  return toolKind(name) === "task" || name === "agent";
 }
 
 export function inferToolName(item: TimelineItem): string {
@@ -132,7 +152,7 @@ export function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
 }
 
-function stringField(input: Record<string, unknown>, keys: string[]): string {
+export function stringField(input: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) return value;
@@ -306,7 +326,7 @@ export function workFoldLabel(elapsedMs?: number | null, language?: string): str
   return translate("chat.workedFor", language).replace("{seconds}", String(seconds));
 }
 
-function formatLiveElapsed(seconds: number, language?: string): string {
+export function formatLiveElapsed(seconds: number, language?: string): string {
   const elapsed = Math.max(0, Math.floor(seconds));
   if (elapsed < 60) return translate("chat.elapsedSec", language, { n: elapsed });
   const minutes = Math.floor(elapsed / 60);
@@ -319,7 +339,7 @@ function formatLiveElapsed(seconds: number, language?: string): string {
 function latestWorkItem(items: TimelineItem[]): TimelineItem | undefined {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
-    if (!item || item.eventType === "error" || item.eventType === "tool_result") continue;
+    if (!item || ["error", "tool_result", "mode_change"].includes(item.eventType) || BOOKKEEPING_EVENTS.has(item.eventType)) continue;
     return item;
   }
   return undefined;
@@ -346,6 +366,7 @@ function liveStageKey(items: TimelineItem[], status?: "queued" | "running" | "se
   if (!latest) return status === "sending" ? "chat.waiting" : "chat.thinking";
   if (latest.eventType === "text") return "chat.typing";
   if (latest.eventType === "thinking") return "chat.thinking";
+  if (latest.eventType === "todo") return "chat.updatingPlan";
   return liveStageKeyForKind(toolKind(inferToolName(latest) || latest.tool));
 }
 
@@ -425,13 +446,34 @@ function editFileLabel(name: string, language?: string): string {
   return translate("chat.editingFile", language, { file: name });
 }
 
-// 还没有结果的修改都算正在进行。同一轮可以同时改多个文件，每个文件一条状态。
-function pendingEditNames(items: TimelineItem[]): string[] {
-  const finished = new Set(
+function finishedCallIds(items: TimelineItem[]): Set<string> {
+  return new Set(
     items
       .filter((item) => item.eventType === "tool_result" && item.callId)
       .map((item) => item.callId as string),
   );
+}
+
+function runningSubAgentCount(items: TimelineItem[]): number {
+  const finished = finishedCallIds(items);
+  return new Set(
+    items
+      .filter((item) => item.eventType === "tool_use" && item.callId && !finished.has(item.callId) && isSubAgentTool(item))
+      .map((item) => item.callId),
+  ).size;
+}
+
+// 只有一个子代理且它就是最新动作时，阶段文案「调用子代理 xx」已经说明了，不再重复计数。
+function subAgentLivePrefix(items: TimelineItem[], language?: string): string {
+  const count = runningSubAgentCount(items);
+  const latest = latestWorkItem(items);
+  if (!count || (count === 1 && latest?.eventType === "tool_use" && isSubAgentTool(latest))) return "";
+  return `${translate("chat.subagent.running", language, { n: count })} · `;
+}
+
+// 还没有结果的修改都算正在进行。同一轮可以同时改多个文件，每个文件一条状态。
+function pendingEditNames(items: TimelineItem[]): string[] {
+  const finished = finishedCallIds(items);
   const names: string[] = [];
   const seen = new Set<string>();
   for (const item of items) {
@@ -463,14 +505,20 @@ export function liveWorkParts(
 ): Array<{ label: string; elapsed: string }> {
   const elapsed = formatLiveElapsed(elapsedSeconds, options?.language);
   const stage = liveStageKey(items, options?.status);
+  const prefix = subAgentLivePrefix(items, options?.language);
   if (stage === "chat.makingEdits") {
     const pending = pendingEditNames(items);
     const names = pending.length ? pending : [latestEditName(items)].filter(Boolean);
-    if (names.length) return names.map((name) => ({ label: editFileLabel(name, options?.language), elapsed }));
+    if (names.length) {
+      return names.map((name, index) => ({
+        label: `${index ? "" : prefix}${editFileLabel(name, options?.language)}`,
+        elapsed,
+      }));
+    }
   }
   const base = translate(stage, options?.language);
   const detail = liveWorkDetail(latestWorkItem(items));
-  return [{ label: detail ? `${base} ${detail}` : base, elapsed }];
+  return [{ label: `${prefix}${detail ? `${base} ${detail}` : base}`, elapsed }];
 }
 
 export function liveWorkLabels(
@@ -703,7 +751,7 @@ function todosFromInput(input: Record<string, unknown>): PlanTodo[] {
 export function pinnedTodos(items: TimelineItem[]): PlanTodo[] {
   let latest: PlanTodo[] = [];
   for (const item of coalesceTimeline(items)) {
-    if (item.eventType === "plan") {
+    if (isTodoEvent(item)) {
       latest = todosFromInput(resolvedInput(item));
       continue;
     }
@@ -730,75 +778,164 @@ export function permissionOptions(item: TimelineItem): Array<{ id: string; label
   });
 }
 
-function withChildren(pair: PairedTool, nested: Map<string, TimelineItem[]>): PairedTool {
-  const callId = pair.use.callId;
-  if (!callId) return pair;
-  const kids = nested.get(callId);
-  if (!kids?.length) return pair;
-  return { ...pair, children: groupTimeline(kids) };
+interface EventTreeNode {
+  item: TimelineItem;
+  result?: TimelineItem;
+  children: EventTreeNode[];
+}
+
+interface TreeIssue {
+  kind: "missing-parent" | "self-parent" | "cycle";
+  seq: number;
+  callId: string | null;
+  parentCallId: string;
+}
+
+// 流式过程中每次刷新都会重建树，同一个异常只报一次。
+const reportedTreeIssues = new Set<string>();
+
+function reportTreeIssues(issues: TreeIssue[]) {
+  const fresh = issues.filter((issue) => {
+    const key = `${issue.kind}:${issue.seq}:${issue.callId}:${issue.parentCallId}`;
+    if (reportedTreeIssues.has(key)) return false;
+    reportedTreeIssues.add(key);
+    return true;
+  });
+  if (fresh.length) console.warn("[timeline] 事件的父调用异常，已挂到根级", fresh);
+}
+
+function treeIssue(node: EventTreeNode, kind: TreeIssue["kind"]): TreeIssue {
+  return {
+    kind,
+    seq: node.item.seq,
+    callId: node.item.callId,
+    parentCallId: node.item.parentCallId?.trim() ?? "",
+  };
+}
+
+// 环上 seq 最小的节点断开父链放到根级，其余节点照常挂在它下面。
+function cycleHead(entry: EventTreeNode, links: Map<EventTreeNode, EventTreeNode>): EventTreeNode {
+  let head = entry;
+  for (let node = links.get(entry); node && node !== entry; node = links.get(node)) {
+    if (node.item.seq < head.item.seq) head = node;
+  }
+  return head;
+}
+
+/** tool_use 与同 callId 的 tool_result 合并成一个节点，再按 parentCallId 在整个事件集合里挂接 */
+function buildEventTree(process: TimelineItem[]): EventTreeNode[] {
+  const nodes: EventTreeNode[] = [];
+  const byCall = new Map<string, EventTreeNode>();
+  const awaitingResult = new Map<string, EventTreeNode[]>();
+  for (const item of process) {
+    if (item.eventType === "tool_result") {
+      const owner = item.callId ? awaitingResult.get(item.callId)?.shift() : undefined;
+      if (owner) owner.result = item;
+      continue;
+    }
+    const node: EventTreeNode = { item, children: [] };
+    nodes.push(node);
+    if (item.eventType !== "tool_use" || !item.callId) continue;
+    if (!byCall.has(item.callId)) byCall.set(item.callId, node);
+    const queue = awaitingResult.get(item.callId);
+    if (queue) queue.push(node);
+    else awaitingResult.set(item.callId, [node]);
+  }
+
+  const issues: TreeIssue[] = [];
+  const links = new Map<EventTreeNode, EventTreeNode>();
+  for (const node of nodes) {
+    const parentCallId = node.item.parentCallId?.trim();
+    if (!parentCallId) continue;
+    const parent = byCall.get(parentCallId);
+    if (parentCallId === node.item.callId) issues.push(treeIssue(node, "self-parent"));
+    else if (!parent) issues.push(treeIssue(node, "missing-parent"));
+    else links.set(node, parent);
+  }
+
+  // 每个节点只沿父链走一次：走到已确认的节点就停，走回本轮路径上的节点说明成环。
+  const settled = new Set<EventTreeNode>();
+  const walking = new Set<EventTreeNode>();
+  for (const start of nodes) {
+    let cursor: EventTreeNode | undefined = start;
+    while (cursor && !settled.has(cursor) && !walking.has(cursor)) {
+      walking.add(cursor);
+      cursor = links.get(cursor);
+    }
+    if (cursor && walking.has(cursor)) {
+      const head = cycleHead(cursor, links);
+      links.delete(head);
+      issues.push(treeIssue(head, "cycle"));
+    }
+    walking.forEach((node) => settled.add(node));
+    walking.clear();
+  }
+
+  const roots: EventTreeNode[] = [];
+  for (const node of nodes) (links.get(node)?.children ?? roots).push(node);
+  for (const node of byCall.values()) node.children.sort((a, b) => a.item.seq - b.item.seq);
+  reportTreeIssues(issues);
+  return roots;
+}
+
+function todoBlock(item: TimelineItem): TimelineBlock | undefined {
+  const todos = todosFromInput(resolvedInput(item));
+  return todos.length ? { type: "plan", todos } : undefined;
+}
+
+function isTodoEvent(item: TimelineItem): boolean {
+  return item.eventType === "todo" || (item.eventType === "plan" && !isPlanArtifactItem(item));
+}
+
+type AgentLifecycle = Map<string, TimelineItem>;
+
+/** agent_start / agent_end 按子代理的 Agent 调用 id 归集，后到的覆盖先到的 */
+function agentLifecycle(items: TimelineItem[]): AgentLifecycle {
+  const lifecycle: AgentLifecycle = new Map();
+  for (const item of items) {
+    if (item.eventType !== "agent_start" && item.eventType !== "agent_end") continue;
+    const callId = item.callId || stringField(resolvedInput(item), ["callId"]);
+    if (callId) lifecycle.set(callId, item);
+  }
+  return lifecycle;
+}
+
+function blockFromNode(node: EventTreeNode, lifecycle: AgentLifecycle): TimelineBlock | undefined {
+  const { item } = node;
+  if (isTodoEvent(item)) return todoBlock(item);
+  if (item.eventType === "mode_change") return { type: "mode", item };
+  if (item.eventType === "permission") return { type: "permission", item };
+  if (item.eventType === "thinking") return (item.content ?? "").trim() ? { type: "thinking", item } : undefined;
+  if (item.eventType === "error") return (item.content || item.output || "").trim() ? { type: "error", item } : undefined;
+  if (item.eventType !== "tool_use" || isBlankTool(item)) return undefined;
+  const name = inferToolName(item).toLowerCase();
+  if (name === "todowrite" || name.includes("todo")) return todoBlock(item);
+  const pair: PairedTool = { use: item, result: node.result, incomplete: !node.result };
+  if (node.children.length) pair.children = blocksFromNodes(node.children, lifecycle);
+  if (isSubAgentTool(item)) {
+    pair.lifecycle = item.callId ? lifecycle.get(item.callId) : undefined;
+    return { type: "subagent", item: pair };
+  }
+  const kind = itemKind(item);
+  if (isExploreKind(kind)) return { type: "explore", items: [{ kind: "tool", item: pair }] };
+  if (kind === "edit" || kind === "write") return { type: "edit", item: pair };
+  if (kind === "shell") return { type: "shell", item: pair };
+  return { type: "tool", item: pair };
 }
 
 export function groupTimeline(items: TimelineItem[]): TimelineBlock[] {
-  const process = coalesceTimeline(items).filter((item) => item.eventType !== "text");
-  const nested = new Map<string, TimelineItem[]>();
-  const top: TimelineItem[] = [];
-  const callIds = new Set(process.map((item) => item.callId).filter((id): id is string => Boolean(id)));
-  for (const item of process) {
-    const parent = item.parentCallId?.trim();
-    if (parent && callIds.has(parent)) {
-      const list = nested.get(parent) ?? [];
-      list.push(item);
-      nested.set(parent, list);
-    } else {
-      top.push(item);
-    }
-  }
-  const resultsByCall = new Map<string, TimelineItem[]>();
-  for (const item of top) {
-    if (item.eventType !== "tool_result" || !item.callId) continue;
-    const list = resultsByCall.get(item.callId);
-    if (list) list.push(item);
-    else resultsByCall.set(item.callId, [item]);
-  }
-  const paired: TimelineBlock[] = [];
+  const events = coalesceTimeline(items);
+  const process = events.filter((item) =>
+    item.eventType !== "text" && !BOOKKEEPING_EVENTS.has(item.eventType) && !isPlanArtifactItem(item),
+  );
+  return blocksFromNodes(buildEventTree(process), agentLifecycle(events));
+}
 
-  for (const item of top) {
-    if (item.eventType === "plan") {
-      const todos = todosFromInput(resolvedInput(item));
-      if (todos.length) paired.push({ type: "plan", todos });
-      continue;
-    }
-    if (item.eventType === "permission") {
-      paired.push({ type: "permission", item });
-      continue;
-    }
-    if (item.eventType === "thinking") {
-      if (!(item.content ?? "").trim()) continue;
-      paired.push({ type: "thinking", item });
-      continue;
-    }
-    if (item.eventType === "error") {
-      if (!(item.content || item.output || "").trim()) continue;
-      paired.push({ type: "error", item });
-      continue;
-    }
-    if (item.eventType !== "tool_use") continue;
-    if (isBlankTool(item)) continue;
-    const name = inferToolName(item).toLowerCase();
-    if (name === "todowrite" || name.includes("todo")) {
-      const todos = todosFromInput(resolvedInput(item));
-      if (todos.length) paired.push({ type: "plan", todos });
-      continue;
-    }
-    const result = item.callId ? resultsByCall.get(item.callId)?.shift() : undefined;
-    const pair = withChildren({ use: item, result }, nested);
-    const kind = itemKind(item);
-    if (isExploreKind(kind)) paired.push({ type: "explore", items: [{ kind: "tool", item: pair }] });
-    else if (kind === "edit" || kind === "write") paired.push({ type: "edit", item: pair });
-    else if (kind === "shell") paired.push({ type: "shell", item: pair });
-    else paired.push({ type: "tool", item: pair });
-  }
-
+function blocksFromNodes(nodes: EventTreeNode[], lifecycle: AgentLifecycle): TimelineBlock[] {
+  const blocks = nodes.flatMap((node) => blockFromNode(node, lifecycle) ?? []);
+  // 同一层的待办只留最新一次，历史快照不再逐条成卡
+  const lastTodo = blocks.reduce((last, block, index) => (block.type === "plan" ? index : last), -1);
+  const paired = blocks.filter((block, index) => block.type !== "plan" || index === lastTodo);
   const merged: TimelineBlock[] = [];
   for (const block of paired) {
     if (block.type === "thinking") {

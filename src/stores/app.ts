@@ -1,7 +1,9 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, getCurrentScope, ref, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
-import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, McpInput, MergeSession, MessageAttachmentInput, RunEvent, Squad, TaskInput, TaskStatus } from "../domain/types";
+import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, McpInput, MergeSession, MessageAttachmentInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
+import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
+import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
 import * as backend from "../services/backend";
 import {
   clearLegacyDismissed,
@@ -61,7 +63,8 @@ export const useAppStore = defineStore("app", () => {
   const error = ref("");
   const chatOpen = ref(false);
   const activeSessionId = ref("welcome");
-  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; priority?: boolean; immediate?: boolean };
+  /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它 */
+  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean };
   const queuedMessages = ref<QueuedMessage[]>([]);
   const dismissedQuestions = ref(new Set<string>(readDismissedQuestions()));
   const sendingSessions = ref(new Set<string>());
@@ -80,6 +83,7 @@ export const useAppStore = defineStore("app", () => {
     sessionId: string;
     content: string;
     attachments: MessageAttachmentInput[];
+    requestedMode?: RunMode;
     message: string;
   } | null>(null);
   const fileReveal = ref<{
@@ -118,6 +122,41 @@ export const useAppStore = defineStore("app", () => {
       );
   }
   const processingMessage = computed(() => sessionProcessing(activeSessionId.value));
+
+  // 每个会话一份计划状态缓存：流式更新只让该会话重算。挂在 store 自己的作用域上，不随组件卸载停掉。
+  const storeScope = getCurrentScope();
+  const planStateCache = new Map<string, ComputedRef<PlanStates>>();
+  function messageRunStatus(message: ChatMessage) {
+    return message.runId ? runStates.value[message.runId]?.status : undefined;
+  }
+  function planStates(sessionId: string): PlanStates {
+    let cached = planStateCache.get(sessionId);
+    if (!cached) {
+      const create = () => computed(() => derivePlanStates(messages.value[sessionId] ?? [], messageRunStatus));
+      cached = storeScope?.run(create) ?? create();
+      planStateCache.set(sessionId, cached);
+    }
+    return cached.value;
+  }
+
+  function sessionMode(sessionId: string): RunMode {
+    const session = data.value?.sessions.find((item) => item.id === sessionId);
+    const task = data.value?.tasks.find((item) => item.sessionId === sessionId);
+    return session?.defaultMode ?? task?.defaultMode ?? DEFAULT_RUN_MODE;
+  }
+
+  async function setSessionMode(sessionId: string, mode: RunMode) {
+    const session = data.value?.sessions.find((item) => item.id === sessionId);
+    if (!session || session.defaultMode === mode) return;
+    const previous = session.defaultMode;
+    session.defaultMode = mode;
+    try {
+      await backend.setSessionDefaultMode(sessionId, mode);
+    } catch (cause) {
+      session.defaultMode = previous;
+      throw cause;
+    }
+  }
 
   async function initialize() {
     loading.value = true;
@@ -310,16 +349,7 @@ export const useAppStore = defineStore("app", () => {
       }
       if (["completed", "failed", "stopped"].includes(payload.status)) {
         await surfacesRefresh;
-        const persisted = await backend.listChatMessages(payload.sessionId);
-        const persistedIds = new Set(persisted.map((message) => message.id));
-        const live = (messages.value[payload.sessionId] ?? []).filter((message) => {
-          if (persistedIds.has(message.id)) return false;
-          if (optimisticMessages.has(message.id)) return true;
-          if (!message.runId) return false;
-          const status = runStates.value[message.runId]?.status;
-          return status === "queued" || status === "running";
-        });
-        messages.value[payload.sessionId] = [...persisted, ...live];
+        await reloadPersistedMessages(payload.sessionId);
         pruneRunStates();
         if (previous?.status === "running") {
           await captureInboxNotice(payload);
@@ -337,6 +367,34 @@ export const useAppStore = defineStore("app", () => {
         }
       }
     });
+  }
+
+  /** 从库里重载会话消息，保留还没落库的乐观消息和进行中的流式消息 */
+  async function reloadPersistedMessages(sessionId: string) {
+    const persisted = await backend.listChatMessages(sessionId);
+    const persistedIds = new Set(persisted.map((message) => message.id));
+    const live = (messages.value[sessionId] ?? []).filter((message) => {
+      if (persistedIds.has(message.id)) return false;
+      if (optimisticMessages.has(message.id)) return true;
+      if (!message.runId) return false;
+      const status = runStates.value[message.runId]?.status;
+      return status === "queued" || status === "running";
+    });
+    messages.value[sessionId] = [...persisted, ...live];
+  }
+
+  /** 批准 / 继续完善 / 拒绝计划；后端按 planId + revision + action 幂等 */
+  async function planAction(input: PlanActionInput) {
+    const result = await backend.planAction(input);
+    const current = messages.value[input.sessionId] ?? [];
+    const known = new Set(current.map((message) => message.id));
+    messages.value[input.sessionId] = [...current, ...result.messages.filter((message) => !known.has(message.id))];
+    const startsRun = input.action !== "reject"
+      && !result.duplicated
+      && !result.messages.some((message) => message.role === "assistant");
+    if (startsRun) pendingRunSessions.value.add(input.sessionId);
+    await reloadPersistedMessages(input.sessionId);
+    return result;
   }
 
   /** runStates 只增不减，会拖慢所有遍历它的计算属性；只保留进行中的和最近一批已结束的。 */
@@ -483,6 +541,7 @@ export const useAppStore = defineStore("app", () => {
         targetId: task.agentId,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
+        defaultMode: task.defaultMode,
       });
     }
     messages.value[task.sessionId] = [];
@@ -575,7 +634,7 @@ export const useAppStore = defineStore("app", () => {
 
   function isTaskRunningDeleteError(cause: unknown) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return message.includes("正在执行") || message.includes("停止运行再删除");
+    return message.startsWith(backend.TASK_RUNNING_PREFIX);
   }
 
   async function confirmDeleteTask(taskId: string) {
@@ -713,7 +772,8 @@ export const useAppStore = defineStore("app", () => {
     const waitingPermission = transcript.some((message) =>
       message.timeline.some((item) => item.eventType === "permission" && item.status !== "resolved"),
     );
-    const status = waitingQuestion
+    const awaitingPlan = latestAwaitingPlan(planStates(session.id));
+    const status = waitingQuestion || awaitingPlan
       ? "needs_input"
       : waitingPermission
         ? "needs_permission"
@@ -731,10 +791,12 @@ export const useAppStore = defineStore("app", () => {
       projectId: session.projectId,
       taskId: task?.id ?? null,
       title: task?.title || session.title,
-      preview: inboxPreview(
-        transcript.filter((message) => message.role === "assistant").map((message) => message.content),
-        payload.error ?? "",
-      ),
+      preview: awaitingPlan
+        ? t("chat.plan.inboxPreview", { title: awaitingPlan.artifact.title })
+        : inboxPreview(
+          transcript.filter((message) => message.role === "assistant").map((message) => message.content),
+          payload.error ?? "",
+        ),
       status,
     });
     const index = data.value.inbox.findIndex((entry) => entry.sessionId === item.sessionId);
@@ -1073,12 +1135,18 @@ export const useAppStore = defineStore("app", () => {
     content: string,
     sessionId = activeSessionId.value,
     attachments: MessageAttachmentInput[] = [],
-    options: { priority?: boolean } = {},
+    options: { priority?: boolean; mode?: RunMode } = {},
   ) {
     const text = content.trim();
     if (!text && !attachments.length) return;
     if (!sessionId) return;
-    const item = { sessionId, content: text, attachments, priority: options.priority };
+    const item: QueuedMessage = {
+      sessionId,
+      content: text,
+      attachments,
+      requestedMode: options.mode ?? sessionMode(sessionId),
+      priority: options.priority,
+    };
     if (options.priority) queuedMessages.value.unshift(item);
     else queuedMessages.value.push(item);
     void drainMessageQueue();
@@ -1224,6 +1292,8 @@ export const useAppStore = defineStore("app", () => {
       ?.[0]
       ?? activeSessionId.value;
     if (!sessionId) return;
+    // 重放沿用该条消息当时的模式，不跟随会话当前默认模式
+    const replayMode = messages.value[sessionId]?.find((item) => item.id === messageId)?.requestedMode ?? undefined;
     queuedMessages.value = queuedMessages.value.filter((item) => item.sessionId !== sessionId);
     await stopSessionRuns(sessionId);
     const diffStore = useDiffStore();
@@ -1250,7 +1320,7 @@ export const useAppStore = defineStore("app", () => {
         messages.value[sessionId] = await backend.listChatMessages(sessionId);
       },
       reloadDiff: () => diffStore.loadActive(),
-      send: () => send(text, sessionId, attachments),
+      send: () => send(text, sessionId, attachments, { mode: replayMode }),
     });
     if (result === "aborted") return;
   }
@@ -1432,6 +1502,7 @@ export const useAppStore = defineStore("app", () => {
             id: `pending:${optimisticId}:${index}`,
           })),
           createdAt: new Date().toISOString(),
+          requestedMode: next.requestedMode,
         },
       ];
       await new Promise<void>((resolve) => {
@@ -1439,7 +1510,7 @@ export const useAppStore = defineStore("app", () => {
       });
       try {
         pendingRunSessions.value.add(next.sessionId);
-        const result = await backend.sendMessage(next.sessionId, next.content, next.attachments);
+        const result = await backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode);
         if (withdrawnOptimistic.has(optimisticId)) {
           withdrawnOptimistic.delete(optimisticId);
           const returnedUser = result.find((message) => message.role === "user");
@@ -1478,6 +1549,7 @@ export const useAppStore = defineStore("app", () => {
           sessionId: next.sessionId,
           content: next.content,
           attachments: next.attachments,
+          requestedMode: next.requestedMode,
           message: t("app.sendFailed", { message }),
         };
       }
@@ -1519,6 +1591,7 @@ export const useAppStore = defineStore("app", () => {
     const draft = {
       content: user.content,
       attachments: attachmentsAsInput(user),
+      requestedMode: user.requestedMode ?? undefined,
     };
     await stopSessionRuns(sessionId);
     if (optimisticMessages.has(user.id)) {
@@ -1626,6 +1699,11 @@ export const useAppStore = defineStore("app", () => {
     ensureProjectSession,
     updateSessionTitle,
     setSessionTarget,
+    sessionMode,
+    setSessionMode,
+    planStates,
+    messageRunStatus,
+    planAction,
     send,
     reaskFrom,
     addComposerContext,

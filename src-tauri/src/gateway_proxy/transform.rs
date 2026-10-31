@@ -2422,7 +2422,10 @@ mod tests {
         let (mapped, _) =
             rewrite_request(body, ApiFormat::Anthropic, ApiFormat::Responses, "deepseek").unwrap();
         let items = mapped["input"].as_array().unwrap();
-        assert!(items.iter().all(|item| item["type"].is_string()), "{items:?}");
+        assert!(
+            items.iter().all(|item| item["type"].is_string()),
+            "{items:?}"
+        );
         assert_eq!(items[1]["type"], "message");
         assert_eq!(items[1]["role"], "assistant");
         assert_eq!(items[1]["content"][0]["type"], "output_text");

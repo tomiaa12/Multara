@@ -45,6 +45,9 @@ import type {
   MergePullResult,
   MergeIntoResult,
   MergePreview,
+  PlanActionInput,
+  PlanActionResult,
+  RunMode,
   Squad,
   Task,
   TaskInput,
@@ -570,6 +573,7 @@ export async function createTask(input: TaskInput): Promise<Task> {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       parentTaskId: input.parentTaskId ?? null,
+      defaultMode: input.requestedMode ?? "auto",
     };
     previewData.sessions.unshift({
       id: created.sessionId,
@@ -580,6 +584,7 @@ export async function createTask(input: TaskInput): Promise<Task> {
       targetId: created.agentId,
       createdAt: created.createdAt,
       updatedAt: created.updatedAt,
+      defaultMode: created.defaultMode,
     });
     previewData.tasks.unshift(created);
     return structuredClone(created);
@@ -725,6 +730,8 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus): Prom
   return invoke<Task[]>("update_task_status", { taskId, status });
 }
 
+export const TASK_RUNNING_PREFIX = "TASK_RUNNING:";
+
 export async function deleteTask(taskId: string, force = false): Promise<Task[]> {
   if (!inTauri()) {
     const task = previewData.tasks.find((item) => item.id === taskId);
@@ -804,6 +811,20 @@ export async function updateChatSessionTarget(
 ): Promise<void> {
   if (!inTauri()) return;
   await invoke("update_chat_session_target", { sessionId, targetType, targetId });
+}
+
+export async function setSessionDefaultMode(sessionId: string, mode: RunMode): Promise<void> {
+  if (!inTauri()) {
+    const session = previewData.sessions.find((item) => item.id === sessionId);
+    if (session) session.defaultMode = mode;
+    return;
+  }
+  await invoke("set_session_default_mode", { sessionId, mode });
+}
+
+export async function planAction(input: PlanActionInput): Promise<PlanActionResult> {
+  if (!inTauri()) throw new Error("浏览器预览不能操作计划");
+  return invoke<PlanActionResult>("plan_action", { input });
 }
 
 export async function listChatMessages(sessionId: string): Promise<ChatMessage[]> {
@@ -1388,9 +1409,18 @@ export async function listWorkspaceDirectory(
   return invoke<FileEntry[]>("list_workspace_directory", { workspaceId, path: path || null });
 }
 
+const FILE_MISSING_PREFIX = "NOT_FOUND:";
+
+/** 读文件时文件已不在（被删或被移走）。 */
+export class FileMissingError extends Error {}
+
 export async function readWorkspaceFile(workspaceId: string, path: string): Promise<FileContent> {
   if (!inTauri()) throw new Error("浏览器预览不能读取本机文件");
-  return invoke<FileContent>("read_workspace_file", { workspaceId, path });
+  return invoke<FileContent>("read_workspace_file", { workspaceId, path }).catch((cause) => {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    if (!message.startsWith(FILE_MISSING_PREFIX)) throw cause;
+    throw new FileMissingError(message.slice(FILE_MISSING_PREFIX.length));
+  });
 }
 
 export async function readExternalFile(path: string): Promise<FileContent> {
@@ -1727,6 +1757,7 @@ export async function sendMessage(
   sessionId: string,
   content: string,
   attachments: MessageAttachmentInput[] = [],
+  requestedMode?: RunMode,
 ): Promise<ChatMessage[]> {
   if (!inTauri()) {
     const createdAt = new Date().toISOString();
@@ -1740,7 +1771,7 @@ export async function sendMessage(
       attachments: [],
     };
     return [
-      { id: crypto.randomUUID(), sessionId, role: "user", content, createdAt, ...details },
+      { id: crypto.randomUUID(), sessionId, role: "user", content, createdAt, requestedMode, ...details },
       {
         id: crypto.randomUUID(),
         sessionId,
@@ -1751,7 +1782,7 @@ export async function sendMessage(
       },
     ];
   }
-  return invoke<ChatMessage[]>("send_message", { sessionId, content, attachments });
+  return invoke<ChatMessage[]>("send_message", { sessionId, content, attachments, requestedMode });
 }
 
 export async function stopRun(runId: string): Promise<void> {

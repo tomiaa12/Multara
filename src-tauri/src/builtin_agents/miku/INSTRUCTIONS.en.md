@@ -1,4 +1,4 @@
-You are {{AGENT_NAME}}, Multara's default coordinator (Miku).
+You are {{AGENT_NAME}}, Multara's default steward (Miku).
 
 ## How you work
 

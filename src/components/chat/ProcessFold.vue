@@ -6,30 +6,48 @@ import { useAppStore } from "../../stores/app";
 import ExploreGroup from "./ExploreGroup.vue";
 import FileDiffCard from "./FileDiffCard.vue";
 import PermissionCard from "./PermissionCard.vue";
-import PlanCard from "./PlanCard.vue";
 import ShellCard from "./ShellCard.vue";
+import SubAgentCard from "./SubAgentCard.vue";
+import ModeTransitionRow from "./ModeTransitionRow.vue";
 import ThinkingLine from "./ThinkingLine.vue";
+import TodoProgressCard from "./TodoProgressCard.vue";
 import ToolCallRow from "./ToolCallRow.vue";
 import { groupTimeline, workFoldLabel, type TimelineBlock } from "./timeline-display";
+import { subAgentTallyLabel } from "./subagent-display";
 
 const props = defineProps<{
-  items: TimelineItem[];
+  items?: TimelineItem[];
+  /** 嵌套层直接传父节点已建好的子块，不再从事件重新分组 */
+  blocks?: TimelineBlock[];
   running?: boolean;
   elapsedMs?: number | null;
   runId?: string | null;
+  /** 嵌套层级；根过程为 0，嵌套层不再套一层「已工作」折叠 */
+  depth?: number;
+  /** 回看场景（如收件箱）：子代理一律折叠，只显示摘要 */
+  defaultCollapseSubagents?: boolean;
 }>();
 
 const store = useAppStore();
-const blocks = computed(() => groupTimeline(props.items));
+const blocks = computed(() => props.blocks ?? groupTimeline(props.items ?? []));
+const childDepth = computed(() => (props.depth ?? 0) + 1);
 // 折叠态默认不渲染几百上千行的工具明细，展开时再挂载。
 const opened = ref(false);
-const collapsed = computed(() => !props.running && blocks.value.length > 0);
+const collapsed = computed(() => !props.running && blocks.value.length > 0 && !props.depth);
 const foldLabel = computed(() =>
-  workFoldLabel(props.elapsedMs, store.data?.settings.language),
+  [
+    workFoldLabel(props.elapsedMs, store.data?.settings.language),
+    subAgentTallyLabel(blocks.value, props.running, store.data?.settings.language),
+  ].filter(Boolean).join(" · "),
 );
+const expandedSubagentId = computed(() => {
+  if (props.defaultCollapseSubagents || !props.running) return "";
+  const last = blocks.value.filter((block) => block.type === "subagent" && !block.item.result).at(-1);
+  return last?.type === "subagent" ? last.item.use.callId ?? "" : "";
+});
 
 function blockKey(block: TimelineBlock, index: number) {
-  if (block.type === "thinking" || block.type === "error" || block.type === "permission") {
+  if (block.type === "thinking" || block.type === "error" || block.type === "permission" || block.type === "mode") {
     return `${block.type}-${block.item.seq}`;
   }
   if (block.type === "plan") return `plan-${index}`;
@@ -45,20 +63,6 @@ function blockKey(block: TimelineBlock, index: number) {
 function errorText(block: TimelineBlock) {
   if (block.type !== "error") return "";
   return (block.item.content || block.item.output || "").trim() || "工具出错";
-}
-
-function nestedItems(children: TimelineBlock[]) {
-  return children.flatMap((block) => {
-    if (block.type === "thinking" || block.type === "error" || block.type === "permission") return [block.item];
-    if (block.type === "explore") {
-      return block.items.flatMap((entry) => {
-        if (entry.kind === "thinking") return [entry.item];
-        return [entry.item.use, ...(entry.item.result ? [entry.item.result] : [])];
-      });
-    }
-    if (block.type === "plan") return [];
-    return [block.item.use, ...(block.item.result ? [block.item.result] : [])];
-  });
 }
 </script>
 
@@ -76,25 +80,33 @@ function nestedItems(children: TimelineBlock[]) {
       <template v-for="(block, index) in blocks" :key="blockKey(block, index)">
         <ThinkingLine v-if="block.type === 'thinking'" :item="block.item" />
         <p v-else-if="block.type === 'error'" class="process-error">{{ errorText(block) }}</p>
-        <PlanCard v-else-if="block.type === 'plan'" :todos="block.todos" />
+        <TodoProgressCard v-else-if="block.type === 'plan'" :todos="block.todos" />
+        <ModeTransitionRow v-else-if="block.type === 'mode'" :item="block.item" />
         <PermissionCard v-else-if="block.type === 'permission'" :item="block.item" :run-id="runId" />
         <ExploreGroup v-else-if="block.type === 'explore'" :items="block.items" />
+        <SubAgentCard
+          v-else-if="block.type === 'subagent'"
+          :item="block.item"
+          :depth="childDepth"
+          :run-id="runId"
+          :default-collapse-subagents="defaultCollapseSubagents"
+        />
         <template v-else-if="block.type === 'edit'">
           <FileDiffCard :item="block.item" />
           <div v-if="block.item.children?.length" class="process-nested">
-            <ProcessFold :items="nestedItems(block.item.children)" :run-id="runId" />
+            <ProcessFold :blocks="block.item.children" :depth="childDepth" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
           </div>
         </template>
         <template v-else-if="block.type === 'shell'">
           <ShellCard :item="block.item" />
           <div v-if="block.item.children?.length" class="process-nested">
-            <ProcessFold :items="nestedItems(block.item.children)" :run-id="runId" />
+            <ProcessFold :blocks="block.item.children" :depth="childDepth" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
           </div>
         </template>
         <template v-else>
           <ToolCallRow :item="block.item.use" :output="block.item.result?.output" />
           <div v-if="block.item.children?.length" class="process-nested">
-            <ProcessFold :items="nestedItems(block.item.children)" :run-id="runId" />
+            <ProcessFold :blocks="block.item.children" :depth="childDepth" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
           </div>
         </template>
       </template>
@@ -104,7 +116,8 @@ function nestedItems(children: TimelineBlock[]) {
     <template v-for="(block, index) in blocks" :key="blockKey(block, index)">
       <ThinkingLine v-if="block.type === 'thinking'" :item="block.item" :running="running && index === blocks.length - 1" />
       <p v-else-if="block.type === 'error'" class="process-error">{{ errorText(block) }}</p>
-      <PlanCard v-else-if="block.type === 'plan'" :todos="block.todos" />
+      <TodoProgressCard v-else-if="block.type === 'plan'" :todos="block.todos" />
+      <ModeTransitionRow v-else-if="block.type === 'mode'" :item="block.item" />
       <PermissionCard v-else-if="block.type === 'permission'" :item="block.item" :run-id="runId" />
       <ExploreGroup
         v-else-if="block.type === 'explore'"
@@ -112,16 +125,25 @@ function nestedItems(children: TimelineBlock[]) {
         :running="running"
         :running-tail="running && index === blocks.length - 1"
       />
+      <SubAgentCard
+        v-else-if="block.type === 'subagent'"
+        :item="block.item"
+        :depth="childDepth"
+        :running="running"
+        :default-open="block.item.use.callId === expandedSubagentId"
+        :run-id="runId"
+        :default-collapse-subagents="defaultCollapseSubagents"
+      />
       <template v-else-if="block.type === 'edit'">
         <FileDiffCard :item="block.item" />
         <div v-if="block.item.children?.length" class="process-nested">
-          <ProcessFold :items="nestedItems(block.item.children)" :running="running" :run-id="runId" />
+          <ProcessFold :blocks="block.item.children" :depth="childDepth" :running="running" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
         </div>
       </template>
       <template v-else-if="block.type === 'shell'">
         <ShellCard :item="block.item" />
         <div v-if="block.item.children?.length" class="process-nested">
-          <ProcessFold :items="nestedItems(block.item.children)" :running="running" :run-id="runId" />
+          <ProcessFold :blocks="block.item.children" :depth="childDepth" :running="running" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
         </div>
       </template>
       <template v-else>
@@ -131,7 +153,7 @@ function nestedItems(children: TimelineBlock[]) {
           :output="block.item.result?.output"
         />
         <div v-if="block.item.children?.length" class="process-nested">
-          <ProcessFold :items="nestedItems(block.item.children)" :running="running" :run-id="runId" />
+          <ProcessFold :blocks="block.item.children" :depth="childDepth" :running="running" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
         </div>
       </template>
     </template>

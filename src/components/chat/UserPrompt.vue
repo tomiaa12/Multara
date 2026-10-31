@@ -14,6 +14,8 @@ import * as backend from "../../services/backend";
 import { watchOffscreen } from "../../ui/offscreen-pause";
 import type { ComposerNode } from "./composer-content";
 import { formatAgentPrompt, isFileChip, isPastedImage, parseUserPromptNodes } from "./composer-content";
+import { DEFAULT_RUN_MODE, modeLabel } from "./run-mode";
+import { t } from "../../i18n";
 
 const props = withDefaults(defineProps<{
   message: ChatMessage;
@@ -71,6 +73,15 @@ const contexts = computed<EditorSelectionContext[]>(() =>
       isDirectory: node.isDirectory,
     })),
 );
+/** 计划操作产生的消息标「批准计划 / 完善计划」；其余只标非自动模式 */
+const promptTag = computed(() => {
+  const planAction = props.message.sourceMeta?.planAction;
+  if (planAction === "approve") return { kind: "approve", label: t("chat.plan.userApprove") };
+  if (planAction === "refine") return { kind: "refine", label: t("chat.plan.userRefine") };
+  const mode = props.message.requestedMode;
+  if (!mode || mode === DEFAULT_RUN_MODE) return null;
+  return { kind: mode, label: modeLabel(mode) };
+});
 const replayAttachments = computed<MessageAttachmentInput[]>(() =>
   props.message.attachments.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size })),
 );
@@ -211,6 +222,7 @@ watch(
           </UiButton>
         </template>
       </template>
+      <span v-if="promptTag" class="user-prompt-tag" :data-kind="promptTag.kind">{{ promptTag.label }}</span>
       <p v-if="editNotice" class="composer-error">{{ editNotice }}</p>
       <ComposerPasteImages
         :images="pastedImages.map((image) => ({ key: image.id, src: previews[image.id], name: image.name }))"

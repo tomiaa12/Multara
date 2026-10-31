@@ -38,9 +38,17 @@ pub fn status(
     let porcelain = output(
         git_command,
         root,
-        &["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"],
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--branch",
+            "--untracked-files=all",
+        ],
     )?;
-    let (header, entries) = porcelain.split_once('\0').unwrap_or((porcelain.as_str(), ""));
+    let (header, entries) = porcelain
+        .split_once('\0')
+        .unwrap_or((porcelain.as_str(), ""));
     let tracking = parse_branch_header(header.strip_prefix("## ").unwrap_or_default());
     let changes = parse_status_records(entries);
     let has_remote = remotes(git_command, root).is_ok_and(|items| !items.is_empty());
@@ -103,9 +111,7 @@ fn parse_branch_header(header: &str) -> BranchTracking {
             .filter(|branch| *branch != "HEAD (no branch)")
             .unwrap_or_default()
             .to_string(),
-        upstream: upstream
-            .filter(|_| counts != "gone")
-            .map(str::to_string),
+        upstream: upstream.filter(|_| counts != "gone").map(str::to_string),
         ahead: count("ahead "),
         behind: count("behind "),
     }
@@ -116,7 +122,12 @@ fn ref_names(git_command: &str, root: &str) -> (Vec<String>, Vec<String>) {
     let listing = output(
         git_command,
         root,
-        &["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/remotes",
+        ],
     )
     .unwrap_or_default();
     let mut branches = Vec::new();
@@ -133,13 +144,17 @@ fn ref_names(git_command: &str, root: &str) -> (Vec<String>, Vec<String>) {
 
 pub fn stage(root: &str, git_command: &str, paths: &[String], staged: bool) -> Result<(), String> {
     if paths.is_empty() {
-        return Err("请选择文件".to_string());
+        return Err(tr!("请选择文件"));
     }
     for path in paths {
         validate_relative(path)?;
     }
     let mut args = if staged {
-        vec![LITERAL_PATHSPECS.to_string(), "add".to_string(), "--".to_string()]
+        vec![
+            LITERAL_PATHSPECS.to_string(),
+            "add".to_string(),
+            "--".to_string(),
+        ]
     } else {
         vec![
             LITERAL_PATHSPECS.to_string(),
@@ -169,7 +184,7 @@ pub fn stage(root: &str, git_command: &str, paths: &[String], staged: bool) -> R
 
 pub fn discard(root: &str, git_command: &str, paths: &[String]) -> Result<(), String> {
     if paths.is_empty() {
-        return Err("请选择文件".to_string());
+        return Err(tr!("请选择文件"));
     }
     for path in paths {
         validate_relative(path)?;
@@ -188,10 +203,7 @@ pub fn discard(root: &str, git_command: &str, paths: &[String]) -> Result<(), St
         )
         .is_ok();
         // 未跟踪（含 status 对不上中文/引号路径时）：用 clean 删掉，避免点了撤回却还在。
-        if worktree_status == "?"
-            || index_status == "?"
-            || (parsed.is_none() && !tracked)
-        {
+        if worktree_status == "?" || index_status == "?" || (parsed.is_none() && !tracked) {
             discard_untracked(git_command, root, path)?;
             continue;
         }
@@ -213,7 +225,14 @@ pub fn discard(root: &str, git_command: &str, paths: &[String]) -> Result<(), St
             run_strings(
                 git_command,
                 root,
-                &[LITERAL_PATHSPECS, "restore", "--staged", "--worktree", "--", path],
+                &[
+                    LITERAL_PATHSPECS,
+                    "restore",
+                    "--staged",
+                    "--worktree",
+                    "--",
+                    path,
+                ],
             )?;
         }
     }
@@ -227,11 +246,15 @@ const LITERAL_PATHSPECS: &str = "--literal-pathspecs";
 fn discard_untracked(git_command: &str, root: &str, path: &str) -> Result<(), String> {
     let clean_path = path.trim();
     if clean_path.is_empty() || clean_path == "." {
-        return Err("不能按仓库根目录撤回未跟踪文件".to_string());
+        return Err(tr!("不能按仓库根目录撤回未跟踪文件"));
     }
     let is_directory = clean_path.ends_with('/') || Path::new(root).join(clean_path).is_dir();
     let flags = if is_directory { "-fd" } else { "-f" };
-    run_strings(git_command, root, &[LITERAL_PATHSPECS, "clean", flags, "--", clean_path])
+    run_strings(
+        git_command,
+        root,
+        &[LITERAL_PATHSPECS, "clean", flags, "--", clean_path],
+    )
 }
 
 /// `-z` 输出不加引号、不转义，中文和带空格、引号的路径原样返回。
@@ -299,10 +322,10 @@ pub fn commit(
 ) -> Result<(), String> {
     let message = message.trim();
     if message.is_empty() || message.chars().count() > 500 {
-        return Err("提交信息不能为空且不能超过 500 个字符".to_string());
+        return Err(tr!("提交信息不能为空且不能超过 500 个字符"));
     }
     if output(git_command, root, &["diff", "--cached", "--quiet"]).is_ok() {
-        return Err("没有已暂存的改动".to_string());
+        return Err(tr!("没有已暂存的改动"));
     }
     let mut args = vec!["commit"];
     if skip_verify {
@@ -331,7 +354,7 @@ pub(crate) fn default_remote(git_command: &str, root: &str) -> Result<String, St
     remotes
         .into_iter()
         .next()
-        .ok_or_else(|| "没有配置远程仓库".to_string())
+        .ok_or_else(|| tr!("没有配置远程仓库"))
 }
 
 fn current_upstream(git_command: &str, root: &str) -> Option<String> {
@@ -380,7 +403,7 @@ fn ensure_not_merging(root: &str, git_command: &str) -> Result<(), String> {
         Path::new(root).join(merge_head).is_file()
     };
     if merging {
-        Err("请先解决或中止合并冲突".to_string())
+        Err(tr!("请先解决或中止合并冲突"))
     } else {
         Ok(())
     }
@@ -400,7 +423,7 @@ pub fn fetch(root: &str, git_command: &str) -> Result<(), String> {
 pub fn pull(root: &str, git_command: &str, skip_verify: bool) -> Result<(), String> {
     ensure_not_merging(root, git_command)?;
     if current_upstream(git_command, root).is_none() {
-        return Err("当前分支还没有上游，请先推送并发布分支".to_string());
+        return Err(tr!("当前分支还没有上游，请先推送并发布分支"));
     }
     let mut args = vec!["pull", "--no-rebase", "--no-edit"];
     if skip_verify {
@@ -450,7 +473,7 @@ pub fn staged_diff(root: &str, git_command: &str) -> Result<String, String> {
         STAGED_DIFF_READ_BYTES,
     )?;
     if diff.trim().is_empty() {
-        return Err("请先暂存要提交的文件".to_string());
+        return Err(tr!("请先暂存要提交的文件"));
     }
     Ok(diff.chars().take(STAGED_DIFF_CHARS).collect())
 }
@@ -518,7 +541,7 @@ pub fn graph_commit_action(
         "tag" => {
             let tag = name.trim();
             if tag.is_empty() || tag.contains(' ') || tag.starts_with('-') {
-                return Err("标记名称无效".to_string());
+                return Err(tr!("标记名称无效"));
             }
             run_strings(
                 git_command,
@@ -527,7 +550,7 @@ pub fn graph_commit_action(
             )?;
             run_strings(git_command, root, &["tag", "--", tag, hash])
         }
-        _ => Err("不支持的提交图操作".to_string()),
+        _ => Err(tr!("不支持的提交图操作")),
     }
 }
 
@@ -555,7 +578,7 @@ pub fn rename_current_branch(
         .trim()
         .to_string();
     if current.is_empty() {
-        return Err("分离的 HEAD 不能重命名".to_string());
+        return Err(tr!("分离的 HEAD 不能重命名"));
     }
     validate_branch(git_command, root, branch)?;
     let previous_upstream = current_upstream(git_command, root);
@@ -592,7 +615,11 @@ pub fn rename_current_branch(
 }
 
 /// 按已知远程名前缀拆 `remote/branch`，远程名本身带 `/` 时取最长匹配。
-fn split_upstream<'a>(git_command: &str, root: &str, upstream: &'a str) -> Option<(String, &'a str)> {
+fn split_upstream<'a>(
+    git_command: &str,
+    root: &str,
+    upstream: &'a str,
+) -> Option<(String, &'a str)> {
     remotes(git_command, root)
         .unwrap_or_default()
         .into_iter()
@@ -606,8 +633,12 @@ fn split_upstream<'a>(git_command: &str, root: &str, upstream: &'a str) -> Optio
 /// main / master 和远程默认分支（`<remote>/HEAD` 指向的分支）不随重命名删除。
 fn is_protected_remote_branch(git_command: &str, root: &str, remote: &str, branch: &str) -> bool {
     PROTECTED_BRANCHES.contains(&branch)
-        || output(git_command, root, &["rev-parse", "--abbrev-ref", &format!("{remote}/HEAD")])
-            .is_ok_and(|head| head.trim() == format!("{remote}/{branch}"))
+        || output(
+            git_command,
+            root,
+            &["rev-parse", "--abbrev-ref", &format!("{remote}/HEAD")],
+        )
+        .is_ok_and(|head| head.trim() == format!("{remote}/{branch}"))
 }
 
 fn push_renamed_remote(
@@ -643,10 +674,10 @@ pub fn set_branch_upstream(
 ) -> Result<String, String> {
     let target = upstream.trim();
     if !target.contains('/') || target.starts_with('/') || target.ends_with('/') {
-        return Err("请选择远程分支，例如 origin/main".to_string());
+        return Err(tr!("请选择远程分支，例如 origin/main"));
     }
     run_strings(git_command, root, &["branch", "--set-upstream-to", target])?;
-    current_upstream(git_command, root).ok_or_else(|| "未能读取上游分支".to_string())
+    current_upstream(git_command, root).ok_or_else(|| tr!("未能读取上游分支"))
 }
 
 pub fn merge_branch(root: &str, git_command: &str, branch: &str) -> Result<(), String> {
@@ -686,7 +717,9 @@ pub fn history(
     let raw = match output(git_command, root, &args) {
         Ok(value) => value,
         Err(message)
-            if message.to_ascii_lowercase().contains("does not have any commits")
+            if message
+                .to_ascii_lowercase()
+                .contains("does not have any commits")
                 || message.to_ascii_lowercase().contains("your current branch") =>
         {
             return Ok(GitHistoryPage {
@@ -748,7 +781,12 @@ pub fn commit_files(
 ) -> Result<Vec<GitCommitFile>, String> {
     validate_revision(hash)?;
     let parent = format!("{hash}^");
-    let has_parent = output(git_command, root, &["rev-parse", "--verify", "--quiet", &parent]).is_ok();
+    let has_parent = output(
+        git_command,
+        root,
+        &["rev-parse", "--verify", "--quiet", &parent],
+    )
+    .is_ok();
     let text = if has_parent {
         output(
             git_command,
@@ -853,7 +891,7 @@ pub fn blame_line(
 ) -> Result<Option<GitLineBlame>, String> {
     validate_relative(rel_path)?;
     if line == 0 {
-        return Err("行号无效".to_string());
+        return Err(tr!("行号无效"));
     }
     if let Some(revision) = revision {
         validate_revision(revision)?;
@@ -864,7 +902,13 @@ pub fn blame_line(
         return Ok(None);
     }
     let range = format!("{line},{line}");
-    let mut args = vec![LITERAL_PATHSPECS, "blame", "-L", range.as_str(), "--porcelain"];
+    let mut args = vec![
+        LITERAL_PATHSPECS,
+        "blame",
+        "-L",
+        range.as_str(),
+        "--porcelain",
+    ];
     if let Some(revision) = revision {
         args.push(revision);
     }
@@ -895,9 +939,9 @@ pub fn blame_file(
         &[LITERAL_PATHSPECS, "blame", "--porcelain", "--", rel_path],
         MAX_BLAME_BYTES,
     ) {
-        Ok((_, true)) => Err(format!(
-            "文件过大（blame 输出超过 {}MB），无法显示逐行作者",
-            MAX_BLAME_BYTES / BYTES_PER_MB
+        Ok((_, true)) => Err(tr!(
+            "文件过大（blame 输出超过 {size}MB），无法显示逐行作者",
+            size = MAX_BLAME_BYTES / BYTES_PER_MB
         )),
         Ok((text, false)) => Ok(Some(parse_blame_porcelain_file(&text))),
         // 没有历史（新文件）：空列表表示“整个文件都尚未提交”，None 才表示不在仓库里。
@@ -943,7 +987,11 @@ pub fn parse_blame_porcelain_file(text: &str) -> Vec<GitLineBlame> {
         let committed = hash.chars().any(|char| char != '0');
         let info = commits.get(hash).cloned().unwrap_or(GitLineBlame {
             committed,
-            hash: if committed { hash.to_string() } else { String::new() },
+            hash: if committed {
+                hash.to_string()
+            } else {
+                String::new()
+            },
             author_name: String::new(),
             author_email: String::new(),
             author_time: 0,
@@ -1014,9 +1062,9 @@ fn show_spec(
     spec: &str,
 ) -> Result<crate::models::GitIndexFile, String> {
     match output_limited(git_command, root, &["show", spec], MAX_SHOW_BYTES) {
-        Ok((_, true)) => Err(format!(
-            "文件超过 {}MB，无法读取该版本内容",
-            MAX_SHOW_BYTES / BYTES_PER_MB
+        Ok((_, true)) => Err(tr!(
+            "文件超过 {size}MB，无法读取该版本内容",
+            size = MAX_SHOW_BYTES / BYTES_PER_MB
         )),
         Ok((content, false)) if content.contains('\0') => Ok(crate::models::GitIndexFile {
             in_repo: true,
@@ -1070,13 +1118,13 @@ fn ensure_clean(root: &str, git_command: &str) -> Result<(), String> {
     {
         Ok(())
     } else {
-        Err("切换或合并分支前请先提交或处理当前改动".to_string())
+        Err(tr!("切换或合并分支前请先提交或处理当前改动"))
     }
 }
 
 pub(crate) fn validate_branch(git_command: &str, root: &str, branch: &str) -> Result<(), String> {
     if branch.trim() != branch || branch.is_empty() || branch.starts_with('-') {
-        return Err("分支名称无效".to_string());
+        return Err(tr!("分支名称无效"));
     }
     run_strings(git_command, root, &["check-ref-format", "--branch", branch])
 }
@@ -1089,7 +1137,7 @@ fn validate_revision(value: &str) -> Result<(), String> {
     if (4..=64).contains(&hex.len()) && hex.chars().all(|char| char.is_ascii_hexdigit()) {
         return Ok(());
     }
-    Err("修订版本无效".to_string())
+    Err(tr!("修订版本无效"))
 }
 
 fn validate_relative(value: &str) -> Result<(), String> {
@@ -1099,7 +1147,7 @@ fn validate_relative(value: &str) -> Result<(), String> {
             .components()
             .any(|component| !matches!(component, Component::Normal(_)))
     {
-        return Err("文件路径无效".to_string());
+        return Err(tr!("文件路径无效"));
     }
     Ok(())
 }
@@ -1127,7 +1175,11 @@ pub(crate) struct Captured {
 
 /// 带超时执行：超时后杀掉整个进程组（钩子起的孙进程一起），返回 `Ok(None)`；
 /// 读线程最多再等 `READER_GRACE`，不会因为孙进程握着管道而无限期挂住。
-fn capture(mut command: Command, timeout: Duration, stdout_limit: usize) -> Result<Option<Captured>, String> {
+fn capture(
+    mut command: Command,
+    timeout: Duration,
+    stdout_limit: usize,
+) -> Result<Option<Captured>, String> {
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command
@@ -1135,7 +1187,7 @@ fn capture(mut command: Command, timeout: Duration, stdout_limit: usize) -> Resu
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("无法启动 Git：{error}"))?;
+        .map_err(|error| tr!("无法启动 Git：{error}", error = error))?;
     let stdout = spawn_reader(child.stdout.take(), stdout_limit);
     let stderr = spawn_reader(child.stderr.take(), MAX_STDERR_BYTES);
     let pid = child.id();
@@ -1158,7 +1210,10 @@ fn capture(mut command: Command, timeout: Duration, stdout_limit: usize) -> Resu
     }))
 }
 
-fn spawn_reader(stream: Option<impl Read + Send + 'static>, limit: usize) -> mpsc::Receiver<(Vec<u8>, bool)> {
+fn spawn_reader(
+    stream: Option<impl Read + Send + 'static>,
+    limit: usize,
+) -> mpsc::Receiver<(Vec<u8>, bool)> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -1189,24 +1244,41 @@ pub(crate) fn output(git_command: &str, root: &str, args: &[&str]) -> Result<Str
 }
 
 /// 和 `output` 一样，但 stdout 最多保留 `limit` 字节，第二个值表示是否被截断。
-fn output_limited(git_command: &str, root: &str, args: &[&str], limit: usize) -> Result<(String, bool), String> {
+fn output_limited(
+    git_command: &str,
+    root: &str,
+    args: &[&str],
+    limit: usize,
+) -> Result<(String, bool), String> {
     let mut command = git_cmd(git_command);
-    command.args(["--no-optional-locks", "-C"]).arg(root).args(args);
-    let result = capture(command, LOCAL_TIMEOUT, limit)?.ok_or_else(|| LOCAL_TIMEOUT_MESSAGE.to_string())?;
+    command
+        .args(["--no-optional-locks", "-C"])
+        .arg(root)
+        .args(args);
+    let result = capture(command, LOCAL_TIMEOUT, limit)?.ok_or_else(local_timeout_message)?;
     if result.status.success() {
-        Ok((String::from_utf8_lossy(&result.stdout).into_owned(), result.truncated))
+        Ok((
+            String::from_utf8_lossy(&result.stdout).into_owned(),
+            result.truncated,
+        ))
     } else {
         Err(result.stderr.trim().to_string())
     }
 }
 
-const LOCAL_TIMEOUT_MESSAGE: &str = "Git 命令超时，可能是钩子或其他进程未结束";
+fn local_timeout_message() -> String {
+    tr!("Git 命令超时，可能是钩子或其他进程未结束")
+}
 
 /// 需要自己看退出码的调用（merge-tree、merge、merge-base 等），带本地超时，超时视为出错。
-pub(crate) fn exec(git_command: &str, root: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Result<Captured, String> {
+pub(crate) fn exec(
+    git_command: &str,
+    root: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+) -> Result<Captured, String> {
     let mut command = git_cmd(git_command);
     command.arg("-C").arg(root).args(args);
-    capture(command, LOCAL_TIMEOUT, UNLIMITED)?.ok_or_else(|| LOCAL_TIMEOUT_MESSAGE.to_string())
+    capture(command, LOCAL_TIMEOUT, UNLIMITED)?.ok_or_else(local_timeout_message)
 }
 
 pub(crate) fn run_strings(git_command: &str, root: &str, args: &[&str]) -> Result<(), String> {
@@ -1220,7 +1292,7 @@ pub(crate) fn run_strings(git_command: &str, root: &str, args: &[&str]) -> Resul
 fn run(git_command: &str, root: &str, args: &[String]) -> Result<(), String> {
     let mut command = git_cmd(git_command);
     command.arg("-C").arg(root).args(args);
-    let result = capture(command, LOCAL_TIMEOUT, 0)?.ok_or_else(|| LOCAL_TIMEOUT_MESSAGE.to_string())?;
+    let result = capture(command, LOCAL_TIMEOUT, 0)?.ok_or_else(local_timeout_message)?;
     if result.status.success() {
         Ok(())
     } else {
@@ -1246,9 +1318,9 @@ pub(crate) fn run_with_timeout(
     }
     let Some(result) = capture(command, timeout, UNLIMITED)? else {
         return Err(if network {
-            "Git 同步超时，请检查网络或远程登录".to_string()
+            tr!("Git 同步超时，请检查网络或远程登录")
         } else {
-            "Git 提交超时，可能是提交钩子未结束".to_string()
+            tr!("Git 提交超时，可能是提交钩子未结束")
         });
     };
     if result.status.success() {
@@ -1278,9 +1350,9 @@ mod tests {
     use std::{fs, process::Command};
 
     use super::{
-        blame_line, commit, commit_files, current_upstream, discard, history, index_file, parse_blame_porcelain,
-        graph_commit_action, parse_branch_header, parse_status_records, pull, push, revision_file,
-        stage, status, switch_branch,
+        blame_line, commit, commit_files, current_upstream, discard, graph_commit_action, history,
+        index_file, parse_blame_porcelain, parse_branch_header, parse_status_records, pull, push,
+        revision_file, stage, status, switch_branch,
     };
 
     #[test]
@@ -1370,7 +1442,11 @@ mod tests {
             .args(["merge", "--no-commit", base])
             .output()
             .unwrap();
-        assert!(!merged.status.success(), "{}", String::from_utf8_lossy(&merged.stderr));
+        assert!(
+            !merged.status.success(),
+            "{}",
+            String::from_utf8_lossy(&merged.stderr)
+        );
 
         let index = index_file(root, "git", "file.txt").unwrap();
         assert!(index.in_repo);
@@ -1382,7 +1458,9 @@ mod tests {
 
     #[test]
     fn parses_nul_separated_status_and_branch_header() {
-        let changes = parse_status_records("R  new name.md\0old name.md\0?? 技术需求.md\0 M \"quoted\".txt\0");
+        let changes = parse_status_records(
+            "R  new name.md\0old name.md\0?? 技术需求.md\0 M \"quoted\".txt\0",
+        );
         let paths: Vec<_> = changes.iter().map(|change| change.path.as_str()).collect();
         assert_eq!(paths, ["new name.md", "技术需求.md", "\"quoted\".txt"]);
         assert!(changes[0].staged && !changes[1].staged);
@@ -1602,7 +1680,10 @@ mod tests {
         command(root, &["branch", "-M", "release"]);
         command(root, &["remote", "add", "origin", remote.to_str().unwrap()]);
         command(root, &["push", "-u", "origin", "release"]);
-        command(root, &["checkout", "-b", "fix/esop", "--track", "origin/release"]);
+        command(
+            root,
+            &["checkout", "-b", "fix/esop", "--track", "origin/release"],
+        );
         fs::write(repo.join("file.txt"), "two\n").unwrap();
         command(root, &["commit", "-am", "second"]);
 
@@ -1611,7 +1692,14 @@ mod tests {
         let upstream = current_upstream("git", root);
         assert_eq!(upstream.as_deref(), Some("origin/fix/esop"));
         let release = Command::new("git")
-            .args(["--git-dir", remote.to_str().unwrap(), "log", "-1", "--format=%s", "release"])
+            .args([
+                "--git-dir",
+                remote.to_str().unwrap(),
+                "log",
+                "-1",
+                "--format=%s",
+                "release",
+            ])
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&release.stdout).trim(), "first");
@@ -1637,7 +1725,9 @@ mod tests {
         assert_eq!(page.items[0].parents.len(), 1);
         assert!(!page.has_more);
         let files = commit_files(root, "git", &page.items[0].hash).unwrap();
-        assert!(files.iter().any(|file| file.path == "file.txt" && file.status == "M"));
+        assert!(files
+            .iter()
+            .any(|file| file.path == "file.txt" && file.status == "M"));
         let head = revision_file(root, "git", "HEAD", "file.txt").unwrap();
         assert_eq!(head.content.replace("\r\n", "\n"), "two\n");
         let parent = revision_file(root, "git", &page.items[0].parents[0], "file.txt").unwrap();
@@ -1681,14 +1771,20 @@ mod tests {
         fs::write(temp.path().join("file.txt"), "one\n").unwrap();
         command(root, &["add", "file.txt"]);
         command(root, &["commit", "-m", "first"]);
-        let blamed = blame_line(root, "git", "file.txt", 1, None).unwrap().unwrap();
+        let blamed = blame_line(root, "git", "file.txt", 1, None)
+            .unwrap()
+            .unwrap();
         assert!(blamed.committed);
         assert_eq!(blamed.author_name, "Multara Test");
         assert_eq!(blamed.subject, "first");
         fs::write(temp.path().join("file.txt"), "two\n").unwrap();
-        let dirty = blame_line(root, "git", "file.txt", 1, None).unwrap().unwrap();
+        let dirty = blame_line(root, "git", "file.txt", 1, None)
+            .unwrap()
+            .unwrap();
         assert!(!dirty.committed);
-        let head = blame_line(root, "git", "file.txt", 1, Some("HEAD")).unwrap().unwrap();
+        let head = blame_line(root, "git", "file.txt", 1, Some("HEAD"))
+            .unwrap()
+            .unwrap();
         assert!(head.committed);
         assert_eq!(head.subject, "first");
     }

@@ -3406,7 +3406,7 @@ function runActiveFileInTerminal() {
   const full = joinWorkPath(workspace?.workPath || workspace?.sourcePath || "", file.path);
   const tab = terminalTabs.value.find((item) => item.id === activeTerminalId.value);
   const quoted = /\s/.test(full)
-    ? (tab?.shell?.includes("命令提示符") ? `"${full}"` : `'${full.replaceAll("'", "''")}'`)
+    ? (tab?.profileId === "cmd" ? `"${full}"` : `'${full.replaceAll("'", "''")}'`)
     : full;
   void sendToActiveTerminal(`${quoted}\n`);
 }
@@ -3692,8 +3692,7 @@ async function openEditorFile(
           noteDiskChange(workspaceId, path, AGENT_DISK_CHANGE());
         }
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        if (options?.force && message.includes("文件不存在")) {
+        if (options?.force && cause instanceof backend.FileMissingError) {
           const empty = {
             ...(existing.file ?? activeFile.value!),
             workspaceId,
@@ -3889,8 +3888,7 @@ async function applyDiskToOpenTab(tab: EditorTab) {
     const file = await backend.readWorkspaceFile(tab.workspaceId, tab.path);
     content = file.content;
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    if (!message.includes("文件不存在")) return;
+    if (!(cause instanceof backend.FileMissingError)) return;
     missing = true;
   }
   if (missing && isEditorTabDirty(tab)) {
@@ -3950,8 +3948,7 @@ async function refreshActiveFile(force = false) {
           activeFile.value.workspaceId,
           activeFile.value.path,
         )        .catch((cause) => {
-          const message = cause instanceof Error ? cause.message : String(cause);
-          if (!message.includes("文件不存在")) throw cause;
+          if (!(cause instanceof backend.FileMissingError)) throw cause;
           diffStore.markFileMissing(activeFile.value!.workspaceId, activeFile.value!.path);
           return {
             ...activeFile.value!,
@@ -4024,8 +4021,7 @@ async function openSourceControlChange(target: ScmOpenTarget) {
           const file = await backend.readWorkspaceFile(target.workspaceId, path);
           return { content: file.content, language: file.language };
         } catch (cause) {
-          const message = cause instanceof Error ? cause.message : String(cause);
-          if (message.includes("文件不存在")) return null;
+          if (cause instanceof backend.FileMissingError) return null;
           throw cause;
         }
       },

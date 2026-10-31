@@ -57,14 +57,14 @@ pub fn list(runtime_id: &str, refresh: bool) -> RuntimeModels {
             supported: true,
             source: "preset",
             models: [
-                ("sonnet", "Sonnet（最新）"),
-                ("opus", "Opus（最新）"),
-                ("haiku", "Haiku（最新）"),
+                ("sonnet", "Sonnet"),
+                ("opus", "Opus"),
+                ("haiku", "Haiku"),
             ]
             .into_iter()
-            .map(|(id, label)| RuntimeModel {
+            .map(|(id, name)| RuntimeModel {
                 id: id.into(),
-                label: label.into(),
+                label: tr!("{name}（最新）", name = name),
             })
             .collect(),
             error: None,
@@ -104,7 +104,7 @@ fn cursor_models(refresh: bool) -> RuntimeModels {
 }
 
 fn query_cursor_models() -> RuntimeModels {
-    let result = crate::runtime::execution("cursor", "")
+    let result = crate::runtime::execution("cursor", "", crate::models::RunMode::Auto)
         .and_then(|(path, _, _)| run_with_timeout(path, &["--list-models"]))
         .map(|text| parse_cursor_models(&text));
     match result {
@@ -118,7 +118,7 @@ fn query_cursor_models() -> RuntimeModels {
             supported: true,
             source: "manual",
             models: Vec::new(),
-            error: Some("Cursor CLI 没有返回模型列表，可能还没登录（cursor-agent login）".into()),
+            error: Some(tr!("Cursor CLI 没有返回模型列表，可能还没登录（cursor-agent login）")),
         },
         Err(error) => RuntimeModels {
             supported: true,
@@ -134,11 +134,11 @@ fn run_with_timeout(path: std::path::PathBuf, args: &[&str]) -> Result<String, S
     command.args(args);
     let output = crate::runtime::output_with_timeout(&mut command, LIST_TIMEOUT)
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "查询模型列表超时".to_string())?;
+        .ok_or_else(|| tr!("查询模型列表超时"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if stderr.is_empty() {
-            "查询模型列表失败".into()
+            tr!("查询模型列表失败")
         } else {
             stderr
         });

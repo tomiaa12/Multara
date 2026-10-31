@@ -1,0 +1,27 @@
+{
+  "_note": "NOT a recorded sample: kimi 2.3.0 is not logged in here, so session/new returns -32000 Authentication required. Shapes below are transcribed from the bundled source (@moonshot-ai/kimi-code dist/main.mjs: ACP_MODES, modeState(), setSessionMode, currentModeUpdateNotification). Verify with a logged-in kimi before relying on it.",
+  "session_new_result_expected": {
+    "sessionId": "<id>",
+    "modes": {
+      "currentModeId": "default",
+      "availableModes": [
+        { "id": "default", "name": "Default", "description": "Manual approvals; tools execute normally." },
+        { "id": "plan", "name": "Plan", "description": "Read-only planning; no tool execution." },
+        { "id": "auto", "name": "Auto", "description": "Auto-approve safe operations." },
+        { "id": "yolo", "name": "YOLO", "description": "Auto-approve everything." }
+      ]
+    },
+    "configOptions": [
+      { "type": "select", "id": "mode", "name": "Mode", "category": "mode", "currentValue": "default",
+        "options": [ { "value": "default" }, { "value": "plan" }, { "value": "auto" }, { "value": "yolo" } ] }
+    ]
+  },
+  "set_mode_request": { "jsonrpc": "2.0", "id": 4, "method": "session/set_mode", "params": { "sessionId": "<id>", "modeId": "plan" } },
+  "set_mode_response": { "jsonrpc": "2.0", "id": 4, "result": {} },
+  "set_mode_unknown_id_error": "invalidParams: Unknown modeId: <id>",
+  "current_mode_update_notification": {
+    "jsonrpc": "2.0", "method": "session/update",
+    "params": { "sessionId": "<id>", "update": { "sessionUpdate": "current_mode_update", "currentModeId": "plan" } }
+  },
+  "alt_set_config_option_request": { "method": "session/set_config_option", "params": { "sessionId": "<id>", "configId": "mode", "value": "plan" } }
+}

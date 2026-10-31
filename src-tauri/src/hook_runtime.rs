@@ -78,22 +78,22 @@ pub fn link_worktree_runtime(source: &Path, worktree: &Path) -> RuntimeLinkRepor
 pub fn describe_repair(report: &RuntimeLinkReport) -> String {
     let mut parts = Vec::new();
     if report.linked_husky {
-        parts.push("已将 .husky/_/husky.sh 链接到主检出。".to_string());
+        parts.push(tr!("已将 .husky/_/husky.sh 链接到主检出。"));
     }
     if report.linked_node_modules {
-        parts.push("已将 node_modules 链接到主检出。".to_string());
+        parts.push(tr!("已将 node_modules 链接到主检出。"));
     }
     if report.skipped_node_modules {
-        parts.push("依赖与主检出不同，未链接 node_modules。".to_string());
+        parts.push(tr!("依赖与主检出不同，未链接 node_modules。"));
     }
     if let Some(error) = &report.husky_error {
-        parts.push(format!("未能链接 .husky/_/husky.sh：{error}。"));
+        parts.push(tr!("未能链接 .husky/_/husky.sh：{error}。", error = error));
     }
     if let Some(error) = &report.node_modules_error {
-        parts.push(format!("未能链接 node_modules：{error}。"));
+        parts.push(tr!("未能链接 node_modules：{error}。", error = error));
     }
     if parts.is_empty() {
-        return "没有需要补上的钩子运行时。".to_string();
+        return tr!("没有需要补上的钩子运行时。");
     }
     parts.concat()
 }
@@ -111,15 +111,15 @@ pub fn preflight(worktree: &str, source: &str, operation: GitOperation) -> Resul
     if !missing_husky && !missing_modules {
         return Ok(());
     }
-    let mut lines = vec![format!("{}被本地钩子拦住", verb(operation))];
+    let mut lines = vec![blocked_by_hooks(operation)];
     if missing_husky {
-        lines.push("缺少 .husky/_/husky.sh".to_string());
+        lines.push(tr!("缺少 .husky/_/husky.sh"));
     }
     if missing_modules && manifests_match {
-        lines.push("缺少 node_modules，可链接主检出".to_string());
+        lines.push(tr!("缺少 node_modules，可链接主检出"));
     }
     if missing_modules && !manifests_match {
-        lines.push("依赖与主检出不同，请单独安装".to_string());
+        lines.push(tr!("依赖与主检出不同，请单独安装"));
     }
     let sentences = lines.join("\n");
     let kind = if missing_modules && !manifests_match && !missing_husky {
@@ -139,10 +139,10 @@ pub fn explain_failure(operation: GitOperation, detail: &str, hooks_path: &str) 
         return detail.to_string();
     }
     match classify_failure(detail, hooks_path) {
-        Failure::AuthOrNetwork => format!("远程认证或网络失败：{detail}"),
-        Failure::RemoteRejected => format!("远程拒绝了这次{}：{detail}", verb(operation)),
+        Failure::AuthOrNetwork => tr!("远程认证或网络失败：{detail}", detail = detail),
+        Failure::RemoteRejected => remote_rejected(operation, detail),
         Failure::LocalHook { hook, offending } => {
-            let (message, repairable) = local_hook_message(verb(operation), &hook, &offending);
+            let (message, repairable) = local_hook_message(operation, &hook, &offending);
             let skippable = hook != "post-merge";
             diagnostic("local_hook", repairable, skippable, operation, &message)
         }
@@ -249,7 +249,7 @@ fn ensure_symlink(source: &Path, dest: &Path, directory: bool) -> LinkResult {
         return LinkResult::Already;
     }
     if dest.symlink_metadata().is_ok() && fs::remove_file(dest).is_err() {
-        return LinkResult::Failed("无法替换失效的符号链接".to_string());
+        return LinkResult::Failed(tr!("无法替换失效的符号链接"));
     }
     if let Some(parent) = dest.parent() {
         if let Err(error) = fs::create_dir_all(parent) {
@@ -337,14 +337,14 @@ fn extract_hook_name(line: &str) -> String {
     "hook".to_string()
 }
 
-fn local_hook_message(verb: &str, hook: &str, offending: &str) -> (String, bool) {
-    let mut lines = vec![format!("{verb}被本地 {hook} 拦住")];
+fn local_hook_message(operation: GitOperation, hook: &str, offending: &str) -> (String, bool) {
+    let mut lines = vec![blocked_by_hook(operation, hook)];
     let mut repairable = false;
     if offending.contains("husky.sh") || offending.contains(".husky/_") {
-        lines.push("缺少 .husky/_/husky.sh".to_string());
+        lines.push(tr!("缺少 .husky/_/husky.sh"));
         repairable = true;
     } else if offending.contains("node_modules") || offending.contains("Cannot find module") {
-        lines.push("缺少 node_modules".to_string());
+        lines.push(tr!("缺少 node_modules"));
         repairable = true;
     } else {
         lines.push(offending.to_string());
@@ -368,12 +368,31 @@ fn diagnostic(
     format!("{DIAGNOSTIC_PREFIX}{payload}\n{message}")
 }
 
-fn verb(operation: GitOperation) -> &'static str {
+/// 动词在各语言里会改变语序和助词，按操作写成整句模板。
+fn blocked_by_hooks(operation: GitOperation) -> String {
     match operation {
-        GitOperation::Push => "推送",
-        GitOperation::Commit => "提交",
-        GitOperation::Pull => "拉取",
-        GitOperation::Sync => "同步",
+        GitOperation::Push => tr!("推送被本地钩子拦住"),
+        GitOperation::Commit => tr!("提交被本地钩子拦住"),
+        GitOperation::Pull => tr!("拉取被本地钩子拦住"),
+        GitOperation::Sync => tr!("同步被本地钩子拦住"),
+    }
+}
+
+fn blocked_by_hook(operation: GitOperation, hook: &str) -> String {
+    match operation {
+        GitOperation::Push => tr!("推送被本地 {hook} 拦住", hook = hook),
+        GitOperation::Commit => tr!("提交被本地 {hook} 拦住", hook = hook),
+        GitOperation::Pull => tr!("拉取被本地 {hook} 拦住", hook = hook),
+        GitOperation::Sync => tr!("同步被本地 {hook} 拦住", hook = hook),
+    }
+}
+
+fn remote_rejected(operation: GitOperation, detail: &str) -> String {
+    match operation {
+        GitOperation::Push => tr!("远程拒绝了这次推送：{detail}", detail = detail),
+        GitOperation::Commit => tr!("远程拒绝了这次提交：{detail}", detail = detail),
+        GitOperation::Pull => tr!("远程拒绝了这次拉取：{detail}", detail = detail),
+        GitOperation::Sync => tr!("远程拒绝了这次同步：{detail}", detail = detail),
     }
 }
 

@@ -166,7 +166,10 @@ pub fn record_origin(db: &Connection, workspace: &Workspace, base_ref: Option<&s
     if workspace.kind != "git" || workspace.isolation_mode != "worktree" {
         return;
     }
-    let reference = base_ref.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("HEAD");
+    let reference = base_ref
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("HEAD");
     let label = if reference == "HEAD" {
         git_merge::head_label(git, &workspace.source_path)
     } else {
@@ -237,17 +240,23 @@ fn load_merge(db: &Connection, merge_id: &str) -> Result<MergeSession, String> {
         [merge_id],
         merge_session_from_row,
     )
-    .map_err(|_| "这次合并已经结束或不存在".to_string())
+    .map_err(|_| tr!("这次合并已经结束或不存在"))
 }
 
 pub fn delete_for_project(db: &Connection, project_id: &str) -> Result<(), String> {
-    db.execute("DELETE FROM merge_sessions WHERE project_id=?1", [project_id])
-        .map_err(|error| error.to_string())?;
+    db.execute(
+        "DELETE FROM merge_sessions WHERE project_id=?1",
+        [project_id],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
 pub fn delete_origin(db: &Connection, workspace_id: &str) {
-    let _ = db.execute("DELETE FROM workspace_origins WHERE workspace_id=?1", [workspace_id]);
+    let _ = db.execute(
+        "DELETE FROM workspace_origins WHERE workspace_id=?1",
+        [workspace_id],
+    );
 }
 
 fn ensure_session_idle(db: &Connection, session_id: &str) -> Result<(), String> {
@@ -259,7 +268,7 @@ fn ensure_session_idle(db: &Connection, session_id: &str) -> Result<(), String> 
         )
         .map_err(|error| error.to_string())?;
     if active > 0 {
-        return Err("智能体还在处理这次合并，请先等它完成或停止运行".to_string());
+        return Err(tr!("智能体还在处理这次合并，请先等它完成或停止运行"));
     }
     Ok(())
 }
@@ -285,7 +294,9 @@ pub async fn git_merge_preview(
         };
         let root = workspace.work_path.as_str();
         let head = git_merge::head_commit(&git, root)?;
-        let dirty = !output(&git, root, &["status", "--porcelain"])?.trim().is_empty();
+        let dirty = !output(&git, root, &["status", "--porcelain"])?
+            .trim()
+            .is_empty();
         let has_remote = crate::git::remotes(&git, root).is_ok_and(|items| !items.is_empty());
         let origin = origin.map(|(base_ref, base_commit)| {
             let (commits, files) = git_merge::compare(&git, root, &base_commit, &head);
@@ -296,7 +307,10 @@ pub async fn git_merge_preview(
                 base_ref,
             }
         });
-        let target = match target.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+        let target = match target
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
             None => None,
             Some(value) => {
                 let target = git_merge::resolve_target(&git, root, &value)?;
@@ -357,7 +371,7 @@ pub async fn git_merge_into_branch(
             let db = state.lock_db()?;
             let workspace = get_git_workspace(&db, &input.workspace_id)?;
             if workspace.session_id.is_some() {
-                return Err("这是合并用的临时工作区，请在原来的工作区里发起合并".to_string());
+                return Err(tr!("这是合并用的临时工作区，请在原来的工作区里发起合并"));
             }
             let git = setting_value(&db, "gitExecutable", "git");
             let isolation_base = expand_user_path(&setting_value(&db, "isolationRoot", ""));
@@ -367,12 +381,16 @@ pub async fn git_merge_into_branch(
         let target = git_merge::resolve_target(&git, &root, &input.target)?;
         let source_label = git_merge::head_label(&git, &root);
         if source_label == target.branch {
-            return Err("不能把分支合并到它自己".to_string());
+            return Err(tr!("不能把分支合并到它自己"));
         }
         if let Err(error) = git_merge::fetch_target(&git, &root, &target) {
             // 只更新本地时，拉不到远程也可以继续；要推送就必须以最新的远程为准。
             if input.push && !error.contains("couldn't find remote ref") {
-                return Err(format!("获取 {} 失败：{error}", target.display()));
+                return Err(tr!(
+                    "获取 {branch} 失败：{error}",
+                    branch = target.display(),
+                    error = error
+                ));
             }
         }
         let base = git_merge::target_base(&git, &root, &target, input.push)?;
@@ -471,18 +489,31 @@ fn start_conflict_session(
         id: Uuid::new_v4().to_string(),
         project_id: Some(workspace.project_id.clone()),
         project_ids: vec![workspace.project_id.clone()],
-        title: format!("合并 {} → {}", start.source_label, start.target.branch),
-        target_type: if input.chat_target_type == "agent" { "agent" } else { "squad" },
+        title: tr!(
+            "合并 {source} → {target}",
+            source = start.source_label,
+            target = start.target.branch
+        ),
+        target_type: if input.chat_target_type == "agent" {
+            "agent"
+        } else {
+            "squad"
+        },
         target_id: input.chat_target_id.clone(),
         created_at: now.clone(),
         updated_at: now.clone(),
+        default_mode: crate::models::RunMode::Auto,
     };
     let merge_workspace = Workspace {
         id: workspace_id,
         project_id: workspace.project_id.clone(),
         session_id: Some(session.id.clone()),
         source_workspace_id: Some(workspace.id.clone()),
-        name: format!("{} · 合并到 {}", workspace.name, start.target.branch),
+        name: tr!(
+            "{name} · 合并到 {branch}",
+            name = workspace.name,
+            branch = start.target.branch
+        ),
         kind: "git",
         source_path: workspace.source_path.clone(),
         work_path: dir_text.clone(),
@@ -517,7 +548,7 @@ fn start_conflict_session(
             )
             .map_err(|error| error.to_string())?;
         if !exists {
-            return Err("选择的智能体或小队不存在".to_string());
+            return Err(tr!("选择的智能体或小队不存在"));
         }
         let transaction = db.transaction().map_err(|error| error.to_string())?;
         transaction
@@ -536,11 +567,7 @@ fn start_conflict_session(
                 ],
             )
             .map_err(|error| error.to_string())?;
-        crate::session::replace_linked_projects(
-            &transaction,
-            &session.id,
-            &session.project_ids,
-        )?;
+        crate::session::replace_linked_projects(&transaction, &session.id, &session.project_ids)?;
         transaction
             .execute(
                 "INSERT INTO workspaces

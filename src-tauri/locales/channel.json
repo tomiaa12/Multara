@@ -1,0 +1,524 @@
+{
+  "只支持 http 和 https 地址": {
+    "en": "Only http and https URLs are supported",
+    "zh-TW": "只支援 http 和 https 網址",
+    "ja": "http と https の URL のみ対応しています",
+    "ko": "http 및 https 주소만 지원합니다"
+  },
+  "重定向次数过多：{url}": {
+    "en": "Too many redirects: {url}",
+    "zh-TW": "重新導向次數過多：{url}",
+    "ja": "リダイレクトが多すぎます：{url}",
+    "ko": "리디렉션이 너무 많습니다: {url}"
+  },
+  "请求失败：{url}": {
+    "en": "Request failed: {url}",
+    "zh-TW": "請求失敗：{url}",
+    "ja": "リクエストに失敗しました：{url}",
+    "ko": "요청 실패: {url}"
+  },
+  "响应过大": {
+    "en": "Response is too large",
+    "zh-TW": "回應過大",
+    "ja": "レスポンスが大きすぎます",
+    "ko": "응답이 너무 큽니다"
+  },
+  "无法读取上游响应": {
+    "en": "Couldn't read the upstream response",
+    "zh-TW": "無法讀取上游回應",
+    "ja": "上流のレスポンスを読み取れません",
+    "ko": "업스트림 응답을 읽을 수 없습니다"
+  },
+  "上游响应头无效：{status}": {
+    "en": "Invalid upstream response header: {status}",
+    "zh-TW": "上游回應標頭無效：{status}",
+    "ja": "上流のレスポンスヘッダーが無効です：{status}",
+    "ko": "업스트림 응답 헤더가 올바르지 않습니다: {status}"
+  },
+  "运行没有产生可回发的文本": {
+    "en": "The run produced no text to send back",
+    "zh-TW": "執行沒有產生可回傳的文字",
+    "ja": "実行結果に返信できるテキストがありません",
+    "ko": "실행 결과에 회신할 텍스트가 없습니다"
+  },
+  "{first_error}；降级发送也失败：{second}": {
+    "en": "{first_error}; fallback send also failed: {second}",
+    "zh-TW": "{first_error}；降級傳送也失敗：{second}",
+    "ja": "{first_error}。代替送信にも失敗しました：{second}",
+    "ko": "{first_error}; 대체 전송도 실패했습니다: {second}"
+  },
+  "计划卡片发送失败：{error}": {
+    "en": "Failed to send plan card: {error}",
+    "zh-TW": "計畫卡片傳送失敗：{error}",
+    "ja": "プランカードの送信に失敗しました：{error}",
+    "ko": "계획 카드 전송 실패: {error}"
+  },
+  "题目卡片发送失败：{error}": {
+    "en": "Failed to send question card: {error}",
+    "zh-TW": "問題卡片傳送失敗：{error}",
+    "ja": "質問カードの送信に失敗しました：{error}",
+    "ko": "질문 카드 전송 실패: {error}"
+  },
+  "\n\n（内容较长，已拆分发送；完整内容见 Multara。）": {
+    "en": "\n\n(This reply was long and has been split into several messages. See Multara for the full content.)",
+    "zh-TW": "\n\n（內容較長，已拆分傳送；完整內容請見 Multara。）",
+    "ja": "\n\n（内容が長いため分割して送信しました。全文は Multara で確認してください。）",
+    "ko": "\n\n(내용이 길어 나누어 보냈습니다. 전체 내용은 Multara에서 확인하세요.)"
+  },
+  "工具调用": {
+    "en": "Tool call",
+    "zh-TW": "工具呼叫",
+    "ja": "ツール呼び出し",
+    "ko": "도구 호출"
+  },
+  "你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。": {
+    "en": "You're not linked to Multara yet. Find the pairing code under \"Message channels\" in Multara, then send those digits here.",
+    "zh-TW": "你還沒有綁定到 Multara。請在 Multara 設定的「訊息管道」中查看配對碼，然後直接傳送這串數字。",
+    "ja": "まだ Multara と連携されていません。Multara の「メッセージチャネル」でペアリングコードを確認し、その数字をそのまま送信してください。",
+    "ko": "아직 Multara에 연결되지 않았습니다. Multara의 '메시지 채널'에서 페어링 코드를 확인한 뒤 그 숫자를 그대로 보내 주세요."
+  },
+  "无法创建会话：{error}": {
+    "en": "Couldn't create a session: {error}",
+    "zh-TW": "無法建立會話：{error}",
+    "ja": "セッションを作成できません：{error}",
+    "ko": "세션을 만들 수 없습니다: {error}"
+  },
+  "配对成功。现在可以直接给这个机器人发消息，也可以发送 /help 查看指令。": {
+    "en": "Paired. You can now message this bot directly, or send /help to see the commands.",
+    "zh-TW": "配對成功。現在可以直接傳訊息給這個機器人，也可以傳送 /help 查看指令。",
+    "ja": "ペアリングが完了しました。このボットに直接メッセージを送れます。/help でコマンド一覧を表示できます。",
+    "ko": "페어링되었습니다. 이제 이 봇에게 바로 메시지를 보낼 수 있으며, /help를 보내면 명령어를 볼 수 있습니다."
+  },
+  "可用指令：\n/new 开启新会话\n/stop 中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明": {
+    "en": "Available commands:\n/new Start a new session\n/stop Stop the current run\n/status Show the current session status\n/project <project name> Switch the default project\n/help Show this help",
+    "zh-TW": "可用指令：\n/new 開啟新會話\n/stop 中止目前執行\n/status 查看目前會話狀態\n/project <需求名稱> 切換預設需求\n/help 顯示這段說明",
+    "ja": "利用できるコマンド：\n/new 新しいセッションを開始\n/stop 現在の実行を停止\n/status 現在のセッションの状態を表示\n/project <プロジェクト名> 既定のプロジェクトを切り替え\n/help このヘルプを表示",
+    "ko": "사용 가능한 명령어:\n/new 새 세션 시작\n/stop 현재 실행 중지\n/status 현재 세션 상태 보기\n/project <요구사항 이름> 기본 요구사항 전환\n/help 이 도움말 보기"
+  },
+  "已开启新会话，下一条消息会创建新的对话。": {
+    "en": "Started a new session. Your next message will begin a new conversation.",
+    "zh-TW": "已開啟新會話，下一則訊息會建立新的對話。",
+    "ja": "新しいセッションを開始しました。次のメッセージから新しい会話になります。",
+    "ko": "새 세션을 시작했습니다. 다음 메시지부터 새 대화가 만들어집니다."
+  },
+  "当前没有正在运行的会话。": {
+    "en": "There's no active session right now.",
+    "zh-TW": "目前沒有正在執行的會話。",
+    "ja": "現在実行中のセッションはありません。",
+    "ko": "현재 실행 중인 세션이 없습니다."
+  },
+  "当前没有正在运行的智能体。": {
+    "en": "No agent is running right now.",
+    "zh-TW": "目前沒有正在執行的智慧體。",
+    "ja": "現在実行中のエージェントはありません。",
+    "ko": "현재 실행 중인 에이전트가 없습니다."
+  },
+  "已请求停止当前运行。": {
+    "en": "Requested to stop the current run.",
+    "zh-TW": "已要求停止目前執行。",
+    "ja": "現在の実行の停止をリクエストしました。",
+    "ko": "현재 실행 중지를 요청했습니다."
+  },
+  "目标：{target}\n会话：{session}\n运行中 {running} · 排队 {queued}": {
+    "en": "Target: {target}\nSession: {session}\nRunning {running} · Queued {queued}",
+    "zh-TW": "目標：{target}\n會話：{session}\n執行中 {running} · 排隊 {queued}",
+    "ja": "対象：{target}\nセッション：{session}\n実行中 {running} · キュー待ち {queued}",
+    "ko": "대상: {target}\n세션: {session}\n실행 중 {running} · 대기 {queued}"
+  },
+  "当前聊天还没有会话，直接发一条消息即可开始。": {
+    "en": "This chat has no session yet. Send a message to get started.",
+    "zh-TW": "目前聊天還沒有會話，直接傳一則訊息即可開始。",
+    "ja": "このチャットにはまだセッションがありません。メッセージを送ると開始します。",
+    "ko": "이 채팅에는 아직 세션이 없습니다. 메시지를 보내면 시작됩니다."
+  },
+  "用法：/project 需求名": {
+    "en": "Usage: /project <project name>",
+    "zh-TW": "用法：/project 需求名稱",
+    "ja": "使い方：/project プロジェクト名",
+    "ko": "사용법: /project 요구사항 이름"
+  },
+  "默认需求已切换为「{name}」。新会话会挂到这个需求下。": {
+    "en": "Default project switched to \"{name}\". New sessions will be added to this project.",
+    "zh-TW": "預設需求已切換為「{name}」。新會話會歸到這個需求下。",
+    "ja": "既定のプロジェクトを「{name}」に切り替えました。新しいセッションはこのプロジェクトに追加されます。",
+    "ko": "기본 요구사항을 '{name}'(으)로 전환했습니다. 새 세션은 이 요구사항에 추가됩니다."
+  },
+  "没有找到这个需求。": {
+    "en": "Couldn't find that project.",
+    "zh-TW": "找不到這個需求。",
+    "ja": "そのプロジェクトが見つかりません。",
+    "ko": "해당 요구사항을 찾을 수 없습니다."
+  },
+  "未知指令。发送 /help 查看可用指令。": {
+    "en": "Unknown command. Send /help to see the available commands.",
+    "zh-TW": "未知指令。傳送 /help 查看可用指令。",
+    "ja": "不明なコマンドです。/help で利用できるコマンドを確認してください。",
+    "ko": "알 수 없는 명령어입니다. /help를 보내 사용 가능한 명령어를 확인하세요."
+  },
+  "小队": {
+    "en": "Squad",
+    "zh-TW": "小隊",
+    "ja": "スクワッド",
+    "ko": "스쿼드"
+  },
+  "智能体": {
+    "en": "Agent",
+    "zh-TW": "智慧體",
+    "ja": "エージェント",
+    "ko": "에이전트"
+  },
+  "绑定的智能体或小队不存在": {
+    "en": "The linked agent or squad no longer exists",
+    "zh-TW": "綁定的智慧體或小隊不存在",
+    "ja": "連携先のエージェントまたはスクワッドが存在しません",
+    "ko": "연결된 에이전트 또는 스쿼드가 존재하지 않습니다"
+  },
+  "私聊": {
+    "en": "Direct message",
+    "zh-TW": "私訊",
+    "ja": "個別チャット",
+    "ko": "1:1 채팅"
+  },
+  "群聊": {
+    "en": "Group chat",
+    "zh-TW": "群組聊天",
+    "ja": "グループチャット",
+    "ko": "그룹 채팅"
+  },
+  "没有把消息交给智能体：{error}": {
+    "en": "Couldn't pass the message to the agent: {error}",
+    "zh-TW": "無法將訊息交給智慧體：{error}",
+    "ja": "メッセージをエージェントに渡せませんでした：{error}",
+    "ko": "메시지를 에이전트에 전달하지 못했습니다: {error}"
+  },
+  "配对码错误次数过多，请 {minutes} 分钟后再试。": {
+    "en": "Too many incorrect pairing codes. Try again in {minutes} minutes.",
+    "zh-TW": "配對碼錯誤次數過多，請 {minutes} 分鐘後再試。",
+    "ja": "ペアリングコードの誤りが多すぎます。{minutes} 分後にもう一度お試しください。",
+    "ko": "페어링 코드를 너무 많이 잘못 입력했습니다. {minutes}분 후에 다시 시도하세요."
+  },
+  "凭据不能包含换行": {
+    "en": "Credentials can't contain line breaks",
+    "zh-TW": "憑證不能包含換行",
+    "ja": "認証情報に改行を含めることはできません",
+    "ko": "자격 증명에는 줄바꿈을 포함할 수 없습니다"
+  },
+  "无法写入钥匙串命令": {
+    "en": "Couldn't write the Keychain command",
+    "zh-TW": "無法寫入鑰匙圈指令",
+    "ja": "キーチェーンのコマンドを書き込めません",
+    "ko": "키체인 명령을 쓸 수 없습니다"
+  },
+  "请填写名称": {
+    "en": "Enter a name",
+    "zh-TW": "請填寫名稱",
+    "ja": "名前を入力してください",
+    "ko": "이름을 입력하세요"
+  },
+  "请填写 App ID": {
+    "en": "Enter the App ID",
+    "zh-TW": "請填寫 App ID",
+    "ja": "App ID を入力してください",
+    "ko": "App ID를 입력하세요"
+  },
+  "目标类型无效": {
+    "en": "Invalid target type",
+    "zh-TW": "目標類型無效",
+    "ja": "対象の種類が無効です",
+    "ko": "대상 유형이 올바르지 않습니다"
+  },
+  "暂不支持这个渠道类型": {
+    "en": "This channel type isn't supported yet",
+    "zh-TW": "暫不支援這個管道類型",
+    "ja": "このチャネルの種類にはまだ対応していません",
+    "ko": "아직 지원하지 않는 채널 유형입니다"
+  },
+  "选择的智能体不存在": {
+    "en": "The selected agent doesn't exist",
+    "zh-TW": "選擇的智慧體不存在",
+    "ja": "選択したエージェントが存在しません",
+    "ko": "선택한 에이전트가 존재하지 않습니다"
+  },
+  "选择的小队不存在": {
+    "en": "The selected squad doesn't exist",
+    "zh-TW": "選擇的小隊不存在",
+    "ja": "選択したスクワッドが存在しません",
+    "ko": "선택한 스쿼드가 존재하지 않습니다"
+  },
+  "选择的需求不存在": {
+    "en": "The selected project doesn't exist",
+    "zh-TW": "選擇的需求不存在",
+    "ja": "選択したプロジェクトが存在しません",
+    "ko": "선택한 요구사항이 존재하지 않습니다"
+  },
+  "请填写 App Secret": {
+    "en": "Enter the App Secret",
+    "zh-TW": "請填寫 App Secret",
+    "ja": "App Secret を入力してください",
+    "ko": "App Secret을 입력하세요"
+  },
+  "保存失败": {
+    "en": "Save failed",
+    "zh-TW": "儲存失敗",
+    "ja": "保存に失敗しました",
+    "ko": "저장에 실패했습니다"
+  },
+  "渠道连接不存在": {
+    "en": "Channel connection not found",
+    "zh-TW": "管道連線不存在",
+    "ja": "チャネル接続が見つかりません",
+    "ko": "채널 연결을 찾을 수 없습니다"
+  },
+  "渠道凭据缺失，请重新填写 App Secret": {
+    "en": "Channel credentials are missing. Re-enter the App Secret.",
+    "zh-TW": "管道憑證遺失，請重新填寫 App Secret",
+    "ja": "チャネルの認証情報がありません。App Secret をもう一度入力してください",
+    "ko": "채널 자격 증명이 없습니다. App Secret을 다시 입력하세요"
+  },
+  "渠道未绑定智能体": {
+    "en": "No agent is linked to this channel",
+    "zh-TW": "管道未綁定智慧體",
+    "ja": "チャネルにエージェントが連携されていません",
+    "ko": "채널에 연결된 에이전트가 없습니다"
+  },
+  "**需要确认**\n工具：`{tool}`": {
+    "en": "**Confirmation needed**\nTool: `{tool}`",
+    "zh-TW": "**需要確認**\n工具：`{tool}`",
+    "ja": "**確認が必要です**\nツール：`{tool}`",
+    "ko": "**확인이 필요합니다**\n도구: `{tool}`"
+  },
+  "确认": {
+    "en": "Confirm",
+    "zh-TW": "確認",
+    "ja": "確認",
+    "ko": "확인"
+  },
+  "（收到一条合并转发消息，暂不支持展开）": {
+    "en": "(Received a combined forwarded message; expanding it isn't supported yet)",
+    "zh-TW": "（收到一則合併轉寄訊息，暫不支援展開）",
+    "ja": "（まとめて転送されたメッセージを受信しました。展開にはまだ対応していません）",
+    "ko": "(묶어서 전달된 메시지를 받았습니다. 아직 펼쳐 볼 수 없습니다)"
+  },
+  "飞书没有返回 tenant_access_token": {
+    "en": "Feishu didn't return a tenant_access_token",
+    "zh-TW": "飛書沒有回傳 tenant_access_token",
+    "ja": "Feishu から tenant_access_token が返されませんでした",
+    "ko": "Feishu가 tenant_access_token을 반환하지 않았습니다"
+  },
+  "下载飞书资源失败：HTTP {status}": {
+    "en": "Failed to download Feishu resource: HTTP {status}",
+    "zh-TW": "下載飛書資源失敗：HTTP {status}",
+    "ja": "Feishu のリソースのダウンロードに失敗しました：HTTP {status}",
+    "ko": "Feishu 리소스 다운로드 실패: HTTP {status}"
+  },
+  "飞书附件超过 25 MB": {
+    "en": "Feishu attachment exceeds 25 MB",
+    "zh-TW": "飛書附件超過 25 MB",
+    "ja": "Feishu の添付ファイルが 25 MB を超えています",
+    "ko": "Feishu 첨부 파일이 25MB를 초과합니다"
+  },
+  "飞书没有返回长连接地址": {
+    "en": "Feishu didn't return a long-connection URL",
+    "zh-TW": "飛書沒有回傳長連線位址",
+    "ja": "Feishu から常時接続の URL が返されませんでした",
+    "ko": "Feishu가 장기 연결 주소를 반환하지 않았습니다"
+  },
+  "飞书接口返回错误": {
+    "en": "Feishu API returned an error",
+    "zh-TW": "飛書介面回傳錯誤",
+    "ja": "Feishu API がエラーを返しました",
+    "ko": "Feishu API가 오류를 반환했습니다"
+  },
+  "飞书接口错误 {code}：{message}": {
+    "en": "Feishu API error {code}: {message}",
+    "zh-TW": "飛書介面錯誤 {code}：{message}",
+    "ja": "Feishu API エラー {code}：{message}",
+    "ko": "Feishu API 오류 {code}: {message}"
+  },
+  "无法解析飞书响应（{error}）：{body}": {
+    "en": "Couldn't parse the Feishu response ({error}): {body}",
+    "zh-TW": "無法解析飛書回應（{error}）：{body}",
+    "ja": "Feishu のレスポンスを解析できません（{error}）：{body}",
+    "ko": "Feishu 응답을 해석할 수 없습니다({error}): {body}"
+  },
+  "长连接地址无效：{error}": {
+    "en": "Invalid long-connection URL: {error}",
+    "zh-TW": "長連線位址無效：{error}",
+    "ja": "常時接続の URL が無効です：{error}",
+    "ko": "장기 연결 주소가 올바르지 않습니다: {error}"
+  },
+  "长连接只支持 wss": {
+    "en": "Long connections only support wss",
+    "zh-TW": "長連線只支援 wss",
+    "ja": "常時接続は wss のみ対応しています",
+    "ko": "장기 연결은 wss만 지원합니다"
+  },
+  "长连接地址缺少主机": {
+    "en": "Long-connection URL is missing a host",
+    "zh-TW": "長連線位址缺少主機",
+    "ja": "常時接続の URL にホストがありません",
+    "ko": "장기 연결 주소에 호스트가 없습니다"
+  },
+  "无法解析长连接主机：{error}": {
+    "en": "Couldn't resolve the long-connection host: {error}",
+    "zh-TW": "無法解析長連線主機：{error}",
+    "ja": "常時接続のホストを名前解決できません：{error}",
+    "ko": "장기 연결 호스트를 확인할 수 없습니다: {error}"
+  },
+  "长连接主机没有可用地址": {
+    "en": "The long-connection host has no usable address",
+    "zh-TW": "長連線主機沒有可用位址",
+    "ja": "常時接続のホストに使用できるアドレスがありません",
+    "ko": "장기 연결 호스트에 사용할 수 있는 주소가 없습니다"
+  },
+  "连接长连接网关失败：{error}": {
+    "en": "Failed to connect to the long-connection gateway: {error}",
+    "zh-TW": "連線長連線閘道失敗：{error}",
+    "ja": "常時接続ゲートウェイへの接続に失敗しました：{error}",
+    "ko": "장기 연결 게이트웨이 연결 실패: {error}"
+  },
+  "无效的 TLS 主机名": {
+    "en": "Invalid TLS host name",
+    "zh-TW": "無效的 TLS 主機名稱",
+    "ja": "TLS ホスト名が無効です",
+    "ko": "TLS 호스트 이름이 올바르지 않습니다"
+  },
+  "TLS 握手失败：{error}": {
+    "en": "TLS handshake failed: {error}",
+    "zh-TW": "TLS 交握失敗：{error}",
+    "ja": "TLS ハンドシェイクに失敗しました：{error}",
+    "ko": "TLS 핸드셰이크 실패: {error}"
+  },
+  "对端关闭了长连接": {
+    "en": "The remote side closed the long connection",
+    "zh-TW": "對端關閉了長連線",
+    "ja": "相手側が常時接続を閉じました",
+    "ko": "상대 측이 장기 연결을 닫았습니다"
+  },
+  "长连接被对端关闭": {
+    "en": "Long connection was closed by the remote side",
+    "zh-TW": "長連線被對端關閉",
+    "ja": "常時接続が相手側によって閉じられました",
+    "ko": "장기 연결이 상대 측에 의해 닫혔습니다"
+  },
+  "长连接帧过大": {
+    "en": "Long-connection frame is too large",
+    "zh-TW": "長連線訊框過大",
+    "ja": "常時接続のフレームが大きすぎます",
+    "ko": "장기 연결 프레임이 너무 큽니다"
+  },
+  "写入长连接失败：{error}": {
+    "en": "Failed to write to the long connection: {error}",
+    "zh-TW": "寫入長連線失敗：{error}",
+    "ja": "常時接続への書き込みに失敗しました：{error}",
+    "ko": "장기 연결 쓰기 실패: {error}"
+  },
+  "刷新长连接失败：{error}": {
+    "en": "Failed to flush the long connection: {error}",
+    "zh-TW": "排清長連線失敗：{error}",
+    "ja": "常時接続のフラッシュに失敗しました：{error}",
+    "ko": "장기 연결 플러시 실패: {error}"
+  },
+  "发送 WebSocket 握手失败：{error}": {
+    "en": "Failed to send WebSocket handshake: {error}",
+    "zh-TW": "傳送 WebSocket 交握失敗：{error}",
+    "ja": "WebSocket ハンドシェイクの送信に失敗しました：{error}",
+    "ko": "WebSocket 핸드셰이크 전송 실패: {error}"
+  },
+  "读取 WebSocket 握手响应失败：{error}": {
+    "en": "Failed to read WebSocket handshake response: {error}",
+    "zh-TW": "讀取 WebSocket 交握回應失敗：{error}",
+    "ja": "WebSocket ハンドシェイク応答の読み取りに失敗しました：{error}",
+    "ko": "WebSocket 핸드셰이크 응답 읽기 실패: {error}"
+  },
+  "WebSocket 握手被对端关闭": {
+    "en": "WebSocket handshake was closed by the remote side",
+    "zh-TW": "WebSocket 交握被對端關閉",
+    "ja": "WebSocket ハンドシェイクが相手側によって閉じられました",
+    "ko": "WebSocket 핸드셰이크가 상대 측에 의해 닫혔습니다"
+  },
+  "WebSocket 握手响应过大": {
+    "en": "WebSocket handshake response is too large",
+    "zh-TW": "WebSocket 交握回應過大",
+    "ja": "WebSocket ハンドシェイク応答が大きすぎます",
+    "ko": "WebSocket 핸드셰이크 응답이 너무 큽니다"
+  },
+  "长连接网关拒绝了握手：{status}": {
+    "en": "The long-connection gateway rejected the handshake: {status}",
+    "zh-TW": "長連線閘道拒絕了交握：{status}",
+    "ja": "常時接続ゲートウェイがハンドシェイクを拒否しました：{status}",
+    "ko": "장기 연결 게이트웨이가 핸드셰이크를 거부했습니다: {status}"
+  },
+  "初始化 TLS 失败：{error}": {
+    "en": "Failed to initialize TLS: {error}",
+    "zh-TW": "初始化 TLS 失敗：{error}",
+    "ja": "TLS の初期化に失敗しました：{error}",
+    "ko": "TLS 초기화 실패: {error}"
+  },
+  "本地代理内部错误": {
+    "en": "Local proxy internal error",
+    "zh-TW": "本機代理內部錯誤",
+    "ja": "ローカルプロキシの内部エラー",
+    "ko": "로컬 프록시 내부 오류"
+  },
+  "无法监听本地代理：{error}": {
+    "en": "Couldn't start the local proxy listener: {error}",
+    "zh-TW": "無法監聽本機代理：{error}",
+    "ja": "ローカルプロキシを待ち受けできません：{error}",
+    "ko": "로컬 프록시를 수신 대기할 수 없습니다: {error}"
+  },
+  "本地代理地址无效": {
+    "en": "Invalid local proxy address",
+    "zh-TW": "本機代理位址無效",
+    "ja": "ローカルプロキシのアドレスが無効です",
+    "ko": "로컬 프록시 주소가 올바르지 않습니다"
+  },
+  "本地代理鉴权失败": {
+    "en": "Local proxy authentication failed",
+    "zh-TW": "本機代理驗證失敗",
+    "ja": "ローカルプロキシの認証に失敗しました",
+    "ko": "로컬 프록시 인증 실패"
+  },
+  "只支持 POST 请求": {
+    "en": "Only POST requests are supported",
+    "zh-TW": "只支援 POST 請求",
+    "ja": "POST リクエストのみ対応しています",
+    "ko": "POST 요청만 지원합니다"
+  },
+  "读取请求失败": {
+    "en": "Failed to read the request",
+    "zh-TW": "讀取請求失敗",
+    "ja": "リクエストの読み取りに失敗しました",
+    "ko": "요청 읽기 실패"
+  },
+  "请求 JSON 无效：{error}": {
+    "en": "Invalid request JSON: {error}",
+    "zh-TW": "請求 JSON 無效：{error}",
+    "ja": "リクエストの JSON が無効です：{error}",
+    "ko": "요청 JSON이 올바르지 않습니다: {error}"
+  },
+  "上游请求失败：{error}": {
+    "en": "Upstream request failed: {error}",
+    "zh-TW": "上游請求失敗：{error}",
+    "ja": "上流へのリクエストに失敗しました：{error}",
+    "ko": "업스트림 요청 실패: {error}"
+  },
+  "读取上游响应失败": {
+    "en": "Failed to read the upstream response",
+    "zh-TW": "讀取上游回應失敗",
+    "ja": "上流のレスポンスの読み取りに失敗しました",
+    "ko": "업스트림 응답 읽기 실패"
+  },
+  "上游返回了无法解析的响应：{error}": {
+    "en": "Upstream returned a response that couldn't be parsed: {error}",
+    "zh-TW": "上游回傳了無法解析的回應：{error}",
+    "ja": "上流から解析できないレスポンスが返されました：{error}",
+    "ko": "업스트림이 해석할 수 없는 응답을 반환했습니다: {error}"
+  },
+  "上游事件过大": {
+    "en": "Upstream event is too large",
+    "zh-TW": "上游事件過大",
+    "ja": "上流のイベントが大きすぎます",
+    "ko": "업스트림 이벤트가 너무 큽니다"
+  }
+}

@@ -9,7 +9,9 @@ use super::require_agent;
 
 pub fn list(db: &Connection) -> Result<Vec<Squad>, String> {
     let mut statement = db
-        .prepare("SELECT id, name, description, instructions, leader_agent_id FROM squads ORDER BY name")
+        .prepare(
+            "SELECT id, name, description, instructions, leader_agent_id FROM squads ORDER BY name",
+        )
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -27,7 +29,9 @@ pub fn list(db: &Connection) -> Result<Vec<Squad>, String> {
     let mut members: HashMap<String, Vec<String>> = HashMap::new();
     db.prepare("SELECT squad_id, agent_id FROM squad_members ORDER BY agent_id")
         .map_err(|error| error.to_string())?
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|error| error.to_string())?
         .try_for_each(|row| {
             let (squad_id, agent_id) = row?;
@@ -37,14 +41,16 @@ pub fn list(db: &Connection) -> Result<Vec<Squad>, String> {
         .map_err(|error| error.to_string())?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, description, instructions, leader_agent_id)| Squad {
-            member_agent_ids: members.remove(&id).unwrap_or_default(),
-            id,
-            name,
-            description,
-            instructions,
-            leader_agent_id,
-        })
+        .map(
+            |(id, name, description, instructions, leader_agent_id)| Squad {
+                member_agent_ids: members.remove(&id).unwrap_or_default(),
+                id,
+                name,
+                description,
+                instructions,
+                leader_agent_id,
+            },
+        )
         .collect())
 }
 
@@ -52,16 +58,16 @@ pub fn get(db: &Connection, squad_id: &str) -> Result<Squad, String> {
     list(db)?
         .into_iter()
         .find(|squad| squad.id == squad_id)
-        .ok_or_else(|| "小队不存在".to_string())
+        .ok_or_else(|| tr!("小队不存在"))
 }
 
 pub fn save(db: &mut Connection, input: SquadInput) -> Result<Vec<Squad>, String> {
     let name = input.name.trim();
     if name.is_empty() {
-        return Err("小队名称不能为空".to_string());
+        return Err(tr!("小队名称不能为空"));
     }
     if !input.member_agent_ids.contains(&input.leader_agent_id) {
-        return Err("队长必须同时是小队成员".to_string());
+        return Err(tr!("队长必须同时是小队成员"));
     }
     for agent_id in &input.member_agent_ids {
         require_agent(db, agent_id)?;

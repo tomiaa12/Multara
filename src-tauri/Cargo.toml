@@ -19,7 +19,8 @@ name = "multara-cli"
 path = "src/bin/multara_cli.rs"
 
 [profile.dev]
-opt-level = 1
+# 开了优化后，增量编译偶尔会链接失败（找不到 _anon.*.llvm.* 符号），所以 multara 自身不优化
+opt-level = 0
 
 [profile.dev.package."*"]
 opt-level = 3

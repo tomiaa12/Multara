@@ -35,9 +35,9 @@ pub fn resume(
             [session_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .map_err(|_| "聊天不存在".to_string())?;
+        .map_err(|_| tr!("聊天不存在"))?;
     if target_type != "agent" {
-        return Err("只能继续单个智能体的会话".to_string());
+        return Err(tr!("只能继续单个智能体的会话"));
     }
     let runtime_id: String = db
         .query_row(
@@ -45,14 +45,14 @@ pub fn resume(
             [&target_id],
             |row| row.get(0),
         )
-        .map_err(|_| "智能体不存在".to_string())?;
+        .map_err(|_| tr!("智能体不存在"))?;
     if !conversation::resumes_via_cli(&runtime_id) {
-        return Err(
-            "这个运行时不能 resume。目前只有 Cursor 和 Claude 可以接着上次的任务。".to_string(),
-        );
+        return Err(tr!(
+            "这个运行时不能 resume。目前只有 Cursor 和 Claude 可以接着上次的任务。"
+        ));
     }
     let conversation_id = conversation::load_id(db, session_id, &target_id, &runtime_id)?
-        .ok_or_else(|| "没有可继续的会话。上次运行还没留下 conversation id。".to_string())?;
+        .ok_or_else(|| tr!("没有可继续的会话。上次运行还没留下 conversation id。"))?;
     let now = chrono::Utc::now().to_rfc3339();
     let message_id = Uuid::new_v4().to_string();
     let turn_id = (!project_ids.is_empty()).then(|| Uuid::new_v4().to_string());
@@ -89,6 +89,7 @@ pub fn resume(
             assignment,
             status: "queued",
             now: &now,
+            mode: crate::models::RunMode::Auto,
         },
     )?;
     Ok(ResumeResult {
@@ -131,14 +132,24 @@ mod tests {
         assert_eq!(result.session_id, "second");
         assert_eq!(result.conversation_id, "saved-chat");
         assert_eq!(result.assignment, "Continue second");
-        let status: String = db.query_row(
-            "SELECT status FROM agent_runs WHERE id=?1", [&result.run_id], |row| row.get(0),
-        ).unwrap();
+        let status: String = db
+            .query_row(
+                "SELECT status FROM agent_runs WHERE id=?1",
+                [&result.run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(status, "queued");
-        assert!(resume(&db, "second", None).unwrap_err().contains("当前会话"));
-        let messages: i64 = db.query_row(
-            "SELECT COUNT(*) FROM messages WHERE session_id='second'", [], |row| row.get(0),
-        ).unwrap();
+        assert!(resume(&db, "second", None)
+            .unwrap_err()
+            .contains("当前会话"));
+        let messages: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE session_id='second'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(messages, 1);
     }
 }

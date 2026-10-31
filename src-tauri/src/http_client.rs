@@ -11,7 +11,12 @@ const MAX_BODY_BYTES_ARG: &str = "8000000";
 const MAX_REDIRECTS: usize = 3;
 const MAX_HEADER_LINE_BYTES: u64 = 16 * 1024;
 /// 跨域重定向时只保留这些不含凭据的请求头（curl 自己只会剥离 `Authorization`，不管 `x-api-key` 之类）。
-const CROSS_ORIGIN_SAFE_HEADERS: &[&str] = &["accept", "user-agent", "content-type", "mcp-protocol-version"];
+const CROSS_ORIGIN_SAFE_HEADERS: &[&str] = &[
+    "accept",
+    "user-agent",
+    "content-type",
+    "mcp-protocol-version",
+];
 
 pub struct Response {
     pub status: u16,
@@ -56,16 +61,18 @@ pub fn get(url: &str, accept: &str) -> Result<Response, String> {
 }
 
 fn parse_http_url(url: &str) -> Result<url::Url, String> {
-    let parsed = url::Url::parse(url.trim()).map_err(|_| format!("地址无效：{url}"))?;
+    let parsed = url::Url::parse(url.trim()).map_err(|_| tr!("地址无效：{url}", url = url))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err("只支持 http 和 https 地址".to_string());
+        return Err(tr!("只支持 http 和 https 地址"));
     }
     Ok(parsed)
 }
 
 /// 请求头写进临时文件（Unix 上创建即 0600）用 `-H @file` 传给 curl，密钥不出现在 `ps` 可见的命令行里。
 /// 调用方要让返回的文件活到 curl 读完为止。
-pub(crate) fn curl_header_file(headers: &[(String, String)]) -> Result<tempfile::NamedTempFile, String> {
+pub(crate) fn curl_header_file(
+    headers: &[(String, String)],
+) -> Result<tempfile::NamedTempFile, String> {
     let mut file = tempfile::NamedTempFile::new().map_err(|error| error.to_string())?;
     let mut text = String::new();
     if !headers
@@ -75,9 +82,14 @@ pub(crate) fn curl_header_file(headers: &[(String, String)]) -> Result<tempfile:
         text.push_str("User-Agent: Multara\n");
     }
     for (key, value) in headers {
-        text.push_str(&format!("{}: {}\n", key.trim(), value.replace(['\r', '\n'], " ")));
+        text.push_str(&format!(
+            "{}: {}\n",
+            key.trim(),
+            value.replace(['\r', '\n'], " ")
+        ));
     }
-    file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
+    file.write_all(text.as_bytes())
+        .map_err(|error| error.to_string())?;
     file.flush().map_err(|error| error.to_string())?;
     Ok(file)
 }
@@ -100,7 +112,11 @@ pub fn request(
             return Ok(response);
         };
         if next.origin() != current.origin() {
-            headers.retain(|(key, _)| CROSS_ORIGIN_SAFE_HEADERS.iter().any(|safe| key.eq_ignore_ascii_case(safe)));
+            headers.retain(|(key, _)| {
+                CROSS_ORIGIN_SAFE_HEADERS
+                    .iter()
+                    .any(|safe| key.eq_ignore_ascii_case(safe))
+            });
         }
         if response.status == 303 || (matches!(response.status, 301 | 302) && method == "POST") {
             method = "GET".to_string();
@@ -108,7 +124,7 @@ pub fn request(
         }
         current = next;
     }
-    Err(format!("重定向次数过多：{url}"))
+    Err(tr!("重定向次数过多：{url}", url = url))
 }
 
 fn redirect_target(response: &Response, current: &url::Url) -> Option<url::Url> {
@@ -148,7 +164,9 @@ fn request_once(
     command.arg("--dump-header").arg(header_file.path());
     command.arg("--output").arg(body_file.path());
     command.args(["-X", method]);
-    command.arg("-H").arg(format!("@{}", request_headers.path().display()));
+    command
+        .arg("-H")
+        .arg(format!("@{}", request_headers.path().display()));
     let payload = body
         .map(|_| tempfile::NamedTempFile::new())
         .transpose()
@@ -162,11 +180,11 @@ fn request_once(
     command.arg(parsed.as_str());
     let output = command
         .output()
-        .map_err(|error| format!("无法调用 curl：{error}"))?;
+        .map_err(|error| tr!("无法调用 curl：{error}", error = error))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if detail.is_empty() {
-            format!("请求失败：{url}")
+            tr!("请求失败：{url}", url = url)
         } else {
             detail
         });
@@ -174,7 +192,7 @@ fn request_once(
     let raw_headers = fs::read(header_file.path()).map_err(|error| error.to_string())?;
     let raw_body = fs::read(body_file.path()).map_err(|error| error.to_string())?;
     if raw_body.len() > MAX_BODY_BYTES {
-        return Err("响应过大".to_string());
+        return Err(tr!("响应过大"));
     }
     let header_text = String::from_utf8_lossy(&raw_headers).to_string();
     // 跟随重定向时会有多段响应头，只取最后一段。
@@ -233,7 +251,9 @@ pub fn request_stream(
         "-X",
         method,
     ]);
-    command.arg("-H").arg(format!("@{}", request_headers.path().display()));
+    command
+        .arg("-H")
+        .arg(format!("@{}", request_headers.path().display()));
     if let Some(file) = payload.as_ref() {
         command
             .arg("--data-binary")
@@ -244,11 +264,11 @@ pub fn request_stream(
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = command
         .spawn()
-        .map_err(|error| format!("无法调用 curl：{error}"))?;
+        .map_err(|error| tr!("无法调用 curl：{error}", error = error))?;
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return Err("无法读取上游响应".to_string());
+        return Err(tr!("无法读取上游响应"));
     };
     let mut reader = BufReader::new(stdout);
     match read_stream_head(&mut reader) {
@@ -268,7 +288,9 @@ pub fn request_stream(
     }
 }
 
-fn read_stream_head(reader: &mut BufReader<ChildStdout>) -> Result<(u16, Vec<(String, String)>), String> {
+fn read_stream_head(
+    reader: &mut BufReader<ChildStdout>,
+) -> Result<(u16, Vec<(String, String)>), String> {
     let mut status_line = String::new();
     reader
         .by_ref()
@@ -279,7 +301,7 @@ fn read_stream_head(reader: &mut BufReader<ChildStdout>) -> Result<(u16, Vec<(St
         .split_whitespace()
         .nth(1)
         .and_then(|value| value.parse().ok())
-        .ok_or_else(|| format!("上游响应头无效：{}", status_line.trim()))?;
+        .ok_or_else(|| tr!("上游响应头无效：{status}", status = status_line.trim()))?;
     let mut response_headers = Vec::new();
     loop {
         let mut line = String::new();

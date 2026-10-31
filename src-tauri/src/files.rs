@@ -14,6 +14,8 @@ const MAX_MEDIA_PREVIEW_BYTES: u64 = 32 * 1024 * 1024;
 const MEDIA_PREVIEW_LIMIT_MB: u64 = MAX_MEDIA_PREVIEW_BYTES / (1024 * 1024);
 const MAX_TREE_ENTRIES: usize = 5_000;
 const MAX_QUICK_OPEN_FILES: usize = 20_000;
+/// 读文件时文件已不在的错误前缀，前端据此把标签标成已删除，不看文案。
+pub const FILE_MISSING: &str = "NOT_FOUND:";
 
 /// `files.exclude` 的默认值。资源管理器隐藏这些名字。
 const EXPLORER_EXCLUDE: &[&str] = &[".git", ".svn", ".hg", ".jj", ".DS_Store", "Thumbs.db"];
@@ -202,13 +204,13 @@ pub fn read(workspace_id: &str, root: &str, relative_path: &str) -> Result<FileC
     let path = root
         .join(normalize_relative(relative_path)?)
         .canonicalize()
-        .map_err(|error| format!("文件不存在：{error}"))?;
+        .map_err(|error| format!("{FILE_MISSING}{}", tr!("文件不存在：{error}", error = error)))?;
     let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
-        return Err("只能打开文件".to_string());
+        return Err(tr!("只能打开文件"));
     }
     if metadata.len() > MAX_READABLE_BYTES {
-        return Err("文件超过 128MB，无法安全载入编辑器".to_string());
+        return Err(tr!("文件超过 128MB，无法安全载入编辑器"));
     }
     let bytes = fs::read(&path).map_err(|error| error.to_string())?;
     file_content(
@@ -226,10 +228,10 @@ pub fn read_absolute(path: &str) -> Result<FileContent, String> {
     let path = Path::new(path);
     let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
-        return Err("只能打开文件".to_string());
+        return Err(tr!("只能打开文件"));
     }
     if metadata.len() > MAX_READABLE_BYTES {
-        return Err("文件超过 128MB，无法安全载入编辑器".to_string());
+        return Err(tr!("文件超过 128MB，无法安全载入编辑器"));
     }
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
     file_content(
@@ -252,7 +254,10 @@ fn file_content(
 ) -> Result<FileContent, String> {
     if let Some(media) = media_preview(path) {
         if size > MAX_MEDIA_PREVIEW_BYTES {
-            return Err(format!("文件超过 {MEDIA_PREVIEW_LIMIT_MB}MB，无法预览"));
+            return Err(tr!(
+                "文件超过 {limit}MB，无法预览",
+                limit = MEDIA_PREVIEW_LIMIT_MB
+            ));
         }
         let encoded = STANDARD.encode(bytes);
         return Ok(FileContent {
@@ -285,19 +290,58 @@ struct MediaKind {
 fn media_preview(path: &Path) -> Option<MediaKind> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match extension.as_str() {
-        "jpg" | "jpe" | "jpeg" => MediaKind { kind: "image", mime: "image/jpeg" },
-        "png" => MediaKind { kind: "image", mime: "image/png" },
-        "bmp" => MediaKind { kind: "image", mime: "image/bmp" },
-        "gif" => MediaKind { kind: "image", mime: "image/gif" },
-        "ico" => MediaKind { kind: "image", mime: "image/x-icon" },
-        "webp" => MediaKind { kind: "image", mime: "image/webp" },
-        "avif" => MediaKind { kind: "image", mime: "image/avif" },
-        "svg" => MediaKind { kind: "image", mime: "image/svg+xml" },
-        "mp3" => MediaKind { kind: "audio", mime: "audio/mpeg" },
-        "wav" => MediaKind { kind: "audio", mime: "audio/wav" },
-        "ogg" | "oga" => MediaKind { kind: "audio", mime: "audio/ogg" },
-        "mp4" => MediaKind { kind: "video", mime: "video/mp4" },
-        "webm" => MediaKind { kind: "video", mime: "video/webm" },
+        "jpg" | "jpe" | "jpeg" => MediaKind {
+            kind: "image",
+            mime: "image/jpeg",
+        },
+        "png" => MediaKind {
+            kind: "image",
+            mime: "image/png",
+        },
+        "bmp" => MediaKind {
+            kind: "image",
+            mime: "image/bmp",
+        },
+        "gif" => MediaKind {
+            kind: "image",
+            mime: "image/gif",
+        },
+        "ico" => MediaKind {
+            kind: "image",
+            mime: "image/x-icon",
+        },
+        "webp" => MediaKind {
+            kind: "image",
+            mime: "image/webp",
+        },
+        "avif" => MediaKind {
+            kind: "image",
+            mime: "image/avif",
+        },
+        "svg" => MediaKind {
+            kind: "image",
+            mime: "image/svg+xml",
+        },
+        "mp3" => MediaKind {
+            kind: "audio",
+            mime: "audio/mpeg",
+        },
+        "wav" => MediaKind {
+            kind: "audio",
+            mime: "audio/wav",
+        },
+        "ogg" | "oga" => MediaKind {
+            kind: "audio",
+            mime: "audio/ogg",
+        },
+        "mp4" => MediaKind {
+            kind: "video",
+            mime: "video/mp4",
+        },
+        "webm" => MediaKind {
+            kind: "video",
+            mime: "video/webm",
+        },
         _ => return None,
     })
 }
@@ -326,25 +370,26 @@ pub fn write(root: &str, relative_path: &str, content: &str) -> Result<(), Strin
 /// 写入文本文件；路径不存在时创建（回滚被删除的文件）。
 pub fn write_or_create(root: &str, relative_path: &str, content: &str) -> Result<(), String> {
     if content.len() as u64 > MAX_EDITABLE_BYTES {
-        return Err("文件超过 64MB，只能只读打开".to_string());
+        return Err(tr!("文件超过 64MB，只能只读打开"));
     }
     let root = canonical_root(root)?;
     let relative = normalize_relative(relative_path)?;
     if relative.is_empty() {
-        return Err("无效路径".to_string());
+        return Err(tr!("无效路径"));
     }
     let relative = Path::new(&relative);
-    let canonical_parent = create_parents_inside(&root, relative.parent().unwrap_or(Path::new("")))?;
-    let name = relative.file_name().ok_or_else(|| "无效路径".to_string())?;
+    let canonical_parent =
+        create_parents_inside(&root, relative.parent().unwrap_or(Path::new("")))?;
+    let name = relative.file_name().ok_or_else(|| tr!("无效路径"))?;
     write_atomic(&canonical_parent.join(name), content)
 }
 
 /// 同目录 tempfile + persist，给编辑器保存共用。
 pub fn write_atomic(target: &Path, content: &str) -> Result<(), String> {
     if content.len() as u64 > MAX_EDITABLE_BYTES {
-        return Err("文件超过 64MB，只能只读打开".to_string());
+        return Err(tr!("文件超过 64MB，只能只读打开"));
     }
-    let parent = target.parent().ok_or_else(|| "无效文件路径".to_string())?;
+    let parent = target.parent().ok_or_else(|| tr!("无效文件路径"))?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     let mut temporary =
         tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
@@ -354,13 +399,13 @@ pub fn write_atomic(target: &Path, content: &str) -> Result<(), String> {
     temporary.flush().map_err(|error| error.to_string())?;
     temporary
         .persist(target)
-        .map_err(|error| format!("保存文件失败：{}", error.error))?;
+        .map_err(|error| tr!("保存文件失败：{error}", error = error.error))?;
     Ok(())
 }
 
 pub fn create_file(root: &str, relative_path: &str, content: &str) -> Result<(), String> {
     if content.len() as u64 > MAX_EDITABLE_BYTES {
-        return Err("文件超过 64MB，无法创建".to_string());
+        return Err(tr!("文件超过 64MB，无法创建"));
     }
     let root = canonical_root(root)?;
     let target = resolve_inside(&root, relative_path)?;
@@ -369,7 +414,7 @@ pub fn create_file(root: &str, relative_path: &str, content: &str) -> Result<(),
         .create_new(true)
         .open(&target)
         .map_err(|error| match error.kind() {
-            std::io::ErrorKind::AlreadyExists => "文件已存在".to_string(),
+            std::io::ErrorKind::AlreadyExists => tr!("文件已存在"),
             _ => error.to_string(),
         })?;
     file.write_all(content.as_bytes())
@@ -380,7 +425,7 @@ pub fn create_directory(root: &str, relative_path: &str) -> Result<(), String> {
     let root = canonical_root(root)?;
     let target = resolve_inside(&root, relative_path)?;
     if fs::symlink_metadata(&target).is_ok() {
-        return Err("文件夹已存在".to_string());
+        return Err(tr!("文件夹已存在"));
     }
     fs::create_dir(&target).map_err(|error| error.to_string())?;
     Ok(())
@@ -389,13 +434,13 @@ pub fn create_directory(root: &str, relative_path: &str) -> Result<(), String> {
 pub fn rename_entry(root: &str, from: &str, to: &str) -> Result<(), String> {
     let root = canonical_root(root)?;
     if normalize_relative(from)?.is_empty() {
-        return Err("不能重命名工作区根目录".to_string());
+        return Err(tr!("不能重命名工作区根目录"));
     }
     let source = resolve_inside(&root, from)?;
-    fs::symlink_metadata(&source).map_err(|error| format!("文件不存在：{error}"))?;
+    fs::symlink_metadata(&source).map_err(|error| tr!("文件不存在：{error}", error = error))?;
     let dest = resolve_inside(&root, to)?;
     if fs::symlink_metadata(&dest).is_ok() {
-        return Err("目标已存在".to_string());
+        return Err(tr!("目标已存在"));
     }
     fs::rename(source, dest).map_err(|error| error.to_string())?;
     Ok(())
@@ -404,7 +449,7 @@ pub fn rename_entry(root: &str, from: &str, to: &str) -> Result<(), String> {
 pub fn delete_entry(root: &str, relative_path: &str) -> Result<(), String> {
     let root = canonical_root(root)?;
     if normalize_relative(relative_path)?.is_empty() {
-        return Err("不能删除工作区根目录".to_string());
+        return Err(tr!("不能删除工作区根目录"));
     }
     remove_path(&resolve_inside(&root, relative_path)?)
 }
@@ -439,10 +484,10 @@ pub fn reveal(root: &str, relative_path: &str) -> Result<(), String> {
 pub(crate) fn resolve_inside(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     let relative = normalize_relative(relative_path)?;
     if relative.is_empty() {
-        return Err("无效路径".to_string());
+        return Err(tr!("无效路径"));
     }
     let target = root.join(Path::new(&relative));
-    let parent = target.parent().ok_or_else(|| "无效路径".to_string())?;
+    let parent = target.parent().ok_or_else(|| tr!("无效路径"))?;
     let canonical_parent = if parent == root {
         root.to_path_buf()
     } else {
@@ -450,11 +495,11 @@ pub(crate) fn resolve_inside(root: &Path, relative_path: &str) -> Result<PathBuf
             if parent.exists() {
                 error
             } else {
-                "父目录不存在".to_string()
+                tr!("父目录不存在")
             }
         })?
     };
-    let name = target.file_name().ok_or_else(|| "无效路径".to_string())?;
+    let name = target.file_name().ok_or_else(|| tr!("无效路径"))?;
     Ok(canonical_parent.join(name))
 }
 
@@ -462,15 +507,18 @@ pub(crate) fn resolve_inside(root: &Path, relative_path: &str) -> Result<PathBuf
 pub(crate) fn ensure_inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let canonical = path
         .canonicalize()
-        .map_err(|error| format!("文件不存在：{error}"))?;
+        .map_err(|error| tr!("文件不存在：{error}", error = error))?;
     if !canonical.starts_with(root) {
-        return Err("路径指向工作区之外".to_string());
+        return Err(tr!("路径指向工作区之外"));
     }
     Ok(canonical)
 }
 
 /// 逐级创建缺失的父目录，每一级都校验没有经符号链接跳出根目录，返回 canonical 的父目录。
-pub(crate) fn create_parents_inside(root: &Path, relative_parent: &Path) -> Result<PathBuf, String> {
+pub(crate) fn create_parents_inside(
+    root: &Path,
+    relative_parent: &Path,
+) -> Result<PathBuf, String> {
     let mut current = root.to_path_buf();
     for component in relative_parent.components() {
         let next = current.join(component);
@@ -479,7 +527,10 @@ pub(crate) fn create_parents_inside(root: &Path, relative_parent: &Path) -> Resu
         }
         current = ensure_inside(root, &next)?;
         if !current.is_dir() {
-            return Err(format!("{} 不是文件夹", relative_parent.display()));
+            return Err(tr!(
+                "{path} 不是文件夹",
+                path = relative_parent.display()
+            ));
         }
     }
     Ok(current)
@@ -573,14 +624,14 @@ fn walk(
 pub(crate) fn canonical_root(root: &str) -> Result<PathBuf, String> {
     Path::new(root)
         .canonicalize()
-        .map_err(|error| format!("工作区不可用：{error}"))
+        .map_err(|error| tr!("工作区不可用：{error}", error = error))
 }
 
 pub fn resolve_existing_or_new(root: &str, relative_path: &str) -> Result<PathBuf, String> {
     let root = canonical_root(root)?;
     let relative = normalize_relative(relative_path)?;
     if relative.is_empty() {
-        return Err("无效路径".to_string());
+        return Err(tr!("无效路径"));
     }
     let target = root.join(Path::new(&relative));
     if target.exists() {
@@ -598,7 +649,7 @@ fn listing_directory(root: &Path, relative_path: &str) -> Result<PathBuf, String
     if directory.is_dir() {
         return Ok(directory);
     }
-    Err("只能展开文件夹".to_string())
+    Err(tr!("只能展开文件夹"))
 }
 
 pub(crate) fn resolve_existing(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
@@ -612,7 +663,7 @@ pub fn normalize_relative(path: &str) -> Result<String, String> {
             .components()
             .any(|component| !matches!(component, Component::Normal(_)))
     {
-        return Err("无效的相对路径".to_string());
+        return Err(tr!("无效的相对路径"));
     }
     Ok(path.to_string_lossy().replace('\\', "/"))
 }
@@ -677,7 +728,7 @@ fn decode_text(bytes: &[u8]) -> Result<String, String> {
         }
     }
     if looks_binary(bytes) {
-        return Err("暂不支持编辑二进制文件".to_string());
+        return Err(tr!("暂不支持编辑二进制文件"));
     }
     if let Ok(text) = std::str::from_utf8(bytes) {
         return Ok(strip_utf8_bom(text).to_string());
@@ -692,7 +743,7 @@ fn decode_text(bytes: &[u8]) -> Result<String, String> {
     if !had_errors {
         return Ok(text.into_owned());
     }
-    Err("暂不支持编辑二进制文件".to_string())
+    Err(tr!("暂不支持编辑二进制文件"))
 }
 
 pub fn language_for_path(path: &Path) -> &'static str {
@@ -917,7 +968,10 @@ mod tests {
 
         delete_entry(root, "link").unwrap();
         assert!(fs::symlink_metadata(workspace.path().join("link")).is_err());
-        assert_eq!(fs::read_to_string(outside.path().join("keep.txt")).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(outside.path().join("keep.txt")).unwrap(),
+            "keep"
+        );
     }
 
     #[test]
@@ -970,7 +1024,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let bytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         fs::write(temp.path().join("status_closed_black.png"), bytes).unwrap();
-        let file = read("workspace", temp.path().to_str().unwrap(), "status_closed_black.png").unwrap();
+        let file = read(
+            "workspace",
+            temp.path().to_str().unwrap(),
+            "status_closed_black.png",
+        )
+        .unwrap();
         assert_eq!(file.media, "image");
         assert!(file.read_only);
         assert!(file.content.starts_with("data:image/png;base64,"));

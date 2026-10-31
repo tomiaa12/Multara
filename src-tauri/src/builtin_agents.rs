@@ -61,16 +61,16 @@ Added by the user:",
 pub fn miku_description(locale: &str) -> &'static str {
     match locale {
         "en" => {
-            "Your workspace coordinator. Miku turns goals into tasks, coordinates agents, and helps you build reusable workflows."
+            "Your workspace steward. Miku turns goals into tasks, coordinates agents, and helps you build reusable workflows."
         }
         "zh-TW" => {
             "你的工作區總管。Miku 把目標變成任務、協調智慧體，並幫你建可複用工作流。"
         }
         "ja" => {
-            "ワークスペースのコーディネーター。Miku は目標をタスクにし、エージェントを調整し、再利用可能なワークフロー作りを手伝います。"
+            "ワークスペースの執事。Miku は目標をタスクにし、エージェントを調整し、再利用可能なワークフロー作りを手伝います。"
         }
         "ko" => {
-            "워크스페이스 총괄. Miku는 목표를 작업으로 바꾸고, 에이전트를 조율하며, 재사용 가능한 워크플로를 만드는 것을 돕습니다."
+            "워크스페이스 스튜어드입니다. Miku는 목표를 작업으로 바꾸고, 에이전트를 조율하며, 재사용 가능한 워크플로를 만드는 것을 돕습니다."
         }
         _ => MIKU_DESCRIPTION,
     }
@@ -98,7 +98,11 @@ pub fn miku_system_instructions(display_name: &str, locale: &str) -> String {
         .replace(MIKU_NAME_PLACEHOLDER, name)
 }
 
-pub fn compose_miku_instructions(display_name: &str, workspace_notes: &str, locale: &str) -> String {
+pub fn compose_miku_instructions(
+    display_name: &str,
+    workspace_notes: &str,
+    locale: &str,
+) -> String {
     let system = miku_system_instructions(display_name, locale);
     let notes = workspace_notes.trim();
     if notes.is_empty() {
@@ -123,7 +127,7 @@ pub fn welcome_opening(agent_name: &str, locale: &str) -> String {
     match locale {
         "en" => format!(
             "Hi — welcome to Multara. This is a workspace where people and AI agents finish work together through tasks.\n\n\
-I'm {name}, the coordinator here. I clarify what needs doing, find the right agent to take it, and I'm always your first stop when you want to talk.\n\n\
+I'm {name}, the steward here. I clarify what needs doing, find the right agent to take it, and I'm always your first stop when you want to talk.\n\n\
 Here's how it goes: you name a goal, I turn it into a task, hand it to the right agent, and you can watch it move.\n\n\
 Pick one below to start, or just tell me what you want to get done."
         ),
@@ -135,13 +139,13 @@ Pick one below to start, or just tell me what you want to get done."
         ),
         "ja" => format!(
             "こんにちは。Multara へようこそ。人と AI エージェントがタスクを通じて一緒に仕事を終わらせるワークスペースです。\n\n\
-私は {name}、ここのコーディネーターです。やることを整理し、適任のエージェントに渡し、いつでも最初に話しかけられる窓口でもあります。\n\n\
+私は {name}、ここの執事です。やることを整理し、適任のエージェントに渡し、いつでも最初に話しかけられる窓口でもあります。\n\n\
 流れはこうです。目標を伝えてください。タスクにして適任のエージェントに渡し、進みを見守れます。\n\n\
 下から選んで始めるか、今やりたいことをそのまま教えてください。"
         ),
         "ko" => format!(
             "안녕하세요. Multara에 오신 것을 환영합니다. 사람과 AI 에이전트가 작업을 통해 함께 일을 끝내는 워크스페이스입니다.\n\n\
-저는 {name}, 이곳의 총괄입니다. 할 일을 정리하고 적합한 에이전트에게 넘기며, 언제든 먼저 말을 걸 수 있는 창구이기도 합니다.\n\n\
+저는 {name}, 이곳의 스튜어드입니다. 할 일을 정리하고 적합한 에이전트에게 넘기며, 언제든 먼저 말을 걸 수 있는 창구이기도 합니다.\n\n\
 흐름은 이렇습니다. 목표를 말해 주세요. 작업으로 만들고 적합한 에이전트에게 넘기면, 진행을 볼 수 있습니다.\n\n\
 아래에서 골라 시작하거나, 지금 하고 싶은 일을 바로 말해 주세요."
         ),
@@ -191,7 +195,10 @@ mod tests {
     #[test]
     fn empty_notes_are_exactly_the_system_layer() {
         let system = miku_system_instructions(MIKU_DEFAULT_NAME, "zh-CN");
-        assert_eq!(compose_miku_instructions(MIKU_DEFAULT_NAME, "", "zh-CN"), system);
+        assert_eq!(
+            compose_miku_instructions(MIKU_DEFAULT_NAME, "", "zh-CN"),
+            system
+        );
         assert_eq!(
             compose_miku_instructions(MIKU_DEFAULT_NAME, "  \n  ", "zh-CN"),
             system
@@ -210,7 +217,8 @@ mod tests {
 
     #[test]
     fn notes_follow_the_system_layer() {
-        let composed = compose_miku_instructions(MIKU_DEFAULT_NAME, "主仓库是 acme/platform。", "zh-CN");
+        let composed =
+            compose_miku_instructions(MIKU_DEFAULT_NAME, "主仓库是 acme/platform。", "zh-CN");
         assert!(composed.starts_with(&miku_system_instructions(MIKU_DEFAULT_NAME, "zh-CN")));
         assert!(composed.contains("## 工作区备注"));
         assert!(composed.contains("主仓库是 acme/platform。"));

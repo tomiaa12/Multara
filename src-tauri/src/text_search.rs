@@ -34,7 +34,10 @@ impl SearchTicket {
         if let Some(previous) = previous {
             previous.store(true, Ordering::Release);
         }
-        Self { key: key.to_string(), cancelled }
+        Self {
+            key: key.to_string(),
+            cancelled,
+        }
     }
 
     pub fn flag(&self) -> Arc<AtomicBool> {
@@ -45,14 +48,19 @@ impl SearchTicket {
 impl Drop for SearchTicket {
     fn drop(&mut self) {
         let mut active = active_searches();
-        if active.get(&self.key).is_some_and(|flag| Arc::ptr_eq(flag, &self.cancelled)) {
+        if active
+            .get(&self.key)
+            .is_some_and(|flag| Arc::ptr_eq(flag, &self.cancelled))
+        {
             active.remove(&self.key);
         }
     }
 }
 
 fn active_searches() -> std::sync::MutexGuard<'static, HashMap<String, Arc<AtomicBool>>> {
-    ACTIVE_SEARCHES.lock().unwrap_or_else(|error| error.into_inner())
+    ACTIVE_SEARCHES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
 }
 
 #[derive(Clone, Serialize)]
@@ -94,15 +102,15 @@ struct GlobSet {
 enum GlobPattern {
     /// 没有通配符时按文件夹前缀匹配，对应「在文件夹中查找」填入的 ./src/components。
     Folder(String),
-    Wildcard { regex: Regex, whole_path: bool },
+    Wildcard {
+        regex: Regex,
+        whole_path: bool,
+    },
 }
 
 impl GlobPattern {
     fn compile(pattern: &str) -> Option<Self> {
-        let normalized = pattern
-            .trim()
-            .trim_start_matches("./")
-            .trim_matches('/');
+        let normalized = pattern.trim().trim_start_matches("./").trim_matches('/');
         if normalized.is_empty() {
             return None;
         }
@@ -119,12 +127,19 @@ impl GlobPattern {
     fn matches(&self, path: &str) -> bool {
         match self {
             Self::Folder(folder) => {
-                path == folder || path.strip_prefix(folder.as_str()).is_some_and(|rest| rest.starts_with('/'))
+                path == folder
+                    || path
+                        .strip_prefix(folder.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
             }
-            Self::Wildcard { regex, whole_path: true } => regex.is_match(path),
-            Self::Wildcard { regex, whole_path: false } => {
-                regex.is_match(path.rsplit('/').next().unwrap_or(path))
-            }
+            Self::Wildcard {
+                regex,
+                whole_path: true,
+            } => regex.is_match(path),
+            Self::Wildcard {
+                regex,
+                whole_path: false,
+            } => regex.is_match(path.rsplit('/').next().unwrap_or(path)),
         }
     }
 }
@@ -153,14 +168,21 @@ pub fn search_workspace(root: &str, query: &SearchQuery) -> Result<TextSearchRes
     };
     let root_path = Path::new(root)
         .canonicalize()
-        .map_err(|error| format!("工作区不可用：{error}"))?;
+        .map_err(|error| tr!("工作区不可用：{error}", error = error))?;
     let globs = GlobSet {
         include: compile_patterns(&query.include),
         exclude: compile_patterns(&query.exclude),
     };
     let mut matches = Vec::new();
     let mut truncated = false;
-    walk(&root_path, query, &globs, &pattern, &mut matches, &mut truncated);
+    walk(
+        &root_path,
+        query,
+        &globs,
+        &pattern,
+        &mut matches,
+        &mut truncated,
+    );
     Ok(TextSearchResponse {
         matches,
         truncated,
@@ -276,7 +298,8 @@ fn preview_window(line: &str, start: usize, column: u32) -> (String, u32) {
     let end = ceil_char(line, (from + PREVIEW_LIMIT).min(line.len()));
     let prefix = if from > 0 { "…" } else { "" };
     let text = format!("{prefix}{}", &line[from..end]);
-    let preview_column = line[from..start].chars().count() as u32 + prefix.chars().count() as u32 + 1;
+    let preview_column =
+        line[from..start].chars().count() as u32 + prefix.chars().count() as u32 + 1;
     (text, preview_column)
 }
 
@@ -304,7 +327,8 @@ fn file_included(path: &str, use_excludes: bool, globs: &GlobSet) -> bool {
     if use_excludes && path.split('/').any(crate::files::hidden_in_search) {
         return false;
     }
-    let included = globs.include.is_empty() || globs.include.iter().any(|pattern| pattern.matches(path));
+    let included =
+        globs.include.is_empty() || globs.include.iter().any(|pattern| pattern.matches(path));
     included && !globs.exclude.iter().any(|pattern| pattern.matches(path))
 }
 
@@ -313,7 +337,11 @@ fn glob_source(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let mut index = 0;
     while index < chars.len() {
-        if chars[index] == '*' && index + 2 < chars.len() && chars[index + 1] == '*' && chars[index + 2] == '/' {
+        if chars[index] == '*'
+            && index + 2 < chars.len()
+            && chars[index + 1] == '*'
+            && chars[index + 2] == '/'
+        {
             source.push_str("(?:^|.*/)");
             index += 3;
             continue;
@@ -353,7 +381,7 @@ fn build_pattern(query: &SearchQuery) -> Result<Regex, String> {
     } else {
         format!("(?i){body}")
     };
-    Regex::new(&pattern).map_err(|error| format!("正则无效：{error}"))
+    Regex::new(&pattern).map_err(|error| tr!("正则无效：{error}", error = error))
 }
 
 #[cfg(test)]
@@ -439,7 +467,11 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(root.path(), root.path().join("loop")).unwrap();
         let response = search_workspace(root.path().to_str().unwrap(), &plain_query(None)).unwrap();
-        let paths: Vec<_> = response.matches.iter().map(|item| item.path.as_str()).collect();
+        let paths: Vec<_> = response
+            .matches
+            .iter()
+            .map(|item| item.path.as_str())
+            .collect();
         assert_eq!(paths, ["keep.ts"]);
     }
 
@@ -449,9 +481,17 @@ mod tests {
         fs::write(root.path().join("a.ts"), "Title\n").unwrap();
         let first = SearchTicket::begin("test-view");
         let second = SearchTicket::begin("test-view");
-        let stale = search_workspace(root.path().to_str().unwrap(), &plain_query(Some(first.flag()))).unwrap();
+        let stale = search_workspace(
+            root.path().to_str().unwrap(),
+            &plain_query(Some(first.flag())),
+        )
+        .unwrap();
         assert!(stale.matches.is_empty() && stale.truncated);
-        let fresh = search_workspace(root.path().to_str().unwrap(), &plain_query(Some(second.flag()))).unwrap();
+        let fresh = search_workspace(
+            root.path().to_str().unwrap(),
+            &plain_query(Some(second.flag())),
+        )
+        .unwrap();
         assert_eq!(fresh.matches.len(), 1);
         drop(first);
         assert!(active_searches().contains_key("test-view"));

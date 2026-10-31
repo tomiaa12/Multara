@@ -2,7 +2,7 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::models::{Task, TaskChecklistItem};
+use crate::models::{RunMode, Task, TaskChecklistItem};
 
 use super::{parse_task_status, require_agent, require_project};
 
@@ -15,11 +15,12 @@ pub struct CreateTaskInput<'a> {
     pub source_session_id: Option<&'a str>,
     pub status: Option<&'a str>,
     pub parent_task_id: Option<&'a str>,
+    pub requested_mode: RunMode,
 }
 
 const TASK_COLUMNS: &str = "t.id, t.session_id, t.title, t.description, t.agent_id, t.status,
                     t.created_at, t.updated_at, t.parent_task_id, t.priority,
-                    t.labels_json, t.checklist_json, t.pr_url";
+                    t.labels_json, t.checklist_json, t.pr_url, t.default_mode";
 
 fn parse_labels(raw: String) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&raw)
@@ -56,6 +57,11 @@ fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         labels: parse_labels(row.get::<_, String>(10).unwrap_or_else(|_| "[]".into())),
         checklist: parse_checklist(row.get::<_, String>(11).unwrap_or_else(|_| "[]".into())),
         pr_url: row.get::<_, String>(12).unwrap_or_default(),
+        default_mode: row
+            .get::<_, String>(13)
+            .unwrap_or_else(|_| "auto".into())
+            .parse()
+            .unwrap_or(RunMode::Auto),
     })
 }
 
@@ -68,7 +74,7 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
     let title = input.title.trim();
     let description = input.description.trim();
     if title.is_empty() {
-        return Err("任务标题不能为空".to_string());
+        return Err(tr!("任务标题不能为空"));
     }
     require_agent(db, input.agent_id)?;
     if let Some(parent_id) = input.parent_task_id {
@@ -80,7 +86,7 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             )
             .map_err(|error| error.to_string())?;
         if exists == 0 {
-            return Err("父任务不存在".to_string());
+            return Err(tr!("父任务不存在"));
         }
     }
     let status = parse_task_status(input.status.unwrap_or("todo"))?;
@@ -123,17 +129,24 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
     transaction
         .execute(
             "INSERT INTO chat_sessions
-             (id, project_id, title, target_type, target_id, created_at, updated_at)
-             VALUES (?1, ?2, ?3, 'agent', ?4, ?5, ?5)",
-            params![session_id, project_id, title, input.agent_id, now],
+             (id, project_id, title, target_type, target_id, created_at, updated_at, default_mode)
+             VALUES (?1, ?2, ?3, 'agent', ?4, ?5, ?5, ?6)",
+            params![
+                session_id,
+                project_id,
+                title,
+                input.agent_id,
+                now,
+                input.requested_mode.as_str()
+            ],
         )
         .map_err(|error| error.to_string())?;
     crate::session::replace_linked_projects(&transaction, &session_id, &unique_project_ids)?;
     transaction
         .execute(
             "INSERT INTO tasks
-             (id, session_id, title, description, agent_id, status, created_at, updated_at, parent_task_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
+             (id, session_id, title, description, agent_id, status, created_at, updated_at, parent_task_id, default_mode)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)",
             params![
                 task_id,
                 session_id,
@@ -142,13 +155,18 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
                 input.agent_id,
                 status,
                 now,
-                input.parent_task_id
+                input.parent_task_id,
+                input.requested_mode.as_str()
             ],
         )
         .map_err(|error| error.to_string())?;
     let queued = status == "todo";
     if queued {
-        let assignment = if description.is_empty() { title } else { description };
+        let assignment = if description.is_empty() {
+            title
+        } else {
+            description
+        };
         super::run::enqueue(
             &transaction,
             super::run::Enqueue {
@@ -159,12 +177,20 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
                 assignment,
                 status: "queued",
                 now: &now,
+                mode: input.requested_mode,
             },
         )?;
     }
     // 挂在父任务下时：在父会话写一条 @指派，详情动态里能看到队长/负责人派活。
     if let Some(parent_id) = input.parent_task_id {
-        let _ = record_parent_assignment(&transaction, parent_id, input.agent_id, title, &task_id, &now);
+        let _ = record_parent_assignment(
+            &transaction,
+            parent_id,
+            input.agent_id,
+            title,
+            &task_id,
+            &now,
+        );
     }
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(CreatedTask {
@@ -182,6 +208,7 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             labels: Vec::new(),
             checklist: Vec::new(),
             pr_url: String::new(),
+            default_mode: input.requested_mode,
         },
         queued,
     })
@@ -201,8 +228,12 @@ fn record_parent_assignment(
             [parent_task_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .map_err(|_| "父任务不存在".to_string())?;
-    let spoken = format!("请处理子任务「{child_title}」（`{child_id}`），完成后向我汇报。");
+        .map_err(|_| tr!("父任务不存在"))?;
+    let spoken = tr!(
+        "请处理子任务「{child_title}」（`{child_id}`），完成后向我汇报。",
+        child_title = child_title,
+        child_id = child_id
+    );
     db.execute(
         "INSERT INTO messages
          (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
@@ -271,7 +302,10 @@ pub fn maybe_resume_parent(
             [&parent_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
-        .map_err(|_| "父任务不存在".to_string())?;
+        .map_err(|_| tr!("父任务不存在"))?;
+    if crate::plan::latest_awaiting_plan(db, &parent_session)?.is_some() {
+        return Ok(None);
+    }
 
     let active: u32 = db
         .query_row(
@@ -307,16 +341,29 @@ pub fn maybe_resume_parent(
         for row in rows {
             let (id, title, status, agent_id) = row.map_err(|error| error.to_string())?;
             let name: String = db
-                .query_row("SELECT name FROM agents WHERE id=?1", [&agent_id], |r| r.get(0))
+                .query_row("SELECT name FROM agents WHERE id=?1", [&agent_id], |r| {
+                    r.get(0)
+                })
                 .unwrap_or(agent_id);
-            lines.push(format!("- [{status}] {title}（`{id}`，@{name}）"));
+            lines.push(tr!(
+                "- [{status}] {title}（`{id}`，@{name}）",
+                status = status,
+                title = title,
+                id = id,
+                name = name
+            ));
         }
     }
     let summary = lines.join("\n");
-    let assignment = format!(
+    let assignment = tr!(
         "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n\
          请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n\n\
-         子任务状态：\n{summary}"
+         子任务状态：\n{summary}",
+        child_title = child_title,
+        child_id = child_id,
+        parent_title = parent_title,
+        parent_id = parent_id,
+        summary = summary
     );
 
     let run_id = super::run::enqueue(
@@ -329,6 +376,7 @@ pub fn maybe_resume_parent(
             assignment: &assignment,
             status: "queued",
             now,
+            mode: RunMode::Auto,
         },
     )?;
     Ok(Some((run_id, parent_session, parent_agent)))
@@ -347,7 +395,7 @@ pub fn attach_existing_session(
 ) -> Result<Task, String> {
     let title = title.trim();
     if title.is_empty() {
-        return Err("任务标题不能为空".to_string());
+        return Err(tr!("任务标题不能为空"));
     }
     require_agent(db, agent_id)?;
     let status = parse_task_status(status)?;
@@ -370,7 +418,7 @@ pub fn attach_existing_session(
         )
         .map_err(|error| error.to_string())?;
     if !exists {
-        return Err("会话不存在".to_string());
+        return Err(tr!("会话不存在"));
     }
     let task_id = Uuid::new_v4().to_string();
     db.execute(
@@ -404,13 +452,23 @@ pub fn get(db: &Connection, task_id: &str) -> Result<Task, String> {
     )
     .optional()
     .map_err(|error| error.to_string())?
-    .ok_or_else(|| "任务不存在".to_string())
+    .ok_or_else(|| tr!("任务不存在"))
 }
 
 const IDLE_IN_PROGRESS: &str = "status='in_progress'
   AND NOT EXISTS (
     SELECT 1 FROM agent_runs r
     WHERE r.session_id = tasks.session_id AND r.status IN ('queued', 'running')
+  )";
+const WITHOUT_AWAITING_PLAN: &str = "NOT EXISTS (
+    SELECT 1 FROM run_events p
+    WHERE p.session_id=tasks.session_id AND p.event_type='plan'
+      AND NOT EXISTS (
+        SELECT 1 FROM run_events a
+        WHERE a.session_id=p.session_id AND a.event_type='plan_action'
+          AND json_extract(a.input_json, '$.planId')=json_extract(p.input_json, '$.planId')
+          AND json_extract(a.input_json, '$.revision')=json_extract(p.input_json, '$.revision')
+      )
   )";
 
 const LAST_RUN_STATUS: &str = "(
@@ -430,7 +488,8 @@ pub(crate) fn settle_finished(db: &Connection) -> Result<(), String> {
             &format!(
                 "SELECT EXISTS(
                    SELECT 1 FROM tasks
-                   WHERE {IDLE_IN_PROGRESS} AND {LAST_RUN_STATUS} IN ('completed', 'failed')
+                   WHERE {IDLE_IN_PROGRESS} AND {WITHOUT_AWAITING_PLAN}
+                     AND {LAST_RUN_STATUS} IN ('completed', 'failed')
                  )"
             ),
             [],
@@ -445,7 +504,8 @@ pub(crate) fn settle_finished(db: &Connection) -> Result<(), String> {
         db.execute(
             &format!(
                 "UPDATE tasks SET status=?1, updated_at=?2
-                 WHERE {IDLE_IN_PROGRESS} AND {LAST_RUN_STATUS} = ?3"
+                 WHERE {IDLE_IN_PROGRESS} AND {WITHOUT_AWAITING_PLAN}
+                   AND {LAST_RUN_STATUS} = ?3"
             ),
             params![next, now, last_run],
         )
@@ -456,7 +516,11 @@ pub(crate) fn settle_finished(db: &Connection) -> Result<(), String> {
 
 /// `ancestor_id` 沿 `parent_task_id` 往上能不能走到 `task_id`（包括两者相同）。
 /// `UNION` 去重，库里已有环时也会终止。
-fn parent_chain_contains(db: &Connection, ancestor_id: &str, task_id: &str) -> Result<bool, String> {
+fn parent_chain_contains(
+    db: &Connection,
+    ancestor_id: &str,
+    task_id: &str,
+) -> Result<bool, String> {
     db.query_row(
         "WITH RECURSIVE chain(id) AS (
            SELECT ?1
@@ -478,9 +542,8 @@ pub fn list(
     project_id: Option<&str>,
 ) -> Result<Vec<Task>, String> {
     let mut statement = db
-        .prepare(
-            &format!(
-                "SELECT {TASK_COLUMNS}
+        .prepare(&format!(
+            "SELECT {TASK_COLUMNS}
              FROM tasks t
              JOIN chat_sessions s ON s.id = t.session_id
              WHERE (?1 IS NULL OR t.status = ?1)
@@ -499,8 +562,7 @@ pub fn list(
                  )
                )
              ORDER BY t.updated_at DESC"
-            ),
-        )
+        ))
         .map_err(|error| error.to_string())?;
     let tasks = statement
         .query_map(params![status, assignee_id, project_id], map_task)
@@ -520,7 +582,7 @@ pub fn update_status(db: &Connection, task_id: &str, status: &str) -> Result<Vec
         )
         .map_err(|error| error.to_string())?;
     if updated == 0 {
-        return Err("任务不存在".to_string());
+        return Err(tr!("任务不存在"));
     }
     // 拖到待办只改列，不重新排队。否则 enqueue 会立刻把状态同步回进行中，卡片拖不过去。
     list(db, None, None, None)
@@ -530,13 +592,27 @@ pub fn update_status(db: &Connection, task_id: &str, status: &str) -> Result<Vec
 /// 不排队的话，下次打开看板 `settle_finished` 会因为最后一次 run 失败把它弹回待办。
 /// 只给 UI 用；智能体在自己的 run 里通过 CLI 改状态时已有活跃 run，不能再叠一条。
 pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
-    let (session_id, title, description, agent_id): (String, String, String, String) = db
+    let (session_id, title, description, agent_id, default_mode): (
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = db
         .query_row(
-            "SELECT session_id, title, description, agent_id FROM tasks WHERE id=?1",
+            "SELECT session_id, title, description, agent_id, default_mode FROM tasks WHERE id=?1",
             [task_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
-        .map_err(|_| "任务不存在".to_string())?;
+        .map_err(|_| tr!("任务不存在"))?;
     let active: u32 = db
         .query_row(
             "SELECT COUNT(*) FROM agent_runs
@@ -548,7 +624,11 @@ pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
     if active > 0 {
         return Ok(false);
     }
-    let assignment = if description.trim().is_empty() { title.as_str() } else { description.as_str() };
+    let assignment = if description.trim().is_empty() {
+        title.as_str()
+    } else {
+        description.as_str()
+    };
     let now = Utc::now().to_rfc3339();
     super::run::enqueue(
         db,
@@ -560,6 +640,7 @@ pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
             assignment,
             status: "queued",
             now: &now,
+            mode: default_mode.parse().unwrap_or(RunMode::Auto),
         },
     )?;
     Ok(true)
@@ -595,6 +676,17 @@ pub fn sync_from_run(
                 )
                 .unwrap_or(1);
             if active == 0 {
+                if run_status == "completed"
+                    && crate::plan::latest_awaiting_plan(db, session_id)?.is_some()
+                {
+                    db.execute(
+                        "UPDATE tasks SET status='blocked', updated_at=?1
+                         WHERE session_id=?2 AND status='in_progress'",
+                        params![now, session_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                    return Ok(());
+                }
                 let next = if run_status == "completed" {
                     "in_review"
                 } else {
@@ -622,7 +714,7 @@ pub fn assign(db: &Connection, task_id: &str, agent_id: &str) -> Result<Task, St
         )
         .map_err(|error| error.to_string())?;
     if updated == 0 {
-        return Err("任务不存在".to_string());
+        return Err(tr!("任务不存在"));
     }
     db.execute(
         "UPDATE chat_sessions SET target_type='agent', target_id=?1, updated_at=?2
@@ -636,7 +728,7 @@ pub fn assign(db: &Connection, task_id: &str, agent_id: &str) -> Result<Task, St
 pub fn comment(db: &Connection, task_id: &str, text: &str) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
-        return Err("评论不能为空".to_string());
+        return Err(tr!("评论不能为空"));
     }
     let session_id: String = db
         .query_row(
@@ -644,7 +736,7 @@ pub fn comment(db: &Connection, task_id: &str, text: &str) -> Result<(), String>
             [task_id],
             |row| row.get(0),
         )
-        .map_err(|_| "任务不存在".to_string())?;
+        .map_err(|_| tr!("任务不存在"))?;
     let now = Utc::now().to_rfc3339();
     db.execute(
         "INSERT INTO messages
@@ -668,7 +760,7 @@ pub fn runs(db: &Connection, task_id: &str) -> Result<serde_json::Value, String>
             [task_id],
             |row| row.get(0),
         )
-        .map_err(|_| "任务不存在".to_string())?;
+        .map_err(|_| tr!("任务不存在"))?;
     let mut statement = db
         .prepare(
             "SELECT id, agent_id, runtime_id, status, assignment, created_at
@@ -735,11 +827,11 @@ pub fn update_meta(
     }
     if let Some(parent) = parent_task_id {
         if parent == Some(task_id) {
-            return Err("任务不能作为自己的子任务".to_string());
+            return Err(tr!("任务不能作为自己的子任务"));
         }
         if let Some(parent_id) = parent {
             if parent_chain_contains(db, parent_id, task_id)? {
-                return Err("不能把任务挂到它自己的子任务下".to_string());
+                return Err(tr!("不能把任务挂到它自己的子任务下"));
             }
         }
         db.execute(
@@ -796,6 +888,7 @@ pub fn update(
 #[cfg(test)]
 mod tests {
     use super::{create, list, CreateTaskInput};
+    use crate::models::RunMode;
     use rusqlite::Connection;
 
     #[test]
@@ -817,25 +910,49 @@ mod tests {
         )
         .unwrap();
 
-        let queued = create(&mut db, CreateTaskInput {
-            title: "Parallel task", description: "", agent_id: "agent",
-            project_id: Some("project"), project_ids: &[], source_session_id: None,
-            status: Some("todo"), parent_task_id: None,
-        }).unwrap();
+        let queued = create(
+            &mut db,
+            CreateTaskInput {
+                title: "Parallel task",
+                description: "",
+                agent_id: "agent",
+                project_id: Some("project"),
+                project_ids: &[],
+                source_session_id: None,
+                status: Some("todo"),
+                parent_task_id: None,
+                requested_mode: RunMode::Auto,
+            },
+        )
+        .unwrap();
         assert!(queued.queued);
         assert!(!super::start_if_idle(&db, &queued.task.id).unwrap());
 
-        let backlog = create(&mut db, CreateTaskInput {
-            title: "Start later", description: "Task details", agent_id: "agent",
-            project_id: Some("project"), project_ids: &[], source_session_id: None,
-            status: Some("backlog"), parent_task_id: None,
-        }).unwrap();
+        let backlog = create(
+            &mut db,
+            CreateTaskInput {
+                title: "Start later",
+                description: "Task details",
+                agent_id: "agent",
+                project_id: Some("project"),
+                project_ids: &[],
+                source_session_id: None,
+                status: Some("backlog"),
+                parent_task_id: None,
+                requested_mode: RunMode::Auto,
+            },
+        )
+        .unwrap();
         assert!(!backlog.queued);
         assert!(super::start_if_idle(&db, &backlog.task.id).unwrap());
         assert!(!super::start_if_idle(&db, &backlog.task.id).unwrap());
-        let queued_count: i64 = db.query_row(
-            "SELECT COUNT(*) FROM agent_runs WHERE status='queued'", [], |row| row.get(0),
-        ).unwrap();
+        let queued_count: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM agent_runs WHERE status='queued'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(queued_count, 2);
     }
 
@@ -864,6 +981,7 @@ mod tests {
                 source_session_id: None,
                 status: Some("backlog"),
                 parent_task_id: None,
+                requested_mode: RunMode::Auto,
             },
         )
         .unwrap();
@@ -880,6 +998,46 @@ mod tests {
         assert_eq!(linked, ["p1", "p2"]);
         assert_eq!(list(&db, None, None, Some("p1")).unwrap().len(), 1);
         assert_eq!(list(&db, None, None, Some("p2")).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn plan_task_freezes_mode_on_task_session_and_first_run() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute(
+            "INSERT INTO agents
+             (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('a1', '智能体', '', '', '', 'claude', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        let created = create(
+            &mut db,
+            CreateTaskInput {
+                title: "先规划",
+                description: "给出方案",
+                agent_id: "a1",
+                project_id: None,
+                project_ids: &[],
+                source_session_id: None,
+                status: Some("todo"),
+                parent_task_id: None,
+                requested_mode: RunMode::Plan,
+            },
+        )
+        .unwrap();
+        let modes: (String, String, String) = db
+            .query_row(
+                "SELECT t.default_mode, s.default_mode, r.mode
+                 FROM tasks t
+                 JOIN chat_sessions s ON s.id=t.session_id
+                 JOIN agent_runs r ON r.session_id=s.id
+                 WHERE t.id=?1",
+                [&created.task.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(modes, ("plan".into(), "plan".into(), "plan".into()));
     }
 
     #[test]
@@ -901,21 +1059,22 @@ mod tests {
             source_session_id: None,
             status: Some("backlog"),
             parent_task_id: None,
+            requested_mode: RunMode::Auto,
         };
         let a = create(&mut db, input("A")).unwrap().task;
         let b = create(&mut db, input("B")).unwrap().task;
         super::update_meta(&db, &b.id, None, None, None, None, Some(Some(&a.id))).unwrap();
         let cycle = super::update_meta(&db, &a.id, None, None, None, None, Some(Some(&b.id)));
         assert!(cycle.is_err());
-        assert_eq!(super::get(&db, &b.id).unwrap().parent_task_id.as_deref(), Some(a.id.as_str()));
+        assert_eq!(
+            super::get(&db, &b.id).unwrap().parent_task_id.as_deref(),
+            Some(a.id.as_str())
+        );
         assert!(super::get(&db, "missing").is_err());
 
         super::settle_finished(&db).unwrap();
-        db.execute(
-            "UPDATE tasks SET status='in_progress' WHERE id=?1",
-            [&a.id],
-        )
-        .unwrap();
+        db.execute("UPDATE tasks SET status='in_progress' WHERE id=?1", [&a.id])
+            .unwrap();
         db.execute(
             "INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, assignment, status, created_at)
              VALUES ('r1', ?1, 'a1', 'cursor', 'A', 'completed', 'now')",
@@ -924,5 +1083,58 @@ mod tests {
         .unwrap();
         super::settle_finished(&db).unwrap();
         assert_eq!(super::get(&db, &a.id).unwrap().status, "in_review");
+    }
+
+    #[test]
+    fn completed_plan_run_waits_for_approval() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute(
+            "INSERT INTO agents
+             (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('a1', '智能体', '', '', '', 'claude', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        let task = create(
+            &mut db,
+            CreateTaskInput {
+                title: "规划任务",
+                description: "先规划",
+                agent_id: "a1",
+                project_id: None,
+                project_ids: &[],
+                source_session_id: None,
+                status: Some("todo"),
+                parent_task_id: None,
+                requested_mode: RunMode::Plan,
+            },
+        )
+        .unwrap()
+        .task;
+        let run_id: String = db
+            .query_row(
+                "SELECT id FROM agent_runs WHERE session_id=?1",
+                [&task.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        db.execute(
+            "UPDATE agent_runs SET status='completed' WHERE id=?1",
+            [&run_id],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO run_events
+             (id, run_id, session_id, seq, event_type, input_json, created_at)
+             VALUES ('plan-event', ?1, ?2, 1, 'plan',
+                     '{\"planId\":\"p1\",\"revision\":1,\"title\":\"方案\"}', 'now')",
+            rusqlite::params![run_id, task.session_id],
+        )
+        .unwrap();
+        super::sync_from_run(&db, &task.session_id, "completed", "later").unwrap();
+        assert_eq!(super::get(&db, &task.id).unwrap().status, "blocked");
+        super::settle_finished(&db).unwrap();
+        assert_eq!(super::get(&db, &task.id).unwrap().status, "blocked");
     }
 }
