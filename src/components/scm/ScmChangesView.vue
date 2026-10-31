@@ -408,8 +408,7 @@ function onPrimary() {
           <Codicon v-if="branchBusy" name="loading" spin :size="16" />
           <span>{{ branchBar.label }}</span>
         </button></UiTooltip>
-        <UiTooltip :content="syncBusy ? t('scm.syncing') : syncBar.tooltip"><button
-          v-if="syncBar"
+        <UiTooltip v-if="syncBar" :content="syncBusy ? t('scm.syncing') : syncBar.tooltip"><button
           type="button"
           class="scm-status-action"
          
