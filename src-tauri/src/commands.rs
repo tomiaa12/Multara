@@ -2882,6 +2882,8 @@ fn save_settings_rows(
             "genApiModel",
             "genApiKey",
             "permissionMode",
+            "dictationEnabled",
+            "dictationLanguage",
         ]
         .contains(&key.as_str())
         {
@@ -4128,6 +4130,66 @@ pub fn open_message_attachment(
         .spawn()
         .map_err(|error| tr!("打开附件失败：{error}", error = error))?;
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationEnvironment {
+    pub supported: bool,
+    /// 不可用时的原因代码，前端据此显示说明。
+    pub reason: Option<&'static str>,
+}
+
+/// 系统听写在 macOS 上要向 TCC 申请「麦克风」和「语音识别」权限。
+/// 权限校验看的是**责任进程**的 Info.plist：用 `tauri dev` 从终端 / 编辑器启动时责任进程是终端或 Cursor，
+/// 它们没有 `NSSpeechRecognitionUsageDescription`，一点麦克风系统就会直接杀掉整个应用（TCC 崩溃，SIGABRT）。
+/// 所以只有从打包后的 .app 里运行、且其 Info.plist 带有这两个说明时才允许使用。
+#[tauri::command]
+pub fn dictation_environment() -> DictationEnvironment {
+    #[cfg(target_os = "macos")]
+    {
+        return macos_dictation_environment();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        DictationEnvironment {
+            supported: true,
+            reason: None,
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_dictation_environment() -> DictationEnvironment {
+    let unsupported = |reason| DictationEnvironment {
+        supported: false,
+        reason: Some(reason),
+    };
+    let Ok(exe) = std::env::current_exe() else {
+        return unsupported("noBundle");
+    };
+    // <名称>.app/Contents/MacOS/<可执行文件>
+    let Some(contents) = exe.parent().and_then(|dir| dir.parent()) else {
+        return unsupported("noBundle");
+    };
+    let in_app_bundle = contents.file_name().is_some_and(|name| name == "Contents")
+        && contents
+            .parent()
+            .and_then(|app| app.extension())
+            .is_some_and(|ext| ext == "app");
+    if !in_app_bundle {
+        return unsupported("devBuild");
+    }
+    let plist = std::fs::read_to_string(contents.join("Info.plist")).unwrap_or_default();
+    if !(plist.contains("NSMicrophoneUsageDescription")
+        && plist.contains("NSSpeechRecognitionUsageDescription"))
+    {
+        return unsupported("missingUsageDescription");
+    }
+    DictationEnvironment {
+        supported: true,
+        reason: None,
+    }
 }
 
 #[tauri::command]

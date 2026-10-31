@@ -2,6 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { ArrowUp } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
+import MicButton from "../dictation/MicButton.vue";
+import { dictationService } from "../../dictation/dictation-service";
+import { useDictationStore } from "../../stores/dictation";
 import ChatComposerField from "./ChatComposerField.vue";
 import ComposerSuggestMenu, {
   type ComposerSuggestCategoryItem,
@@ -56,6 +59,8 @@ const props = withDefaults(defineProps<{
   allowFilePicker?: boolean;
   /** 传入会话 id 时显示模式选择与计划提示行（只读 / 预览场景不传）。 */
   modeSessionId?: string;
+  /** 主输入框开启系统听写；历史气泡等不要传。 */
+  dictation?: boolean;
 }>(), {
   modeSessionId: "",
   targetValue: "",
@@ -69,6 +74,7 @@ const props = withDefaults(defineProps<{
   embedded: false,
   sessionCommands: false,
   allowFilePicker: false,
+  dictation: false,
 });
 
 const emit = defineEmits<{
@@ -82,7 +88,10 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
+const dictationStore = useDictationStore();
+const dictationTargetId = `composer-${crypto.randomUUID()}`;
 const rootEl = ref<HTMLElement | null>(null);
+const showDictation = computed(() => props.dictation && dictationStore.visible && !props.disabled);
 const dropOver = ref(false);
 const suggestTrigger = ref<ComposerTrigger | null>(null);
 const suggestMenu = ref<{ handleKeydown: (event: KeyboardEvent) => boolean } | null>(null);
@@ -312,7 +321,17 @@ const field = ref<{
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
   isEmpty: () => boolean;
   beginExternalDrop: () => void;
+  getEditorEl: () => HTMLElement | null;
+  notifyChange: () => void;
+  isComposing: () => boolean;
 } | null>(null);
+
+async function onSubmit() {
+  if (showDictation.value) {
+    await dictationService.stopBeforeSubmit(dictationTargetId);
+  }
+  emit("submit");
+}
 
 const selectedTarget = computed({
   get: () => props.targetValue,
@@ -344,7 +363,7 @@ defineExpose({
     class="chat-composer"
     data-workspace-drop="composer"
     :class="{ 'footer-on-focus': footerMode === 'focus', 'is-drop-over': dropOver, 'is-disabled': disabled }"
-    @submit.prevent="emit('submit')"
+    @submit.prevent="onSubmit"
     @keydown.capture="onComposerKeydown"
     @dragover.capture="onDragOver"
     @dragleave="onDragLeave"
@@ -374,7 +393,7 @@ defineExpose({
       :contexts="contexts"
       :disabled="disabled"
       @change="onComposerChange"
-      @submit="emit('submit')"
+      @submit="onSubmit"
       @paste-image="emit('paste-image', $event)"
     />
     <div class="composer-footer">
@@ -400,6 +419,13 @@ defineExpose({
       <slot name="tools" />
       <div class="composer-actions">
         <ContextUsageButton v-if="showContextUsage" :placement="usagePlacement" />
+        <MicButton
+          v-if="showDictation"
+          :target-id="dictationTargetId"
+          :get-editor="() => field?.getEditorEl() ?? null"
+          :notify-change="() => field?.notifyChange()"
+          :is-composing="() => field?.isComposing() ?? false"
+        />
         <slot name="actions">
           <UiButton class="ds-send-button send-button" type="submit" :disabled="disabled || !canSend" tip="发送">
             <ArrowUp :size="16" />

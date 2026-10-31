@@ -4,6 +4,7 @@ import { t } from "../i18n";
 import { Maximize2, MessageCircle, Minimize2, Minus } from "@lucide/vue";
 import { useRoute } from "vue-router";
 import ChatPanel from "./ChatPanel.vue";
+import { dictationService } from "../dictation/dictation-service";
 import { useAppStore } from "../stores/app";
 
 const props = defineProps<{
@@ -21,8 +22,15 @@ watch(
   () => store.chatOpen,
   (open) => {
     if (open) retained.value = true;
+    else void dictationService.stop();
   },
   { immediate: true },
+);
+watch(
+  () => props.hidden,
+  (hidden) => {
+    if (hidden) void dictationService.stop();
+  },
 );
 /** host 已在 hidden 时整体 v-show=false；此处只区分面板 / FAB */
 const panelOpen = computed(() => store.chatOpen);

@@ -1645,6 +1645,7 @@ defineExpose({
       <ChatComposer
         :key="session?.id ?? 'none'"
         ref="composerInput"
+        dictation
         :placeholder="composerPlaceholder"
         :initial-nodes="composerDraft"
         :contexts="composerContexts"

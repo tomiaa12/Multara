@@ -630,6 +630,9 @@ defineExpose({
   serialize,
   isEmpty,
   beginExternalDrop,
+  getEditorEl: () => editor.value,
+  notifyChange: () => emitChange(),
+  isComposing: () => ime.isComposing(),
 });
 </script>
 

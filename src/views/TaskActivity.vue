@@ -336,6 +336,7 @@ watch(
     />
     <ChatComposer
       ref="composer"
+      dictation
       :placeholder="t('tasks.activityReply')"
       :initial-nodes="emptyNodes"
       :contexts="[]"

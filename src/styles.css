@@ -1805,6 +1805,76 @@ textarea:not(.inputarea) {
 .chat-composer .composer-actions .ui-button {
   border-radius: 50%;
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.dictation-mic-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+.dictation-mic.is-recording {
+  color: var(--color-danger, #e5484d);
+  animation: dictation-pulse 1.2s ease-in-out infinite;
+}
+.dictation-mic.is-busy {
+  opacity: 0.8;
+}
+@keyframes dictation-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.composer-field .dictation-interim {
+  color: var(--color-text-tertiary);
+}
+.dictation-onboarding .dictation-privacy,
+.dictation-onboarding .dictation-probe {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+.dictation-onboarding .dictation-probe.is-error {
+  color: var(--color-danger, #e5484d);
+}
+.dictation-level {
+  height: 6px;
+  margin: 12px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+.dictation-level > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: var(--color-primary);
+}
+.dictation-devices {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.settings-card > .settings-hint {
+  margin: 0;
+  padding: var(--spacing-4);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
 .process-stream {
   display: grid;
   justify-items: start;
