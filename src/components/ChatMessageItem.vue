@@ -26,8 +26,13 @@ const props = withDefaults(defineProps<{
   restoreMessageId?: string;
   turnRunning?: boolean;
   questionState?: "pending" | "answered" | "skipped" | null;
+  defaultCollapseSubagents?: boolean;
+  /** 窄布局（右下角气泡）：计划卡片只显示摘要 */
+  compact?: boolean;
 }>(), {
   questionState: null,
+  defaultCollapseSubagents: false,
+  compact: false,
   duplicateCount: 1,
   targetLabel: "智能体",
   targetAvatar: "M",
@@ -123,6 +128,8 @@ function startReask(
     :allow-continue="allowContinue"
     :allow-fork="allowFork"
     :question-state="questionState"
+    :default-collapse-subagents="defaultCollapseSubagents"
+    :compact="compact"
     @pick-action="emit('pick-action', $event)"
   />
 </template>

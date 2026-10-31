@@ -62,7 +62,10 @@ pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
         .map_err(|error| error.to_string())?
         .try_for_each(|row| {
             let (agent_id, resource_id, kind) = row?;
-            assigned.entry(agent_id).or_default().push((resource_id, kind));
+            assigned
+                .entry(agent_id)
+                .or_default()
+                .push((resource_id, kind));
             Ok::<_, rusqlite::Error>(())
         })
         .map_err(|error| error.to_string())?;
@@ -82,7 +85,7 @@ pub fn get(db: &Connection, agent_id: &str) -> Result<Agent, String> {
     list(db)?
         .into_iter()
         .find(|agent| agent.id == agent_id)
-        .ok_or_else(|| "智能体不存在".to_string())
+        .ok_or_else(|| tr!("智能体不存在"))
 }
 
 pub fn system_key(db: &Connection, agent_id: &str) -> Result<Option<String>, String> {
@@ -93,7 +96,7 @@ pub fn system_key(db: &Connection, agent_id: &str) -> Result<Option<String>, Str
     )
     .optional()
     .map_err(|error| error.to_string())?
-    .ok_or_else(|| "智能体不存在".to_string())
+    .ok_or_else(|| tr!("智能体不存在"))
 }
 
 pub fn save(
@@ -103,17 +106,17 @@ pub fn save(
 ) -> Result<Vec<Agent>, String> {
     let name = input.name.trim();
     if name.is_empty() {
-        return Err("智能体名称不能为空".to_string());
+        return Err(tr!("智能体名称不能为空"));
     }
     if !(1..=6).contains(&input.max_concurrent_tasks) {
-        return Err("智能体并发必须在 1 到 6 之间".to_string());
+        return Err(tr!("智能体并发必须在 1 到 6 之间"));
     }
     let id = input
         .id
         .clone()
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     if id == MIKU_SYSTEM_KEY && input.id.is_none() {
-        return Err("不能创建与总管相同的标识".to_string());
+        return Err(tr!("不能创建与总管相同的标识"));
     }
     let existing_key = db
         .query_row("SELECT system_key FROM agents WHERE id=?1", [&id], |row| {
@@ -123,7 +126,7 @@ pub fn save(
         .map_err(|error| error.to_string())?
         .flatten();
     if existing_key.as_deref() == Some(MIKU_SYSTEM_KEY) && id != crate::builtin_agents::MIKU_ID {
-        return Err("不能修改总管身份".to_string());
+        return Err(tr!("不能修改总管身份"));
     }
     let existing_runtime: Option<String> = db
         .query_row("SELECT runtime_id FROM agents WHERE id=?1", [&id], |row| {
@@ -150,7 +153,7 @@ pub fn save(
             !require_online || runtime::resolve_runtime_command(&command, &provider).is_some()
         });
     if !runtime_ok {
-        return Err("请选择本机已检测到的运行时".to_string());
+        return Err(tr!("请选择本机已检测到的运行时"));
     }
 
     let is_miku = builtin_agents::is_miku_key(existing_key.as_deref())
@@ -209,10 +212,10 @@ pub fn save(
 pub fn delete(db: &Connection, agent_id: &str) -> Result<Vec<Agent>, String> {
     let key = system_key(db, agent_id)?;
     if builtin_agents::is_miku_key(key.as_deref()) {
-        return Err("Miku 是产品总管，不能删除".to_string());
+        return Err(tr!("Miku 是产品总管，不能删除"));
     }
     db.execute("DELETE FROM agents WHERE id = ?1", [agent_id])
-        .map_err(|error| format!("该智能体仍被小队或历史任务使用，无法删除：{error}"))?;
+        .map_err(|error| tr!("该智能体仍被小队或历史任务使用，无法删除：{error}", error = error))?;
     list(db)
 }
 

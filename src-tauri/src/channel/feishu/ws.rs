@@ -30,13 +30,14 @@ pub struct WsConn {
 
 impl WsConn {
     pub fn connect(url: &str, timeout: Duration) -> Result<WsConn, String> {
-        let parsed = url::Url::parse(url).map_err(|error| format!("长连接地址无效：{error}"))?;
+        let parsed = url::Url::parse(url)
+            .map_err(|error| tr!("长连接地址无效：{error}", error = error))?;
         if parsed.scheme() != "wss" {
-            return Err("长连接只支持 wss".to_string());
+            return Err(tr!("长连接只支持 wss"));
         }
         let host = parsed
             .host_str()
-            .ok_or_else(|| "长连接地址缺少主机".to_string())?
+            .ok_or_else(|| tr!("长连接地址缺少主机"))?
             .to_string();
         let port = parsed.port_or_known_default().unwrap_or(443);
         let mut path = parsed.path().to_string();
@@ -50,12 +51,12 @@ impl WsConn {
 
         let mut addrs = (host.as_str(), port)
             .to_socket_addrs()
-            .map_err(|error| format!("无法解析长连接主机：{error}"))?;
+            .map_err(|error| tr!("无法解析长连接主机：{error}", error = error))?;
         let address = addrs
             .next()
-            .ok_or_else(|| "长连接主机没有可用地址".to_string())?;
+            .ok_or_else(|| tr!("长连接主机没有可用地址"))?;
         let tcp = TcpStream::connect_timeout(&address, timeout)
-            .map_err(|error| format!("连接长连接网关失败：{error}"))?;
+            .map_err(|error| tr!("连接长连接网关失败：{error}", error = error))?;
         let _ = tcp.set_nodelay(true);
         tcp.set_read_timeout(Some(Duration::from_secs(15)))
             .map_err(|error| error.to_string())?;
@@ -63,8 +64,8 @@ impl WsConn {
             .map_err(|error| error.to_string())?;
 
         let config = rustls_config()?;
-        let server_name = ServerName::try_from(host.clone())
-            .map_err(|_| "无效的 TLS 主机名".to_string())?;
+        let server_name =
+            ServerName::try_from(host.clone()).map_err(|_| tr!("无效的 TLS 主机名"))?;
         let connection =
             ClientConnection::new(config, server_name).map_err(|error| error.to_string())?;
         let mut stream = StreamOwned {
@@ -76,7 +77,7 @@ impl WsConn {
             stream
                 .conn
                 .complete_io(&mut stream.sock)
-                .map_err(|error| format!("TLS 握手失败：{error}"))?;
+                .map_err(|error| tr!("TLS 握手失败：{error}", error = error))?;
         }
         handshake_stream(&mut stream, &host, port, &path)?;
         let _ = stream.sock.set_read_timeout(Some(Duration::from_secs(2)));
@@ -121,7 +122,7 @@ impl WsConn {
                         self.pending = Some(frame.opcode);
                     }
                     0x8 => {
-                        return Err(WsError::Closed("对端关闭了长连接".to_string()));
+                        return Err(WsError::Closed(tr!("对端关闭了长连接")));
                     }
                     0x9 => {
                         let payload = frame.payload;
@@ -143,7 +144,7 @@ impl WsConn {
             let mut chunk = [0u8; 16 * 1024];
             match self.stream.read(&mut chunk) {
                 Ok(0) => {
-                    return Err(WsError::Closed("长连接被对端关闭".to_string()));
+                    return Err(WsError::Closed(tr!("长连接被对端关闭")));
                 }
                 Ok(read) => self.buffer.extend_from_slice(&chunk[..read]),
                 Err(error)
@@ -157,7 +158,7 @@ impl WsConn {
                 Err(error) => return Err(WsError::Closed(error.to_string())),
             }
             if self.buffer.len() > MAX_FRAME_BYTES {
-                return Err(WsError::Closed("长连接帧过大".to_string()));
+                return Err(WsError::Closed(tr!("长连接帧过大")));
             }
         }
     }
@@ -184,10 +185,10 @@ impl WsConn {
         );
         self.stream
             .write_all(&frame)
-            .map_err(|error| format!("写入长连接失败：{error}"))?;
+            .map_err(|error| tr!("写入长连接失败：{error}", error = error))?;
         self.stream
             .flush()
-            .map_err(|error| format!("刷新长连接失败：{error}"))
+            .map_err(|error| tr!("刷新长连接失败：{error}", error = error))
     }
 }
 
@@ -232,7 +233,7 @@ fn parse_frame(buffer: &[u8]) -> Result<Option<ParsedFrame>, WsError> {
         value => value,
     };
     if length > MAX_FRAME_BYTES {
-        return Err(WsError::Closed("长连接帧过大".to_string()));
+        return Err(WsError::Closed(tr!("长连接帧过大")));
     }
     let mask = if masked {
         if buffer.len() < offset + 4 {
@@ -291,7 +292,7 @@ fn handshake_stream<S: Read + Write>(
     );
     stream
         .write_all(request.as_bytes())
-        .map_err(|error| format!("发送 WebSocket 握手失败：{error}"))?;
+        .map_err(|error| tr!("发送 WebSocket 握手失败：{error}", error = error))?;
     stream.flush().map_err(|error| error.to_string())?;
 
     let mut response = Vec::new();
@@ -299,23 +300,23 @@ fn handshake_stream<S: Read + Write>(
     loop {
         let read = stream
             .read(&mut chunk)
-            .map_err(|error| format!("读取 WebSocket 握手响应失败：{error}"))?;
+            .map_err(|error| tr!("读取 WebSocket 握手响应失败：{error}", error = error))?;
         if read == 0 {
-            return Err("WebSocket 握手被对端关闭".to_string());
+            return Err(tr!("WebSocket 握手被对端关闭"));
         }
         response.extend_from_slice(&chunk[..read]);
         if response.windows(4).any(|window| window == b"\r\n\r\n") {
             break;
         }
         if response.len() > 16 * 1024 {
-            return Err("WebSocket 握手响应过大".to_string());
+            return Err(tr!("WebSocket 握手响应过大"));
         }
     }
     let text = String::from_utf8_lossy(&response);
     if !text.starts_with("HTTP/1.1 101") && !text.starts_with("HTTP/1.0 101") {
-        return Err(format!(
-            "长连接网关拒绝了握手：{}",
-            text.lines().next().unwrap_or("").trim()
+        return Err(tr!(
+            "长连接网关拒绝了握手：{status}",
+            status = text.lines().next().unwrap_or("").trim()
         ));
     }
     Ok(())
@@ -327,7 +328,7 @@ fn rustls_config() -> Result<std::sync::Arc<rustls::ClientConfig>, String> {
         let _ = rustls::crypto::ring::default_provider().install_default();
     });
     let config = rustls::ClientConfig::with_platform_verifier()
-        .map_err(|error| format!("初始化 TLS 失败：{error}"))?;
+        .map_err(|error| tr!("初始化 TLS 失败：{error}", error = error))?;
     Ok(std::sync::Arc::new(config))
 }
 

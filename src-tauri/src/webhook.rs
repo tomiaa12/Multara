@@ -81,7 +81,10 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
     let event = request_header(&request, "X-Multara-Event");
     let signature = request_header(&request, "X-Multara-Signature");
     let dedupe_key = request_header(&request, "X-Multara-Delivery");
-    if request.body_length().is_some_and(|length| length > MAX_BODY_BYTES) {
+    if request
+        .body_length()
+        .is_some_and(|length| length > MAX_BODY_BYTES)
+    {
         respond(request, 413, r#"{"error":"payload_too_large"}"#);
         return;
     }
@@ -118,10 +121,14 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
         signature,
     };
     match process_automation_webhook(input, app) {
-        Ok(status) => respond(request, 202, &serde_json::json!({ "status": status }).to_string()),
+        Ok(status) => respond(
+            request,
+            202,
+            &serde_json::json!({ "status": status }).to_string(),
+        ),
         Err(error) => respond(
             request,
-            if error.contains("签名") || error.contains("token") {
+            if is_auth_error(&error) {
                 401
             } else {
                 400
@@ -129,6 +136,18 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
             &error_body(&error),
         ),
     }
+}
+
+/// 错误文案已按界面语言翻译，只能和同样翻译过的原文逐条比对
+fn is_auth_error(error: &str) -> bool {
+    [
+        tr!("Webhook 缺少签名"),
+        tr!("Webhook 签名格式无效"),
+        tr!("Webhook 签名校验失败"),
+        tr!("Webhook token 无效或触发器已停用"),
+    ]
+    .iter()
+    .any(|text| text == error)
 }
 
 fn request_header(request: &tiny_http::Request, name: &'static str) -> Option<String> {

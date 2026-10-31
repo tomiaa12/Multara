@@ -1,4 +1,6 @@
 export type RuntimeStatus = "online" | "offline" | "not_found";
+export type RunMode = "auto" | "plan" | "agent";
+export type PlanActionKind = "approve" | "refine" | "reject";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "stopped";
 export type ResourceKind = "skill" | "mcp";
 
@@ -133,6 +135,20 @@ export interface Runtime {
   models?: string[];
   kind?: "builtin" | "profile" | "gateway" | string;
   description?: string;
+  /** 旧后端没有这一项时按「只支持 auto / agent」处理 */
+  capabilities?: RuntimeCapabilities;
+}
+
+export interface RuntimeCapabilities {
+  requestedModes: RunMode[];
+  autoPlan?: boolean;
+  observableModeChanges: boolean;
+  interactiveModeSwitch: boolean;
+  structuredPlan: boolean;
+  nativeSubagents: boolean;
+  nestedSubagents: boolean;
+  /** i18n key（如 runtimeNoNativePlan / acpModesUnknown），也可能是后端给的中文短句 */
+  planUnsupportedReason?: string;
 }
 
 export interface CustomRuntimeInput {
@@ -224,6 +240,7 @@ export interface ChatSession {
   targetId: string;
   createdAt: string;
   updatedAt: string;
+  defaultMode?: RunMode;
 }
 
 export type TaskStatus =
@@ -257,6 +274,7 @@ export interface Task {
   labels?: string[];
   checklist?: TaskChecklistItem[];
   prUrl?: string;
+  defaultMode?: RunMode;
 }
 
 export interface TaskInput {
@@ -268,6 +286,8 @@ export interface TaskInput {
   status?: TaskStatus;
   sourceSessionId?: string | null;
   parentTaskId?: string | null;
+  /** 第一轮的模式；创建入口只允许 auto / plan */
+  requestedMode?: Extract<RunMode, "auto" | "plan">;
 }
 
 export interface TaskRunRecord {
@@ -307,6 +327,7 @@ export interface ChatMessage {
   messageKind: "message" | "no_response" | "assignment";
   quickActions: QuickAction[];
   timeline: TimelineItem[];
+  truncatedBefore?: number;
   attachments: MessageAttachment[];
   createdAt: string;
   feedback?: "up" | "down" | null;
@@ -318,9 +339,25 @@ export interface ChatMessage {
     cacheReadTokens: number;
     cacheWriteTokens: number;
   } | null;
+  /** 用户消息发送时选的模式 */
+  requestedMode?: RunMode | null;
+  /** 助手消息对应运行的实际模式 */
+  runMode?: RunMode | null;
 }
 
-export type TimelineItemType = "text" | "thinking" | "tool_use" | "tool_result" | "error" | "plan" | "permission";
+export type TimelineItemType =
+  | "text"
+  | "thinking"
+  | "tool_use"
+  | "tool_result"
+  | "error"
+  | "plan"
+  | "permission"
+  | "mode_change"
+  | "todo"
+  | "agent_start"
+  | "agent_end"
+  | "plan_action";
 
 export interface TimelineItem {
   seq: number;
@@ -334,6 +371,20 @@ export interface TimelineItem {
   replacesFinalText?: boolean;
   parentCallId?: string | null;
   status?: string | null;
+}
+
+export interface PlanActionInput {
+  sessionId: string;
+  planRunId: string;
+  planId: string;
+  revision: number;
+  action: PlanActionKind;
+  feedback?: string;
+}
+
+export interface PlanActionResult {
+  messages: ChatMessage[];
+  duplicated: boolean;
 }
 
 export interface QuickAction {

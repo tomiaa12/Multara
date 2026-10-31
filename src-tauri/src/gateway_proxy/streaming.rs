@@ -405,7 +405,10 @@ fn read_event<R: BufRead>(reader: &mut R) -> std::io::Result<Option<(String, Str
         let mut line = String::new();
         let read = Read::take(&mut *reader, (MAX_EVENT_BYTES + 1) as u64).read_line(&mut line)?;
         if line.len() + data.len() > MAX_EVENT_BYTES {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "上游事件过大"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                tr!("上游事件过大"),
+            ));
         }
         if read == 0 {
             return if data.is_empty() {
@@ -551,7 +554,9 @@ fn extract_delta(format: ApiFormat, event: &str, value: &Value) -> Delta {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
-                tool_start: tool.get("id").is_some_and(|id| id.as_str().is_some_and(|id| !id.is_empty())),
+                tool_start: tool
+                    .get("id")
+                    .is_some_and(|id| id.as_str().is_some_and(|id| !id.is_empty())),
                 tool_continuation_check: true,
                 tool_upstream_index: tool.get("index").and_then(Value::as_u64),
                 done: value

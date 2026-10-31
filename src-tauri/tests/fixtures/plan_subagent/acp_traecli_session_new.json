@@ -1,0 +1,218 @@
+{
+ "summary": {
+  "runtime": "traecli",
+  "cmd": [
+   "traecli",
+   "acp",
+   "serve",
+   "--yolo"
+  ],
+  "initialize": {
+   "protocolVersion": 1,
+   "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+     "image": true,
+     "audio": false,
+     "embeddedContext": true
+    },
+    "mcpCapabilities": {
+     "http": true,
+     "sse": false,
+     "acp": false
+    },
+    "sessionCapabilities": {
+     "list": {},
+     "additionalDirectories": {},
+     "fork": {},
+     "resume": {},
+     "close": {}
+    },
+    "auth": {
+     "logout": {}
+    },
+    "_meta": {
+     "trae": {
+      "options": {
+       "mcpServers": {
+        "values": "configured-mcp-server-names",
+        "semantics": "replace",
+        "optional": true,
+        "scope": "model-visible-tools",
+        "connectionLifecycle": "unchanged"
+       },
+       "skills": {
+        "values": "canonical-skill-names",
+        "semantics": "replace",
+        "default": "all"
+       }
+      }
+     }
+    }
+   },
+   "authMethods": [
+    {
+     "id": "trae-tob-browser",
+     "name": "Sign in with Enterprise SSO",
+     "description": "Open your TRAE enterprise browser login"
+    },
+    {
+     "id": "trae-tob-pat",
+     "name": "Sign in with Personal Access Token",
+     "description": "Requires `TRAECLI_PERSONAL_ACCESS_TOKEN` to be set before starting TRAE CLI."
+    }
+   ],
+   "agentInfo": {
+    "name": "traecli-acp",
+    "title": "TRAE CLI",
+    "version": "0.209.1"
+   },
+   "_meta": {
+    "steering": {
+     "supported": true
+    },
+    "jetbrains": {
+     "air": {
+      "version": 1,
+      "capabilities": [
+       "asyncTasks"
+      ]
+     }
+    },
+    "trae": {
+     "acpBackend": "legacy"
+    }
+   }
+  },
+  "session_new": {
+   "code": -32000,
+   "message": "Authentication required"
+  },
+  "stderr_head": ""
+ },
+ "traffic": [
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "protocolVersion": 1,
+     "clientCapabilities": {},
+     "clientInfo": {
+      "name": "multara",
+      "version": "0.1.0"
+     }
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "protocolVersion": 1,
+     "agentCapabilities": {
+      "loadSession": true,
+      "promptCapabilities": {
+       "image": true,
+       "audio": false,
+       "embeddedContext": true
+      },
+      "mcpCapabilities": {
+       "http": true,
+       "sse": false,
+       "acp": false
+      },
+      "sessionCapabilities": {
+       "list": {},
+       "additionalDirectories": {},
+       "fork": {},
+       "resume": {},
+       "close": {}
+      },
+      "auth": {
+       "logout": {}
+      },
+      "_meta": {
+       "trae": {
+        "options": {
+         "mcpServers": {
+          "values": "configured-mcp-server-names",
+          "semantics": "replace",
+          "optional": true,
+          "scope": "model-visible-tools",
+          "connectionLifecycle": "unchanged"
+         },
+         "skills": {
+          "values": "canonical-skill-names",
+          "semantics": "replace",
+          "default": "all"
+         }
+        }
+       }
+      }
+     },
+     "authMethods": [
+      {
+       "id": "trae-tob-browser",
+       "name": "Sign in with Enterprise SSO",
+       "description": "Open your TRAE enterprise browser login"
+      },
+      {
+       "id": "trae-tob-pat",
+       "name": "Sign in with Personal Access Token",
+       "description": "Requires `TRAECLI_PERSONAL_ACCESS_TOKEN` to be set before starting TRAE CLI."
+      }
+     ],
+     "agentInfo": {
+      "name": "traecli-acp",
+      "title": "TRAE CLI",
+      "version": "0.209.1"
+     },
+     "_meta": {
+      "steering": {
+       "supported": true
+      },
+      "jetbrains": {
+       "air": {
+        "version": 1,
+        "capabilities": [
+         "asyncTasks"
+        ]
+       }
+      },
+      "trae": {
+       "acpBackend": "legacy"
+      }
+     }
+    }
+   }
+  },
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "session/new",
+    "params": {
+     "cwd": "/private/var/folders/yx/rpctnck94dvfnh5k59fk0py80000gn/T/multara-acp-xrlyeog3",
+     "mcpServers": []
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+     "code": -32000,
+     "message": "Authentication required"
+    }
+   }
+  }
+ ]
+}

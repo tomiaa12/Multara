@@ -1,0 +1,458 @@
+{
+  "运行时已退出，退出码 {code}": {
+    "en": "The runtime exited with code {code}",
+    "zh-TW": "執行環境已結束，結束代碼 {code}",
+    "ja": "ランタイムが終了しました（終了コード {code}）",
+    "ko": "런타임이 종료되었습니다(종료 코드 {code})"
+  },
+  "运行时已退出": {
+    "en": "The runtime exited",
+    "zh-TW": "執行環境已結束",
+    "ja": "ランタイムが終了しました",
+    "ko": "런타임이 종료되었습니다"
+  },
+  "根据用户的第一句提问，生成一个简短对话标题。只输出标题本身，不要引号、句号、解释或 Markdown。中文不超过 16 个字，英文不超过 6 个单词。\n\n{clipped}": {
+    "en": "Based on the user's first question, write a short chat title. Output only the title itself: no quotes, trailing period, explanation, or Markdown. Use at most 16 characters for Chinese or at most 6 words for English, and write it in the same language as the question.\n\n{clipped}",
+    "zh-TW": "根據使用者的第一句提問，產生一個簡短的對話標題。只輸出標題本身，不要引號、句號、解釋或 Markdown。中文不超過 16 個字，英文不超過 6 個單字。\n\n{clipped}",
+    "ja": "ユーザーの最初の質問をもとに、短い会話タイトルを作成してください。タイトルだけを出力し、引用符・句点・説明・Markdown は付けないでください。日本語・中国語は 16 文字以内、英語は 6 単語以内にしてください。\n\n{clipped}",
+    "ko": "사용자의 첫 질문을 바탕으로 짧은 대화 제목을 만드세요. 제목만 출력하고 따옴표, 마침표, 설명, Markdown은 넣지 마세요. 한국어·중국어는 16자 이내, 영어는 6단어 이내로 작성하세요.\n\n{clipped}"
+  },
+  "对话标题": {
+    "en": "chat title",
+    "zh-TW": "對話標題",
+    "ja": "会話タイトル",
+    "ko": "대화 제목"
+  },
+  "运行时没有生成对话标题": {
+    "en": "The runtime did not generate a chat title",
+    "zh-TW": "執行環境沒有產生對話標題",
+    "ja": "ランタイムが会話タイトルを生成しませんでした",
+    "ko": "런타임이 대화 제목을 생성하지 않았습니다"
+  },
+  "提交信息": {
+    "en": "commit message",
+    "zh-TW": "提交訊息",
+    "ja": "コミットメッセージ",
+    "ko": "커밋 메시지"
+  },
+  "分支名": {
+    "en": "branch name",
+    "zh-TW": "分支名稱",
+    "ja": "ブランチ名",
+    "ko": "브랜치 이름"
+  },
+  "运行时没有生成{label}": {
+    "en": "The runtime did not generate a {label}",
+    "zh-TW": "執行環境沒有產生{label}",
+    "ja": "ランタイムが{label}を生成しませんでした",
+    "ko": "런타임이 {label}을(를) 생성하지 않았습니다"
+  },
+  "请先填写 API URL": {
+    "en": "Enter the API URL first",
+    "zh-TW": "請先填寫 API URL",
+    "ja": "先に API URL を入力してください",
+    "ko": "먼저 API URL을 입력하세요"
+  },
+  "请先填写模型": {
+    "en": "Enter the model first",
+    "zh-TW": "請先填寫模型",
+    "ja": "先にモデルを入力してください",
+    "ko": "먼저 모델을 입력하세요"
+  },
+  "请先填写 API Key": {
+    "en": "Enter the API key first",
+    "zh-TW": "請先填寫 API Key",
+    "ja": "先に API Key を入力してください",
+    "ko": "먼저 API Key를 입력하세요"
+  },
+  "生成{label}失败（HTTP {status}）：{detail}": {
+    "en": "Could not generate {label} (HTTP {status}): {detail}",
+    "zh-TW": "產生{label}失敗（HTTP {status}）：{detail}",
+    "ja": "{label}を生成できませんでした（HTTP {status}）：{detail}",
+    "ko": "{label} 생성 실패(HTTP {status}): {detail}"
+  },
+  "接口返回无法解析：{error}": {
+    "en": "Could not parse the API response: {error}",
+    "zh-TW": "無法解析介面回傳的內容：{error}",
+    "ja": "API の応答を解析できません：{error}",
+    "ko": "API 응답을 해석할 수 없습니다: {error}"
+  },
+  "接口没有生成{label}": {
+    "en": "The API did not generate a {label}",
+    "zh-TW": "介面沒有產生{label}",
+    "ja": "API が{label}を生成しませんでした",
+    "ko": "API가 {label}을(를) 생성하지 않았습니다"
+  },
+  "根据下面的需求写一个 Agent Skill 的完整 SKILL.md。要求：\n1. 以 YAML frontmatter 开头，包含 name（小写英文、数字和连字符）和 description（一句话说明做什么、什么时候用）。\n2. 正文用 Markdown 写清楚适用场景、具体步骤和注意事项，语言与需求一致。\n3. 只输出 SKILL.md 的内容，不要用代码块包裹，不要解释，不要调用工具。\n\n需求：{requirement}": {
+    "en": "Write a complete SKILL.md for an Agent Skill based on the request below. Requirements:\n1. Start with YAML frontmatter containing name (lowercase letters, digits, and hyphens) and description (one sentence on what it does and when to use it).\n2. In the body, use Markdown to clearly describe when it applies, the concrete steps, and caveats, in the same language as the request.\n3. Output only the contents of SKILL.md. Do not wrap it in a code block, do not explain, and do not call tools.\n\nRequest: {requirement}",
+    "zh-TW": "根據下面的需求寫一份 Agent Skill 的完整 SKILL.md。要求：\n1. 以 YAML frontmatter 開頭，包含 name（小寫英文、數字和連字號）和 description（一句話說明做什麼、什麼時候用）。\n2. 內文用 Markdown 寫清楚適用情境、具體步驟和注意事項，語言與需求一致。\n3. 只輸出 SKILL.md 的內容，不要用程式碼區塊包住，不要解釋，不要呼叫工具。\n\n需求：{requirement}",
+    "ja": "以下の依頼をもとに、Agent Skill の完全な SKILL.md を書いてください。要件：\n1. YAML frontmatter で始め、name（英小文字・数字・ハイフン）と description（何をするか、いつ使うかを一文で）を含めること。\n2. 本文は Markdown で、適用場面・具体的な手順・注意点をわかりやすく書き、言語は依頼に合わせること。\n3. SKILL.md の内容だけを出力し、コードブロックで囲まず、説明もせず、ツールも呼び出さないこと。\n\n依頼：{requirement}",
+    "ko": "아래 요청을 바탕으로 Agent Skill의 완전한 SKILL.md를 작성하세요. 요구 사항:\n1. YAML frontmatter로 시작하고 name(영문 소문자, 숫자, 하이픈)과 description(무엇을 하는지, 언제 쓰는지 한 문장)을 포함하세요.\n2. 본문은 Markdown으로 적용 상황, 구체적인 단계, 주의 사항을 명확히 쓰고, 언어는 요청과 같게 하세요.\n3. SKILL.md 내용만 출력하세요. 코드 블록으로 감싸지 말고, 설명하지 말고, 도구를 호출하지 마세요.\n\n요청: {requirement}"
+  },
+  "找不到指定的智能体：{id}": {
+    "en": "Could not find the selected agent: {id}",
+    "zh-TW": "找不到指定的智慧體：{id}",
+    "ja": "指定したエージェントが見つかりません：{id}",
+    "ko": "지정한 에이전트를 찾을 수 없습니다: {id}"
+  },
+  "指定的智能体暂时不可用：{id}": {
+    "en": "The selected agent is currently unavailable: {id}",
+    "zh-TW": "指定的智慧體暫時無法使用：{id}",
+    "ja": "指定したエージェントは現在使用できません：{id}",
+    "ko": "지정한 에이전트를 지금 사용할 수 없습니다: {id}"
+  },
+  "没有可用的智能体运行时来生成{label}": {
+    "en": "No agent runtime is available to generate the {label}",
+    "zh-TW": "沒有可用的智慧體執行環境來產生{label}",
+    "ja": "{label}を生成できるエージェントのランタイムがありません",
+    "ko": "{label}을(를) 생성할 수 있는 에이전트 런타임이 없습니다"
+  },
+  "启动{label}生成器失败：{error}": {
+    "en": "Could not start the {label} generator: {error}",
+    "zh-TW": "啟動{label}產生器失敗：{error}",
+    "ja": "{label}の生成を開始できませんでした：{error}",
+    "ko": "{label} 생성기를 시작하지 못했습니다: {error}"
+  },
+  "运行时标准输入不可用": {
+    "en": "The runtime's standard input is unavailable",
+    "zh-TW": "執行環境的標準輸入無法使用",
+    "ja": "ランタイムの標準入力を使用できません",
+    "ko": "런타임의 표준 입력을 사용할 수 없습니다"
+  },
+  "生成{label}超时": {
+    "en": "Generating the {label} timed out",
+    "zh-TW": "產生{label}逾時",
+    "ja": "{label}の生成がタイムアウトしました",
+    "ko": "{label} 생성 시간이 초과되었습니다"
+  },
+  "发送{label}提示失败：{error}": {
+    "en": "Could not send the {label} prompt: {error}",
+    "zh-TW": "傳送{label}提示失敗：{error}",
+    "ja": "{label}のプロンプトを送信できませんでした：{error}",
+    "ko": "{label} 프롬프트를 보내지 못했습니다: {error}"
+  },
+  "生成{label}失败：{detail}": {
+    "en": "Could not generate the {label}: {detail}",
+    "zh-TW": "產生{label}失敗：{detail}",
+    "ja": "{label}を生成できませんでした：{detail}",
+    "ko": "{label} 생성 실패: {detail}"
+  },
+  "无法写入运行中的任务": {
+    "en": "Could not write to the running task",
+    "zh-TW": "無法寫入執行中的任務",
+    "ja": "実行中のタスクに書き込めません",
+    "ko": "실행 중인 작업에 쓸 수 없습니다"
+  },
+  "无法把后续消息发给运行中的智能体：{error}": {
+    "en": "Could not send the follow-up message to the running agent: {error}",
+    "zh-TW": "無法把後續訊息傳給執行中的智慧體：{error}",
+    "ja": "実行中のエージェントに追加メッセージを送れませんでした：{error}",
+    "ko": "실행 중인 에이전트에 후속 메시지를 보내지 못했습니다: {error}"
+  },
+  "无法访问运行中的任务": {
+    "en": "Could not access the running tasks",
+    "zh-TW": "無法存取執行中的任務",
+    "ja": "実行中のタスクにアクセスできません",
+    "ko": "실행 중인 작업에 접근할 수 없습니다"
+  },
+  "没有等待确认的权限请求": {
+    "en": "There is no permission request awaiting confirmation",
+    "zh-TW": "沒有等待確認的權限請求",
+    "ja": "確認待ちの権限リクエストはありません",
+    "ko": "확인을 기다리는 권한 요청이 없습니다"
+  },
+  "对话摘要": {
+    "en": "chat summary",
+    "zh-TW": "對話摘要",
+    "ja": "会話の要約",
+    "ko": "대화 요약"
+  },
+  "任务已经结束": {
+    "en": "The task has already finished",
+    "zh-TW": "任務已經結束",
+    "ja": "タスクはすでに終了しています",
+    "ko": "작업이 이미 끝났습니다"
+  },
+  "任务不存在": {
+    "en": "Task not found",
+    "zh-TW": "任務不存在",
+    "ja": "タスクが見つかりません",
+    "ko": "작업을 찾을 수 없습니다"
+  },
+  "根代理": {
+    "en": "The root agent",
+    "zh-TW": "根代理",
+    "ja": "ルートエージェント",
+    "ko": "루트 에이전트"
+  },
+  "子代理（parent_call_id: {parent_call_id}）": {
+    "en": "A subagent (parent_call_id: {parent_call_id})",
+    "zh-TW": "子代理（parent_call_id: {parent_call_id}）",
+    "ja": "サブエージェント（parent_call_id: {parent_call_id}）",
+    "ko": "서브에이전트(parent_call_id: {parent_call_id})"
+  },
+  "{actor}工具调用连续失败 {count} 次，已自动停止。请检查模型或网关对工具参数的流式输出。": {
+    "en": "{actor} had {count} tool calls fail in a row and was stopped automatically. Check how the model or gateway streams tool arguments.",
+    "zh-TW": "{actor}工具呼叫連續失敗 {count} 次，已自動停止。請檢查模型或閘道對工具參數的串流輸出。",
+    "ja": "{actor}のツール呼び出しが {count} 回連続で失敗したため、自動的に停止しました。モデルまたはゲートウェイのツール引数のストリーミング出力を確認してください。",
+    "ko": "{actor}의 도구 호출이 {count}회 연속 실패하여 자동으로 중지했습니다. 모델 또는 게이트웨이의 도구 인수 스트리밍 출력을 확인하세요."
+  },
+  "启动运行时失败：{error}": {
+    "en": "Could not start the runtime: {error}",
+    "zh-TW": "啟動執行環境失敗：{error}",
+    "ja": "ランタイムを起動できませんでした：{error}",
+    "ko": "런타임을 시작하지 못했습니다: {error}"
+  },
+  "发送任务到运行时失败：{error}": {
+    "en": "Could not send the task to the runtime: {error}",
+    "zh-TW": "傳送任務到執行環境失敗：{error}",
+    "ja": "タスクをランタイムに送信できませんでした：{error}",
+    "ko": "작업을 런타임에 보내지 못했습니다: {error}"
+  },
+  "任务超过 {minutes} 分钟，已自动停止": {
+    "en": "The task ran longer than {minutes} minutes and was stopped automatically",
+    "zh-TW": "任務超過 {minutes} 分鐘，已自動停止",
+    "ja": "タスクが {minutes} 分を超えたため、自動的に停止しました",
+    "ko": "작업이 {minutes}분을 넘어 자동으로 중지되었습니다"
+  },
+  "运行时退出码：{code}": {
+    "en": "Runtime exit code: {code}",
+    "zh-TW": "執行環境結束代碼：{code}",
+    "ja": "ランタイムの終了コード：{code}",
+    "ko": "런타임 종료 코드: {code}"
+  },
+  "运行时退出码：{code}\n{detail}": {
+    "en": "Runtime exit code: {code}\n{detail}",
+    "zh-TW": "執行環境結束代碼：{code}\n{detail}",
+    "ja": "ランタイムの終了コード：{code}\n{detail}",
+    "ko": "런타임 종료 코드: {code}\n{detail}"
+  },
+  "发送任务到运行时的线程异常退出": {
+    "en": "The thread sending the task to the runtime exited unexpectedly",
+    "zh-TW": "傳送任務到執行環境的執行緒異常結束",
+    "ja": "タスクをランタイムに送信するスレッドが異常終了しました",
+    "ko": "작업을 런타임에 보내는 스레드가 비정상 종료되었습니다"
+  },
+  "运行已完成，但运行时没有返回文本。": {
+    "en": "The run finished, but the runtime returned no text.",
+    "zh-TW": "執行已完成，但執行環境沒有回傳文字。",
+    "ja": "実行は完了しましたが、ランタイムからテキストが返されませんでした。",
+    "ko": "실행은 완료되었지만 런타임이 텍스트를 반환하지 않았습니다."
+  },
+  "这次运行没有成功完成。": {
+    "en": "This run didn't complete successfully.",
+    "zh-TW": "這次執行沒有成功完成。",
+    "ja": "この実行は正常に完了しませんでした。",
+    "ko": "이번 실행은 정상적으로 완료되지 않았습니다."
+  },
+  "用户需求：": {
+    "en": "User request:",
+    "zh-TW": "使用者需求：",
+    "ja": "ユーザーの依頼：",
+    "ko": "사용자 요청:"
+  },
+  "你是小队队员，向队长汇报。请根据队长说明完成你负责的部分。": {
+    "en": "You are a squad member reporting to the squad lead. Complete your part according to the lead's instructions.",
+    "zh-TW": "你是小隊隊員，向隊長回報。請根據隊長說明完成你負責的部分。",
+    "ja": "あなたはスクワッドのメンバーで、リーダーに報告します。リーダーの指示に従って担当部分を完了してください。",
+    "ko": "당신은 스쿼드 멤버이며 리더에게 보고합니다. 리더의 지시에 따라 맡은 부분을 완료하세요."
+  },
+  "队长说明：": {
+    "en": "Lead's instructions:",
+    "zh-TW": "隊長說明：",
+    "ja": "リーダーの指示：",
+    "ko": "리더의 지시:"
+  },
+  "这次运行没有关联项目。文件都写在这个工作目录里，不要修改目录以外的路径：\n{cwd}": {
+    "en": "This run is not linked to a project. Write all files in this working directory and do not modify paths outside it:\n{cwd}",
+    "zh-TW": "這次執行沒有關聯專案。檔案都寫在這個工作目錄裡，不要修改目錄以外的路徑：\n{cwd}",
+    "ja": "この実行はプロジェクトに関連付けられていません。ファイルはすべてこの作業ディレクトリに書き込み、ディレクトリ外のパスは変更しないでください：\n{cwd}",
+    "ko": "이번 실행은 프로젝트와 연결되어 있지 않습니다. 파일은 모두 이 작업 디렉터리에 쓰고, 디렉터리 밖의 경로는 수정하지 마세요:\n{cwd}"
+  },
+  "没有可执行任务的项目目录，请先为需求添加 Git 项目或文件夹": {
+    "en": "There is no project directory to run the task in. Add a Git repository or folder to the project first",
+    "zh-TW": "沒有可執行任務的專案目錄，請先為需求新增 Git 專案或資料夾",
+    "ja": "タスクを実行できるプロジェクトディレクトリがありません。先にプロジェクトへ Git リポジトリまたはフォルダーを追加してください",
+    "ko": "작업을 실행할 프로젝트 디렉터리가 없습니다. 먼저 요구사항에 Git 프로젝트나 폴더를 추가하세요"
+  },
+  "只能修改以下需求工作区目录。用户拖入或点名的工作区外文件可以阅读，不要修改那些路径：\n{paths}": {
+    "en": "Only modify the following project workspace directories. You may read files outside the workspace that the user dragged in or mentioned, but do not modify those paths:\n{paths}",
+    "zh-TW": "只能修改以下需求工作區目錄。使用者拖入或點名的工作區外檔案可以閱讀，不要修改那些路徑：\n{paths}",
+    "ja": "変更してよいのは以下のプロジェクトのワークスペースディレクトリだけです。ユーザーがドラッグまたは名指ししたワークスペース外のファイルは読んでもかまいませんが、それらのパスは変更しないでください：\n{paths}",
+    "ko": "아래 요구사항 워크스페이스 디렉터리만 수정할 수 있습니다. 사용자가 끌어다 놓거나 언급한 워크스페이스 밖 파일은 읽어도 되지만, 그 경로는 수정하지 마세요:\n{paths}"
+  },
+  "会话标识无效，无法准备工作目录": {
+    "en": "Invalid session ID; could not prepare the working directory",
+    "zh-TW": "工作階段識別碼無效，無法準備工作目錄",
+    "ja": "セッション ID が無効なため、作業ディレクトリを準備できません",
+    "ko": "세션 ID가 올바르지 않아 작업 디렉터리를 준비할 수 없습니다"
+  },
+  "无法准备工作目录：{error}": {
+    "en": "Could not prepare the working directory: {error}",
+    "zh-TW": "無法準備工作目錄：{error}",
+    "ja": "作業ディレクトリを準備できません：{error}",
+    "ko": "작업 디렉터리를 준비할 수 없습니다: {error}"
+  },
+  "Skill 内容过大，无法安全注入：{name}": {
+    "en": "Skill content is too large to inject safely: {name}",
+    "zh-TW": "Skill 內容過大，無法安全注入：{name}",
+    "ja": "Skill の内容が大きすぎて安全に注入できません：{name}",
+    "ko": "Skill 내용이 너무 커서 안전하게 주입할 수 없습니다: {name}"
+  },
+  "本次未授权任何 Multara Skill。": {
+    "en": "No Multara Skills are authorized for this run.",
+    "zh-TW": "本次未授權任何 Multara Skill。",
+    "ja": "今回は Multara の Skill を一切許可していません。",
+    "ko": "이번에는 Multara Skill을 하나도 허용하지 않았습니다."
+  },
+  "本次只授权以下 Skills；不要调用其他 Skill：\n{skills}": {
+    "en": "Only the following Skills are authorized for this run; do not use any other Skill:\n{skills}",
+    "zh-TW": "本次只授權以下 Skills；不要呼叫其他 Skill：\n{skills}",
+    "ja": "今回許可されている Skill は以下だけです。ほかの Skill は呼び出さないでください：\n{skills}",
+    "ko": "이번에는 아래 Skills만 허용됩니다. 다른 Skill은 호출하지 마세요:\n{skills}"
+  },
+  "本次未由 Multara 注入任何 MCP。": {
+    "en": "Multara has not injected any MCP servers for this run.",
+    "zh-TW": "本次未由 Multara 注入任何 MCP。",
+    "ja": "今回は Multara から MCP を一切注入していません。",
+    "ko": "이번에는 Multara가 MCP를 하나도 주입하지 않았습니다."
+  },
+  "本次未授权任何 MCP。": {
+    "en": "No MCP servers are authorized for this run.",
+    "zh-TW": "本次未授權任何 MCP。",
+    "ja": "今回は MCP を一切許可していません。",
+    "ko": "이번에는 MCP를 하나도 허용하지 않았습니다."
+  },
+  "本次只授权以下 MCP：{names}。": {
+    "en": "Only the following MCP servers are authorized for this run: {names}.",
+    "zh-TW": "本次只授權以下 MCP：{names}。",
+    "ja": "今回許可されている MCP は以下だけです：{names}。",
+    "ko": "이번에는 다음 MCP만 허용됩니다: {names}."
+  },
+  "、": {
+    "en": ", ",
+    "zh-TW": "、",
+    "ja": "、",
+    "ko": ", "
+  },
+  "未找到自定义运行时命令：{command}": {
+    "en": "Custom runtime command not found: {command}",
+    "zh-TW": "找不到自訂執行環境命令：{command}",
+    "ja": "カスタムランタイムのコマンドが見つかりません：{command}",
+    "ko": "사용자 지정 런타임 명령을 찾을 수 없습니다: {command}"
+  },
+  "自定义 API 中转站需要配置默认模型": {
+    "en": "The custom API relay needs a default model",
+    "zh-TW": "自訂 API 中轉站需要設定預設模型",
+    "ja": "カスタム API 中継にはデフォルトモデルの設定が必要です",
+    "ko": "사용자 지정 API 중계 서버에는 기본 모델을 설정해야 합니다"
+  },
+  "不是自定义运行时": {
+    "en": "Not a custom runtime",
+    "zh-TW": "不是自訂執行環境",
+    "ja": "カスタムランタイムではありません",
+    "ko": "사용자 지정 런타임이 아닙니다"
+  },
+  "自定义运行时不存在": {
+    "en": "Custom runtime not found",
+    "zh-TW": "自訂執行環境不存在",
+    "ja": "カスタムランタイムが見つかりません",
+    "ko": "사용자 지정 런타임을 찾을 수 없습니다"
+  },
+  "[图片]": {
+    "en": "[Image]",
+    "zh-TW": "[圖片]",
+    "ja": "[画像]",
+    "ko": "[이미지]"
+  },
+  "未知运行时：{runtime_id}": {
+    "en": "Unknown runtime: {runtime_id}",
+    "zh-TW": "未知的執行環境：{runtime_id}",
+    "ja": "不明なランタイム：{runtime_id}",
+    "ko": "알 수 없는 런타임: {runtime_id}"
+  },
+  "未找到 {name} CLI": {
+    "en": "{name} CLI not found",
+    "zh-TW": "找不到 {name} CLI",
+    "ja": "{name} CLI が見つかりません",
+    "ko": "{name} CLI를 찾을 수 없습니다"
+  },
+  "运行时返回错误": {
+    "en": "The runtime returned an error",
+    "zh-TW": "執行環境回傳錯誤",
+    "ja": "ランタイムがエラーを返しました",
+    "ko": "런타임이 오류를 반환했습니다"
+  },
+  "{name}（最新）": {
+    "en": "{name} (latest)",
+    "zh-TW": "{name}（最新）",
+    "ja": "{name}（最新）",
+    "ko": "{name}(최신)"
+  },
+  "Cursor CLI 没有返回模型列表，可能还没登录（cursor-agent login）": {
+    "en": "Cursor CLI returned no model list; you may not be signed in yet (cursor-agent login)",
+    "zh-TW": "Cursor CLI 沒有回傳模型清單，可能還沒登入（cursor-agent login）",
+    "ja": "Cursor CLI からモデル一覧が返されませんでした。まだログインしていない可能性があります（cursor-agent login）",
+    "ko": "Cursor CLI가 모델 목록을 반환하지 않았습니다. 아직 로그인하지 않았을 수 있습니다(cursor-agent login)"
+  },
+  "查询模型列表超时": {
+    "en": "Fetching the model list timed out",
+    "zh-TW": "查詢模型清單逾時",
+    "ja": "モデル一覧の取得がタイムアウトしました",
+    "ko": "모델 목록 조회 시간이 초과되었습니다"
+  },
+  "查询模型列表失败": {
+    "en": "Could not fetch the model list",
+    "zh-TW": "查詢模型清單失敗",
+    "ja": "モデル一覧を取得できませんでした",
+    "ko": "모델 목록을 가져오지 못했습니다"
+  },
+  "计划已处理": {
+    "en": "This plan has already been handled",
+    "zh-TW": "計畫已處理",
+    "ja": "この計画は処理済みです",
+    "ko": "이 계획은 이미 처리되었습니다"
+  },
+  "回退说明：用户刚刚确认把工作区文件恢复到这条提问之前。那些改动是有意丢弃的。不要从 agent-transcripts、旧对话、git 历史或其他日志里把它们找回来再套用。只根据当前工作区文件和本轮任务重新实现。": {
+    "en": "Rollback note: the user just confirmed restoring the workspace files to their state before this message. Those changes were discarded on purpose. Do not recover and reapply them from agent-transcripts, earlier conversations, git history, or other logs. Re-implement based only on the current workspace files and this turn's task.",
+    "zh-TW": "回退說明：使用者剛剛確認把工作區檔案還原到這則提問之前。那些變更是刻意捨棄的。不要從 agent-transcripts、舊對話、git 歷史或其他日誌裡把它們找回來再套用。只根據目前的工作區檔案和本輪任務重新實作。",
+    "ja": "ロールバックに関する注意：ユーザーはワークスペースのファイルをこの質問の前の状態に戻すことを確認しました。それらの変更は意図的に破棄されています。agent-transcripts、過去の会話、git 履歴、その他のログから取り戻して再適用しないでください。現在のワークスペースのファイルと今回のタスクだけに基づいて実装し直してください。",
+    "ko": "롤백 안내: 사용자가 방금 워크스페이스 파일을 이 질문 이전 상태로 되돌리는 것을 확인했습니다. 그 변경은 의도적으로 버린 것입니다. agent-transcripts, 이전 대화, git 기록이나 다른 로그에서 찾아 다시 적용하지 마세요. 현재 워크스페이스 파일과 이번 작업만을 기준으로 다시 구현하세요."
+  },
+  "--- 以下为本轮 ---": {
+    "en": "--- Current turn ---",
+    "zh-TW": "--- 以下為本輪 ---",
+    "ja": "--- 以下が今回のターン ---",
+    "ko": "--- 이번 턴 ---"
+  },
+  "用户任务：": {
+    "en": "User task: ",
+    "zh-TW": "使用者任務：",
+    "ja": "ユーザーのタスク：",
+    "ko": "사용자 작업: "
+  },
+  "助手：": {
+    "en": "Assistant:",
+    "zh-TW": "助理：",
+    "ja": "アシスタント：",
+    "ko": "어시스턴트:"
+  },
+  "用户：": {
+    "en": "User:",
+    "zh-TW": "使用者：",
+    "ja": "ユーザー：",
+    "ko": "사용자:"
+  },
+  "对话摘要：": {
+    "en": "Conversation summary:",
+    "zh-TW": "對話摘要：",
+    "ja": "会話の要約：",
+    "ko": "대화 요약:"
+  },
+  "对话历史：": {
+    "en": "Conversation history:",
+    "zh-TW": "對話歷史：",
+    "ja": "会話履歴：",
+    "ko": "대화 기록:"
+  }
+}

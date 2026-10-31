@@ -6,7 +6,7 @@ use std::{
     process,
 };
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::{
     builtin_agents, database,
@@ -14,7 +14,8 @@ use crate::{
     ops, runtime,
 };
 
-const HELP: &str = "\
+fn help() -> String {
+    tr!("\
 multara — Multara 内置 CLI
 
 用法：
@@ -38,7 +39,8 @@ stdout 为 JSON。提示与 --help 走 stderr。解析 stdout 时不要 2>&1。
   MULTARA_DB          sqlite 路径
   MULTARA_APP_DATA    应用数据目录（默认其中的 multara.sqlite3）
   MULTARA_SESSION_ID  当前聊天会话，用于继承需求
-";
+")
+}
 
 pub fn run() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -81,7 +83,7 @@ pub fn run_args(
 ) -> Result<(), i32> {
     // `-h` 只在开头才算求助，否则恰好等于 `-h` 的描述或评论会被吞掉。
     if args.is_empty() || args[0] == "-h" || args.iter().any(|arg| arg == "--help") {
-        let _ = writeln!(stderr, "{HELP}");
+        let _ = writeln!(stderr, "{}", help());
         return Ok(());
     }
     let mut db = match open_db() {
@@ -108,6 +110,12 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
     let resource = parsed.positional.first().map(String::as_str).unwrap_or("");
     let verb = parsed.positional.get(1).map(String::as_str).unwrap_or("");
     let id = parsed.positional.get(2).cloned();
+    ensure_write_allowed(
+        db,
+        env::var("MULTARA_RUN_ID").ok().as_deref(),
+        resource,
+        verb,
+    )?;
     match (resource, verb) {
         ("task", "list") => {
             ops::task::settle_finished(db)?;
@@ -119,13 +127,13 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             )?)
         }
         ("task", "get") => {
-            let id = id.ok_or_else(|| "缺少任务 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少任务 id"))?;
             ops::json(&ops::task::get(db, &id)?)
         }
         ("task", "create") => {
             let title = parsed
                 .flag(&["title"])
-                .ok_or_else(|| "缺少 --title".to_string())?;
+                .ok_or_else(|| tr!("缺少 --title"))?;
             let description = description_from(&parsed)?;
             let assignee = parsed
                 .flag(&["assignee", "assignee-id"])
@@ -149,12 +157,13 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                     source_session_id: source_session.as_deref(),
                     status: parsed.flag(&["status"]),
                     parent_task_id: parent_task_id.as_deref(),
+                    requested_mode: crate::models::RunMode::Auto,
                 },
             )?;
             ops::json(&created.task)
         }
         ("task", "update") => {
-            let id = id.ok_or_else(|| "缺少任务 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少任务 id"))?;
             let description = parsed
                 .flag(&["description"])
                 .map(str::to_string)
@@ -170,46 +179,46 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             )?)
         }
         ("task", "status") => {
-            let id = id.ok_or_else(|| "缺少任务 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少任务 id"))?;
             let status = parsed
                 .positional
                 .get(3)
                 .map(String::as_str)
                 .or_else(|| parsed.flag(&["status"]))
-                .ok_or_else(|| "缺少状态".to_string())?;
+                .ok_or_else(|| tr!("缺少状态"))?;
             ops::json(&ops::task::update_status(db, &id, status)?)
         }
         ("task", "assign") => {
-            let id = id.ok_or_else(|| "缺少任务 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少任务 id"))?;
             let to = parsed
                 .flag(&["to", "assignee", "assignee-id"])
-                .ok_or_else(|| "缺少 --to".to_string())?;
+                .ok_or_else(|| tr!("缺少 --to"))?;
             ops::json(&ops::task::assign(db, &id, to)?)
         }
         ("task", "comment") => {
-            let id = id.ok_or_else(|| "缺少任务 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少任务 id"))?;
             let text = parsed
                 .flag(&["comment"])
-                .ok_or_else(|| "缺少 --comment".to_string())?;
+                .ok_or_else(|| tr!("缺少 --comment"))?;
             ops::task::comment(db, &id, text)?;
             ops::json(&serde_json::json!({ "ok": true }))
         }
         ("task", "runs") => {
-            let id = id.ok_or_else(|| "缺少任务 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少任务 id"))?;
             ops::json(&ops::task::runs(db, &id)?)
         }
         ("agent", "list") => ops::json(&ops::agent::list(db)?),
         ("agent", "get") => {
-            let id = id.ok_or_else(|| "缺少智能体 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少智能体 id"))?;
             ops::json(&ops::agent::get(db, &id)?)
         }
         ("agent", "create") => {
             let name = parsed
                 .flag(&["name"])
-                .ok_or_else(|| "缺少 --name".to_string())?;
+                .ok_or_else(|| tr!("缺少 --name"))?;
             let runtime_id = parsed
                 .flag(&["runtime-id"])
-                .ok_or_else(|| "缺少 --runtime-id".to_string())?;
+                .ok_or_else(|| tr!("缺少 --runtime-id"))?;
             ops::json(&ops::agent::create(
                 db,
                 name,
@@ -224,7 +233,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             )?)
         }
         ("agent", "update") => {
-            let id = id.ok_or_else(|| "缺少智能体 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少智能体 id"))?;
             let current = ops::agent::get(db, &id)?;
             let input = AgentInput {
                 id: Some(id),
@@ -261,16 +270,16 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("squad", "list") => ops::json(&ops::squad::list(db)?),
         ("squad", "get") => {
-            let id = id.ok_or_else(|| "缺少小队 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少小队 id"))?;
             ops::json(&ops::squad::get(db, &id)?)
         }
         ("squad", "create") => {
             let name = parsed
                 .flag(&["name"])
-                .ok_or_else(|| "缺少 --name".to_string())?;
+                .ok_or_else(|| tr!("缺少 --name"))?;
             let lead = parsed
                 .flag(&["lead-id", "leader-id"])
-                .ok_or_else(|| "缺少 --lead-id".to_string())?;
+                .ok_or_else(|| tr!("缺少 --lead-id"))?;
             let members = parsed.list_flag("member-ids");
             ops::json(&ops::squad::create(
                 db,
@@ -281,7 +290,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             )?)
         }
         ("squad", "update") => {
-            let id = id.ok_or_else(|| "缺少小队 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少小队 id"))?;
             let current = ops::squad::get(db, &id)?;
             ops::json(&ops::squad::save(
                 db,
@@ -309,7 +318,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             )?)
         }
         ("squad", "member") => {
-            let id = id.ok_or_else(|| "缺少小队 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少小队 id"))?;
             ops::json(&ops::squad::set_members(
                 db,
                 &id,
@@ -318,18 +327,18 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("project", "list") => ops::json(&ops::project::list(db)?),
         ("project", "get") => {
-            let id = id.ok_or_else(|| "缺少需求 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少需求 id"))?;
             ops::json(&ops::project::get(db, &id)?)
         }
         ("project", "create") => ops::json(&ops::project::create(
             db,
             parsed
                 .flag(&["name"])
-                .ok_or_else(|| "缺少 --name".to_string())?,
+                .ok_or_else(|| tr!("缺少 --name"))?,
             parsed.flag(&["description", "note"]).unwrap_or(""),
         )?),
         ("project", "update") => {
-            let id = id.ok_or_else(|| "缺少需求 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少需求 id"))?;
             ops::json(&ops::project::update(
                 db,
                 &id,
@@ -339,7 +348,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("automation", "list") => ops::json(&ops::automation::list(db)?),
         ("automation", "get") => {
-            let id = id.ok_or_else(|| "缺少自动化 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少自动化 id"))?;
             ops::json(&ops::automation::get(db, &id)?)
         }
         ("automation", "create") => create_automation(db, &parsed),
@@ -348,13 +357,13 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&rows.iter().map(channel_json).collect::<Vec<_>>())
         }
         ("channel", "get") => {
-            let id = id.ok_or_else(|| "缺少渠道 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少渠道 id"))?;
             let installation = crate::channel::store::get_installation(db, &id)?
-                .ok_or_else(|| "渠道不存在".to_string())?;
+                .ok_or_else(|| tr!("渠道不存在"))?;
             ops::json(&channel_json(&installation))
         }
         ("channel", "enable") | ("channel", "disable") => {
-            let id = id.ok_or_else(|| "缺少渠道 id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少渠道 id"))?;
             let enabled = verb == "enable";
             db.execute(
                 "UPDATE channel_installations SET enabled=?1, updated_at=?2 WHERE id=?3",
@@ -365,7 +374,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("skill", "list") => ops::json(&ops::skill::list_scanned()),
         ("skill", "get") => {
-            let id = id.ok_or_else(|| "缺少 skill id".to_string())?;
+            let id = id.ok_or_else(|| tr!("缺少 skill id"))?;
             ops::json(&ops::skill::get(&id)?)
         }
         ("skill", "builtin") => {
@@ -373,13 +382,13 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&ops::skill::builtin(locale))
         }
         ("skill", "import") => {
-            Err("第一期不支持 URL 导入。用 `multara skill list` 查看本机扫描结果。".into())
+            Err(tr!("第一期不支持 URL 导入。用 `multara skill list` 查看本机扫描结果。"))
         }
         ("runtime", "list") => ops::json(&runtime::detect()),
         ("session", "history") => {
             let session_id = id
                 .or_else(|| env::var("MULTARA_SESSION_ID").ok())
-                .ok_or_else(|| "缺少会话 id 或 MULTARA_SESSION_ID".to_string())?;
+                .ok_or_else(|| tr!("缺少会话 id 或 MULTARA_SESSION_ID"))?;
             ops::json(&ops::skill::comment_history(db, &session_id)?)
         }
         ("terminal", "list") => ops::json(&crate::terminal::list_snapshots(&app_data_dir()?)?),
@@ -402,32 +411,88 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         ("session", "resume") => {
             let session_id = id
                 .or_else(|| env::var("MULTARA_SESSION_ID").ok())
-                .ok_or_else(|| "缺少会话 id 或 MULTARA_SESSION_ID".to_string())?;
+                .ok_or_else(|| tr!("缺少会话 id 或 MULTARA_SESSION_ID"))?;
             ops::json(&ops::session::resume(
                 db,
                 &session_id,
                 parsed.flag(&["prompt"]),
             )?)
         }
-        ("", _) => Err(HELP.to_string()),
-        (resource, "") => Err(format!("缺少动词。试试 `multara {resource} --help`")),
-        (resource, verb) => Err(format!("未知命令：multara {resource} {verb}")),
+        ("", _) => Err(help()),
+        (resource, "") => Err(tr!(
+            "缺少动词。试试 `multara {resource} --help`",
+            resource = resource
+        )),
+        (resource, verb) => Err(tr!(
+            "未知命令：multara {resource} {verb}",
+            resource = resource,
+            verb = verb
+        )),
     }
 }
 
+fn ensure_write_allowed(
+    db: &Connection,
+    run_id: Option<&str>,
+    resource: &str,
+    verb: &str,
+) -> Result<(), String> {
+    const WRITE_COMMANDS: &[(&str, &str)] = &[
+        ("task", "create"),
+        ("task", "update"),
+        ("task", "status"),
+        ("task", "assign"),
+        ("task", "comment"),
+        ("agent", "create"),
+        ("agent", "update"),
+        ("squad", "create"),
+        ("squad", "update"),
+        ("squad", "member"),
+        ("project", "create"),
+        ("project", "update"),
+        ("automation", "create"),
+        ("channel", "enable"),
+        ("channel", "disable"),
+        ("session", "resume"),
+    ];
+    if !WRITE_COMMANDS.contains(&(resource, verb)) {
+        return Ok(());
+    }
+    let Some(run_id) = run_id else {
+        return Ok(());
+    };
+    let mode: Option<String> = db
+        .query_row("SELECT mode FROM agent_runs WHERE id=?1", [run_id], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if mode.as_deref() == Some("plan") {
+        return Err(tr!(
+            "规划模式下不能执行写命令：multara {resource} {verb}",
+            resource = resource,
+            verb = verb
+        ));
+    }
+    Ok(())
+}
+
 fn create_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String, String> {
+    if parsed.flag(&["mode"]) == Some("plan") {
+        return Err(tr!("自动化不支持规划模式"));
+    }
     let name = parsed
         .flag(&["name"])
-        .ok_or_else(|| "缺少 --name".to_string())?;
+        .ok_or_else(|| tr!("缺少 --name"))?;
     let agent_id = parsed
         .flag(&["agent-id", "assignee", "assignee-id"])
-        .ok_or_else(|| "缺少 --agent-id".to_string())?;
+        .ok_or_else(|| tr!("缺少 --agent-id"))?;
     let prompt = parsed
         .flag(&["prompt"])
-        .ok_or_else(|| "缺少 --prompt".to_string())?;
+        .ok_or_else(|| tr!("缺少 --prompt"))?;
     let project_id = parsed
         .flag(&["project-id", "project"])
-        .ok_or_else(|| "缺少 --project-id".to_string())?;
+        .ok_or_else(|| tr!("缺少 --project-id"))?;
     ops::require_agent(db, agent_id)?;
     ops::require_project(db, project_id)?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -445,7 +510,11 @@ fn create_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String,
         })
         .transpose()?;
     // 与界面保存的计划自动化一致：automations 记 interval，真正的计划在触发器行里。
-    let trigger_type = if schedule.is_some() { "interval" } else { "manual" };
+    let trigger_type = if schedule.is_some() {
+        "interval"
+    } else {
+        "manual"
+    };
     let transaction = db.transaction().map_err(|error| error.to_string())?;
     transaction
         .execute(
@@ -493,14 +562,14 @@ const DEFAULT_TIMEZONE: &str = "UTC";
 fn next_schedule_run(expression: &str, timezone: &str) -> Result<String, String> {
     use std::str::FromStr;
     let timezone =
-        chrono_tz::Tz::from_str(timezone).map_err(|_| "--timezone 需要 IANA 时区".to_string())?;
+        chrono_tz::Tz::from_str(timezone).map_err(|_| tr!("--timezone 需要 IANA 时区"))?;
     let schedule = cron::Schedule::from_str(&format!("0 {}", expression.trim()))
-        .map_err(|error| format!("--schedule 需要 5 字段 Cron 表达式：{error}"))?;
+        .map_err(|error| tr!("--schedule 需要 5 字段 Cron 表达式：{error}", error = error))?;
     schedule
         .after(&chrono::Utc::now().with_timezone(&timezone))
         .next()
         .map(|next| next.with_timezone(&chrono::Utc).to_rfc3339())
-        .ok_or_else(|| "Cron 无法计算下一次运行时间".to_string())
+        .ok_or_else(|| tr!("Cron 无法计算下一次运行时间"))
 }
 
 fn description_from(parsed: &ParsedArgs) -> Result<String, String> {
@@ -513,19 +582,23 @@ fn description_from(parsed: &ParsedArgs) -> Result<String, String> {
 fn description_file(parsed: &ParsedArgs) -> Result<String, String> {
     let path = parsed
         .flag(&["description-file"])
-        .ok_or_else(|| "缺少 --description 或 --description-file".to_string())?;
+        .ok_or_else(|| tr!("缺少 --description 或 --description-file"))?;
     ensure_description_file_allowed(path)?;
     let mut bytes = Vec::new();
     fs::File::open(path)
-        .and_then(|file| file.take(MAX_DESCRIPTION_FILE_BYTES + 1).read_to_end(&mut bytes))
-        .map_err(|error| format!("读取 description-file 失败：{error}"))?;
+        .and_then(|file| {
+            file.take(MAX_DESCRIPTION_FILE_BYTES + 1)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|error| tr!("读取 description-file 失败：{error}", error = error))?;
     if bytes.len() as u64 > MAX_DESCRIPTION_FILE_BYTES {
-        return Err(format!(
-            "description-file 超过 {} KB",
-            MAX_DESCRIPTION_FILE_BYTES / 1024
+        return Err(tr!(
+            "description-file 超过 {size} KB",
+            size = MAX_DESCRIPTION_FILE_BYTES / 1024
         ));
     }
-    String::from_utf8(bytes).map_err(|error| format!("读取 description-file 失败：{error}"))
+    String::from_utf8(bytes)
+        .map_err(|error| tr!("读取 description-file 失败：{error}", error = error))
 }
 
 const MAX_DESCRIPTION_FILE_BYTES: u64 = 1024 * 1024;
@@ -533,7 +606,8 @@ const MAX_DESCRIPTION_FILE_BYTES: u64 = 1024 * 1024;
 /// 描述内容之后能通过 `task get` 读出来，所以只允许读当前目录（智能体的工作区）和系统临时目录里的文件，
 /// 不能拿它去读 `~/.ssh/*` 之类的任意路径。
 fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
-    let target = fs::canonicalize(path).map_err(|error| format!("读取 description-file 失败：{error}"))?;
+    let target =
+        fs::canonicalize(path).map_err(|error| tr!("读取 description-file 失败：{error}", error = error))?;
     let allowed = [env::current_dir().ok(), Some(env::temp_dir())]
         .into_iter()
         .flatten()
@@ -542,13 +616,15 @@ fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
     if allowed {
         Ok(())
     } else {
-        Err("description-file 只能位于当前目录或系统临时目录内".to_string())
+        Err(tr!("description-file 只能位于当前目录或系统临时目录内"))
     }
 }
 
 fn open_db() -> Result<Connection, String> {
     let path = db_path()?;
-    database::open_file_light(&path)
+    let db = database::open_file_light(&path)?;
+    crate::app_locale::set_current(crate::app_locale::from_db(&db));
+    Ok(db)
 }
 
 fn parse_line(value: &str, name: &str) -> Result<usize, String> {
@@ -556,7 +632,7 @@ fn parse_line(value: &str, name: &str) -> Result<usize, String> {
         .parse()
         .ok()
         .filter(|line| *line >= 1)
-        .ok_or_else(|| format!("--{name} 需要从 1 开始的行号"))
+        .ok_or_else(|| tr!("--{name} 需要从 1 开始的行号", name = name))
 }
 
 fn app_data_dir() -> Result<PathBuf, String> {
@@ -575,7 +651,7 @@ pub fn db_path() -> Result<PathBuf, String> {
     }
     let home = env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
-        .ok_or_else(|| "无法确定主目录，请设置 MULTARA_DB".to_string())?;
+        .ok_or_else(|| tr!("无法确定主目录，请设置 MULTARA_DB"))?;
     let mut path = PathBuf::from(home);
     if cfg!(target_os = "macos") {
         path.push("Library/Application Support/com.multara.desktop/multara.sqlite3");
@@ -914,8 +990,18 @@ mod tests {
         .unwrap();
         let args = |schedule: &str| -> Vec<String> {
             [
-                "automation", "create", "--name", "日报", "--agent-id", "miku", "--prompt",
-                "写日报", "--project-id", "p", "--schedule", schedule,
+                "automation",
+                "create",
+                "--name",
+                "日报",
+                "--agent-id",
+                "miku",
+                "--prompt",
+                "写日报",
+                "--project-id",
+                "p",
+                "--schedule",
+                schedule,
             ]
             .map(String::from)
             .to_vec()
@@ -934,6 +1020,22 @@ mod tests {
     }
 
     #[test]
+    fn automation_rejects_plan_mode() {
+        let mut db = db();
+        let error = execute(
+            &[
+                "automation".into(),
+                "create".into(),
+                "--mode".into(),
+                "plan".into(),
+            ],
+            &mut db,
+        )
+        .unwrap_err();
+        assert_eq!(error, "自动化不支持规划模式");
+    }
+
+    #[test]
     fn session_resume_requires_a_saved_conversation() {
         let mut db = db();
         db.execute("UPDATE agents SET runtime_id='cursor' WHERE id='miku'", [])
@@ -944,6 +1046,24 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("conversation id"));
+    }
+
+    #[test]
+    fn plan_run_cannot_execute_write_commands() {
+        let db = db();
+        db.execute(
+            "INSERT INTO agent_runs
+             (id, session_id, agent_id, runtime_id, assignment, status, created_at, mode)
+             VALUES ('plan-run', 'welcome', 'miku', 'claude', 'plan', 'running', 'now', 'plan')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            super::ensure_write_allowed(&db, Some("plan-run"), "task", "create")
+                .unwrap_err()
+                .contains("规划模式")
+        );
+        assert!(super::ensure_write_allowed(&db, Some("plan-run"), "task", "list").is_ok());
     }
 
     #[test]

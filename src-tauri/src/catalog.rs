@@ -5,7 +5,8 @@ use serde_json::Value;
 
 use crate::http_client;
 
-const SKILL_TREE_URL: &str = "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
+const SKILL_TREE_URL: &str =
+    "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
 const MCP_REGISTRY_URL: &str = "https://registry.modelcontextprotocol.io/v0/servers";
 const SKILL_DOCS: &str = "https://github.com/anthropics/skills";
 
@@ -26,17 +27,18 @@ pub fn search(kind: &str, query: &str) -> Result<Vec<CatalogItem>, String> {
     match kind {
         "skill" => search_skills(query),
         "mcp" => search_mcp(query),
-        _ => Err("商店类型无效".to_string()),
+        _ => Err(tr!("商店类型无效")),
     }
 }
 
 fn search_skills(query: &str) -> Result<Vec<CatalogItem>, String> {
     match http_client::get(SKILL_TREE_URL, "application/vnd.github+json") {
         Ok(response) if (200..300).contains(&response.status) => {
-            let value: Value = serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
+            let value: Value =
+                serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
             Ok(filter_items(parse_skill_tree(&value), query))
         }
-        Ok(response) => Err(format!("Skills 商店 HTTP {}", response.status)),
+        Ok(response) => Err(tr!("Skills 商店 HTTP {status}", status = response.status)),
         Err(_) => Ok(filter_items(fallback_skills(), query)),
     }
 }
@@ -52,10 +54,11 @@ fn search_mcp(query: &str) -> Result<Vec<CatalogItem>, String> {
     };
     match http_client::get(&url, "application/json") {
         Ok(response) if (200..300).contains(&response.status) => {
-            let value: Value = serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
+            let value: Value =
+                serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
             Ok(filter_items(parse_mcp_registry(&value), query))
         }
-        Ok(response) => Err(format!("MCP 商店 HTTP {}", response.status)),
+        Ok(response) => Err(tr!("MCP 商店 HTTP {status}", status = response.status)),
         Err(error) => Err(error),
     }
 }
@@ -75,7 +78,9 @@ pub fn parse_skill_tree(value: &Value) -> Vec<CatalogItem> {
         if !path.ends_with("/SKILL.md") && path != "SKILL.md" {
             continue;
         }
-        let folder = path.trim_end_matches("/SKILL.md").trim_end_matches("SKILL.md");
+        let folder = path
+            .trim_end_matches("/SKILL.md")
+            .trim_end_matches("SKILL.md");
         let name = folder
             .rsplit('/')
             .next()
@@ -163,8 +168,15 @@ fn mcp_install_json(server: &Value, fallback_name: &str) -> Option<String> {
     let identifier = package
         .get("identifier")
         .and_then(Value::as_str)
-        .filter(|identifier| !identifier.is_empty() && !identifier.starts_with('-') && !identifier.contains(char::is_whitespace))?;
-    let registry = package.get("registryType").and_then(Value::as_str).unwrap_or("npm");
+        .filter(|identifier| {
+            !identifier.is_empty()
+                && !identifier.starts_with('-')
+                && !identifier.contains(char::is_whitespace)
+        })?;
+    let registry = package
+        .get("registryType")
+        .and_then(Value::as_str)
+        .unwrap_or("npm");
     let (command, args): (&str, Vec<&str>) = match registry {
         "pypi" | "python" => ("uvx", vec![identifier]),
         _ => ("npx", vec!["-y", identifier]),
@@ -193,11 +205,11 @@ fn filter_items(items: Vec<CatalogItem>, query: &str) -> Vec<CatalogItem> {
 
 fn fallback_skills() -> Vec<CatalogItem> {
     [
-        ("pdf", "PDF 处理：提取、创建和编辑 PDF。"),
-        ("docx", "Word 文档读写。"),
-        ("xlsx", "电子表格读写。"),
-        ("pptx", "演示文稿创建。"),
-        ("skill-creator", "编写新的 Agent Skill。"),
+        ("pdf", tr!("PDF 处理：提取、创建和编辑 PDF。")),
+        ("docx", tr!("Word 文档读写。")),
+        ("xlsx", tr!("电子表格读写。")),
+        ("pptx", tr!("演示文稿创建。")),
+        ("skill-creator", tr!("编写新的 Agent Skill。")),
     ]
     .into_iter()
     .map(|(name, description)| CatalogItem {
@@ -216,7 +228,9 @@ fn urlencoding(value: &str) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             b' ' => out.push_str("%20"),
             _ => out.push_str(&format!("%{byte:02X}")),
         }

@@ -10,8 +10,7 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, RecvTimeoutError, TrySendError},
-        Arc,
-        Mutex, OnceLock,
+        Arc, Mutex, OnceLock,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -162,7 +161,7 @@ fn join_relative(parent: &str, name: &str) -> String {
 /// 工作区内的条目路径。不解析条目本身的符号链接，删除链接时只删链接；父目录不能经符号链接跳出根目录。
 fn entry_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if files::normalize_relative(relative)?.is_empty() {
-        return Err("不能操作工作区根目录".to_string());
+        return Err(tr!("不能操作工作区根目录"));
     }
     files::resolve_inside(root, relative)
 }
@@ -171,7 +170,7 @@ fn entry_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
 fn entry_path_creating_parents(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let normalized = files::normalize_relative(relative)?;
     if normalized.is_empty() {
-        return Err("不能操作工作区根目录".to_string());
+        return Err(tr!("不能操作工作区根目录"));
     }
     if let Some(parent) = Path::new(&normalized).parent() {
         files::create_parents_inside(root, parent)?;
@@ -185,7 +184,7 @@ fn exists_no_follow(path: &Path) -> bool {
 
 fn copy_recursive(source: &Path, target: &Path, depth: usize) -> Result<(), String> {
     if depth > MAX_COPY_DEPTH {
-        return Err("文件夹层级太深，无法复制".to_string());
+        return Err(tr!("文件夹层级太深，无法复制"));
     }
     let metadata = fs::metadata(source).map_err(|error| error.to_string())?;
     if metadata.is_dir() {
@@ -301,7 +300,7 @@ pub fn list_directory(root: &str, relative: &str) -> Result<Vec<ExplorerEntry>, 
         root.join(Path::new(&relative))
     };
     if !directory.is_dir() {
-        return Err("只能展开文件夹".to_string());
+        return Err(tr!("只能展开文件夹"));
     }
     let mut entries = Vec::new();
     for child in fs::read_dir(&directory).map_err(|error| error.to_string())? {
@@ -323,7 +322,11 @@ pub fn list_directory(root: &str, relative: &str) -> Result<Vec<ExplorerEntry>, 
             path: join_relative(&relative, &name),
             name,
             is_directory,
-            depth: if relative.is_empty() { 0 } else { relative.split('/').count() },
+            depth: if relative.is_empty() {
+                0
+            } else {
+                relative.split('/').count()
+            },
             symlink_target: if file_type.is_symlink() {
                 files::symlink_target(&child_path)
             } else {
@@ -352,7 +355,7 @@ pub fn delete_entries(
         let outcome = (|| -> Result<Option<String>, String> {
             let target = entry_path(&root, &normalized)?;
             if !exists_no_follow(&target) {
-                return Err(format!("文件不存在：{normalized}"));
+                return Err(tr!("文件不存在：{path}", path = normalized));
             }
             let backup_id = backup_entry(&target, backups);
             let removed = if use_trash {
@@ -369,23 +372,36 @@ pub fn delete_entries(
             Ok(backup_id)
         })();
         results.push(match outcome {
-            Ok(backup_id) => DeleteResult { path: normalized, backup_id, error: None },
-            Err(error) => DeleteResult { path: normalized, backup_id: None, error: Some(error) },
+            Ok(backup_id) => DeleteResult {
+                path: normalized,
+                backup_id,
+                error: None,
+            },
+            Err(error) => DeleteResult {
+                path: normalized,
+                backup_id: None,
+                error: Some(error),
+            },
         });
     }
     Ok(results)
 }
 
-pub fn restore_entry(root: &str, relative: &str, backup_id: &str, backups: &Path) -> Result<(), String> {
+pub fn restore_entry(
+    root: &str,
+    relative: &str,
+    backup_id: &str,
+    backups: &Path,
+) -> Result<(), String> {
     if !valid_backup_id(backup_id) {
-        return Err("无效的撤销记录".to_string());
+        return Err(tr!("无效的撤销记录"));
     }
     let holder = backups.join(backup_id);
     let stored = fs::read_dir(&holder)
-        .map_err(|_| "撤销记录已过期".to_string())?
+        .map_err(|_| tr!("撤销记录已过期"))?
         .flatten()
         .next()
-        .ok_or_else(|| "撤销记录已过期".to_string())?
+        .ok_or_else(|| tr!("撤销记录已过期"))?
         .path();
     let root = files::canonical_root(root)?;
     let target = entry_path_creating_parents(&root, relative)?;
@@ -405,39 +421,41 @@ fn transfer_one(
 ) -> Result<String, String> {
     let source = match &request.source_workspace_id {
         Some(id) => {
-            let root = roots.get(id).ok_or_else(|| "工作区不存在".to_string())?;
+            let root = roots.get(id).ok_or_else(|| tr!("工作区不存在"))?;
             entry_path(root, &request.source)?
         }
         None => {
             let path = PathBuf::from(&request.source);
             if !path.is_absolute() {
-                return Err("无效的源路径".to_string());
+                return Err(tr!("无效的源路径"));
             }
             path
         }
     };
     if !exists_no_follow(&source) {
-        return Err(format!("文件不存在：{}", request.source));
+        return Err(tr!("文件不存在：{path}", path = request.source));
     }
     let root = roots
         .get(&request.target_workspace_id)
-        .ok_or_else(|| "工作区不存在".to_string())?;
+        .ok_or_else(|| tr!("工作区不存在"))?;
     let target_relative = files::normalize_relative(&request.target)?;
     let target = entry_path_creating_parents(root, &target_relative)?;
     if source == target {
-        return Err("源和目标相同".to_string());
+        return Err(tr!("源和目标相同"));
     }
-    let source_is_dir = fs::metadata(&source).map(|meta| meta.is_dir()).unwrap_or(false);
+    let source_is_dir = fs::metadata(&source)
+        .map(|meta| meta.is_dir())
+        .unwrap_or(false);
     let canonical_source = source.canonicalize().unwrap_or_else(|_| source.clone());
     let canonical_target_parent = target
         .parent()
         .and_then(|parent| parent.canonicalize().ok())
         .unwrap_or_default();
     if source_is_dir && canonical_target_parent.starts_with(&canonical_source) {
-        return Err("不能把文件夹放进它自己里面".to_string());
+        return Err(tr!("不能把文件夹放进它自己里面"));
     }
     if canonical_source.starts_with(&target) || source.starts_with(&target) {
-        return Err("不能用文件夹覆盖它自己里面的内容".to_string());
+        return Err(tr!("不能用文件夹覆盖它自己里面的内容"));
     }
     let replaced = match exists_no_follow(&target) {
         false => None,
@@ -470,7 +488,7 @@ fn transfer_one(
 fn set_aside(target: &Path) -> Result<PathBuf, String> {
     let name = target
         .file_name()
-        .ok_or_else(|| "无效路径".to_string())?
+        .ok_or_else(|| tr!("无效路径"))?
         .to_string_lossy();
     let aside = target.with_file_name(format!(".{name}.multara-replace-{}", uuid::Uuid::new_v4()));
     fs::rename(target, &aside).map_err(|error| error.to_string())?;
@@ -492,21 +510,32 @@ pub fn create_entry(root: &str, relative: &str, is_directory: bool) -> Result<()
     }
 }
 
-pub fn write_bytes(root: &str, relative: &str, bytes: &[u8], overwrite: bool) -> Result<(), String> {
+pub fn write_bytes(
+    root: &str,
+    relative: &str,
+    bytes: &[u8],
+    overwrite: bool,
+) -> Result<(), String> {
     let root = files::canonical_root(root)?;
     let target = entry_path_creating_parents(&root, relative)?;
     if exists_no_follow(&target) {
         if !overwrite {
             return Err(format!("{TARGET_EXISTS}{relative}"));
         }
-        if fs::metadata(&target).map(|meta| meta.is_dir()).unwrap_or(false) {
-            return Err("目标是文件夹，不能写入".to_string());
+        if fs::metadata(&target)
+            .map(|meta| meta.is_dir())
+            .unwrap_or(false)
+        {
+            return Err(tr!("目标是文件夹，不能写入"));
         }
     }
     // 先写同目录临时文件再改名：原子替换，且最终分量是符号链接时替换链接本身而不是顺着写到链接目标。
-    let parent = target.parent().ok_or_else(|| "无效路径".to_string())?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
-    temporary.write_all(bytes).map_err(|error| error.to_string())?;
+    let parent = target.parent().ok_or_else(|| tr!("无效路径"))?;
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    temporary
+        .write_all(bytes)
+        .map_err(|error| error.to_string())?;
     // 临时文件默认 0600；沿用旧文件的权限，新文件用常规的 0644。
     #[cfg(unix)]
     {
@@ -532,9 +561,11 @@ pub async fn explorer_list_directory(
     app: AppHandle,
 ) -> Result<Vec<ExplorerEntry>, String> {
     let root = root_for(&app, &workspace_id)?;
-    tauri::async_runtime::spawn_blocking(move || list_directory(&root, path.as_deref().unwrap_or("")))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        list_directory(&root, path.as_deref().unwrap_or(""))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -558,7 +589,10 @@ pub fn explorer_stat(
         readonly: metadata.permissions().readonly(),
         is_directory: metadata.is_dir(),
         is_symlink: link.file_type().is_symlink(),
-        absolute_path: target.to_string_lossy().trim_start_matches(r"\\?\").to_string(),
+        absolute_path: target
+            .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .to_string(),
     })
 }
 
@@ -599,9 +633,12 @@ pub async fn explorer_transfer_entries(
 ) -> Result<Vec<TransferResult>, String> {
     let mut roots = HashMap::new();
     for request in &operations {
-        for id in [Some(&request.target_workspace_id), request.source_workspace_id.as_ref()]
-            .into_iter()
-            .flatten()
+        for id in [
+            Some(&request.target_workspace_id),
+            request.source_workspace_id.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
         {
             if !roots.contains_key(id) {
                 let root = files::canonical_root(&root_for(&app, id)?)?;
@@ -612,13 +649,18 @@ pub async fn explorer_transfer_entries(
     tauri::async_runtime::spawn_blocking(move || {
         operations
             .iter()
-            .map(|request| match transfer_one(&roots, request, copy, overwrite) {
-                Ok(target) => TransferResult { target, error: None },
-                Err(error) => TransferResult {
-                    target: request.target.clone(),
-                    error: Some(error),
+            .map(
+                |request| match transfer_one(&roots, request, copy, overwrite) {
+                    Ok(target) => TransferResult {
+                        target,
+                        error: None,
+                    },
+                    Err(error) => TransferResult {
+                        target: request.target.clone(),
+                        error: Some(error),
+                    },
                 },
-            })
+            )
             .collect()
     })
     .await
@@ -645,7 +687,9 @@ pub async fn explorer_write_file(
     app: AppHandle,
 ) -> Result<(), String> {
     let root = root_for(&app, &workspace_id)?;
-    let bytes = STANDARD.decode(base64.as_bytes()).map_err(|error| error.to_string())?;
+    let bytes = STANDARD
+        .decode(base64.as_bytes())
+        .map_err(|error| error.to_string())?;
     tauri::async_runtime::spawn_blocking(move || write_bytes(&root, &path, &bytes, overwrite))
         .await
         .map_err(|error| error.to_string())?
@@ -680,7 +724,9 @@ pub async fn explorer_git_ignored(
                 let _ = stdin.write_all(b"\0");
             })
         });
-        let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        let output = child
+            .wait_with_output()
+            .map_err(|error| error.to_string())?;
         if let Some(writer) = writer {
             let _ = writer.join();
         }
@@ -724,7 +770,8 @@ pub async fn explorer_git_remote(
         };
         Ok(Some(GitRemoteInfo {
             remote,
-            branch: git_line(&git, &root, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default(),
+            branch: git_line(&git, &root, &["rev-parse", "--abbrev-ref", "HEAD"])
+                .unwrap_or_default(),
             commit: git_line(&git, &root, &["rev-parse", "HEAD"]).unwrap_or_default(),
             prefix: git_line(&git, &root, &["rev-parse", "--show-prefix"]).unwrap_or_default(),
         }))
@@ -742,7 +789,7 @@ pub fn explorer_open_external(
     let root = files::canonical_root(&workspace_root(&state, &workspace_id)?)?;
     let target = entry_path(&root, &path)?;
     if !exists_no_follow(&target) {
-        return Err("文件不存在".to_string());
+        return Err(tr!("文件不存在"));
     }
     #[cfg(target_os = "windows")]
     let program = "explorer";
@@ -772,7 +819,10 @@ pub fn explorer_absolute_path(
     } else {
         entry_path(&root, &path)?
     };
-    Ok(target.to_string_lossy().trim_start_matches(r"\\?\").to_string())
+    Ok(target
+        .to_string_lossy()
+        .trim_start_matches(r"\\?\")
+        .to_string())
 }
 
 #[tauri::command]
@@ -784,7 +834,12 @@ pub fn explorer_clipboard_write_files(
     for entry in entries {
         let root = files::canonical_root(&workspace_root(&state, &entry.workspace_id)?)?;
         let target = entry_path(&root, &entry.path)?;
-        paths.push(target.to_string_lossy().trim_start_matches(r"\\?\").to_string());
+        paths.push(
+            target
+                .to_string_lossy()
+                .trim_start_matches(r"\\?\")
+                .to_string(),
+        );
     }
     write_clipboard_files(&paths)
 }
@@ -828,7 +883,12 @@ fn read_clipboard_files() -> Vec<String> {
 fn write_clipboard_files(paths: &[String]) -> Result<(), String> {
     let list = paths
         .iter()
-        .map(|path| format!("POSIX file \"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
+        .map(|path| {
+            format!(
+                "POSIX file \"{}\"",
+                path.replace('\\', "\\\\").replace('"', "\\\"")
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let status = crate::process::command("osascript")
@@ -838,7 +898,7 @@ fn write_clipboard_files(paths: &[String]) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err("无法写入系统剪贴板".to_string())
+        Err(tr!("无法写入系统剪贴板"))
     }
 }
 
@@ -861,7 +921,7 @@ fn read_clipboard_files() -> Vec<String> {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 fn write_clipboard_files(_paths: &[String]) -> Result<(), String> {
-    Err("当前系统不支持把文件写入剪贴板".to_string())
+    Err(tr!("当前系统不支持把文件写入剪贴板"))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -1190,7 +1250,9 @@ pub fn explorer_watch_workspaces(
     if workspace_ids.is_empty() {
         registry.owners.remove(&owner);
     } else {
-        registry.owners.insert(owner, workspace_ids.into_iter().collect());
+        registry
+            .owners
+            .insert(owner, workspace_ids.into_iter().collect());
     }
     let wanted: HashSet<String> = registry.owners.values().flatten().cloned().collect();
     registry.watchers.retain(|id, _| wanted.contains(id));
@@ -1269,7 +1331,10 @@ mod tests {
         assert!(!temp.path().join("docs").exists());
         let backup = results[0].backup_id.clone().unwrap();
         restore_entry(root, "docs", &backup, backups.path()).unwrap();
-        assert_eq!(fs::read_to_string(temp.path().join("docs/a.md")).unwrap(), "hello");
+        assert_eq!(
+            fs::read_to_string(temp.path().join("docs/a.md")).unwrap(),
+            "hello"
+        );
     }
 
     #[test]
@@ -1308,7 +1373,10 @@ mod tests {
             target: "a".to_string(),
         };
         assert!(transfer_one(&map, &request, false, true).is_err());
-        assert_eq!(fs::read_to_string(temp.path().join("a/b/x.txt")).unwrap(), "x");
+        assert_eq!(
+            fs::read_to_string(temp.path().join("a/b/x.txt")).unwrap(),
+            "x"
+        );
     }
 
     #[test]
@@ -1326,7 +1394,10 @@ mod tests {
             target: "b/x.txt".to_string(),
         };
         transfer_one(&map, &request, true, true).unwrap();
-        assert_eq!(fs::read_to_string(temp.path().join("b/x.txt")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(temp.path().join("b/x.txt")).unwrap(),
+            "new"
+        );
         assert_eq!(fs::read_dir(temp.path().join("b")).unwrap().count(), 1);
     }
 
@@ -1338,8 +1409,11 @@ mod tests {
         let backups = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("keep.txt"), "keep").unwrap();
         std::os::unix::fs::symlink(outside.path(), workspace.path().join("link")).unwrap();
-        std::os::unix::fs::symlink(outside.path().join("keep.txt"), workspace.path().join("file-link"))
-            .unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("keep.txt"),
+            workspace.path().join("file-link"),
+        )
+        .unwrap();
         let root = workspace.path().to_str().unwrap();
 
         assert!(write_bytes(root, "link/keep.txt", b"overwritten", true).is_err());
@@ -1347,16 +1421,23 @@ mod tests {
         assert!(create_entry(root, "link/created.txt", false).is_err());
         assert!(!outside.path().join("deep").exists());
         assert!(!outside.path().join("created.txt").exists());
-        let nested = delete_entries(root, &["link/keep.txt".to_string()], false, backups.path()).unwrap();
+        let nested =
+            delete_entries(root, &["link/keep.txt".to_string()], false, backups.path()).unwrap();
         assert!(nested[0].error.is_some());
 
         write_bytes(root, "file-link", b"replaced", true).unwrap();
-        assert_eq!(fs::read_to_string(outside.path().join("keep.txt")).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(outside.path().join("keep.txt")).unwrap(),
+            "keep"
+        );
 
         let results = delete_entries(root, &["link".to_string()], false, backups.path()).unwrap();
         assert!(results[0].error.is_none());
         assert!(fs::symlink_metadata(workspace.path().join("link")).is_err());
-        assert_eq!(fs::read_to_string(outside.path().join("keep.txt")).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(outside.path().join("keep.txt")).unwrap(),
+            "keep"
+        );
     }
 
     #[test]

@@ -13,7 +13,7 @@ pub fn get(id: &str) -> Result<crate::models::GlobalResource, String> {
     list_scanned()
         .into_iter()
         .find(|resource| resource.id == id)
-        .ok_or_else(|| "Skill 不存在".to_string())
+        .ok_or_else(|| tr!("Skill 不存在"))
 }
 
 pub fn builtin(locale: &str) -> serde_json::Value {

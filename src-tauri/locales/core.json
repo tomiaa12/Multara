@@ -1,0 +1,122 @@
+{
+  "会话不存在": {
+    "en": "Session not found",
+    "zh-TW": "會話不存在",
+    "ja": "セッションが見つかりません",
+    "ko": "세션을 찾을 수 없습니다"
+  },
+  "消息不存在或不属于该会话": {
+    "en": "Message not found or does not belong to this conversation",
+    "zh-TW": "訊息不存在或不屬於此對話",
+    "ja": "メッセージが見つからないか、この会話のものではありません",
+    "ko": "메시지를 찾을 수 없거나 이 대화에 속하지 않습니다"
+  },
+  "反馈只能是 up 或 down": {
+    "en": "Feedback must be up or down",
+    "zh-TW": "回饋只能是 up 或 down",
+    "ja": "フィードバックは up か down のみです",
+    "ko": "피드백은 up 또는 down만 가능합니다"
+  },
+  "消息不存在": {
+    "en": "Message not found",
+    "zh-TW": "訊息不存在",
+    "ja": "メッセージが見つかりません",
+    "ko": "메시지를 찾을 수 없습니다"
+  },
+  "摘要不能为空": {
+    "en": "Summary cannot be empty",
+    "zh-TW": "摘要不能為空",
+    "ja": "要約は空にできません",
+    "ko": "요약은 비워 둘 수 없습니다"
+  },
+  "没有可以压缩的对话": {
+    "en": "There is no conversation to compact",
+    "zh-TW": "沒有可以壓縮的對話",
+    "ja": "圧縮できる会話がありません",
+    "ko": "압축할 대화가 없습니다"
+  },
+  "无效运行模式：{value}": {
+    "en": "Invalid run mode: {value}",
+    "zh-TW": "無效的執行模式：{value}",
+    "ja": "無効な実行モード：{value}",
+    "ko": "잘못된 실행 모드: {value}"
+  },
+  "Multara 退出时这次运行还没写完，已中断。": {
+    "en": "Multara quit before this run finished writing, so it was interrupted.",
+    "zh-TW": "Multara 結束時這次執行還沒寫完，已中斷。",
+    "ja": "この実行の書き込みが終わる前に Multara が終了したため、中断されました。",
+    "ko": "이번 실행이 끝나기 전에 Multara가 종료되어 중단되었습니다."
+  },
+  "Multara 在任务完成前退出": {
+    "en": "Multara quit before the task finished",
+    "zh-TW": "Multara 在任務完成前結束",
+    "ja": "タスクの完了前に Multara が終了しました",
+    "ko": "작업이 완료되기 전에 Multara가 종료되었습니다"
+  },
+  "当前智能体不支持规划模式": {
+    "en": "This agent doesn't support Plan mode",
+    "zh-TW": "目前的智慧體不支援規劃模式",
+    "ja": "このエージェントは計画モードに対応していません",
+    "ko": "현재 에이전트는 계획 모드를 지원하지 않습니다"
+  },
+  "session/set_mode 失败：运行时未确认规划模式": {
+    "en": "session/set_mode failed: the runtime didn't confirm Plan mode",
+    "zh-TW": "session/set_mode 失敗：執行環境未確認規劃模式",
+    "ja": "session/set_mode に失敗しました：ランタイムが計画モードを確認しませんでした",
+    "ko": "session/set_mode 실패: 런타임이 계획 모드를 확인하지 않았습니다"
+  },
+  "{method} 超时：运行时没有应答": {
+    "en": "{method} timed out: the runtime didn't respond",
+    "zh-TW": "{method} 逾時：執行環境沒有回應",
+    "ja": "{method} がタイムアウトしました：ランタイムから応答がありません",
+    "ko": "{method} 시간 초과: 런타임이 응답하지 않았습니다"
+  },
+  "命令提示符": {
+    "en": "Command Prompt",
+    "zh-TW": "命令提示字元",
+    "ja": "コマンド プロンプト",
+    "ko": "명령 프롬프트"
+  },
+  "文件不存在：{error}": {
+    "en": "File not found: {error}",
+    "zh-TW": "檔案不存在：{error}",
+    "ja": "ファイルが見つかりません：{error}",
+    "ko": "파일을 찾을 수 없습니다: {error}"
+  },
+  "文件不存在：{path}": {
+    "en": "File not found: {path}",
+    "zh-TW": "檔案不存在：{path}",
+    "ja": "ファイルが見つかりません：{path}",
+    "ko": "파일을 찾을 수 없습니다: {path}"
+  },
+  "文件不存在": {
+    "en": "File not found",
+    "zh-TW": "檔案不存在",
+    "ja": "ファイルが見つかりません",
+    "ko": "파일을 찾을 수 없습니다"
+  },
+  "任务正在执行，请先停止运行再删除": {
+    "en": "The task is running. Stop it before deleting.",
+    "zh-TW": "任務正在執行，請先停止執行再刪除",
+    "ja": "タスクは実行中です。停止してから削除してください",
+    "ko": "작업이 실행 중입니다. 먼저 중지한 후 삭제하세요"
+  },
+  "请按用户这句话处理你负责的部分，完成后向我汇报。": {
+    "en": "Please handle your part based on the user's request, and report back to me when done.",
+    "zh-TW": "請按使用者這句話處理你負責的部分，完成後向我回報。",
+    "ja": "ユーザーのこの依頼に沿って担当部分を進め、終わったら報告してください。",
+    "ko": "사용자의 이 요청에 따라 맡은 부분을 처리하고 끝나면 보고해 주세요."
+  },
+  "请按刚才的拆分处理你负责的部分，完成后向我汇报。": {
+    "en": "Please handle your part as just split up, and report back to me when done.",
+    "zh-TW": "請按剛才的拆分處理你負責的部分，完成後向我回報。",
+    "ja": "先ほどの分担に沿って担当部分を進め、終わったら報告してください。",
+    "ko": "방금 나눈 대로 맡은 부분을 처리하고 끝나면 보고해 주세요."
+  },
+  "请处理子任务「{child_title}」（`{child_id}`），完成后向我汇报。": {
+    "en": "Please handle the subtask \"{child_title}\" (`{child_id}`), and report back to me when done.",
+    "zh-TW": "請處理子任務「{child_title}」（`{child_id}`），完成後向我回報。",
+    "ja": "サブタスク「{child_title}」（`{child_id}`）を進め、終わったら報告してください。",
+    "ko": "하위 작업 \"{child_title}\"(`{child_id}`)을 처리하고 끝나면 보고해 주세요."
+  }
+}

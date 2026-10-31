@@ -28,7 +28,7 @@ fn pick_macos() -> Result<Vec<PickedPath>, String> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
 
-    let mtm = MainThreadMarker::new().ok_or_else(|| "文件选择器必须在主线程运行".to_string())?;
+    let mtm = MainThreadMarker::new().ok_or_else(|| tr!("文件选择器必须在主线程运行"))?;
     let panel = NSOpenPanel::openPanel(mtm);
     panel.setCanChooseFiles(true);
     panel.setCanChooseDirectories(true);
@@ -54,7 +54,11 @@ fn pick_macos() -> Result<Vec<PickedPath>, String> {
 fn pick_other(app: &AppHandle) -> Result<Vec<PickedPath>, String> {
     use tauri_plugin_dialog::DialogExt;
     // Windows / Linux 系统对话框无法在同一窗口混选文件与文件夹，退化为多选文件。
-    let selected = app.dialog().file().blocking_pick_files().unwrap_or_default();
+    let selected = app
+        .dialog()
+        .file()
+        .blocking_pick_files()
+        .unwrap_or_default();
     Ok(classify_paths(
         selected
             .into_iter()

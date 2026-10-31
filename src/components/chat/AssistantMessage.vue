@@ -9,6 +9,8 @@ import FailureBubble from "./FailureBubble.vue";
 import MessageFooter from "./MessageFooter.vue";
 import ProcessFold from "./ProcessFold.vue";
 import RichContent from "./RichContent.vue";
+import PlanArtifactCard from "./PlanArtifactCard.vue";
+import { plansInMessage } from "./plan-state";
 import { useAppStore } from "../../stores/app";
 import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
 import { extractQuestions } from "./question-block";
@@ -22,8 +24,13 @@ const props = withDefaults(defineProps<{
   allowContinue?: boolean;
   allowFork?: boolean;
   questionState?: "pending" | "answered" | "skipped" | null;
+  /** 回看场景（如收件箱）：子代理默认全折叠，只显示摘要 */
+  defaultCollapseSubagents?: boolean;
+  /** 窄布局：计划卡片只显示标题、摘要和步骤数 */
+  compact?: boolean;
 }>(), {
   allowFork: false,
+  compact: false,
 });
 const emit = defineEmits<{
   "pick-action": [prompt: string];
@@ -45,7 +52,7 @@ const bodyRaw = computed(() =>
 const extracted = computed(() => extractQuestions(bodyRaw.value));
 const bodyText = computed(() => {
   if (!hidesAssignment.value) return extracted.value.body;
-  return assignmentVisibleText(extracted.value.body);
+  return assignmentVisibleText(extracted.value.body, props.message.messageKind);
 });
 /** 失败消息没有正文时，复制内容取失败摘要 + 技术详情 */
 const footerText = computed(() => {
@@ -63,6 +70,7 @@ const questionStateLabel = computed(() => {
 const showAssignmentOriginal = computed(() =>
   hidesAssignment.value && bodyRaw.value.trim() !== bodyText.value.trim(),
 );
+const plans = computed(() => plansInMessage(store.planStates(props.message.sessionId), props.message.id));
 </script>
 
 <template>
@@ -91,8 +99,16 @@ const showAssignmentOriginal = computed(() =>
         :running="running"
         :elapsed-ms="message.elapsedMs"
         :run-id="message.runId"
+        :default-collapse-subagents="defaultCollapseSubagents"
       />
       <RichContent v-if="bodyText.trim()" :content="bodyText" />
+      <PlanArtifactCard
+        v-for="entry in plans"
+        :key="entry.key"
+        :entry="entry"
+        :compact="compact"
+        :session-id="message.sessionId"
+      />
       <p v-if="running && extracted.streaming" class="question-summary-pending">{{ t("chat.questionPreparing") }}</p>
       <div v-else-if="questions.length && !running" class="question-summary" :class="questionState ?? ''">
         <div v-for="question in questions" :key="question.id" class="question-summary-item">

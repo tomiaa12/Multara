@@ -41,7 +41,7 @@ pub fn project_id(db: &Connection, session_id: &str) -> Result<Option<String>, S
         [session_id],
         |row| row.get(0),
     )
-    .map_err(|_| "聊天不存在".to_string())
+    .map_err(|_| tr!("聊天不存在"))
 }
 
 pub fn linked_project_ids(db: &Connection, session_id: &str) -> Result<Vec<String>, String> {
@@ -53,7 +53,7 @@ pub fn linked_project_ids(db: &Connection, session_id: &str) -> Result<Vec<Strin
         )
         .map_err(|error| error.to_string())?;
     if !exists {
-        return Err("聊天不存在".to_string());
+        return Err(tr!("聊天不存在"));
     }
     let mut statement = db
         .prepare(
@@ -162,7 +162,9 @@ pub(crate) fn ensure_session_idle(db: &Connection, session_id: &str) -> Result<(
         )
         .map_err(|error| error.to_string())?;
     if active {
-        Err("当前会话仍有智能体正在运行，此运行无法追加消息，请等待结束或停止后发送".to_string())
+        Err(tr!(
+            "当前会话仍有智能体正在运行，此运行无法追加消息，请等待结束或停止后发送"
+        ))
     } else {
         Ok(())
     }
@@ -193,7 +195,7 @@ pub(crate) fn ensure_project_idle(db: &Connection, project_id: &str) -> Result<(
         )
         .map_err(|error| error.to_string())?;
     if active {
-        Err("项目仍有智能体正在运行".to_string())
+        Err(tr!("项目仍有智能体正在运行"))
     } else {
         Ok(())
     }
@@ -264,7 +266,10 @@ fn workspace_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_project_idle, ensure_session_idle, linked_project_ids, session_workspaces, sorted_project_ids};
+    use super::{
+        ensure_project_idle, ensure_session_idle, linked_project_ids, session_workspaces,
+        sorted_project_ids,
+    };
     use rusqlite::Connection;
 
     fn database() -> Connection {
@@ -344,9 +349,11 @@ mod tests {
         assert!(ensure_project_idle(&db, "p1").is_err());
         assert!(ensure_project_idle(&db, "p2").is_err());
 
-        db.execute("UPDATE agent_runs SET status='queued' WHERE id='r1'", []).unwrap();
+        db.execute("UPDATE agent_runs SET status='queued' WHERE id='r1'", [])
+            .unwrap();
         assert!(ensure_session_idle(&db, "s1").is_err());
-        db.execute("UPDATE agent_runs SET status='completed' WHERE id='r1'", []).unwrap();
+        db.execute("UPDATE agent_runs SET status='completed' WHERE id='r1'", [])
+            .unwrap();
         assert!(ensure_session_idle(&db, "s1").is_ok());
         assert!(ensure_project_idle(&db, "p1").is_ok());
     }

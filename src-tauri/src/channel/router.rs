@@ -77,7 +77,7 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
                 app,
                 installation,
                 &message,
-                "你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。",
+                &tr!("你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。"),
             );
         }
         return;
@@ -90,7 +90,12 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
     let binding = match ensure_binding(app, installation, &message) {
         Ok(binding) => binding,
         Err(error) => {
-            send_notice(app, installation, &message, &format!("无法创建会话：{error}"));
+            send_notice(
+                app,
+                installation,
+                &message,
+                &tr!("无法创建会话：{error}", error = error),
+            );
             return;
         }
     };
@@ -127,13 +132,11 @@ fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessa
         return true;
     }
     let text = message.text.trim();
-    let candidate = text
-        .strip_prefix("/pair ")
-        .map(str::trim)
-        .unwrap_or(text);
+    let candidate = text.strip_prefix("/pair ").map(str::trim).unwrap_or(text);
     if candidate != code {
         // 只把看起来像在输配对码的消息记为失败，正常聊天不会把人锁住
-        let attempted = text.starts_with("/pair ") || candidate.chars().count() == code.chars().count();
+        let attempted =
+            text.starts_with("/pair ") || candidate.chars().count() == code.chars().count();
         if attempted && pairing::record_failure(&installation.id, sender) {
             send_notice(app, installation, message, &pairing::locked_notice());
             return true;
@@ -160,16 +163,12 @@ fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessa
         app,
         installation,
         message,
-        "配对成功。现在可以直接给这个机器人发消息，也可以发送 /help 查看指令。",
+        &tr!("配对成功。现在可以直接给这个机器人发消息，也可以发送 /help 查看指令。"),
     );
     true
 }
 
-fn handle_command(
-    app: &AppHandle,
-    installation: &Installation,
-    message: &InboundMessage,
-) -> bool {
+fn handle_command(app: &AppHandle, installation: &Installation, message: &InboundMessage) -> bool {
     let text = message.text.trim();
     if !text.starts_with('/') {
         return false;
@@ -183,7 +182,7 @@ fn handle_command(
             app,
             installation,
             message,
-            "可用指令：\n/new 开启新会话\n/stop 中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明",
+            &tr!("可用指令：\n/new 开启新会话\n/stop 中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明"),
         ),
         "/new" => {
             let route_key = route_key(message);
@@ -195,7 +194,7 @@ fn handle_command(
                     let _ = store::retire_binding(&db, &binding.id);
                 }
             }
-            send_notice(app, installation, message, "已开启新会话，下一条消息会创建新的对话。");
+            send_notice(app, installation, message, &tr!("已开启新会话，下一条消息会创建新的对话。"));
         }
         "/stop" => {
             let route_key = route_key(message);
@@ -210,7 +209,7 @@ fn handle_command(
                     .map(|binding| binding.session_id)
             };
             let Some(session_id) = session_id else {
-                send_notice(app, installation, message, "当前没有正在运行的会话。");
+                send_notice(app, installation, message, &tr!("当前没有正在运行的会话。"));
                 return true;
             };
             let run_ids: Vec<String> = {
@@ -235,13 +234,13 @@ fn handle_command(
                     .unwrap_or_default()
             };
             if run_ids.is_empty() {
-                send_notice(app, installation, message, "当前没有正在运行的智能体。");
+                send_notice(app, installation, message, &tr!("当前没有正在运行的智能体。"));
                 return true;
             }
             for run_id in &run_ids {
                 let _ = crate::executor::stop(app, run_id);
             }
-            send_notice(app, installation, message, "已请求停止当前运行。");
+            send_notice(app, installation, message, &tr!("已请求停止当前运行。"));
         }
         "/status" => {
             let route_key = route_key(message);
@@ -278,18 +277,25 @@ fn handle_command(
                     app,
                     installation,
                     message,
-                    &format!(
-                        "目标：{}\n会话：{}\n运行中 {running} · 排队 {queued}",
-                        target_label(installation),
-                        &session_id[..session_id.len().min(8)]
+                    &tr!(
+                        "目标：{target}\n会话：{session}\n运行中 {running} · 排队 {queued}",
+                        target = target_label(installation),
+                        session = &session_id[..session_id.len().min(8)],
+                        running = running,
+                        queued = queued
                     ),
                 ),
-                None => send_notice(app, installation, message, "当前聊天还没有会话，直接发一条消息即可开始。"),
+                None => send_notice(
+                    app,
+                    installation,
+                    message,
+                    &tr!("当前聊天还没有会话，直接发一条消息即可开始。"),
+                ),
             }
         }
         "/project" => {
             if argument.is_empty() {
-                send_notice(app, installation, message, "用法：/project 需求名");
+                send_notice(app, installation, message, &tr!("用法：/project 需求名"));
                 return true;
             }
             let project = {
@@ -316,17 +322,17 @@ fn handle_command(
                         app,
                         installation,
                         message,
-                        &format!("默认需求已切换为「{name}」。新会话会挂到这个需求下。"),
+                        &tr!("默认需求已切换为「{name}」。新会话会挂到这个需求下。", name = name),
                     );
                 }
-                None => send_notice(app, installation, message, "没有找到这个需求。"),
+                None => send_notice(app, installation, message, &tr!("没有找到这个需求。")),
             }
         }
         _ => send_notice(
             app,
             installation,
             message,
-            "未知指令。发送 /help 查看可用指令。",
+            &tr!("未知指令。发送 /help 查看可用指令。"),
         ),
     }
     true
@@ -336,9 +342,9 @@ fn target_label(installation: &Installation) -> String {
     let state = format!(
         "{} {}",
         if installation.target_type == "squad" {
-            "小队"
+            tr!("小队")
         } else {
-            "智能体"
+            tr!("智能体")
         },
         installation.name
     );
@@ -346,7 +352,11 @@ fn target_label(installation: &Installation) -> String {
 }
 
 fn route_key(message: &InboundMessage) -> String {
-    match message.thread_id.as_deref().filter(|value| !value.is_empty()) {
+    match message
+        .thread_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         Some(thread) => format!("{}:{}", message.chat_id, thread),
         None => message.chat_id.clone(),
     }
@@ -373,7 +383,7 @@ fn ensure_binding(
             [&installation.target_id],
             |row| row.get(0),
         )
-        .map_err(|_| "绑定的智能体或小队不存在".to_string())?;
+        .map_err(|_| tr!("绑定的智能体或小队不存在"))?;
     let now = Utc::now().to_rfc3339();
     let session_id = uuid::Uuid::new_v4().to_string();
     let first_line: String = message
@@ -385,9 +395,9 @@ fn ensure_binding(
         .take(20)
         .collect();
     let chat_label = if message.chat_type == ChatType::P2p {
-        "私聊".to_string()
+        tr!("私聊")
     } else {
-        "群聊".to_string()
+        tr!("群聊")
     };
     let title = if first_line.trim().is_empty() {
         format!("{chat_label} · {target_name}")
@@ -408,11 +418,7 @@ fn ensure_binding(
         ],
     )
     .map_err(|error| error.to_string())?;
-    let project_ids: Vec<String> = installation
-        .project_id
-        .clone()
-        .into_iter()
-        .collect();
+    let project_ids: Vec<String> = installation.project_id.clone().into_iter().collect();
     crate::session::replace_linked_projects(&db, &session_id, &project_ids)?;
     store::create_binding(&db, &installation.id, &key, message, &session_id)
 }
@@ -441,7 +447,15 @@ fn download_media(
         .take(10)
         .filter_map(|media: &MediaRef| {
             let name = sanitize_file_name(&media.name);
-            let suffix: String = media.file_key.chars().rev().take(6).collect::<String>().chars().rev().collect();
+            let suffix: String = media
+                .file_key
+                .chars()
+                .rev()
+                .take(6)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
             let dest = root.join(format!("{suffix}-{name}"));
             api.download_resource(&message.message_id, &media.file_key, &media.kind, &dest)
                 .ok()?;
@@ -535,7 +549,8 @@ fn flush(app: &AppHandle, key: &str) {
     if batch.texts.is_empty() && batch.attachments.is_empty() {
         return;
     }
-    let content = batch.texts.join("\n\n");
+    let raw_content = batch.texts.join("\n\n");
+    let (content, requested_mode) = parse_mode_command(&raw_content);
     let meta = json!({
         "installationId": batch.installation.id,
         "chatId": batch.message.chat_id,
@@ -551,10 +566,11 @@ fn flush(app: &AppHandle, key: &str) {
     let result = crate::commands::send_channel_message(
         app,
         &batch.binding.session_id,
-        &content,
+        content,
         std::mem::take(&mut batch.attachments),
         &batch.installation.channel_type,
         meta,
+        requested_mode,
     );
     match result {
         Ok(outcome) => {
@@ -607,30 +623,33 @@ fn flush(app: &AppHandle, key: &str) {
                 app,
                 &batch.installation,
                 &batch.message,
-                &format!("没有把消息交给智能体：{error}"),
+                &tr!("没有把消息交给智能体：{error}", error = error),
             );
         }
     }
 }
 
-fn send_notice(
-    app: &AppHandle,
-    installation: &Installation,
-    message: &InboundMessage,
-    text: &str,
-) {
+fn send_notice(app: &AppHandle, installation: &Installation, message: &InboundMessage, text: &str) {
     let Ok((_, api)) = api_for(app, &installation.id) else {
         return;
     };
     let (msg_type, content) = if looks_like_markdown(text) {
-        ("interactive", crate::channel::feishu::card::markdown_card(text).to_string())
+        (
+            "interactive",
+            crate::channel::feishu::card::markdown_card(text).to_string(),
+        )
     } else {
         ("text", json!({ "text": text }).to_string())
     };
     let message_id = if message.chat_type == ChatType::P2p && message.thread_id.is_none() {
         api.send_message_raw(&message.chat_id, msg_type, &content)
     } else {
-        api.reply(&message.message_id, msg_type, &content, message.thread_id.is_some())
+        api.reply(
+            &message.message_id,
+            msg_type,
+            &content,
+            message.thread_id.is_some(),
+        )
     };
     if let Ok(sent) = message_id {
         let state = app.state::<AppState>();
@@ -648,12 +667,13 @@ pub fn looks_like_markdown(text: &str) -> bool {
 fn handle_card_action(app: &AppHandle, installation: &Installation, action: CardAction) {
     let allowed = {
         let state = app.state::<AppState>();
-        matches!(
+        is_owner(
             state
                 .lock_db()
                 .ok()
-                .and_then(|db| store::allowed_user(&db, &installation.id, &action.operator_id)),
-            Some(user) if user.role == "owner"
+                .and_then(|db| store::allowed_user(&db, &installation.id, &action.operator_id))
+                .as_ref()
+                .map(|user| user.role.as_str()),
         )
     };
     if !allowed {
@@ -686,7 +706,13 @@ fn handle_card_action(app: &AppHandle, installation: &Installation, action: Card
         }
     } else if kind == "question" {
         answer_question(app, installation, &action);
+    } else if kind == "plan" {
+        handle_plan_action(app, installation, &action);
     }
+}
+
+fn is_owner(role: Option<&str>) -> bool {
+    role == Some("owner")
 }
 
 /// 点击提问卡片 = 发一条普通用户消息，走同一条执行路径。
@@ -727,6 +753,7 @@ fn answer_question(app: &AppHandle, installation: &Installation, action: &CardAc
         Vec::new(),
         &installation.channel_type,
         meta,
+        None,
     ) else {
         return;
     };
@@ -750,4 +777,153 @@ fn answer_question(app: &AppHandle, installation: &Installation, action: &CardAc
             );
         }
     };
+}
+
+fn handle_plan_action(app: &AppHandle, installation: &Installation, action: &CardAction) {
+    let run_id = action
+        .value
+        .get("runId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let plan_id = action
+        .value
+        .get("planId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let revision = action
+        .value
+        .get("revision")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or_default();
+    let plan_action = action
+        .value
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let (delivery, locale) = {
+        let state = app.state::<AppState>();
+        let Ok(db) = state.lock_db() else {
+            return;
+        };
+        (store::delivery_by_run(&db, run_id), crate::app_locale::from_db(&db))
+    };
+    let Some(delivery) = delivery else {
+        return;
+    };
+    if plan_action == "refine" {
+        if let Ok((_, api)) = api_for(app, &installation.id) {
+            let _ = api.send_message_raw(
+                &delivery.chat_id,
+                "text",
+                &json!({ "text": crate::plan_prompts::plan_card_text(locale).refine_hint })
+                    .to_string(),
+            );
+        }
+        return;
+    }
+    let source = crate::commands::MessageSource {
+        source_type: installation.channel_type.clone(),
+        meta: json!({
+            "installationId": installation.id,
+            "chatId": delivery.chat_id,
+            "messageId": action.message_id,
+            "senderId": action.operator_id,
+            "senderName": null,
+        }),
+    };
+    let result = crate::commands::plan_action_inner(
+        app,
+        crate::commands::PlanActionInput {
+            session_id: delivery.session_id.clone(),
+            plan_run_id: run_id.to_string(),
+            plan_id: plan_id.to_string(),
+            revision,
+            action: plan_action.to_string(),
+            feedback: None,
+        },
+        json!({
+            "type": "channel",
+            "id": action.operator_id,
+        }),
+        Some(source),
+    );
+    let Ok(result) = result else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return;
+    };
+    for message in result.messages {
+        let new_run = match message.turn_id {
+            Some(turn_id) => db.query_row(
+                "SELECT id FROM agent_runs WHERE turn_id=?1 ORDER BY created_at DESC LIMIT 1",
+                [&turn_id],
+                |row| row.get::<_, String>(0),
+            ),
+            None => db.query_row(
+                "SELECT id FROM agent_runs
+                 WHERE session_id=?1 AND created_at>=?2
+                 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                rusqlite::params![delivery.session_id, message.created_at],
+                |row| row.get::<_, String>(0),
+            ),
+        };
+        let Ok(new_run) = new_run else {
+            continue;
+        };
+        let _ = store::insert_delivery(
+            &db,
+            &store::Delivery {
+                run_id: new_run,
+                session_id: delivery.session_id.clone(),
+                binding_id: delivery.binding_id.clone(),
+                installation_id: installation.id.clone(),
+                chat_id: delivery.chat_id.clone(),
+                chat_type: delivery.chat_type,
+                reply_to_message_id: Some(action.message_id.clone()),
+                thread_id: delivery.thread_id.clone(),
+                sender_id: Some(action.operator_id.clone()),
+                typing_reaction_id: None,
+            },
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_owner, parse_mode_command};
+    use crate::models::RunMode;
+
+    #[test]
+    fn parses_plan_and_agent_commands() {
+        assert_eq!(
+            parse_mode_command("/plan 先梳理风险"),
+            ("先梳理风险", Some(RunMode::Plan))
+        );
+        assert_eq!(
+            parse_mode_command("/agent 开始执行"),
+            ("开始执行", Some(RunMode::Agent))
+        );
+        assert_eq!(parse_mode_command("普通消息"), ("普通消息", None));
+    }
+
+    #[test]
+    fn card_actions_require_owner_role() {
+        assert!(is_owner(Some("owner")));
+        assert!(!is_owner(Some("member")));
+        assert!(!is_owner(None));
+    }
+}
+
+fn parse_mode_command(content: &str) -> (&str, Option<crate::models::RunMode>) {
+    let content = content.trim();
+    if let Some(value) = content.strip_prefix("/plan ") {
+        return (value.trim(), Some(crate::models::RunMode::Plan));
+    }
+    if let Some(value) = content.strip_prefix("/agent ") {
+        return (value.trim(), Some(crate::models::RunMode::Agent));
+    }
+    (content, None)
 }

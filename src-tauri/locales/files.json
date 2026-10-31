@@ -1,0 +1,410 @@
+{
+  "只能打开文件": {
+    "en": "Only files can be opened",
+    "zh-TW": "只能開啟檔案",
+    "ja": "開けるのはファイルのみです",
+    "ko": "파일만 열 수 있습니다"
+  },
+  "文件超过 128MB，无法安全载入编辑器": {
+    "en": "File is larger than 128MB and can't be safely loaded into the editor",
+    "zh-TW": "檔案超過 128MB，無法安全載入編輯器",
+    "ja": "ファイルが 128MB を超えているため、エディターに安全に読み込めません",
+    "ko": "파일이 128MB를 초과하여 편집기에 안전하게 불러올 수 없습니다"
+  },
+  "文件超过 {limit}MB，无法预览": {
+    "en": "File is larger than {limit}MB and can't be previewed",
+    "zh-TW": "檔案超過 {limit}MB，無法預覽",
+    "ja": "ファイルが {limit}MB を超えているため、プレビューできません",
+    "ko": "파일이 {limit}MB를 초과하여 미리 볼 수 없습니다"
+  },
+  "文件超过 64MB，只能只读打开": {
+    "en": "File is larger than 64MB and can only be opened read-only",
+    "zh-TW": "檔案超過 64MB，只能以唯讀方式開啟",
+    "ja": "ファイルが 64MB を超えているため、読み取り専用でのみ開けます",
+    "ko": "파일이 64MB를 초과하여 읽기 전용으로만 열 수 있습니다"
+  },
+  "无效路径": {
+    "en": "Invalid path",
+    "zh-TW": "無效的路徑",
+    "ja": "無効なパスです",
+    "ko": "잘못된 경로입니다"
+  },
+  "无效文件路径": {
+    "en": "Invalid file path",
+    "zh-TW": "無效的檔案路徑",
+    "ja": "無効なファイルパスです",
+    "ko": "잘못된 파일 경로입니다"
+  },
+  "保存文件失败：{error}": {
+    "en": "Couldn't save file: {error}",
+    "zh-TW": "儲存檔案失敗：{error}",
+    "ja": "ファイルを保存できませんでした：{error}",
+    "ko": "파일 저장 실패: {error}"
+  },
+  "文件超过 64MB，无法创建": {
+    "en": "File is larger than 64MB and can't be created",
+    "zh-TW": "檔案超過 64MB，無法建立",
+    "ja": "ファイルが 64MB を超えているため、作成できません",
+    "ko": "파일이 64MB를 초과하여 만들 수 없습니다"
+  },
+  "文件已存在": {
+    "en": "File already exists",
+    "zh-TW": "檔案已存在",
+    "ja": "ファイルは既に存在します",
+    "ko": "파일이 이미 있습니다"
+  },
+  "文件夹已存在": {
+    "en": "Folder already exists",
+    "zh-TW": "資料夾已存在",
+    "ja": "フォルダーは既に存在します",
+    "ko": "폴더가 이미 있습니다"
+  },
+  "不能重命名工作区根目录": {
+    "en": "Can't rename the workspace root",
+    "zh-TW": "無法重新命名工作區根目錄",
+    "ja": "ワークスペースのルートの名前は変更できません",
+    "ko": "워크스페이스 루트의 이름은 바꿀 수 없습니다"
+  },
+  "目标已存在": {
+    "en": "Target already exists",
+    "zh-TW": "目標已存在",
+    "ja": "ターゲットは既に存在します",
+    "ko": "대상이 이미 있습니다"
+  },
+  "不能删除工作区根目录": {
+    "en": "Can't delete the workspace root",
+    "zh-TW": "無法刪除工作區根目錄",
+    "ja": "ワークスペースのルートは削除できません",
+    "ko": "워크스페이스 루트는 삭제할 수 없습니다"
+  },
+  "父目录不存在": {
+    "en": "Parent folder doesn't exist",
+    "zh-TW": "上層資料夾不存在",
+    "ja": "親フォルダーが存在しません",
+    "ko": "상위 폴더가 없습니다"
+  },
+  "路径指向工作区之外": {
+    "en": "Path points outside the workspace",
+    "zh-TW": "路徑指向工作區之外",
+    "ja": "パスがワークスペースの外を指しています",
+    "ko": "경로가 워크스페이스 밖을 가리킵니다"
+  },
+  "{path} 不是文件夹": {
+    "en": "{path} is not a folder",
+    "zh-TW": "{path} 不是資料夾",
+    "ja": "{path} はフォルダーではありません",
+    "ko": "{path}은(는) 폴더가 아닙니다"
+  },
+  "工作区不可用：{error}": {
+    "en": "Workspace unavailable: {error}",
+    "zh-TW": "工作區無法使用：{error}",
+    "ja": "ワークスペースを使用できません：{error}",
+    "ko": "워크스페이스를 사용할 수 없습니다: {error}"
+  },
+  "只能展开文件夹": {
+    "en": "Only folders can be expanded",
+    "zh-TW": "只能展開資料夾",
+    "ja": "展開できるのはフォルダーのみです",
+    "ko": "폴더만 펼칠 수 있습니다"
+  },
+  "无效的相对路径": {
+    "en": "Invalid relative path",
+    "zh-TW": "無效的相對路徑",
+    "ja": "無効な相対パスです",
+    "ko": "잘못된 상대 경로입니다"
+  },
+  "暂不支持编辑二进制文件": {
+    "en": "Editing binary files isn't supported yet",
+    "zh-TW": "暫不支援編輯二進位檔案",
+    "ja": "バイナリファイルの編集にはまだ対応していません",
+    "ko": "바이너리 파일 편집은 아직 지원하지 않습니다"
+  },
+  "不能操作工作区根目录": {
+    "en": "Can't modify the workspace root",
+    "zh-TW": "無法操作工作區根目錄",
+    "ja": "ワークスペースのルートは操作できません",
+    "ko": "워크스페이스 루트는 조작할 수 없습니다"
+  },
+  "文件夹层级太深，无法复制": {
+    "en": "Folder is nested too deeply to copy",
+    "zh-TW": "資料夾層級太深，無法複製",
+    "ja": "フォルダーの階層が深すぎるため、コピーできません",
+    "ko": "폴더 계층이 너무 깊어 복사할 수 없습니다"
+  },
+  "无效的撤销记录": {
+    "en": "Invalid undo record",
+    "zh-TW": "無效的復原記錄",
+    "ja": "無効な元に戻す記録です",
+    "ko": "잘못된 실행 취소 기록입니다"
+  },
+  "撤销记录已过期": {
+    "en": "Undo record has expired",
+    "zh-TW": "復原記錄已過期",
+    "ja": "元に戻す記録の有効期限が切れています",
+    "ko": "실행 취소 기록이 만료되었습니다"
+  },
+  "工作区不存在": {
+    "en": "Workspace not found",
+    "zh-TW": "工作區不存在",
+    "ja": "ワークスペースが見つかりません",
+    "ko": "워크스페이스를 찾을 수 없습니다"
+  },
+  "无效的源路径": {
+    "en": "Invalid source path",
+    "zh-TW": "無效的來源路徑",
+    "ja": "無効なソースパスです",
+    "ko": "잘못된 원본 경로입니다"
+  },
+  "源和目标相同": {
+    "en": "Source and target are the same",
+    "zh-TW": "來源與目標相同",
+    "ja": "ソースとターゲットが同じです",
+    "ko": "원본과 대상이 같습니다"
+  },
+  "不能把文件夹放进它自己里面": {
+    "en": "Can't move a folder into itself",
+    "zh-TW": "無法將資料夾放進它自己裡面",
+    "ja": "フォルダーをそれ自身の中に入れることはできません",
+    "ko": "폴더를 자기 자신 안에 넣을 수 없습니다"
+  },
+  "不能用文件夹覆盖它自己里面的内容": {
+    "en": "Can't overwrite a folder's own contents with it",
+    "zh-TW": "無法用資料夾覆寫它自己裡面的內容",
+    "ja": "フォルダーでそれ自身の中身を上書きすることはできません",
+    "ko": "폴더로 자기 자신 안의 내용을 덮어쓸 수 없습니다"
+  },
+  "目标是文件夹，不能写入": {
+    "en": "Target is a folder and can't be written to",
+    "zh-TW": "目標是資料夾，無法寫入",
+    "ja": "ターゲットはフォルダーのため、書き込めません",
+    "ko": "대상이 폴더이므로 쓸 수 없습니다"
+  },
+  "无法写入系统剪贴板": {
+    "en": "Couldn't write to the system clipboard",
+    "zh-TW": "無法寫入系統剪貼簿",
+    "ja": "システムのクリップボードに書き込めません",
+    "ko": "시스템 클립보드에 쓸 수 없습니다"
+  },
+  "当前系统不支持把文件写入剪贴板": {
+    "en": "This system doesn't support copying files to the clipboard",
+    "zh-TW": "目前系統不支援將檔案寫入剪貼簿",
+    "ja": "このシステムはファイルをクリップボードにコピーできません",
+    "ko": "이 시스템은 파일을 클립보드에 복사하는 기능을 지원하지 않습니다"
+  },
+  "终端目录不存在": {
+    "en": "Terminal folder doesn't exist",
+    "zh-TW": "終端機目錄不存在",
+    "ja": "ターミナルのフォルダーが存在しません",
+    "ko": "터미널 폴더가 없습니다"
+  },
+  "没有可用的 shell": {
+    "en": "No shell available",
+    "zh-TW": "沒有可用的 shell",
+    "ja": "利用できるシェルがありません",
+    "ko": "사용할 수 있는 셸이 없습니다"
+  },
+  "终端已关闭": {
+    "en": "Terminal is closed",
+    "zh-TW": "終端機已關閉",
+    "ja": "ターミナルは閉じられています",
+    "ko": "터미널이 닫혔습니다"
+  },
+  "无法读取剪贴板": {
+    "en": "Couldn't read the clipboard",
+    "zh-TW": "無法讀取剪貼簿",
+    "ja": "クリップボードを読み取れません",
+    "ko": "클립보드를 읽을 수 없습니다"
+  },
+  "无效的终端 id": {
+    "en": "Invalid terminal ID",
+    "zh-TW": "無效的終端機 ID",
+    "ja": "無効なターミナル ID です",
+    "ko": "잘못된 터미널 ID입니다"
+  },
+  "没有打开的终端": {
+    "en": "No open terminals",
+    "zh-TW": "沒有開啟的終端機",
+    "ja": "開いているターミナルはありません",
+    "ko": "열려 있는 터미널이 없습니다"
+  },
+  "起始行 {start} 超出终端内容（最后一行 {last}）": {
+    "en": "Start line {start} is beyond the terminal output (last line {last})",
+    "zh-TW": "起始行 {start} 超出終端機內容（最後一行 {last}）",
+    "ja": "開始行 {start} がターミナルの内容を超えています（最終行 {last}）",
+    "ko": "시작 줄 {start}이(가) 터미널 내용을 벗어났습니다(마지막 줄 {last})"
+  },
+  "终端里没有进程在监听端口 {port}": {
+    "en": "No process in the terminal is listening on port {port}",
+    "zh-TW": "終端機中沒有程序在監聽連接埠 {port}",
+    "ja": "ターミナル内にポート {port} をリッスンしているプロセスはありません",
+    "ko": "터미널에서 포트 {port}을(를) 수신 대기 중인 프로세스가 없습니다"
+  },
+  "语言服务器已退出": {
+    "en": "Language server has exited",
+    "zh-TW": "語言伺服器已結束",
+    "ja": "言語サーバーが終了しました",
+    "ko": "언어 서버가 종료되었습니다"
+  },
+  "发送给语言服务器失败：服务器长时间没有读取输入": {
+    "en": "Couldn't send to the language server: it hasn't read its input for too long",
+    "zh-TW": "傳送給語言伺服器失敗：伺服器長時間沒有讀取輸入",
+    "ja": "言語サーバーに送信できませんでした：サーバーが長時間入力を読み取っていません",
+    "ko": "언어 서버로 보내지 못했습니다: 서버가 오랫동안 입력을 읽지 않았습니다"
+  },
+  "启动 {command} 失败：{error}": {
+    "en": "Couldn't start {command}: {error}",
+    "zh-TW": "啟動 {command} 失敗：{error}",
+    "ja": "{command} を起動できませんでした：{error}",
+    "ko": "{command} 시작 실패: {error}"
+  },
+  "{command} 没有可用的标准输入输出": {
+    "en": "{command} has no usable standard input/output",
+    "zh-TW": "{command} 沒有可用的標準輸入輸出",
+    "ja": "{command} に使用できる標準入出力がありません",
+    "ko": "{command}에 사용할 수 있는 표준 입출력이 없습니다"
+  },
+  "正则无效：{error}": {
+    "en": "Invalid regular expression: {error}",
+    "zh-TW": "規則運算式無效：{error}",
+    "ja": "正規表現が無効です：{error}",
+    "ko": "정규식이 잘못되었습니다: {error}"
+  },
+  "文件选择器必须在主线程运行": {
+    "en": "The file picker must run on the main thread",
+    "zh-TW": "檔案選擇器必須在主執行緒執行",
+    "ja": "ファイル選択ダイアログはメインスレッドで実行する必要があります",
+    "ko": "파일 선택기는 메인 스레드에서 실행해야 합니다"
+  },
+  "关于 {name}": {
+    "en": "About {name}",
+    "zh-TW": "關於 {name}",
+    "ja": "{name}について",
+    "ko": "{name}에 관하여"
+  },
+  "隐藏 {name}": {
+    "en": "Hide {name}",
+    "zh-TW": "隱藏 {name}",
+    "ja": "{name}を非表示",
+    "ko": "{name} 가리기"
+  },
+  "退出 {name}": {
+    "en": "Quit {name}",
+    "zh-TW": "結束 {name}",
+    "ja": "{name}を終了",
+    "ko": "{name} 종료"
+  },
+  "服务": {
+    "en": "Services",
+    "zh-TW": "服務",
+    "ja": "サービス",
+    "ko": "서비스"
+  },
+  "隐藏其他": {
+    "en": "Hide Others",
+    "zh-TW": "隱藏其他",
+    "ja": "ほかを非表示",
+    "ko": "기타 가리기"
+  },
+  "全部显示": {
+    "en": "Show All",
+    "zh-TW": "顯示全部",
+    "ja": "すべてを表示",
+    "ko": "모두 보기"
+  },
+  "文件": {
+    "en": "File",
+    "zh-TW": "檔案",
+    "ja": "ファイル",
+    "ko": "파일"
+  },
+  "关闭": {
+    "en": "Close",
+    "zh-TW": "關閉",
+    "ja": "閉じる",
+    "ko": "닫기"
+  },
+  "编辑": {
+    "en": "Edit",
+    "zh-TW": "編輯",
+    "ja": "編集",
+    "ko": "편집"
+  },
+  "撤销": {
+    "en": "Undo",
+    "zh-TW": "還原",
+    "ja": "取り消す",
+    "ko": "실행 취소"
+  },
+  "重做": {
+    "en": "Redo",
+    "zh-TW": "重做",
+    "ja": "やり直す",
+    "ko": "실행 복귀"
+  },
+  "剪切": {
+    "en": "Cut",
+    "zh-TW": "剪下",
+    "ja": "カット",
+    "ko": "오려두기"
+  },
+  "拷贝": {
+    "en": "Copy",
+    "zh-TW": "拷貝",
+    "ja": "コピー",
+    "ko": "복사하기"
+  },
+  "粘贴": {
+    "en": "Paste",
+    "zh-TW": "貼上",
+    "ja": "ペースト",
+    "ko": "붙여넣기"
+  },
+  "全选": {
+    "en": "Select All",
+    "zh-TW": "全選",
+    "ja": "すべてを選択",
+    "ko": "전체 선택"
+  },
+  "显示": {
+    "en": "View",
+    "zh-TW": "顯示方式",
+    "ja": "表示",
+    "ko": "보기"
+  },
+  "进入全屏幕": {
+    "en": "Enter Full Screen",
+    "zh-TW": "進入全螢幕",
+    "ja": "フルスクリーンにする",
+    "ko": "전체 화면 시작"
+  },
+  "窗口": {
+    "en": "Window",
+    "zh-TW": "視窗",
+    "ja": "ウインドウ",
+    "ko": "윈도우"
+  },
+  "最小化": {
+    "en": "Minimize",
+    "zh-TW": "縮到最小",
+    "ja": "しまう",
+    "ko": "최소화"
+  },
+  "缩放": {
+    "en": "Zoom",
+    "zh-TW": "縮放",
+    "ja": "拡大/縮小",
+    "ko": "확대/축소"
+  },
+  "前置全部窗口": {
+    "en": "Bring All to Front",
+    "zh-TW": "將全部視窗移至最前",
+    "ja": "すべてを手前に移動",
+    "ko": "모두 앞으로 가져오기"
+  },
+  "帮助": {
+    "en": "Help",
+    "zh-TW": "輔助說明",
+    "ja": "ヘルプ",
+    "ko": "도움말"
+  }
+}

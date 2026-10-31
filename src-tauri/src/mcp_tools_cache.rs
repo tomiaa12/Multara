@@ -118,7 +118,11 @@ impl McpToolsCache {
                 if !force {
                     if let Some(entry) = guard.entries.get(&id) {
                         let succeeded = entry.probe.ok || !entry.probe.tools.is_empty();
-                        let window = if succeeded { FRESH_SECS } else { FAILURE_BACKOFF_SECS };
+                        let window = if succeeded {
+                            FRESH_SECS
+                        } else {
+                            FAILURE_BACKOFF_SECS
+                        };
                         if now.saturating_sub(entry.updated_at_ms) < window * 1000 {
                             continue;
                         }
@@ -186,7 +190,7 @@ fn worker_loop(app: AppHandle) {
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
             resources::mcp_is_enabled(&owner, &name).then(|| resources::probe_mcp(&owner, &name))
         }))
-        .unwrap_or_else(|_| Some(Err("探测时发生内部错误".to_string())));
+        .unwrap_or_else(|_| Some(Err(tr!("探测时发生内部错误"))));
         match outcome {
             None => {}
             Some(Ok(probe)) => McpToolsCache::store_probe(&app, &owner, &name, probe),

@@ -15,12 +15,17 @@ const LINE_QUEUE_CAPACITY: usize = 1024;
 const INITIALIZE_REQUEST_ID: u64 = 1;
 const SESSION_NEW_REQUEST_ID: u64 = 2;
 const PROMPT_REQUEST_ID: u64 = 3;
+const SET_MODE_REQUEST_ID: u64 = 4;
+/// 错误事件的 `code`：会话建立或切换规划模式失败，执行器据此判定规划运行失败，不看文案。
+pub const MODE_ERROR_CODE: &str = "acp_mode";
 
 pub struct ByteSender(pub Sender<Vec<u8>>);
 
 impl Write for ByteSender {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.send(buf.to_vec()).map_err(|_| io::Error::other("event channel closed"))?;
+        self.0
+            .send(buf.to_vec())
+            .map_err(|_| io::Error::other("event channel closed"))?;
         Ok(buf.len())
     }
 
@@ -46,6 +51,7 @@ impl Read for ByteReceiver {
     }
 }
 
+use crate::models::RunMode;
 use serde_json::{json, Value};
 
 pub type PermissionNotifier = Arc<dyn Fn(&str, Option<&Value>) + Send + Sync>;
@@ -83,6 +89,8 @@ impl PermissionGate {
 /// Speaks ACP or the DSH stdio protocol and writes one normalized JSON event per line.
 pub fn drive<R: Read + Send + 'static, W: Write, E: Write>(
     kind: &str,
+    runtime_id: &str,
+    mode: RunMode,
     stdout: R,
     stdin: &mut W,
     prompt: &str,
@@ -101,13 +109,24 @@ pub fn drive<R: Read + Send + 'static, W: Write, E: Write>(
     if kind == "dsh" {
         drive_dsh(&lines, stdin, prompt, cwd, events);
     } else {
-        drive_acp(&lines, stdin, prompt, cwd, events, gate.as_ref());
+        drive_acp(
+            &lines,
+            stdin,
+            runtime_id,
+            mode,
+            prompt,
+            cwd,
+            events,
+            gate.as_ref(),
+        );
     }
 }
 
 fn drive_acp<W: Write, E: Write>(
     lines: &Receiver<String>,
     stdin: &mut W,
+    runtime_id: &str,
+    mode: RunMode,
     prompt: &str,
     cwd: &str,
     events: &mut E,
@@ -147,6 +166,42 @@ fn drive_acp<W: Write, E: Write>(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+    let available_modes = available_modes(&created);
+    emit(
+        events,
+        json!({"type":"acp_modes","runtimeId":runtime_id,"input":available_modes}),
+    );
+    let plan_mode = crate::runtime::find_plan_mode(&available_modes);
+    crate::runtime::cache_acp_plan_mode(runtime_id, plan_mode.as_deref());
+    if mode == RunMode::Plan {
+        let Some(mode_id) = plan_mode else {
+            emit(
+                events,
+                json!({"type":"error","code":MODE_ERROR_CODE,"error":tr!("当前智能体不支持规划模式")}),
+            );
+            return;
+        };
+        if call(
+            lines,
+            stdin,
+            SET_MODE_REQUEST_ID,
+            "session/set_mode",
+            json!({"sessionId":session_id,"modeId":mode_id}),
+            events,
+            gate,
+        )
+        .is_none()
+        {
+            return;
+        }
+        if !await_mode_update(lines, stdin, &mode_id, events, gate) {
+            emit(
+                events,
+                json!({"type":"error","code":MODE_ERROR_CODE,"error":tr!("session/set_mode 失败：运行时未确认规划模式")}),
+            );
+            return;
+        }
+    }
     if write_rpc(
         stdin,
         Some(PROMPT_REQUEST_ID),
@@ -174,6 +229,81 @@ fn drive_acp<W: Write, E: Write>(
             break;
         }
     }
+}
+
+fn await_mode_update<W: Write, E: Write>(
+    lines: &Receiver<String>,
+    stdin: &mut W,
+    expected_mode: &str,
+    events: &mut E,
+    gate: Option<&PermissionGate>,
+) -> bool {
+    let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+    loop {
+        let Ok(line) = lines.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        else {
+            return false;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        let confirmed = value.get("method").and_then(Value::as_str) == Some("session/update")
+            && value
+                .pointer("/params/update/sessionUpdate")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    kind.eq_ignore_ascii_case("current_mode_update")
+                        || kind.eq_ignore_ascii_case("currentmodeupdate")
+                })
+            && value
+                .pointer("/params/update/currentModeId")
+                .or_else(|| value.pointer("/params/update/modeId"))
+                .and_then(Value::as_str)
+                == Some(expected_mode);
+        if value.get("method").is_some() {
+            let _ = handle_agent_message(&value, stdin, events, gate);
+        }
+        if confirmed {
+            return true;
+        }
+    }
+}
+
+pub fn available_modes(created: &Value) -> Vec<Value> {
+    if let Some(modes) = created
+        .pointer("/modes/availableModes")
+        .and_then(Value::as_array)
+    {
+        return modes.clone();
+    }
+    created
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|option| {
+            option
+                .get("category")
+                .and_then(Value::as_str)
+                .is_some_and(|category| category.eq_ignore_ascii_case("mode"))
+        })
+        .flat_map(|option| {
+            option
+                .get("options")
+                .or_else(|| option.get("values"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .map(|option| {
+            if option.get("id").is_some() {
+                option
+            } else {
+                let id = option.get("value").cloned().unwrap_or(Value::Null);
+                json!({"id":id,"name":option.get("name").cloned().unwrap_or(Value::Null)})
+            }
+        })
+        .collect()
 }
 
 fn drive_dsh<W: Write, E: Write>(
@@ -206,23 +336,39 @@ fn drive_dsh<W: Write, E: Write>(
 }
 
 fn emit_dsh<E: Write>(value: &Value, events: &mut E) {
-    match value.get("type").and_then(Value::as_str).unwrap_or_default() {
-        "text" => emit(events, json!({"type":"text","text": value.get("content").and_then(Value::as_str).unwrap_or_default()})),
-        "tool_call" => emit(events, json!({
+    match value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+    {
+        "text" => emit(
+            events,
+            json!({"type":"text","text": value.get("content").and_then(Value::as_str).unwrap_or_default()}),
+        ),
+        "tool_call" => emit(
+            events,
+            json!({
             "type": "tool_use",
             "id": value.get("call_id").and_then(Value::as_str).unwrap_or_default(),
             "name": value.get("name").and_then(Value::as_str).unwrap_or("tool"),
             "input": value.get("arguments").cloned().unwrap_or(Value::Null)
-        })),
-        "tool_result" => emit(events, json!({
+            }),
+        ),
+        "tool_result" => emit(
+            events,
+            json!({
             "type": "tool_result",
             "call_id": value.get("call_id").and_then(Value::as_str).unwrap_or_default(),
             "output": value.get("output").and_then(Value::as_str).unwrap_or_default()
-        })),
-        "error" => emit(events, json!({
+            }),
+        ),
+        "error" => emit(
+            events,
+            json!({
             "type": "error",
-            "error": value.pointer("/error/message").and_then(Value::as_str).or_else(|| value.get("message").and_then(Value::as_str)).unwrap_or("运行时返回错误")
-        })),
+            "error": value.pointer("/error/message").and_then(Value::as_str).map(str::to_string).or_else(|| value.get("message").and_then(Value::as_str).map(str::to_string)).unwrap_or_else(|| tr!("运行时返回错误"))
+            }),
+        ),
         _ => {}
     }
 }
@@ -251,7 +397,10 @@ fn call<W: Write, E: Write>(
         let line = match lines.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(line) => line,
             Err(RecvTimeoutError::Timeout) => {
-                emit(events, json!({"type":"error","error": format!("{method} 超时：运行时没有应答")}));
+                emit(
+                    events,
+                    json!({"type":"error","error": tr!("{method} 超时：运行时没有应答", method = method)}),
+                );
                 return None;
             }
             Err(RecvTimeoutError::Disconnected) => return None,
@@ -292,7 +441,14 @@ fn emit_rpc_error<E: Write>(value: &Value, method: &str, events: &mut E) -> bool
         .and_then(Value::as_str)
         .map(str::to_string)
         .unwrap_or_else(|| error.to_string());
-    emit(events, json!({"type":"error","error": format!("{method} 失败：{message}")}));
+    emit(
+        events,
+        json!({
+            "type": "error",
+            "code": method.starts_with("session/").then_some(MODE_ERROR_CODE),
+            "error": tr!("{method} 失败：{message}", method = method, message = message)
+        }),
+    );
     true
 }
 
@@ -412,57 +568,88 @@ fn emit_acp_update<E: Write>(params: Option<&Value>, events: &mut E) {
                 emit(events, json!({"type":"thinking","thinking": text}));
             }
         }
-        "tool_call" | "toolcall" => emit(events, json!({
+        "tool_call" | "toolcall" => emit(
+            events,
+            json!({
             "type": "tool_use",
             "id": update.get("toolCallId").and_then(Value::as_str).unwrap_or_default(),
             "name": update.get("name").or_else(|| update.get("title")).and_then(Value::as_str).unwrap_or("tool"),
             "input": update.get("parameters").or_else(|| update.get("rawInput")).cloned().unwrap_or(Value::Null),
             "status": update.get("status").and_then(Value::as_str).unwrap_or("pending")
-        })),
+            }),
+        ),
         "tool_call_update" | "toolcallupdate" => {
-            let call_id = update.get("toolCallId").and_then(Value::as_str).unwrap_or_default();
+            let call_id = update
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let status = update.get("status").and_then(Value::as_str).unwrap_or("");
             let output = update
                 .get("output")
                 .and_then(Value::as_str)
-                .or_else(|| update.pointer("/content/0/content/text").and_then(Value::as_str))
+                .or_else(|| {
+                    update
+                        .pointer("/content/0/content/text")
+                        .and_then(Value::as_str)
+                })
                 .or_else(|| update.pointer("/content/0/text").and_then(Value::as_str))
                 .unwrap_or("");
-            let failed = status.eq_ignore_ascii_case("failed") || status.eq_ignore_ascii_case("error");
+            let failed =
+                status.eq_ignore_ascii_case("failed") || status.eq_ignore_ascii_case("error");
             let finished = failed || status.eq_ignore_ascii_case("completed");
             // in_progress 带着中间输出时不能当成结果，否则会反复发出 ok 的 tool_result。
             if finished || (status.is_empty() && !output.is_empty()) {
-                emit(events, json!({
+                emit(
+                    events,
+                    json!({
                     "type": "tool_result",
                     "call_id": call_id,
                     "output": output,
                     "status": if failed { "error" } else { "ok" }
-                }));
+                    }),
+                );
             } else if !status.is_empty() {
-                emit(events, json!({
+                emit(
+                    events,
+                    json!({
                     "type": "tool_use",
                     "id": call_id,
                     "status": status
-                }));
+                    }),
+                );
             }
         }
-        "plan" => emit(events, json!({
+        "plan" => emit(
+            events,
+            json!({
             "type": "plan",
             "input": update.get("entries").cloned().unwrap_or(Value::Null)
-        })),
-        "available_commands_update" | "availablecommandsupdate" => emit(events, json!({
+            }),
+        ),
+        "available_commands_update" | "availablecommandsupdate" => emit(
+            events,
+            json!({
             "type": "commands",
             "input": update.get("availableCommands").or_else(|| update.get("available_commands")).cloned().unwrap_or(Value::Null)
-        })),
-        "current_mode_update" | "currentmodeupdate" => emit(events, json!({
+            }),
+        ),
+        "current_mode_update" | "currentmodeupdate" => emit(
+            events,
+            json!({
             "type": "mode",
             "content": update.get("currentModeId").or_else(|| update.get("modeId")).and_then(Value::as_str).unwrap_or_default()
-        })),
+            }),
+        ),
         _ => {}
     }
 }
 
-fn write_rpc<W: Write>(stdin: &mut W, id: Option<u64>, method: &str, params: Value) -> std::io::Result<()> {
+fn write_rpc<W: Write>(
+    stdin: &mut W,
+    id: Option<u64>,
+    method: &str,
+    params: Value,
+) -> std::io::Result<()> {
     let mut body = json!({ "jsonrpc": "2.0", "method": method, "params": params });
     if let Some(id) = id {
         body["id"] = json!(id);
@@ -477,7 +664,12 @@ fn write_result<W: Write>(stdin: &mut W, id: &Value, result: Value) -> std::io::
     stdin.flush()
 }
 
-fn write_rpc_error<W: Write>(stdin: &mut W, id: &Value, code: i32, message: &str) -> std::io::Result<()> {
+fn write_rpc_error<W: Write>(
+    stdin: &mut W,
+    id: &Value,
+    code: i32,
+    message: &str,
+) -> std::io::Result<()> {
     let body = json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } });
     writeln!(stdin, "{body}")?;
     stdin.flush()
@@ -485,7 +677,7 @@ fn write_rpc_error<W: Write>(stdin: &mut W, id: &Value, code: i32, message: &str
 
 #[cfg(test)]
 mod tests {
-    use super::{drive, id_matches, reject_option};
+    use super::{available_modes, drive, id_matches, reject_option, RunMode};
     use serde_json::json;
     use std::io::Cursor;
 
@@ -493,8 +685,71 @@ mod tests {
         let stdout = Cursor::new(lines.join("\n").into_bytes());
         let mut stdin = Vec::new();
         let mut events = Vec::new();
-        drive("acp", stdout, &mut stdin, "hi", "/tmp", &mut events, None);
+        drive(
+            "acp",
+            "kimi",
+            RunMode::Auto,
+            stdout,
+            &mut stdin,
+            "hi",
+            "/tmp",
+            &mut events,
+            None,
+        );
         String::from_utf8(events).unwrap()
+    }
+
+    #[test]
+    fn extracts_modes_only_from_protocol_response() {
+        let response: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/plan_subagent/acp_kimi_modes_from_source.json"
+        ))
+        .unwrap();
+        let created = response
+            .get("session_new_result_expected")
+            .unwrap_or(&response);
+        let modes = available_modes(created);
+        assert_eq!(
+            crate::runtime::find_plan_mode(&modes).as_deref(),
+            Some("plan")
+        );
+        assert!(available_modes(
+            &json!({"configOptions":[{"category":"other","options":[{"id":"plan","name":"plan"}]}]})
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn plan_mode_sets_acp_mode_before_prompt() {
+        let stdout = Cursor::new(
+            [
+                r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+                r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s1","modes":{"currentModeId":"agent","availableModes":[{"id":"plan","name":"Plan"}]}}}"#,
+                r#"{"jsonrpc":"2.0","id":4,"result":{}}"#,
+                r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"current_mode_update","currentModeId":"plan"}}}"#,
+                r#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}"#,
+            ]
+            .join("\n")
+            .into_bytes(),
+        );
+        let mut stdin = Vec::new();
+        let mut events = Vec::new();
+        drive(
+            "acp",
+            "kimi",
+            RunMode::Plan,
+            stdout,
+            &mut stdin,
+            "hi",
+            "/tmp",
+            &mut events,
+            None,
+        );
+        let requests = String::from_utf8(stdin).unwrap();
+        let set_at = requests.find("session/set_mode").unwrap();
+        let prompt_at = requests.find("session/prompt").unwrap();
+        assert!(set_at < prompt_at);
+        assert!(requests.contains(r#""modeId":"plan""#));
     }
 
     #[test]

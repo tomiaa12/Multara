@@ -1,0 +1,199 @@
+{
+ "summary": {
+  "runtime": "qwenpaw",
+  "cmd": [
+   "qwenpaw",
+   "acp"
+  ],
+  "initialize": {
+   "agentCapabilities": {
+    "loadSession": true,
+    "mcpCapabilities": {
+     "http": true,
+     "sse": true
+    },
+    "sessionCapabilities": {
+     "close": {},
+     "list": {},
+     "resume": {}
+    }
+   },
+   "agentInfo": {
+    "name": "qwenpaw",
+    "title": "QwenPaw",
+    "version": "2.2.2.post1"
+   },
+   "protocolVersion": 1
+  },
+  "session_new": {
+   "_meta": {
+    "qwenpaw.agent": "default"
+   },
+   "configOptions": [
+    {
+     "currentValue": "default",
+     "options": [
+      {
+       "description": "Normal mode with Tool Guard enabled",
+       "name": "Default",
+       "value": "default"
+      },
+      {
+       "description": "Skip all tool guard security checks",
+       "name": "Bypass Permissions",
+       "value": "bypassPermissions"
+      }
+     ],
+     "category": "mode",
+     "description": "Controls tool guard and permission behavior. 'Bypass Permissions' disables all security checks.",
+     "id": "mode",
+     "name": "Session Mode",
+     "type": "select"
+    }
+   ],
+   "models": {
+    "availableModels": [
+     {
+      "modelId": "kilo:kilo-auto/free",
+      "name": "Kilo Auto (Free Router)"
+     },
+     {
+      "modelId": "kilo:openrouter/free",
+      "name": "OpenRouter - Free"
+     }
+    ],
+    "currentModelId": ""
+   },
+   "sessionId": "3543ad60c0194fb0ae61ea957760a39a"
+  },
+  "set_mode": {
+   "plan": {}
+  },
+  "stderr_head": "INFO /Users/USER/.qwenpaw/venv/lib/python3.12/site-packages/qwenpaw/agents/tools/__init__.py:80 | 2026-10-31 00:55:47 | Unified browser experimental beta is enabled (subprocess isolation; OS sandboxing is planned). Set browser.experimental=false to use the deprecated stable browser implementation.\nINFO /Users/USER/.qwenpaw/venv/lib/python3.12/site-packages/qwenpaw/agents/acp/server.py:505 | 20"
+ },
+ "traffic": [
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "protocolVersion": 1,
+     "clientCapabilities": {},
+     "clientInfo": {
+      "name": "multara",
+      "version": "0.1.0"
+     }
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "agentCapabilities": {
+      "loadSession": true,
+      "mcpCapabilities": {
+       "http": true,
+       "sse": true
+      },
+      "sessionCapabilities": {
+       "close": {},
+       "list": {},
+       "resume": {}
+      }
+     },
+     "agentInfo": {
+      "name": "qwenpaw",
+      "title": "QwenPaw",
+      "version": "2.2.2.post1"
+     },
+     "protocolVersion": 1
+    }
+   }
+  },
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "session/new",
+    "params": {
+     "cwd": "/private/var/folders/yx/rpctnck94dvfnh5k59fk0py80000gn/T/multara-acp-z7r0q35m",
+     "mcpServers": []
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "_meta": {
+      "qwenpaw.agent": "default"
+     },
+     "configOptions": [
+      {
+       "currentValue": "default",
+       "options": [
+        {
+         "description": "Normal mode with Tool Guard enabled",
+         "name": "Default",
+         "value": "default"
+        },
+        {
+         "description": "Skip all tool guard security checks",
+         "name": "Bypass Permissions",
+         "value": "bypassPermissions"
+        }
+       ],
+       "category": "mode",
+       "description": "Controls tool guard and permission behavior. 'Bypass Permissions' disables all security checks.",
+       "id": "mode",
+       "name": "Session Mode",
+       "type": "select"
+      }
+     ],
+     "models": {
+      "availableModels": [
+       {
+        "modelId": "kilo:kilo-auto/free",
+        "name": "Kilo Auto (Free Router)"
+       },
+       {
+        "modelId": "kilo:openrouter/free",
+        "name": "OpenRouter - Free"
+       }
+      ],
+      "currentModelId": ""
+     },
+     "sessionId": "3543ad60c0194fb0ae61ea957760a39a"
+    }
+   }
+  },
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 101,
+    "method": "session/set_mode",
+    "params": {
+     "sessionId": "3543ad60c0194fb0ae61ea957760a39a",
+     "modeId": "plan"
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 101,
+    "result": {}
+   }
+  }
+ ]
+}

@@ -1,0 +1,168 @@
+{
+ "summary": {
+  "runtime": "kimi",
+  "cmd": [
+   "kimi",
+   "acp"
+  ],
+  "initialize": {
+   "protocolVersion": 1,
+   "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+     "image": true,
+     "audio": false,
+     "embeddedContext": true
+    },
+    "sessionCapabilities": {
+     "list": {},
+     "resume": {},
+     "close": {},
+     "delete": {},
+     "fork": {},
+     "additionalDirectories": {}
+    },
+    "mcpCapabilities": {
+     "http": true,
+     "sse": true
+    },
+    "auth": {
+     "logout": {}
+    }
+   },
+   "authMethods": [
+    {
+     "id": "login",
+     "type": "terminal",
+     "name": "Login with Kimi account",
+     "description": "Open the device-code login flow in a terminal.",
+     "args": [
+      "--login"
+     ],
+     "env": {},
+     "_meta": {
+      "terminal-auth": {
+       "type": "terminal",
+       "label": "Login with Kimi account",
+       "command": "/Users/USER/.nvm/versions/node/v22.23.2/bin/kimi",
+       "args": [
+        "login"
+       ],
+       "env": {}
+      }
+     }
+    }
+   ],
+   "agentInfo": {
+    "name": "Kimi Code CLI",
+    "version": "2.3.0"
+   }
+  },
+  "session_new": {
+   "code": -32000,
+   "message": "Authentication required"
+  },
+  "stderr_head": "{\"level\":\"info\",\"msg\":\"acp: auth readiness probe failed, trying the OAuth summary\",\"error\":\"no provider configured; complete onboarding via /login or the providers endpoint\"}\n"
+ },
+ "traffic": [
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "protocolVersion": 1,
+     "clientCapabilities": {},
+     "clientInfo": {
+      "name": "multara",
+      "version": "0.1.0"
+     }
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "protocolVersion": 1,
+     "agentCapabilities": {
+      "loadSession": true,
+      "promptCapabilities": {
+       "image": true,
+       "audio": false,
+       "embeddedContext": true
+      },
+      "sessionCapabilities": {
+       "list": {},
+       "resume": {},
+       "close": {},
+       "delete": {},
+       "fork": {},
+       "additionalDirectories": {}
+      },
+      "mcpCapabilities": {
+       "http": true,
+       "sse": true
+      },
+      "auth": {
+       "logout": {}
+      }
+     },
+     "authMethods": [
+      {
+       "id": "login",
+       "type": "terminal",
+       "name": "Login with Kimi account",
+       "description": "Open the device-code login flow in a terminal.",
+       "args": [
+        "--login"
+       ],
+       "env": {},
+       "_meta": {
+        "terminal-auth": {
+         "type": "terminal",
+         "label": "Login with Kimi account",
+         "command": "/Users/USER/.nvm/versions/node/v22.23.2/bin/kimi",
+         "args": [
+          "login"
+         ],
+         "env": {}
+        }
+       }
+      }
+     ],
+     "agentInfo": {
+      "name": "Kimi Code CLI",
+      "version": "2.3.0"
+     }
+    }
+   }
+  },
+  {
+   "dir": ">>",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "session/new",
+    "params": {
+     "cwd": "/private/var/folders/yx/rpctnck94dvfnh5k59fk0py80000gn/T/multara-acp-1wdg5o6x",
+     "mcpServers": []
+    }
+   }
+  },
+  {
+   "dir": "<<",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+     "code": -32000,
+     "message": "Authentication required"
+    }
+   }
+  }
+ ]
+}

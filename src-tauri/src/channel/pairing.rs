@@ -54,7 +54,10 @@ pub fn record_failure(installation_id: &str, sender_id: &str) -> bool {
 }
 
 pub fn locked_notice() -> String {
-    format!("配对码错误次数过多，请 {} 分钟后再试。", LOCKOUT.as_secs() / 60)
+    tr!(
+        "配对码错误次数过多，请 {minutes} 分钟后再试。",
+        minutes = LOCKOUT.as_secs() / 60
+    )
 }
 
 pub fn clear(installation_id: &str, sender_id: &str) {

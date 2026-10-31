@@ -1,0 +1,2 @@
+{"type":"control_request","request_id":"permission-read","request":{"subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"/tmp/claude-auto-plan/auth.py"},"tool_use_id":"read-1"}}
+{"type":"control_request","request_id":"permission-exit","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","input":{"plan":"# 计划\n\n1. 检查认证层。"},"tool_use_id":"exit-1"}}

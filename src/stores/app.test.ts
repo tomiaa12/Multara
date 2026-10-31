@@ -12,7 +12,8 @@ const backend = vi.hoisted(() => ({
   listTaskInboxSurfaces: vi.fn(),
   listChatMessages: vi.fn(async () => []),
   listAgentsAndSquads: vi.fn(async () => ({ agents: [], squads: [] })),
-  sendMessage: vi.fn<(sessionId: string, content: string, attachments: unknown[]) => Promise<ChatMessage[]>>(),
+  sendMessage: vi.fn<(sessionId: string, content: string, attachments: unknown[], requestedMode?: string) => Promise<ChatMessage[]>>(),
+  setSessionDefaultMode: vi.fn(async () => undefined),
   stopRun: vi.fn(),
   upsertInboxItem: vi.fn(async (input: Record<string, unknown>) => ({ id: "notice", ...input })),
 }));
@@ -262,7 +263,7 @@ describe("per-session message queues", () => {
     await emit();
     store.send("parallel request", "other");
     await vi.runAllTimersAsync();
-    expect(backend.sendMessage).toHaveBeenCalledWith("other", "parallel request", []);
+    expect(backend.sendMessage).toHaveBeenCalledWith("other", "parallel request", [], "auto");
     expect(store.sessionProcessing("welcome")).toBe(true);
     expect(store.queuedMessages).toEqual([]);
   });
@@ -293,7 +294,7 @@ describe("per-session message queues", () => {
     expect(store.queuedMessages).toHaveLength(1);
     await emit({ status: "completed" });
     await vi.runAllTimersAsync();
-    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "wait here", []);
+    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "wait here", [], "auto");
   });
 
   test("send now submits while the session is running without stopping it", async () => {
@@ -304,7 +305,7 @@ describe("per-session message queues", () => {
     store.promoteQueuedMessage(1);
     await vi.runAllTimersAsync();
     expect(backend.sendMessage).toHaveBeenCalledTimes(1);
-    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "send now", []);
+    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "send now", [], "auto");
     expect(backend.stopRun).not.toHaveBeenCalled();
     expect(store.queuedMessages.map((item) => item.content)).toEqual(["later"]);
   });
@@ -319,7 +320,7 @@ describe("per-session message queues", () => {
     store.promoteQueuedMessage(0);
     await vi.runAllTimersAsync();
     expect(backend.sendMessage).toHaveBeenCalledTimes(2);
-    expect(backend.sendMessage).toHaveBeenLastCalledWith("welcome", "second", []);
+    expect(backend.sendMessage).toHaveBeenLastCalledWith("welcome", "second", [], "auto");
   });
 
   test("a send now failure is surfaced with the draft, not silently requeued", async () => {
@@ -355,7 +356,7 @@ describe("per-session message queues", () => {
     store.activeSessionId = "other";
     await emit({ status: "completed" });
     await vi.runAllTimersAsync();
-    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "next welcome", []);
+    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "next welcome", [], "auto");
     expect(store.sessionProcessing("other")).toBe(true);
   });
 
@@ -380,6 +381,34 @@ describe("per-session message queues", () => {
     await vi.runAllTimersAsync();
     expect(backend.sendMessage).not.toHaveBeenCalled();
     expect(store.queuedMessages.map((item) => item.content)).toEqual(["queued after fail"]);
+  });
+
+  test("switching mode after queueing does not change the queued message's mode", async () => {
+    const store = useAppStore();
+    await emit();
+    await store.setSessionMode("welcome", "plan");
+    store.send("plan this", "welcome");
+    await store.setSessionMode("welcome", "agent");
+    store.send("then do it", "welcome");
+    expect(store.queuedMessages.map((item) => item.requestedMode)).toEqual(["plan", "agent"]);
+    expect(backend.setSessionDefaultMode).toHaveBeenLastCalledWith("welcome", "agent");
+    await emit({ status: "completed" });
+    await vi.runAllTimersAsync();
+    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "plan this", [], "plan");
+    expect(store.queuedMessages.map((item) => item.requestedMode)).toEqual(["agent"]);
+  });
+
+  test("send now and send failure keep the frozen mode", async () => {
+    const store = useAppStore();
+    await emit();
+    await store.setSessionMode("welcome", "plan");
+    store.send("steer the plan", "welcome");
+    await store.setSessionMode("welcome", "auto");
+    backend.sendMessage.mockRejectedValueOnce(new Error("当前智能体不支持规划模式"));
+    store.promoteQueuedMessage(0);
+    await vi.runAllTimersAsync();
+    expect(backend.sendMessage).toHaveBeenCalledWith("welcome", "steer the plan", [], "plan");
+    expect(store.sendFailure?.requestedMode).toBe("plan");
   });
 
   test("a completion refresh preserves a message being submitted immediately", async () => {

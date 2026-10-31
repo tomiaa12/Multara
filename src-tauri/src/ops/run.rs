@@ -1,3 +1,4 @@
+use crate::models::RunMode;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
@@ -9,6 +10,7 @@ pub struct Enqueue<'a> {
     pub assignment: &'a str,
     pub status: &'a str,
     pub now: &'a str,
+    pub mode: RunMode,
 }
 
 pub fn enqueue(db: &Connection, run: Enqueue<'_>) -> Result<String, String> {
@@ -22,8 +24,8 @@ pub fn enqueue(db: &Connection, run: Enqueue<'_>) -> Result<String, String> {
     let id = Uuid::new_v4().to_string();
     db.execute(
         "INSERT INTO agent_runs
-         (id, session_id, turn_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         (id, session_id, turn_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at, mode)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             id,
             run.session_id,
@@ -33,7 +35,8 @@ pub fn enqueue(db: &Connection, run: Enqueue<'_>) -> Result<String, String> {
             run.parent_run_id,
             run.assignment,
             run.status,
-            run.now
+            run.now,
+            run.mode.as_str()
         ],
     )
     .map_err(|error| error.to_string())?;

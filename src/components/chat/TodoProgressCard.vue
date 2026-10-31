@@ -19,7 +19,7 @@ function label(status: string) {
 </script>
 
 <template>
-  <section class="plan-card">
+  <section class="todo-progress-card">
     <header>待办</header>
     <ul>
       <li v-for="todo in todos" :key="todo.id" :data-tone="tone(todo.status)">

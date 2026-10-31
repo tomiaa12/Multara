@@ -22,7 +22,14 @@ fn file_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
 #[cfg(target_os = "macos")]
 fn keychain_get(id: &str) -> Option<String> {
     let output = crate::process::command("security")
-        .args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", id, "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-a",
+            id,
+            "-w",
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -38,7 +45,7 @@ fn keychain_get(id: &str) -> Option<String> {
 fn keychain_set(id: &str, value: &str) -> Result<(), String> {
     use std::io::Write;
     if value.contains(['\n', '\r']) || id.contains(['\n', '\r']) {
-        return Err("凭据不能包含换行".to_string());
+        return Err(tr!("凭据不能包含换行"));
     }
     let quote = |text: &str| format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""));
     let mut child = crate::process::command("security")
@@ -57,9 +64,15 @@ fn keychain_set(id: &str, value: &str) -> Result<(), String> {
     let written = child
         .stdin
         .take()
-        .ok_or_else(|| "无法写入钥匙串命令".to_string())
-        .and_then(|mut stdin| stdin.write_all(line.as_bytes()).map_err(|error| error.to_string()));
-    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        .ok_or_else(|| tr!("无法写入钥匙串命令"))
+        .and_then(|mut stdin| {
+            stdin
+                .write_all(line.as_bytes())
+                .map_err(|error| error.to_string())
+        });
+    let output = child
+        .wait_with_output()
+        .map_err(|error| error.to_string())?;
     written?;
     if keychain_get(id).as_deref() == Some(value) {
         Ok(())
