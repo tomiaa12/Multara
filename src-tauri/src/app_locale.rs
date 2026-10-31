@@ -147,10 +147,43 @@ fn normalize(raw: &str) -> &'static str {
 }
 
 fn system_language() -> String {
-    std::env::var("LC_ALL")
-        .or_else(|_| std::env::var("LC_MESSAGES"))
-        .or_else(|_| std::env::var("LANG"))
-        .unwrap_or_else(|_| "en".into())
+    // C / POSIX / C.UTF-8 表示「未设语言」，macOS 从 Dock 启动时 LANG 经常是这个，
+    // 不能当成英文；前端跟随系统时用的是 navigator.language（如 zh-CN）。
+    for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(value) = std::env::var(key) {
+            if env_language_usable(&value) {
+                return value;
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(locale) = macos_preferred_language() {
+        return locale;
+    }
+    "en".into()
+}
+
+fn env_language_usable(value: &str) -> bool {
+    let base = value
+        .split(['.', '@'])
+        .next()
+        .unwrap_or(value)
+        .trim();
+    !base.is_empty() && !base.eq_ignore_ascii_case("C") && !base.eq_ignore_ascii_case("POSIX")
+}
+
+#[cfg(target_os = "macos")]
+fn macos_preferred_language() -> Option<String> {
+    let output = std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleLocale"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let locale = String::from_utf8(output.stdout).ok()?;
+    let trimmed = locale.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 #[cfg(test)]
@@ -167,5 +200,14 @@ mod tests {
         assert_eq!(normalize("zh_HK"), "zh-TW");
         assert_eq!(normalize("en-US"), "en");
         assert_eq!(normalize("ja_JP"), "ja");
+    }
+
+    #[test]
+    fn ignores_c_locale_env() {
+        assert!(!env_language_usable("C"));
+        assert!(!env_language_usable("C.UTF-8"));
+        assert!(!env_language_usable("POSIX"));
+        assert!(env_language_usable("zh_CN.UTF-8"));
+        assert!(env_language_usable("en_US.UTF-8"));
     }
 }
