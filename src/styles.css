@@ -1626,9 +1626,16 @@ textarea:not(.inputarea) {
   min-height: 28px;
   justify-content: space-between;
   align-items: flex-end;
+  gap: 8px;
   margin-top: 5px;
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
+}
+.composer-footer-start {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
 }
 .target-picker {
   display: flex;
@@ -2411,7 +2418,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   align-items: center;
   gap: 6px;
   margin: 0;
-  padding: 4px 10px 0;
+  padding: 4px 0 0;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-xs);
 }
@@ -2438,7 +2445,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   display: inline-flex;
   align-self: flex-start;
   width: fit-content;
-  margin: 6px 10px 0;
+  margin: 6px 0 0;
   padding: 0 6px;
   border-radius: var(--radius-sm);
   background: var(--color-bg-tertiary);

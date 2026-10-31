@@ -378,23 +378,25 @@ defineExpose({
       @paste-image="emit('paste-image', $event)"
     />
     <div class="composer-footer">
-      <label class="target-picker">
-        <UiSelect
-          v-if="allowTargetChange && targetOptions.length"
-          v-model="selectedTarget"
-          variant="ghost"
-          size="sm"
-          searchable
-          :page-size="5"
-          aria-label="选择要询问的智能体或小队"
-          :groups="targetGroups"
-        />
-        <template v-else>
-          <AgentAvatar :value="targetAvatar" :name="targetLabel" :size="22" />
-          <span>{{ targetLabel }}</span>
-        </template>
-      </label>
-      <ChatModePicker v-if="modeSessionId" :session-id="modeSessionId" />
+      <div class="composer-footer-start">
+        <label class="target-picker">
+          <UiSelect
+            v-if="allowTargetChange && targetOptions.length"
+            v-model="selectedTarget"
+            variant="ghost"
+            size="sm"
+            searchable
+            :page-size="5"
+            aria-label="选择要询问的智能体或小队"
+            :groups="targetGroups"
+          />
+          <template v-else>
+            <AgentAvatar :value="targetAvatar" :name="targetLabel" :size="22" />
+            <span>{{ targetLabel }}</span>
+          </template>
+        </label>
+        <ChatModePicker v-if="modeSessionId" :session-id="modeSessionId" />
+      </div>
       <slot name="tools" />
       <div class="composer-actions">
         <ContextUsageButton v-if="showContextUsage" :placement="usagePlacement" />
