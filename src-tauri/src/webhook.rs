@@ -1,6 +1,10 @@
 use std::{
     io::Read,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
 };
 
 use tauri::{AppHandle, Manager};
@@ -12,6 +16,7 @@ const MAX_BODY_BYTES: usize = 256 * 1024;
 /// 每个请求一个线程处理，同时在处理的请求超过这个数就直接回 503。
 /// tiny_http 不暴露底层 socket，没法给读请求体设超时；发完头不发体的客户端只会占住一个名额。
 const MAX_CONCURRENT_REQUESTS: usize = 8;
+const DEFAULT_PORT: u16 = 43127;
 static ACTIVE_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 
 struct ActiveSlot;
@@ -22,26 +27,91 @@ impl Drop for ActiveSlot {
     }
 }
 
-pub fn start(app: AppHandle) {
-    let port = {
-        let state = app.state::<AppState>();
-        let Ok(db) = state.lock_db() else {
-            return;
-        };
-        db.query_row(
-            "SELECT value FROM app_settings WHERE key='webhookPort'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(43127)
+struct WebhookRuntime {
+    desired_port: AtomicU16,
+    stop: AtomicBool,
+    server: Mutex<Option<Arc<Server>>>,
+}
+
+impl WebhookRuntime {
+    fn new(port: u16) -> Self {
+        Self {
+            desired_port: AtomicU16::new(port),
+            stop: AtomicBool::new(false),
+            server: Mutex::new(None),
+        }
+    }
+
+    fn set_port(&self, port: u16) {
+        self.desired_port.store(port, Ordering::SeqCst);
+    }
+
+    fn unblock(&self) {
+        if let Ok(guard) = self.server.lock() {
+            if let Some(server) = guard.as_ref() {
+                server.unblock();
+            }
+        }
+    }
+}
+
+fn read_port(app: &AppHandle) -> u16 {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return DEFAULT_PORT;
     };
-    std::thread::spawn(move || {
-        let Ok(server) = Server::http(format!("127.0.0.1:{port}")) else {
-            eprintln!("Multara Webhook 服务无法监听 127.0.0.1:{port}");
-            return;
+    db.query_row(
+        "SELECT value FROM app_settings WHERE key='webhookPort'",
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|value| value.parse::<u16>().ok())
+    .filter(|port| *port >= 1024)
+    .unwrap_or(DEFAULT_PORT)
+}
+
+pub fn start(app: AppHandle) {
+    let port = read_port(&app);
+    let runtime = Arc::new(WebhookRuntime::new(port));
+    app.manage(runtime.clone());
+    let app_for_loop = app.clone();
+    std::thread::Builder::new()
+        .name("multara-webhook".into())
+        .spawn(move || run_loop(app_for_loop, runtime))
+        .expect("spawn webhook thread");
+}
+
+/// 设置里改了端口后调用：解阻塞当前 Server，循环会用新端口重新监听。
+pub fn reload(app: &AppHandle) {
+    let port = read_port(app);
+    let Some(runtime) = app.try_state::<Arc<WebhookRuntime>>() else {
+        return;
+    };
+    let current = runtime.desired_port.load(Ordering::SeqCst);
+    if current == port {
+        return;
+    }
+    runtime.set_port(port);
+    runtime.unblock();
+}
+
+fn run_loop(app: AppHandle, runtime: Arc<WebhookRuntime>) {
+    while !runtime.stop.load(Ordering::SeqCst) {
+        let port = runtime.desired_port.load(Ordering::SeqCst);
+        let server = match Server::http(format!("127.0.0.1:{port}")) {
+            Ok(server) => Arc::new(server),
+            Err(error) => {
+                eprintln!("Multara Webhook 服务无法监听 127.0.0.1:{port}：{error}");
+                // 端口被占时稍后重试，避免设置改错后永久退出。
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
         };
+        if let Ok(mut guard) = runtime.server.lock() {
+            *guard = Some(Arc::clone(&server));
+        }
+        eprintln!("Multara Webhook 监听 127.0.0.1:{port}");
         for request in server.incoming_requests() {
             if ACTIVE_REQUESTS.fetch_add(1, Ordering::AcqRel) >= MAX_CONCURRENT_REQUESTS {
                 ACTIVE_REQUESTS.fetch_sub(1, Ordering::AcqRel);
@@ -57,7 +127,10 @@ pub fn start(app: AppHandle) {
                     handle_request(request, &app);
                 });
         }
-    });
+        if let Ok(mut guard) = runtime.server.lock() {
+            *guard = None;
+        }
+    }
 }
 
 fn error_body(error: &str) -> String {

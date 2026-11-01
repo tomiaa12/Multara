@@ -2835,12 +2835,13 @@ pub async fn save_settings(
 ) -> Result<HashMap<String, String>, String> {
     let _span = crate::diag::span("save_settings");
     validate_settings(&settings)?;
+    let reload_webhook = settings.contains_key("webhookPort");
     let skill_root = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("builtin-skills");
-    off_main(app, move |state| {
+    let saved = off_main(app.clone(), move |state| {
         let language_changed = settings.contains_key("language");
         let (locale, saved) = save_settings_rows(&*state.lock_db()?, settings)?;
         if language_changed {
@@ -2849,7 +2850,11 @@ pub async fn save_settings(
         }
         Ok(saved)
     })
-    .await
+    .await?;
+    if reload_webhook {
+        crate::webhook::reload(&app);
+    }
+    Ok(saved)
 }
 
 fn save_settings_rows(

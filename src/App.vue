@@ -44,6 +44,7 @@ import {
 } from "./components/workbench/unsaved-editor";
 import { useAppStore } from "./stores/app";
 import { useEditorStatusStore } from "./stores/editor-status";
+import { applyThemeSetting } from "./theme";
 import EditorLanguagePicker from "./components/workbench/EditorLanguagePicker.vue";
 import ContextMenu, { type ContextMenuItem } from "./components/ui/ContextMenu.vue";
 import { editorZoomLabel } from "./components/workbench/monaco-zoom";
@@ -168,7 +169,8 @@ function beginSidebarResize(event: PointerEvent) {
 
 async function toggleTheme() {
   const next = documentTheme.value === "light" ? "dark" : "light";
-  document.documentElement.dataset.theme = next;
+  applyThemeSetting(next);
+  documentTheme.value = next;
   try {
     await store.saveSettings({ theme: next });
   } catch {

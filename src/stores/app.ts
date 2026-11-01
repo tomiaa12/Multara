@@ -163,7 +163,8 @@ export const useAppStore = defineStore("app", () => {
     error.value = "";
     try {
       data.value = await backend.bootstrap();
-      applyStoredTheme(data.value.settings.theme ?? "dark");
+      const { applyThemeSetting } = await import("../theme");
+      applyThemeSetting(data.value.settings.theme);
       const { applyLanguageSetting } = await import("../i18n");
       applyLanguageSetting(data.value.settings.language);
       setFileIconTheme(data.value.settings.fileIconTheme);
@@ -198,13 +199,6 @@ export const useAppStore = defineStore("app", () => {
     } finally {
       loading.value = false;
     }
-  }
-
-  function applyStoredTheme(theme: string) {
-    const selected = theme === "system"
-      ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
-      : theme;
-    document.documentElement.dataset.theme = selected;
   }
 
   async function registerRunEvents() {
