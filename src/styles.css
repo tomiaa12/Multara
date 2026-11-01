@@ -1870,10 +1870,22 @@ textarea:not(.inputarea) {
 }
 .settings-card > .settings-hint {
   margin: 0;
-  padding: var(--spacing-4);
+  padding: 0 var(--spacing-4) var(--spacing-3);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-normal);
+}
+.settings-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  width: 280px;
+  max-width: 100%;
+}
+.settings-inline .ui-input {
+  flex: 1;
+  min-width: 0;
+  width: auto !important;
 }
 .process-stream {
   display: grid;

@@ -18,12 +18,20 @@ import UiModal from "./components/ui/UiModal.vue";
 import UiTextarea from "./components/ui/UiTextarea.vue";
 import { router } from "./router";
 import { overlayScrollPlugin } from "./ui/overlay-scroll";
+import { applyThemeSetting, THEME_STORAGE_KEY } from "./theme";
 import "./design/tokens.css";
 import "./design/base.css";
 import "./design/components.css";
 import "./design/layout.css";
 import "./styles.css";
 import "./assets/diff-overlay.css";
+
+// CSS 加载后再次对齐主题，避免只有 :root 深色规则生效。
+try {
+  applyThemeSetting(localStorage.getItem(THEME_STORAGE_KEY));
+} catch {
+  applyThemeSetting("system");
+}
 
 if (import.meta.env.DEV) {
   void import("./e2e/devBridge");

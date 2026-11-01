@@ -108,10 +108,78 @@ const RESTORED_WINDOW_FLAGS: StateFlags = StateFlags::from_bits_truncate(
         | StateFlags::FULLSCREEN.bits(),
 );
 
-fn reveal_main_window(app: &tauri::App) -> tauri::Result<()> {
+fn system_prefers_light() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // AppleInterfaceStyle=Dark 表示深色；键不存在则为浅色。
+        return !std::process::Command::new("defaults")
+            .args(["read", "-g", "AppleInterfaceStyle"])
+            .output()
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("Dark"));
+    }
+    #[cfg(windows)]
+    {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+        return RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+            .ok()
+            .and_then(|key| key.get_value::<u32, _>("AppsUseLightTheme").ok())
+            .map(|value| value == 1)
+            .unwrap_or(false);
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        false
+    }
+}
+
+fn resolve_startup_theme(setting: &str) -> &'static str {
+    match setting {
+        "light" => "light",
+        "dark" => "dark",
+        _ => {
+            if system_prefers_light() {
+                "light"
+            } else {
+                "dark"
+            }
+        }
+    }
+}
+
+fn startup_window_color(resolved: &str) -> tauri::window::Color {
+    // 与 tokens.css / index.html 启动底色一致
+    if resolved == "light" {
+        tauri::window::Color(0xff, 0xff, 0xff, 0xff)
+    } else {
+        tauri::window::Color(0x14, 0x14, 0x16, 0xff)
+    }
+}
+
+fn reveal_main_window(
+    app: &tauri::App,
+    theme_setting: Option<&str>,
+) -> tauri::Result<()> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
+
+    if let Some(setting) = theme_setting {
+        let setting = match setting {
+            "light" | "dark" | "system" => setting,
+            _ => "dark",
+        };
+        let resolved = resolve_startup_theme(setting);
+        let _ = window.set_background_color(Some(startup_window_color(resolved)));
+        // 尽早写入页面主题，避免 localStorage 尚未有缓存时按系统色猜错。
+        let script = format!(
+            r#"(function(){{try{{localStorage.setItem("multara.theme","{setting}");document.documentElement.dataset.theme="{resolved}";}}catch(e){{}}}})();"#
+        );
+        let _ = window.eval(&script);
+    }
 
     #[cfg(windows)]
     {
@@ -185,16 +253,18 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            reveal_main_window(app)?;
+            // 先开库读主题，再 show 窗口，避免原生底色先闪深色再切浅色。
             let state = database::open(app.handle()).map_err(|error| {
                 let message =
                     format!("无法打开 Multara 数据库（数据目录可能无权限或文件已损坏）：{error}");
                 eprintln!("{message}");
                 message
             })?;
-            if let Ok(db) = state.lock_db() {
+            let startup_theme = state.lock_db().ok().map(|db| {
                 app_locale::set_current(app_locale::from_db(&db));
-            }
+                commands::setting_value(&db, "theme", "dark")
+            });
+            reveal_main_window(app, startup_theme.as_deref())?;
             #[cfg(target_os = "macos")]
             app.set_menu(macos_menu::app_menu(app.handle())?)?;
             if let Ok(data_dir) = app.handle().path().app_data_dir() {

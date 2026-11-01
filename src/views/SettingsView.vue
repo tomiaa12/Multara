@@ -10,7 +10,7 @@ import {
   serializeExplorerSettings,
   type ExplorerSettings,
 } from "../components/workbench/explorer/explorer-settings";
-import { appVersion } from "../services/backend";
+import { appVersion, checkGitExecutable } from "../services/backend";
 import { setUpdateProxy } from "../services/update";
 import { useAppStore } from "../stores/app";
 import { useDictationStore } from "../stores/dictation";
@@ -25,8 +25,10 @@ import {
 } from "../domain/ai-helper-defaults";
 import { DEFAULT_FILE_ICON_THEME, FILE_ICON_THEMES, normalizeFileIconTheme, setFileIconTheme } from "../file-icons";
 import { applyLanguageSetting, locale, t } from "../i18n";
+import { applyThemeSetting } from "../theme";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
 import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
+import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import SettingsAiGenBlock from "./SettingsAiGenBlock.vue";
 import { integerSettingEntry } from "./settings-number";
 
@@ -77,6 +79,7 @@ const form = reactive({
   fileIconTheme: DEFAULT_FILE_ICON_THEME as string,
   gitExecutable: "git",
   isolationRoot: "~/.multara",
+  branchPrefix: "feat",
   autoUpdate: true,
   updateProxy: "",
   formatOnSave: false,
@@ -101,6 +104,8 @@ const filesExcludeText = ref(filesExcludeToText(DEFAULT_EXPLORER_SETTINGS.filesE
 const watcherExcludeText = ref(filesExcludeToText(DEFAULT_EXPLORER_SETTINGS.watcherExclude));
 const message = ref("");
 const version = ref("");
+const gitTestMessage = ref("");
+const gitTesting = ref(false);
 let hydrating = true;
 let saveTimer = 0;
 let lastSentSettings: Record<string, string> | null = null;
@@ -166,6 +171,21 @@ const languageOptions = computed(() => [
   { value: "ko", label: t("settings.lang.ko") },
 ]);
 
+const themeTabs = computed(() => [
+  { id: "system", label: t("settings.lang.system") },
+  { id: "dark", label: t("settings.theme.dark") },
+  { id: "light", label: t("settings.theme.light") },
+]);
+
+const fileIconTabs = computed(() =>
+  FILE_ICON_THEMES.map((item) => ({ id: item.value, label: item.label })),
+);
+
+const permissionTabs = computed(() => [
+  { id: "bypass", label: t("settings.permission.bypass") },
+  { id: "prompt", label: t("settings.permission.prompt") },
+]);
+
 watch(
   () => store.data?.settings,
   (settings) => {
@@ -178,7 +198,9 @@ watch(
     form.fileIconTheme = normalizeFileIconTheme(settings.fileIconTheme);
     form.gitExecutable = settings.gitExecutable ?? "git";
     form.isolationRoot = settings.isolationRoot ?? "~/.multara";
+    form.branchPrefix = settings.branchPrefix ?? "feat";
     form.autoUpdate = settings.autoUpdate !== "false";
+    gitTestMessage.value = "";
     form.updateProxy = settings.updateProxy ?? "";
     setUpdateProxy(form.updateProxy);
     form.formatOnSave = settings.formatOnSave === "true";
@@ -225,6 +247,7 @@ watch(
   () => [
     form.gitExecutable,
     form.isolationRoot,
+    form.branchPrefix,
     form.autoUpdate,
     form.updateProxy,
     form.formatOnSave,
@@ -271,8 +294,9 @@ function settingsPayload() {
     language: form.language,
     theme: form.theme,
     fileIconTheme: form.fileIconTheme,
-    gitExecutable: form.gitExecutable,
+    gitExecutable: form.gitExecutable.trim() || "git",
     isolationRoot: form.isolationRoot,
+    branchPrefix: form.branchPrefix.trim() || "feat",
     autoUpdate: String(form.autoUpdate),
     updateProxy: form.updateProxy.trim(),
     formatOnSave: String(form.formatOnSave),
@@ -313,6 +337,19 @@ async function persist() {
   }
 }
 
+async function testGitExecutable() {
+  gitTesting.value = true;
+  gitTestMessage.value = "";
+  try {
+    const versionText = await checkGitExecutable(form.gitExecutable.trim() || "git");
+    gitTestMessage.value = versionText;
+  } catch (cause) {
+    gitTestMessage.value = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    gitTesting.value = false;
+  }
+}
+
 function onSideSelect(item: SideNavItem) {
   if (!SECTION_IDS.includes(item.id as SectionId)) return;
   openSection(item.id as SectionId);
@@ -324,10 +361,7 @@ function openSection(id: SectionId) {
 }
 
 function applyTheme() {
-  const selected = form.theme === "system"
-    ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
-    : form.theme;
-  document.documentElement.dataset.theme = selected;
+  applyThemeSetting(form.theme);
 }
 
 watch(
@@ -440,18 +474,19 @@ onBeforeUnmount(() => {
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.theme") }}</strong><p>{{ t("settings.themeHint") }}</p></div>
-            <UiSelect
+            <SegmentedTabs
               v-model="form.theme"
-              :options="[
-                { value: 'system', label: t('settings.lang.system') },
-                { value: 'dark', label: t('settings.theme.dark') },
-                { value: 'light', label: t('settings.theme.light') },
-              ]"
+              :items="themeTabs"
+              :label="t('settings.theme')"
             />
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.fileIconTheme") }}</strong><p>{{ t("settings.fileIconThemeHint") }}</p></div>
-            <UiSelect v-model="form.fileIconTheme" :options="[...FILE_ICON_THEMES]" />
+            <SegmentedTabs
+              v-model="form.fileIconTheme"
+              :items="fileIconTabs"
+              :label="t('settings.fileIconTheme')"
+            />
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.runTimeout") }}</strong><p>{{ t("settings.runTimeoutHint") }}</p></div>
@@ -459,12 +494,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="settings-row">
             <div><strong>{{ t("settings.permission") }}</strong><p>{{ t("settings.permissionHint") }}</p></div>
-            <UiSelect
+            <SegmentedTabs
               v-model="form.permissionMode"
-              :options="[
-                { value: 'bypass', label: t('settings.permission.bypass') },
-                { value: 'prompt', label: t('settings.permission.prompt') },
-              ]"
+              :items="permissionTabs"
+              :label="t('settings.permission')"
             />
           </div>
           <label class="settings-row">
@@ -597,12 +630,30 @@ onBeforeUnmount(() => {
 
         <section v-else-if="section === 'git'" class="settings-card">
           <div class="settings-row settings-row-start">
+            <div><strong>{{ t("settings.git.executable") }}</strong><p>{{ t("settings.git.executableHint") }}</p></div>
+            <div class="settings-inline">
+              <UiInput
+                v-model="form.gitExecutable"
+                :placeholder="t('settings.git.executablePlaceholder')"
+                spellcheck="false"
+              />
+              <UiButton type="button" :disabled="gitTesting" @click="testGitExecutable">
+                {{ gitTesting ? t("settings.git.testing") : t("settings.git.test") }}
+              </UiButton>
+            </div>
+          </div>
+          <p v-if="gitTestMessage" class="settings-hint" role="status">{{ gitTestMessage }}</p>
+          <div class="settings-row settings-row-start">
             <div><strong>{{ t("settings.git.isolationRoot") }}</strong><p>{{ t("settings.git.isolationRootHint") }}</p></div>
             <UiInput v-model="form.isolationRoot" placeholder="~/.multara" />
           </div>
         </section>
 
         <section v-else-if="section === 'branch'" class="settings-card settings-ai-gen">
+          <div class="settings-row">
+            <div><strong>{{ t("settings.branch.prefix") }}</strong><p>{{ t("settings.branch.prefixHint") }}</p></div>
+            <UiInput v-model="form.branchPrefix" :placeholder="t('settings.branch.prefixPlaceholder')" spellcheck="false" />
+          </div>
           <SettingsAiGenBlock
             v-model:mode="form.branchGenMode"
             v-model:agent-id="form.branchAgentId"

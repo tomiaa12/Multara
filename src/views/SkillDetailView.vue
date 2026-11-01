@@ -47,6 +47,21 @@ const resourceId = computed(() => String(route.params.resourceId ?? ""));
 const skill = computed(() => store.data?.resources.find((item) => item.id === resourceId.value && item.kind === "skill") ?? null);
 const users = computed(() => store.data?.agents.filter((agent) => agent.skillIds.includes(resourceId.value)) ?? []);
 const dirty = computed(() => openFile.value !== null && draft.value !== savedText.value);
+const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
+const editorOptions = computed(() => ({
+  scrollBeyondLastLine: false,
+  lineNumbers: "on" as const,
+  lineNumbersMinChars: 3,
+  lineDecorationsWidth: 10,
+  glyphMargin: false,
+  readOnly: openFile.value?.readOnly,
+  minimap: { enabled: false },
+  automaticLayout: true,
+  tabSize: 2,
+  insertSpaces: true,
+  stickyScroll: { enabled: stickyScroll.value },
+  ...monacoZoomOptions,
+}));
 const sourceName = computed(() => {
   const owner = skill.value?.owner;
   if (!owner || owner === "multara") return "Multara";
@@ -342,20 +357,7 @@ async function removeSkill() {
           :language="monacoLanguageId(openFile.language || 'plaintext')"
           :path="editorPath"
           :theme="editorTheme"
-          :options="{
-            scrollBeyondLastLine: false,
-            lineNumbers: 'on',
-            lineNumbersMinChars: 3,
-            lineDecorationsWidth: 10,
-            glyphMargin: false,
-            readOnly: openFile.readOnly,
-            minimap: { enabled: false },
-            automaticLayout: true,
-            tabSize: 2,
-            insertSpaces: true,
-            stickyScroll: { enabled: true },
-            ...monacoZoomOptions,
-          }"
+          :options="editorOptions"
           width="100%"
           height="100%"
           @change="(value: string | undefined) => { draft = value ?? ''; }"
