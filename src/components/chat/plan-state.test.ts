@@ -91,6 +91,16 @@ describe("derivePlanStates", () => {
     expect(derivePlanStates(failedFromHistory).byKey.get(key)?.status).toBe("failed");
   });
 
+  it("reads approve from user sourceMeta when plan_action timeline is missing", () => {
+    const states = derivePlanStates([
+      user("u1"),
+      assistant("a1", [plan("p", 1)]),
+      user("u2", { planAction: "approve", planId: "p", revision: 1 }),
+    ]);
+    expect(states.byKey.get(planKey("p", 1))?.status).toBe("approved");
+    expect(states.latestAwaitingKey).toBeNull();
+  });
+
   it("marks rejected plans and leaves nothing actionable", () => {
     const states = derivePlanStates([assistant("a1", [plan("p", 1), action("p", 1, "reject")])]);
     expect(states.byKey.get(planKey("p", 1))?.status).toBe("rejected");
