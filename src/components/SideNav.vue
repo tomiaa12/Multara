@@ -149,7 +149,11 @@ function onResizePointerDown(event: PointerEvent) {
     <div v-for="(group, index) in groups" :key="group.label ?? index" class="nav-group">
       <span v-if="group.label" class="nav-label">{{ group.label }}</span>
       <template v-for="item in group.items" :key="item.id">
-        <UiTooltip :content="(iconCollapsed ? item.label : item.title) || ''" :disabled="!(iconCollapsed ? item.label : item.title)">
+        <UiTooltip
+          placement="right"
+          :content="(iconCollapsed ? item.label : item.title) || ''"
+          :disabled="!(iconCollapsed ? item.label : item.title)"
+        >
           <component
             :is="item.to ? RouterLink : 'button'"
             :to="item.to"
