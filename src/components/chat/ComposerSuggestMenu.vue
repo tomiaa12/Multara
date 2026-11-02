@@ -1,10 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
-import { Bot, ChevronRight, FolderKanban, Hash, Paperclip, Search, Sparkles } from "@lucide/vue";
+import {
+  Bot,
+  ChevronRight,
+  CircleDot,
+  FolderKanban,
+  FolderOpen,
+  GitPullRequest,
+  Hash,
+  MessageSquare,
+  Paperclip,
+  Search,
+  Sparkles,
+} from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
+import FileTypeIcon from "../FileTypeIcon.vue";
 import { bindDismissableLayer } from "../ui/dismissable-layer";
 import { nextPopupZIndex } from "../ui/popup-z-index";
-import type { ComposerSuggestCategory } from "./composer-entities";
+import type { ComposerSuggestCategoryId } from "./composer-entities";
 import {
   matchesCascadeQuery,
   navigateCascade,
@@ -15,12 +28,13 @@ import { t } from "../../i18n";
 
 export type ComposerSuggestItem = {
   id: string;
-  kind: ComposerSuggestCategory;
+  kind: ComposerSuggestCategoryId;
   label: string;
   description?: string;
   /** 有头像时按智能体下拉选项渲染（AgentAvatar + ds-select-option） */
   avatar?: string | null;
-  leading?: "bot" | "sparkles" | "hash" | "requirement";
+  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker";
+  isDirectory?: boolean;
 };
 
 export type ComposerSuggestGroup = {
@@ -30,15 +44,16 @@ export type ComposerSuggestGroup = {
 };
 
 export type ComposerSuggestCategoryItem = {
-  id: ComposerSuggestCategory | "file";
+  id: ComposerSuggestCategoryId;
   label: string;
   groups: ComposerSuggestGroup[];
   action?: "pick-files-or-folders";
+  emptyText?: string;
 };
 
 const props = defineProps<{
   categories: ComposerSuggestCategoryItem[];
-  defaultCategory: ComposerSuggestCategory;
+  defaultCategory: ComposerSuggestCategoryId;
   query: string;
   /** 光标或输入区的视口矩形，用于浮层定位（不占输入框文档流） */
   anchor: { left: number; top: number; bottom: number; width?: number } | null;
@@ -113,8 +128,11 @@ function activateCategory(index: number) {
 
 function resetCategory() {
   const index = props.categories.findIndex((item) => item.id === props.defaultCategory);
-  selectCategory(Math.max(index, 0));
-  activePane.value = "categories";
+  const next = Math.max(index, 0);
+  selectCategory(next);
+  // + 默认打开「文件/文件夹」时直接进二级列表；有 action 的仍停在左侧
+  const category = props.categories[next];
+  activePane.value = category && !category.action ? "results" : "categories";
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -234,11 +252,14 @@ onMounted(() => {
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("scroll", onViewportChange, true);
   unbindDismiss = bindDismissableLayer({
-    // 点在输入区继续改 @ 查询时不关；点到页内其它区域或窗口失焦才关
+    // 点在输入区继续改 @ 查询时不关；发送旁 + 由 openAttachMenu 自己切换
     contains: (target) =>
       Boolean(
         root.value?.contains(target)
-        || (target instanceof Element && target.closest(".composer-field")),
+        || (target instanceof Element && (
+          target.closest(".composer-field")
+          || target.closest("[data-composer-attach]")
+        )),
       ),
     onDismiss: () => emit("close"),
   });
@@ -272,7 +293,11 @@ onBeforeUnmount(() => {
           @mousemove="activePane = 'categories'; selectCategory(index)"
           @click="activateCategory(index)"
         >
-          <Bot v-if="category.id === 'agent'" :size="14" />
+          <Paperclip v-if="category.id === 'file'" :size="14" />
+          <MessageSquare v-else-if="category.id === 'session'" :size="14" />
+          <CircleDot v-else-if="category.id === 'issue'" :size="14" />
+          <GitPullRequest v-else-if="category.id === 'pullRequest'" :size="14" />
+          <Bot v-else-if="category.id === 'agent'" :size="14" />
           <Sparkles v-else-if="category.id === 'skill'" :size="14" />
           <Hash v-else-if="category.id === 'task'" :size="14" />
           <FolderKanban v-else-if="category.id === 'requirement'" :size="14" />
@@ -282,7 +307,7 @@ onBeforeUnmount(() => {
         </button>
       </nav>
       <section class="composer-suggest-results">
-        <label class="ds-select-search">
+        <label v-if="!activeCategory?.action" class="ds-select-search">
           <Search :size="14" />
           <input
             v-model="searchQuery"
@@ -294,7 +319,7 @@ onBeforeUnmount(() => {
         <div ref="listEl" class="ds-select-list" @mousedown.prevent>
           <template v-for="group in visibleGroups" :key="group.id">
             <div v-if="group.items.length" class="ds-select-group">
-              <div class="ds-select-group-label">
+              <div v-if="group.label" class="ds-select-group-label">
                 <span>{{ group.label }}</span>
                 <span>{{ group.items.length }}/{{ filteredGroups.find((item) => item.id === group.id)?.items.length }}</span>
               </div>
@@ -318,9 +343,17 @@ onBeforeUnmount(() => {
                   :size="null"
                 />
                 <span v-else class="composer-suggest-leading">
-                  <Sparkles v-if="item.leading === 'sparkles'" :size="14" />
+                  <FileTypeIcon
+                    v-if="item.leading === 'file' || item.leading === 'folder' || item.isDirectory"
+                    :name="item.label"
+                    :directory="Boolean(item.isDirectory || item.leading === 'folder')"
+                    :size="14"
+                  />
+                  <Sparkles v-else-if="item.leading === 'sparkles'" :size="14" />
                   <Hash v-else-if="item.leading === 'hash'" :size="14" />
                   <FolderKanban v-else-if="item.leading === 'requirement'" :size="14" />
+                  <MessageSquare v-else-if="item.leading === 'session'" :size="14" />
+                  <FolderOpen v-else-if="item.leading === 'picker'" :size="14" />
                   <Bot v-else :size="14" />
                 </span>
                 <span class="ds-select-option-body">
@@ -341,7 +374,9 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </template>
-          <div v-if="!navigationEntries.length" class="ds-select-empty">{{ t("select.empty") }}</div>
+          <div v-if="!navigationEntries.length" class="ds-select-empty">
+            {{ activeCategory?.emptyText || t("select.empty") }}
+          </div>
         </div>
       </section>
     </div>
