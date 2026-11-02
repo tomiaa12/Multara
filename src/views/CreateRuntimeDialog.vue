@@ -254,7 +254,7 @@ async function save(payload: {
 </script>
 
 <template>
-  <UiModal @click.self="!busy && emit('close')">
+  <UiModal :close-on-esc="false" @click.self="!busy && emit('close')">
     <form class="modal domain-modal runtime-create-dialog" @submit.prevent @input="markEdited">
       <header class="modal-heading">
         <div class="skill-create-title">

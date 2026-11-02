@@ -75,7 +75,7 @@ function submit() {
 </script>
 
 <template>
-  <UiModal>
+  <UiModal @close="emit('close')">
     <form class="modal workspace-picker-modal" @submit.prevent="submit">
       <div class="workspace-picker-head">
         <h2>{{ t("workspace.addTitle") }}</h2>

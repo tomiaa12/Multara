@@ -177,7 +177,7 @@ const canSubmit = computed(() => {
 </script>
 
 <template>
-  <UiModal @click.self="!busy && emit('close')">
+  <UiModal :close-on-esc="false" @click.self="!busy && emit('close')">
     <form
       class="modal domain-modal skill-create-dialog"
       @submit.prevent="submit"
