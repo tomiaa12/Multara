@@ -34,42 +34,47 @@ function commit(id: string, fallback: string) {
 <template>
   <UiModal @click.self="emit('close')">
     <div class="modal">
-      <div class="modal-heading">
+      <header class="modal-heading">
         <h2>{{ t('dashboard.manageTags') }}</h2>
         <UiButton class="icon-button" size="icon" :tip="t('common.close')" @click="emit('close')">
           <X :size="15" />
         </UiButton>
-      </div>
-      <form class="tag-manage-create" @submit.prevent="submitCreate">
-        <span>{{ t('tags.createNew') }}</span>
-        <UiInput v-model="name.value" :placeholder="t('tags.namePlaceholder')" />
-        <UiButton type="submit" :disabled="!name.value.trim()">{{ t('tags.add') }}</UiButton>
-      </form>
-      <div v-if="tags.length" class="tag-pop-list">
-        <div v-for="tag in tags" :key="tag.id" class="tag-manage-row">
-          <i class="tag-dot" :style="{ background: tag.color }" />
-          <UiInput
-            :model-value="drafts[tag.id] ?? tag.name"
-            @update:model-value="drafts[tag.id] = String($event ?? '')"
-            @blur="commit(tag.id, tag.name)"
-            @keydown.enter.prevent="commit(tag.id, tag.name)"
-          />
-          <UiButton size="small" variant="danger" @click="emit('remove', tag.id)">{{ t('common.delete') }}</UiButton>
-          <div class="tag-color-row">
-            <button
-              v-for="color in TAG_COLORS"
-              :key="color"
-              type="button"
-              class="tag-color-swatch"
-              :class="{ 'is-on': tag.color === color }"
-              :style="{ background: color }"
-              :aria-label="color"
-              @click="emit('recolor', tag.id, color)"
+      </header>
+      <div class="modal-body vs-scroll">
+        <form class="tag-manage-create" @submit.prevent="submitCreate">
+          <span>{{ t('tags.createNew') }}</span>
+          <UiInput v-model="name.value" :placeholder="t('tags.namePlaceholder')" />
+          <UiButton type="submit" :disabled="!name.value.trim()">{{ t('tags.add') }}</UiButton>
+        </form>
+        <div v-if="tags.length" class="tag-pop-list">
+          <div v-for="tag in tags" :key="tag.id" class="tag-manage-row">
+            <i class="tag-dot" :style="{ background: tag.color }" />
+            <UiInput
+              :model-value="drafts[tag.id] ?? tag.name"
+              @update:model-value="drafts[tag.id] = String($event ?? '')"
+              @blur="commit(tag.id, tag.name)"
+              @keydown.enter.prevent="commit(tag.id, tag.name)"
             />
+            <UiButton size="small" variant="danger" @click="emit('remove', tag.id)">{{ t('common.delete') }}</UiButton>
+            <div class="tag-color-row">
+              <button
+                v-for="color in TAG_COLORS"
+                :key="color"
+                type="button"
+                class="tag-color-swatch"
+                :class="{ 'is-on': tag.color === color }"
+                :style="{ background: color }"
+                :aria-label="color"
+                @click="emit('recolor', tag.id, color)"
+              />
+            </div>
           </div>
         </div>
+        <p v-else class="tag-empty">{{ t('tags.emptyHint') }}</p>
       </div>
-      <p v-else class="tag-empty">{{ t('tags.emptyHint') }}</p>
+      <div class="modal-actions">
+        <UiButton @click="emit('close')">{{ t('common.close') }}</UiButton>
+      </div>
     </div>
   </UiModal>
 </template>

@@ -64,21 +64,26 @@ function openOverflow(event: MouseEvent) {
 
   <UiModal v-if="showAll" @click.self="showAll = false">
     <div class="modal avatar-stack-dialog" role="dialog" aria-modal="true">
-      <div class="modal-heading">
+      <header class="modal-heading">
         <h2>{{ title }}</h2>
         <UiButton class="icon-button" size="icon" :tip="t('common.close')" @click="showAll = false">
           <X :size="15" />
         </UiButton>
+      </header>
+      <div class="modal-body vs-scroll">
+        <ul class="avatar-stack-list">
+          <li v-for="item in items" :key="item.key">
+            <AgentAvatar :value="item.image || ''" :name="item.name" :size="28" />
+            <div class="avatar-stack-meta">
+              <strong>{{ item.name }}</strong>
+              <small v-if="item.title && item.title !== item.name">{{ item.title }}</small>
+            </div>
+          </li>
+        </ul>
       </div>
-      <ul class="avatar-stack-list vs-scroll">
-        <li v-for="item in items" :key="item.key">
-          <AgentAvatar :value="item.image || ''" :name="item.name" :size="28" />
-          <div class="avatar-stack-meta">
-            <strong>{{ item.name }}</strong>
-            <small v-if="item.title && item.title !== item.name">{{ item.title }}</small>
-          </div>
-        </li>
-      </ul>
+      <div class="modal-actions">
+        <UiButton @click="showAll = false">{{ t("common.close") }}</UiButton>
+      </div>
     </div>
   </UiModal>
 </template>

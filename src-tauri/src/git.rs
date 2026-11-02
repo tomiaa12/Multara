@@ -450,11 +450,16 @@ pub fn push(root: &str, git_command: &str, skip_verify: bool) -> Result<(), Stri
 }
 
 pub fn sync(root: &str, git_command: &str, skip_verify: bool) -> Result<(), String> {
-    if !has_same_name_upstream(git_command, root) {
-        return push(root, git_command, skip_verify);
+    // 有上游就先 pull（behind 时不能只走 push，否则计数不变）。
+    // 同名上游再 push；无上游则 publish（push -u）；跟踪着别的基准分支时只 pull 不推。
+    let has_upstream = current_upstream(git_command, root).is_some();
+    if has_upstream {
+        pull(root, git_command, skip_verify)?;
     }
-    pull(root, git_command, skip_verify)?;
-    push(root, git_command, skip_verify)
+    if has_same_name_upstream(git_command, root) || !has_upstream {
+        push(root, git_command, skip_verify)?;
+    }
+    Ok(())
 }
 
 pub fn configured_hooks_path(root: &str, git_command: &str) -> String {

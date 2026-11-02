@@ -82,22 +82,27 @@ function openAll(event: MouseEvent) {
 
   <UiModal v-if="showAll" @click.self="showAll = false">
     <div class="modal overflow-summary-dialog" role="dialog" aria-modal="true">
-      <div class="modal-heading">
+      <header class="modal-heading">
         <h2>{{ dialogTitle }}</h2>
         <UiButton class="icon-button" size="icon" :tip="t('common.close')" @click="showAll = false">
           <X :size="15" />
         </UiButton>
+      </header>
+      <div class="modal-body vs-scroll">
+        <ul class="overflow-summary-list">
+          <li v-for="item in items" :key="item.id">
+            <i v-if="item.color" class="tag-dot" :style="{ background: item.color }" />
+            <div class="overflow-summary-meta">
+              <strong>{{ item.label }}</strong>
+              <small v-if="item.detail">{{ item.detail }}</small>
+            </div>
+            <span v-if="item.badge" class="ds-badge">{{ item.badge }}</span>
+          </li>
+        </ul>
       </div>
-      <ul class="overflow-summary-list vs-scroll">
-        <li v-for="item in items" :key="item.id">
-          <i v-if="item.color" class="tag-dot" :style="{ background: item.color }" />
-          <div class="overflow-summary-meta">
-            <strong>{{ item.label }}</strong>
-            <small v-if="item.detail">{{ item.detail }}</small>
-          </div>
-          <span v-if="item.badge" class="ds-badge">{{ item.badge }}</span>
-        </li>
-      </ul>
+      <div class="modal-actions">
+        <UiButton @click="showAll = false">{{ t("common.close") }}</UiButton>
+      </div>
     </div>
   </UiModal>
 </template>

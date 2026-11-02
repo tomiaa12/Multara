@@ -6791,6 +6791,11 @@ body.is-dragging-workspace-file * {
   width: min(680px, 100%);
   max-height: calc(100vh - 48px);
 }
+.requirement-create-modal:has(> .modal-body) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .requirement-create-head {
   display: flex;
   align-items: flex-start;
@@ -11492,12 +11497,15 @@ label.settings-row:hover {
 .avatar-stack-dialog {
   width: min(420px, 92vw);
 }
+.overflow-summary-dialog > .modal-body,
+.avatar-stack-dialog > .modal-body {
+  gap: var(--spacing-2);
+}
 .overflow-summary-list,
 .avatar-stack-list {
   display: grid;
   gap: var(--spacing-1);
-  max-height: min(360px, 50vh);
-  margin: var(--spacing-2) 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -11824,17 +11832,48 @@ label.settings-row:hover {
   font-weight: var(--font-weight-medium);
 }
 .delete-project-dialog {
-  width: min(520px, 92vw);
+  width: min(680px, 94vw);
   gap: var(--spacing-3);
 }
+.delete-project-foot {
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+.delete-project-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-4);
+  min-width: 0;
+}
+.delete-project-foot-end {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+.delete-project-row-delete {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.delete-project-foot-error {
+  margin: 0;
+  padding: 0 var(--spacing-1);
+}
 .delete-project-intro {
+  align-items: flex-start;
+}
+.delete-project-intro > div {
   display: grid;
   gap: var(--spacing-1);
+  min-width: 0;
 }
 .delete-project-intro p {
   margin: 0;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
   line-height: 1.45;
 }
 .delete-project-lead,
@@ -11846,11 +11885,19 @@ label.settings-row:hover {
   font-size: var(--font-size-sm);
   line-height: 1.45;
 }
+.delete-project-dialog > .modal-body {
+  gap: var(--spacing-3);
+}
 .delete-project-list {
   display: grid;
   gap: var(--spacing-2);
-  max-height: min(360px, 50vh);
   margin: 0;
+}
+.delete-project-branch-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-4);
 }
 .delete-project-row {
   display: grid;

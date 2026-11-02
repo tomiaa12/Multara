@@ -5,6 +5,7 @@ import { createRefreshScheduler } from "./refresh-scheduler";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("refresh scheduler", () => {
@@ -43,6 +44,75 @@ describe("refresh scheduler", () => {
     scheduler.request();
     scheduler.dispose();
     await vi.runAllTimersAsync();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  test("defers refresh until the window is focused again", async () => {
+    vi.useFakeTimers();
+    let focused = false;
+    let wake: (() => void) | undefined;
+
+    vi.stubGlobal("window", {
+      addEventListener: (type: string, handler: () => void) => {
+        if (type === "focus") wake = handler;
+      },
+      removeEventListener: () => undefined,
+    });
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      hasFocus: () => focused,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    });
+
+    const refresh = vi.fn(async () => undefined);
+    const scheduler = createRefreshScheduler(refresh, {
+      debounceMs: 100,
+      cooldownMs: 5_000,
+      isFocused: () => focused,
+    });
+
+    scheduler.request();
+    await vi.advanceTimersByTimeAsync(100);
+    await Promise.resolve();
+    expect(refresh).not.toHaveBeenCalled();
+
+    focused = true;
+    wake?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    scheduler.dispose();
+  });
+
+  test("dispose cancels a refresh waiting for focus", async () => {
+    vi.useFakeTimers();
+    let focused = false;
+
+    vi.stubGlobal("window", {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    });
+    vi.stubGlobal("document", {
+      visibilityState: "hidden",
+      hasFocus: () => focused,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    });
+
+    const refresh = vi.fn(async () => undefined);
+    const scheduler = createRefreshScheduler(refresh, {
+      debounceMs: 100,
+      isFocused: () => focused,
+    });
+
+    scheduler.request();
+    await vi.advanceTimersByTimeAsync(100);
+    await Promise.resolve();
+    scheduler.dispose();
+    focused = true;
+    await Promise.resolve();
     expect(refresh).not.toHaveBeenCalled();
   });
 });

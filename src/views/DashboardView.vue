@@ -19,6 +19,7 @@ import DeleteProjectDialog, {
   type DeleteWorkspaceChoice,
 } from "../components/dashboard/DeleteProjectDialog.vue";
 import RequirementEmptyState from "../components/dashboard/RequirementEmptyState.vue";
+import RequirementWorkspacesDialog from "../components/dashboard/RequirementWorkspacesDialog.vue";
 import WorkspacePickerFields from "../components/dashboard/WorkspacePickerFields.vue";
 import {
   buildWorkspaceRequests,
@@ -33,7 +34,6 @@ import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import { useAppStore } from "../stores/app";
-import { workspaceModeLabel } from "../components/workbench/workspace-mode";
 import {
   buildHomeIndex,
   buildHomeProject,
@@ -83,6 +83,7 @@ const tagsExpanded = ref(false);
 const tagsOverflow = ref(false);
 const tagChips = ref<HTMLElement | null>(null);
 const deleteTarget = ref<{ id: string; name: string } | null>(null);
+const manageWorkspacesTarget = ref<{ id: string; name: string } | null>(null);
 
 const rows = computed(() => {
   const data = store.data;
@@ -243,23 +244,22 @@ function tagItems(projectId: string): OverflowSummaryItem[] {
   }));
 }
 
-function projectItems(row: HomeProject): OverflowSummaryItem[] {
-  const jobs = projectJobs(row.id).map((job) => ({
-    id: job.id,
-    label: job.name,
-    detail: job.status === "preparing"
-      ? t("dashboard.jobPreparingHint")
-      : job.error || t("dashboard.jobFailed"),
-    badge: job.status === "preparing" ? t("dashboard.jobPreparing") : t("dashboard.jobFailed"),
-  }));
-  const workspaces = row.workspaces.map((workspace) => ({
-    id: workspace.id,
-    label: workspace.name,
-    detail: workspace.kind === "git" ? (workspace.branch || "HEAD") : workspace.workPath,
-    badge: workspaceModeLabel(workspace),
-  }));
-  return [...jobs, ...workspaces];
+function projectCountLabel(row: HomeProject) {
+  const n = row.workspaces.length + projectJobs(row.id).length;
+  return t("overflowSummary.count", { n, unit: t("dashboard.unit.project") });
 }
+
+function openManageWorkspaces(row: HomeProject, event: MouseEvent) {
+  event.stopPropagation();
+  if (!row.workspaces.length && !projectJobs(row.id).length) return;
+  manageWorkspacesTarget.value = { id: row.id, name: row.name };
+}
+
+const manageWorkspaces = computed(() =>
+  (store.data?.workspaces ?? []).filter(
+    (item) => item.projectId === manageWorkspacesTarget.value?.id,
+  ),
+);
 
 function workerItems(row: HomeProject) {
   return row.workers.map((worker) => ({
@@ -343,6 +343,13 @@ function openWorkbenchFromDelete() {
   if (!target) return;
   error.value = t("dashboard.deleteConflictGotoWorkbench");
   deleteTarget.value = null;
+  void router.push(`/projects/${target.id}`);
+}
+
+function openWorkbenchFromManage() {
+  const target = manageWorkspacesTarget.value;
+  if (!target) return;
+  manageWorkspacesTarget.value = null;
   void router.push(`/projects/${target.id}`);
 }
 </script>
@@ -456,14 +463,16 @@ function openWorkbenchFromDelete() {
                   empty-text="—"
                 />
               </td>
-              <td class="req-col-fluid">
-                <OverflowSummary
-                  :items="projectItems(row)"
-                  count-only
-                  :unit="t('dashboard.unit.project')"
-                  :dialog-title="t('dashboard.overflowProjectsTitle')"
-                  empty-text="—"
-                />
+              <td class="req-col-fluid" @click.stop>
+                <button
+                  v-if="row.workspaces.length || projectJobs(row.id).length"
+                  type="button"
+                  class="overflow-summary-more"
+                  @click="openManageWorkspaces(row, $event)"
+                >
+                  {{ projectCountLabel(row) }}
+                </button>
+                <span v-else class="overflow-summary-empty">—</span>
               </td>
               <td class="req-col-fluid">
                 <AvatarStack
@@ -553,12 +562,21 @@ function openWorkbenchFromDelete() {
       @open-workbench="openWorkbenchFromDelete"
     />
 
+    <RequirementWorkspacesDialog
+      v-if="manageWorkspacesTarget"
+      :project-id="manageWorkspacesTarget.id"
+      :project-name="manageWorkspacesTarget.name"
+      :workspaces="manageWorkspaces"
+      @close="manageWorkspacesTarget = null"
+      @open-workbench="openWorkbenchFromManage"
+    />
+
     <UiModal
       v-if="showCreate"
       @click.self="closeEditor"
     >
       <form class="modal requirement-create-modal" @submit.prevent="saveProject">
-        <header class="requirement-create-head">
+        <header class="modal-heading requirement-create-head">
           <div>
             <h2>{{ editingId ? t("dashboard.edit") : t("dashboard.create") }}</h2>
             <p>{{ editingId ? t("dashboard.editHint") : t("dashboard.createHint") }}</p>
@@ -568,7 +586,7 @@ function openWorkbenchFromDelete() {
           </UiButton>
         </header>
 
-        <div class="requirement-create-body">
+        <div class="modal-body requirement-create-body vs-scroll">
           <label class="requirement-create-name">
             <span>{{ t("dashboard.nameLabel") }}</span>
             <UiInput
@@ -603,9 +621,9 @@ function openWorkbenchFromDelete() {
               @manage="showManage = true"
             />
           </section>
-        </div>
 
-        <div v-if="error" class="error-card">{{ error }}</div>
+          <div v-if="error" class="error-card">{{ error }}</div>
+        </div>
 
         <div class="modal-actions">
           <UiButton type="button" @click="closeEditor">{{ t("common.cancel") }}</UiButton>

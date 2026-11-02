@@ -687,9 +687,12 @@ export const useAppStore = defineStore("app", () => {
     return project;
   }
 
-  async function detachWorkspace(workspaceId: string) {
+  async function detachWorkspace(
+    workspaceId: string,
+    options?: backend.DeleteProjectWorkspaceOptions,
+  ) {
     if (!data.value) return;
-    await backend.detachWorkspace(workspaceId);
+    await backend.detachWorkspace(workspaceId, options);
     const workspace = data.value.workspaces.find((item) => item.id === workspaceId);
     data.value.workspaces = data.value.workspaces.filter((item) => item.id !== workspaceId);
     if (!workspace) return;
