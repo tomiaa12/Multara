@@ -63,6 +63,8 @@ export const useAppStore = defineStore("app", () => {
   const error = ref("");
   const chatOpen = ref(false);
   const activeSessionId = ref("welcome");
+  /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
+  const activeInboxSessionId = ref<string | null>(null);
   /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它 */
   type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean };
   const queuedMessages = ref<QueuedMessage[]>([]);
@@ -756,6 +758,10 @@ export const useAppStore = defineStore("app", () => {
     return agentsRefresh;
   }
 
+  function setActiveInboxSession(sessionId: string | null) {
+    activeInboxSessionId.value = sessionId;
+  }
+
   async function captureInboxNotice(payload: RunEvent) {
     if (!data.value) return;
     // 自动化在后端自己落任务和收件箱；前端把看板/收件箱重新拉一遍即可。
@@ -778,14 +784,19 @@ export const useAppStore = defineStore("app", () => {
       : waitingPermission
         ? "needs_permission"
         : payload.status;
-    if (!shouldNotifyInbox({
+    const path = currentAppPath();
+    const viewingInboxSession = path === "/inbox" && activeInboxSessionId.value === session.id;
+    const shouldNotify = shouldNotifyInbox({
       status,
       previousStatus: "running",
       sessionId: session.id,
       projectId: session.projectId,
       taskId: task?.id ?? null,
-      currentPath: currentAppPath(),
-    })) return;
+      currentPath: path,
+      activeInboxSessionId: activeInboxSessionId.value,
+    });
+    // 正在看这条：仍刷新预览/状态，但立刻标已读，避免未读 +1。
+    if (!shouldNotify && !viewingInboxSession) return;
     const item = await backend.upsertInboxItem({
       sessionId: session.id,
       projectId: session.projectId,
@@ -802,6 +813,10 @@ export const useAppStore = defineStore("app", () => {
     const index = data.value.inbox.findIndex((entry) => entry.sessionId === item.sessionId);
     if (index >= 0) data.value.inbox.splice(index, 1);
     data.value.inbox.unshift(item);
+    if (viewingInboxSession) {
+      await markInboxRead(item.id, transcript.at(-1)?.id ?? null);
+      return;
+    }
     notifyDesktop(item.title, item.preview);
   }
 
@@ -1683,6 +1698,7 @@ export const useAppStore = defineStore("app", () => {
     markInboxRead,
     markInboxUnread,
     markInboxAllRead,
+    setActiveInboxSession,
     archiveInboxItem,
     deleteInboxItem,
     forkSession,

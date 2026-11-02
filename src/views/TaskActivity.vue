@@ -225,9 +225,11 @@ function stop() {
   void store.stopSessionRuns(props.sessionId);
 }
 
-function revealUnread() {
-  if (!props.unreadMessageId) return;
-  if (scrollListToMessage(logEl.value, props.unreadMessageId)) return;
+function revealThreadScroll() {
+  const list = logEl.value;
+  if (!list || !props.thread) return;
+  if (props.unreadMessageId && scrollListToMessage(list, props.unreadMessageId)) return;
+  list.scrollTop = list.scrollHeight;
 }
 
 onMounted(() => {
@@ -240,10 +242,10 @@ watch(() => props.sessionId, (sessionId) => {
 
 watch(
   () => [props.unreadMessageId, messages.value.length] as const,
-  async ([messageId]) => {
-    if (!messageId) return;
+  async () => {
+    if (!props.thread) return;
     await nextTick();
-    requestAnimationFrame(() => revealUnread());
+    requestAnimationFrame(() => revealThreadScroll());
   },
   { immediate: true },
 );
