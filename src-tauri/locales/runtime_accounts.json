@@ -1,0 +1,110 @@
+{
+  "读取钥匙串失败：{error}": {
+    "en": "Couldn't read the keychain: {error}",
+    "zh-TW": "讀取鑰匙圈失敗：{error}",
+    "ja": "キーチェーンを読み取れませんでした：{error}",
+    "ko": "키체인을 읽지 못했습니다: {error}"
+  },
+  "写入钥匙串失败：{error}": {
+    "en": "Couldn't write to the keychain: {error}",
+    "zh-TW": "寫入鑰匙圈失敗：{error}",
+    "ja": "キーチェーンに書き込めませんでした：{error}",
+    "ko": "키체인에 쓰지 못했습니다: {error}"
+  },
+  "当前系统不支持钥匙串账号": {
+    "en": "Keychain accounts aren't supported on this system",
+    "zh-TW": "目前系統不支援鑰匙圈帳號",
+    "ja": "このシステムではキーチェーンのアカウントに対応していません",
+    "ko": "이 시스템에서는 키체인 계정을 지원하지 않습니다"
+  },
+  "读取 {path} 失败：{error}": {
+    "en": "Couldn't read {path}: {error}",
+    "zh-TW": "讀取 {path} 失敗：{error}",
+    "ja": "{path} を読み取れませんでした：{error}",
+    "ko": "{path}을(를) 읽지 못했습니다: {error}"
+  },
+  "{path} 不是标准 JSON，无法读取账号": {
+    "en": "{path} isn't standard JSON, so the account can't be read",
+    "zh-TW": "{path} 不是標準 JSON，無法讀取帳號",
+    "ja": "{path} は標準の JSON ではないため、アカウントを読み取れません",
+    "ko": "{path}이(가) 표준 JSON이 아니어서 계정을 읽을 수 없습니다"
+  },
+  "配置结构和预期不同，无法写入账号": {
+    "en": "The config isn't structured as expected, so the account can't be written",
+    "zh-TW": "設定結構與預期不同，無法寫入帳號",
+    "ja": "設定の構造が想定と異なるため、アカウントを書き込めません",
+    "ko": "설정 구조가 예상과 달라 계정을 쓸 수 없습니다"
+  },
+  "账号库文件已损坏：{path}": {
+    "en": "The account store is corrupted: {path}",
+    "zh-TW": "帳號庫檔案已損壞：{path}",
+    "ja": "アカウントの保存ファイルが壊れています：{path}",
+    "ko": "계정 저장 파일이 손상되었습니다: {path}"
+  },
+  "当前系统暂不支持切换这个 CLI 的账号": {
+    "en": "Switching accounts for this CLI isn't supported on this system yet",
+    "zh-TW": "目前系統暫不支援切換這個 CLI 的帳號",
+    "ja": "このシステムでは、この CLI のアカウント切り替えにまだ対応していません",
+    "ko": "이 시스템에서는 아직 이 CLI의 계정 전환을 지원하지 않습니다"
+  },
+  "Codex 设置为把登录存进系统钥匙串（cli_auth_credentials_store），暂不支持切换": {
+    "en": "Codex is set to store its login in the system keychain (cli_auth_credentials_store), so switching isn't supported yet",
+    "zh-TW": "Codex 設定為把登入存進系統鑰匙圈（cli_auth_credentials_store），暫不支援切換",
+    "ja": "Codex はログインをシステムのキーチェーンに保存する設定（cli_auth_credentials_store）のため、切り替えにはまだ対応していません",
+    "ko": "Codex가 로그인을 시스템 키체인에 저장하도록 설정되어 있어(cli_auth_credentials_store) 아직 전환을 지원하지 않습니다"
+  },
+  "这个 CLI 暂不支持账号切换": {
+    "en": "This CLI doesn't support account switching yet",
+    "zh-TW": "這個 CLI 暫不支援帳號切換",
+    "ja": "この CLI はまだアカウント切り替えに対応していません",
+    "ko": "이 CLI는 아직 계정 전환을 지원하지 않습니다"
+  },
+  "账号不存在，可能已被删除": {
+    "en": "The account no longer exists; it may have been removed",
+    "zh-TW": "帳號不存在，可能已被刪除",
+    "ja": "アカウントが見つかりません。削除された可能性があります",
+    "ko": "계정이 없습니다. 삭제되었을 수 있습니다"
+  },
+  "切换后读到的不是目标账号，已恢复原来的登录": {
+    "en": "After switching, the CLI wasn't signed in as the chosen account, so the previous login was restored",
+    "zh-TW": "切換後讀到的不是目標帳號，已恢復原來的登入",
+    "ja": "切り替え後のログインが選んだアカウントではなかったため、元のログインに戻しました",
+    "ko": "전환 후 선택한 계정으로 로그인되지 않아 이전 로그인으로 되돌렸습니다"
+  },
+  "Kimi Code 正在刷新登录，请稍后再试": {
+    "en": "Kimi Code is refreshing its login. Try again shortly",
+    "zh-TW": "Kimi Code 正在重新整理登入，請稍後再試",
+    "ja": "Kimi Code がログインを更新しています。しばらくしてから再試行してください",
+    "ko": "Kimi Code가 로그인을 갱신하는 중입니다. 잠시 후 다시 시도하세요"
+  },
+  "找不到用户主目录": {
+    "en": "Couldn't find the home directory",
+    "zh-TW": "找不到使用者主目錄",
+    "ja": "ホームディレクトリが見つかりません",
+    "ko": "홈 디렉터리를 찾을 수 없습니다"
+  },
+  "自定义运行时不支持账号管理": {
+    "en": "Custom runtimes don't support account management",
+    "zh-TW": "自訂執行環境不支援帳號管理",
+    "ja": "カスタムランタイムはアカウント管理に対応していません",
+    "ko": "사용자 지정 런타임은 계정 관리를 지원하지 않습니다"
+  },
+  "有任务正在使用这个 CLI，请等它结束或先停止再切换账号": {
+    "en": "A task is using this CLI. Wait for it to finish or stop it before switching accounts",
+    "zh-TW": "有任務正在使用這個 CLI，請等它結束或先停止再切換帳號",
+    "ja": "この CLI を使用中のタスクがあります。終了を待つか停止してからアカウントを切り替えてください",
+    "ko": "이 CLI를 사용 중인 작업이 있습니다. 끝날 때까지 기다리거나 중지한 뒤 계정을 전환하세요"
+  },
+  "找不到这个运行时": {
+    "en": "Runtime not found",
+    "zh-TW": "找不到這個執行環境",
+    "ja": "このランタイムが見つかりません",
+    "ko": "이 런타임을 찾을 수 없습니다"
+  },
+  "{command} 未检测到": {
+    "en": "{command} wasn't found",
+    "zh-TW": "未偵測到 {command}",
+    "ja": "{command} が見つかりません",
+    "ko": "{command}을(를) 찾을 수 없습니다"
+  }
+}

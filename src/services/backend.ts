@@ -660,6 +660,61 @@ export async function listAgentRuns(agentId: string): Promise<AgentActivityRecor
   return invoke<AgentActivityRecord[]>("list_agent_runs", { agentId });
 }
 
+/** a：可读可切；b：可切但字段可能变；c：快照提供商配置；d：只能看状态和去终端登录 */
+export type RuntimeAccountTier = "a" | "b" | "c" | "d";
+
+export interface RuntimeAccount {
+  id: string;
+  label: string | null;
+  name: string | null;
+  capturedAt: number;
+  current: boolean;
+}
+
+export interface RuntimeAccountStatus {
+  runtimeId: string;
+  tier: RuntimeAccountTier;
+  switchable: boolean;
+  reason: string | null;
+  overrideEnv: string | null;
+  /** signedIn 为 null：读不到登录状态 */
+  live: { signedIn: boolean | null; label: string | null; accountId: string | null };
+  accounts: RuntimeAccount[];
+  runningElsewhere: boolean;
+}
+
+export async function listRuntimeAccountSummaries(runtimeIds: string[]): Promise<RuntimeAccountStatus[]> {
+  if (!inTauri()) return [];
+  return invoke<RuntimeAccountStatus[]>("runtime_account_summaries", { runtimeIds });
+}
+
+export async function getRuntimeAccountStatus(runtimeId: string): Promise<RuntimeAccountStatus> {
+  if (!inTauri()) throw new Error("请在桌面应用中管理 CLI 账号");
+  return invoke<RuntimeAccountStatus>("runtime_account_status", { runtimeId });
+}
+
+export async function switchRuntimeAccount(runtimeId: string, accountId: string): Promise<RuntimeAccountStatus> {
+  return invoke<RuntimeAccountStatus>("runtime_account_switch", { runtimeId, accountId });
+}
+
+export async function removeRuntimeAccount(runtimeId: string, accountId: string): Promise<RuntimeAccountStatus> {
+  return invoke<RuntimeAccountStatus>("runtime_account_remove", { runtimeId, accountId });
+}
+
+export async function renameRuntimeAccount(
+  runtimeId: string,
+  accountId: string,
+  name: string,
+): Promise<RuntimeAccountStatus> {
+  return invoke<RuntimeAccountStatus>("runtime_account_rename", { runtimeId, accountId, name });
+}
+
+/** 内嵌终端里要输入的登录命令；调用时会先把当前登录收进账号库 */
+export async function getRuntimeLoginCommand(runtimeId: string): Promise<{ cwd: string; command: string }> {
+  if (!inTauri()) throw new Error("请在桌面应用中登录 CLI");
+  return invoke<{ cwd: string; command: string }>("runtime_account_login", { runtimeId });
+}
+
 export interface RuntimeModels {
   /** false：该运行时不接收 --model，填了也会被忽略 */
   supported: boolean;

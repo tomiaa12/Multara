@@ -21,6 +21,10 @@ import {
 import { useAppStore } from "../stores/app";
 import { readStorage, writeStorage } from "../utils/safe-storage";
 import CreateRuntimeDialog from "./CreateRuntimeDialog.vue";
+import RuntimeAccountsDialog from "./RuntimeAccountsDialog.vue";
+import RuntimeLoginTerminal from "./RuntimeLoginTerminal.vue";
+import { hasAccounts, useRuntimeAccountSummaries } from "./runtime-account-summaries";
+import type { RuntimeAccountStatus } from "../services/backend";
 
 const RUNTIME_VIEW_KEY = "multara.runtimes.view";
 const RUNTIME_FILTER_KEY = "multara.runtimes.filter";
@@ -74,6 +78,16 @@ const busy = ref(false);
 const error = ref("");
 const editor = ref<"" | "agent" | "squad">("");
 const runtimeModal = ref<null | Runtime | "new">(null);
+const accountRuntime = ref<Runtime | null>(null);
+const loginRuntime = ref<Runtime | null>(null);
+const { summaries: accountSummaries, setStatus: setAccountStatus } = useRuntimeAccountSummaries(
+  computed(() => (kind.value === "runtimes" ? store.data?.runtimes ?? [] : [])),
+);
+
+function onLoginDone(status: RuntimeAccountStatus) {
+  setAccountStatus(status);
+  loginRuntime.value = null;
+}
 const allVisibleRuntimes = computed(() => baseVisibleRuntimes(store.data?.runtimes ?? []));
 const visibleRuntimes = computed(() =>
   filterRuntimes(store.data?.runtimes ?? [], runtimeKindFilter.value),
@@ -375,6 +389,7 @@ function runtimeSubtitle(runtime: Runtime) {
               <strong>{{ runtime.name }}</strong>
               <small>
                 {{ runtimeSubtitle(runtime) }}
+                <template v-if="accountSummaries[runtime.id]?.live.label"> · {{ accountSummaries[runtime.id]?.live.label }}</template>
                 <span v-if="runtime.kind === 'gateway'" class="tag">{{ t("runtime.gatewayBadge") }}</span>
               </small>
             </span>
@@ -401,6 +416,14 @@ function runtimeSubtitle(runtime: Runtime) {
               <UiButton class="icon-button" size="icon" :tip="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
               <UiButton class="icon-button" size="icon" variant="danger" :tip="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
             </template>
+            <UiButton
+              v-else-if="hasAccounts(runtime)"
+              variant="ghost"
+              size="small"
+              @click="accountRuntime = runtime"
+            >
+              {{ t("runtimeAccount.manage") }}
+            </UiButton>
           </span>
         </div>
       </div>
@@ -412,6 +435,7 @@ function runtimeSubtitle(runtime: Runtime) {
               <strong>{{ runtime.name }}</strong>
               <small>
                 {{ runtimeSubtitle(runtime) }}
+                <template v-if="accountSummaries[runtime.id]?.live.label"> · {{ accountSummaries[runtime.id]?.live.label }}</template>
                 <span v-if="runtime.kind === 'gateway'" class="tag">{{ t("runtime.gatewayBadge") }}</span>
               </small>
               <small v-if="runtime.description">{{ runtime.description }}</small>
@@ -438,6 +462,11 @@ function runtimeSubtitle(runtime: Runtime) {
             <div v-if="runtime.id.startsWith('custom:')" class="runtime-actions">
               <UiButton class="icon-button" size="icon" :tip="t('common.edit')" @click="editRuntime(runtime)"><Pencil :size="14" /></UiButton>
               <UiButton class="icon-button" size="icon" variant="danger" :tip="t('common.delete')" @click="removeRuntime(runtime)"><Trash2 :size="14" /></UiButton>
+            </div>
+            <div v-else-if="hasAccounts(runtime)" class="runtime-actions">
+              <UiButton variant="ghost" size="small" @click="accountRuntime = runtime">
+                {{ t("runtimeAccount.manage") }}
+              </UiButton>
             </div>
           </footer>
         </article>
@@ -627,6 +656,20 @@ function runtimeSubtitle(runtime: Runtime) {
       v-if="runtimeModal !== null"
       :runtime="runtimeModal === 'new' ? null : runtimeModal"
       @close="runtimeModal = null"
+    />
+    <RuntimeAccountsDialog
+      v-if="accountRuntime"
+      :runtime="accountRuntime"
+      :status="accountSummaries[accountRuntime.id]"
+      @update="setAccountStatus"
+      @login="loginRuntime = accountRuntime"
+      @close="accountRuntime = null"
+    />
+    <RuntimeLoginTerminal
+      v-if="loginRuntime"
+      :runtime="loginRuntime"
+      @done="onLoginDone"
+      @close="loginRuntime = null"
     />
   </div>
 </template>
