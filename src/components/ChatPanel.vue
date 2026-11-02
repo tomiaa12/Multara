@@ -1310,8 +1310,12 @@ watch(
       applySessionScroll(typeof current[0] === "string" ? current[0] : undefined);
       return;
     }
-    // 刚发出的用户消息：粘性提问开启时顶到视口顶部，否则普通贴底。
-    if (lengthAfter > lengthBefore && sessionMessages.value.at(-1)?.role === "user") {
+    // 刚发出的用户消息（含批准计划：末条可能已是助手占位，不能只看 at(-1)）：
+    // 粘性提问开启时顶到视口顶部，否则普通贴底。从卡片弹窗批准时用户常不在底部。
+    if (
+      lengthAfter > lengthBefore
+      && sessionMessages.value.slice(lengthBefore).some((message) => message.role === "user")
+    ) {
       followBottom.value = true;
       void nextTick(() => {
         if (props.stickyUserTurn) pinLastExchangeToTop();

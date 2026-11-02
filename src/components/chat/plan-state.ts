@@ -161,6 +161,14 @@ export function derivePlanStates(
       latestRevision.set(artifact.planId, Math.max(latestRevision.get(artifact.planId) ?? artifact.revision, artifact.revision));
     }
   }
+  // 用户消息 sourceMeta 也记一笔，避免 plan_action 时间线漏载时状态卡住待确认
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const ref = sourcePlanRef(message);
+    if (!ref.key || typeof ref.action !== "string" || actions.has(ref.key)) continue;
+    actions.set(ref.key, ref.action as PlanActionRecord);
+  }
+
   const byKey = new Map<string, PlanEntry>();
   let latestAwaitingKey: string | null = null;
   for (const entry of found) {
