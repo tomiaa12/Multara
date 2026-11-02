@@ -4,8 +4,6 @@ import {
   Archive,
   ArchiveRestore,
   ArrowRight,
-  ChevronDown,
-  ChevronRight,
   FolderPlus,
   Pencil,
   Plus,
@@ -21,31 +19,27 @@ import DeleteProjectDialog, {
   type DeleteWorkspaceChoice,
 } from "../components/dashboard/DeleteProjectDialog.vue";
 import RequirementEmptyState from "../components/dashboard/RequirementEmptyState.vue";
-import WorkspaceClipGrid from "../components/dashboard/WorkspaceClipGrid.vue";
 import WorkspacePickerFields from "../components/dashboard/WorkspacePickerFields.vue";
 import {
   buildWorkspaceRequests,
   validatePicker,
   type PickerItem,
 } from "../components/dashboard/workspace-picker";
-import ContextMenu, {
-  type ContextMenuItem,
-} from "../components/ui/ContextMenu.vue";
+import AvatarStack from "../components/ui/AvatarStack.vue";
+import OverflowSummary, {
+  type OverflowSummaryItem,
+} from "../components/ui/OverflowSummary.vue";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
-import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
-import {
-  workspaceMode,
-  workspaceModeLabel,
-} from "../components/workbench/workspace-mode";
+import { workspaceModeLabel } from "../components/workbench/workspace-mode";
 import {
   buildHomeIndex,
   buildHomeProject,
   matchesHomeFilter,
-  workspaceKindLabel,
   type HomeFilter,
+  type HomeProject,
 } from "./dashboard/project-home";
 import {
   addRequirementCategory,
@@ -61,6 +55,8 @@ import {
 } from "./dashboard/requirement-categories";
 
 const TAG_FILTER_MAX_HEIGHT = 52;
+const CELL_PREVIEW = 1;
+const AVATAR_VISIBLE = 3;
 
 defineOptions({ name: "DashboardView" });
 
@@ -73,7 +69,6 @@ const busy = ref(false);
 const error = ref("");
 const workspaceProjectId = ref("");
 const showWorkspacePicker = ref(false);
-const expandedProjects = ref(new Set<string>());
 const filter = ref<HomeFilter>("all");
 const query = ref("");
 const categories = sharedRequirementCategories();
@@ -87,13 +82,7 @@ const showManage = ref(false);
 const tagsExpanded = ref(false);
 const tagsOverflow = ref(false);
 const tagChips = ref<HTMLElement | null>(null);
-const workspaceMenu = ref<{ x: number; y: number; workspaceId: string } | null>(
-  null,
-);
 const deleteTarget = ref<{ id: string; name: string } | null>(null);
-const workspaceMenuItems: ContextMenuItem[] = [
-  { id: "reveal", label: t("dashboard.reveal") },
-];
 
 const rows = computed(() => {
   const data = store.data;
@@ -215,13 +204,6 @@ onMounted(() => {
   void measureTags();
 });
 
-function toggleProject(projectId: string) {
-  const expanded = new Set(expandedProjects.value);
-  if (expanded.has(projectId)) expanded.delete(projectId);
-  else expanded.add(projectId);
-  expandedProjects.value = expanded;
-}
-
 function openWorkspacePicker(projectId: string) {
   error.value = "";
   workspaceProjectId.value = projectId;
@@ -233,13 +215,8 @@ function closeWorkspacePicker() {
   workspaceProjectId.value = "";
 }
 
-async function onWorkspacesAdded() {
-  const id = workspaceProjectId.value;
+function onWorkspacesAdded() {
   closeWorkspacePicker();
-  if (!id) return;
-  const expanded = new Set(expandedProjects.value);
-  expanded.add(id);
-  expandedProjects.value = expanded;
 }
 
 function projectJobs(projectId: string) {
@@ -248,6 +225,49 @@ function projectJobs(projectId: string) {
 
 function canOpenProject(projectId: string, workspaceCount: number) {
   return workspaceCount > 0 && !store.isProjectPreparing(projectId);
+}
+
+function openProject(row: HomeProject) {
+  if (!canOpenProject(row.id, row.workspaces.length)) {
+    if (store.isProjectPreparing(row.id)) error.value = t("dashboard.preparingBlocked");
+    return;
+  }
+  void router.push(`/projects/${row.id}`);
+}
+
+function tagItems(projectId: string): OverflowSummaryItem[] {
+  return tagsFor(projectId).map((tag) => ({
+    id: tag.id,
+    label: tag.name,
+    color: tag.color,
+  }));
+}
+
+function projectItems(row: HomeProject): OverflowSummaryItem[] {
+  const jobs = projectJobs(row.id).map((job) => ({
+    id: job.id,
+    label: job.name,
+    detail: job.status === "preparing"
+      ? t("dashboard.jobPreparingHint")
+      : job.error || t("dashboard.jobFailed"),
+    badge: job.status === "preparing" ? t("dashboard.jobPreparing") : t("dashboard.jobFailed"),
+  }));
+  const workspaces = row.workspaces.map((workspace) => ({
+    id: workspace.id,
+    label: workspace.name,
+    detail: workspace.kind === "git" ? (workspace.branch || "HEAD") : workspace.workPath,
+    badge: workspaceModeLabel(workspace),
+  }));
+  return [...jobs, ...workspaces];
+}
+
+function workerItems(row: HomeProject) {
+  return row.workers.map((worker) => ({
+    key: worker.key,
+    name: worker.name,
+    image: worker.image,
+    title: worker.title,
+  }));
 }
 
 async function saveProject() {
@@ -275,31 +295,11 @@ async function saveProject() {
     projectName.value = "";
     note.value = "";
     draftTags.value = [];
-    const expanded = new Set(expandedProjects.value);
-    expanded.add(project.id);
-    expandedProjects.value = expanded;
     if (requests.length) store.queueAddWorkspaces(project.id, requests);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   } finally {
     busy.value = false;
-  }
-}
-
-function openWorkspaceMenu(event: MouseEvent, workspaceId: string) {
-  event.preventDefault();
-  event.stopPropagation();
-  workspaceMenu.value = { x: event.clientX, y: event.clientY, workspaceId };
-}
-
-async function onWorkspaceMenuSelect(id: string) {
-  const menu = workspaceMenu.value;
-  workspaceMenu.value = null;
-  if (!menu || id !== "reveal") return;
-  try {
-    await backend.revealWorkspacePath(menu.workspaceId);
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
   }
 }
 
@@ -411,222 +411,120 @@ function openWorkbenchFromDelete() {
           </div>
         </div>
 
-      <div v-if="visibleRows.length" class="req-list">
-        <article
-          v-for="row in visibleRows"
-          :key="row.id"
-          class="req-card"
-          :class="{
-            'is-open': expandedProjects.has(row.id),
-            'is-archived': row.archived,
-          }"
-          tabindex="0"
-          @click="toggleProject(row.id)"
-          @keydown.enter="toggleProject(row.id)"
-          @keydown.space.prevent="toggleProject(row.id)"
-        >
-          <div class="req-row">
-            <span class="req-expand" aria-hidden="true">
-              <ChevronDown v-if="expandedProjects.has(row.id)" :size="16" />
-              <ChevronRight v-else :size="16" />
-            </span>
-            <div class="req-main">
-              <div class="req-title">
-                <h3>{{ row.name }}</h3>
-                <span
-                  v-if="row.pillText"
-                  class="ds-badge"
-                  :data-tone="row.pill === 'running' ? 'primary' : undefined"
-                >
-                  <i v-if="row.pill === 'running'" class="ds-dot" data-tone="primary" />
-                  {{ row.pillText }}
-                </span>
-                <span v-if="row.archived" class="ds-badge">{{ t("dashboard.archivedBadge") }}</span>
-                <span v-for="tag in tagsFor(row.id)" :key="tag.id" class="tag-chip">
-                  <i class="tag-dot" :style="{ background: tag.color }" />
-                  <span>{{ tag.name }}</span>
-                </span>
-              </div>
-              <p v-if="row.note.trim()" class="req-note">{{ row.note }}</p>
-              <div
-                v-if="(row.workspaces.length || projectJobs(row.id).length) && !expandedProjects.has(row.id)"
-                class="req-projects"
-              >
-                <span class="req-project-count"
-                  >{{ t("dashboard.projectCount", { n: row.workspaces.length + projectJobs(row.id).length }) }}</span
-                >
-                <span
-                  v-for="workspace in row.workspaces"
-                  :key="workspace.id"
-                  class="req-project-chip"
-                >
-                  {{ workspace.name }}
-                </span>
-                <span
-                  v-for="job in projectJobs(row.id)"
-                  :key="job.id"
-                  class="req-project-chip"
-                  :class="{ 'is-failed': job.status === 'failed' }"
-                >
-                  {{ job.status === "preparing" ? t("dashboard.preparingJob", { name: job.name }) : job.name }}
-                </span>
-              </div>
-              <small
-                v-if="row.workingMeta && !expandedProjects.has(row.id)"
-                class="req-meta"
-                >{{ row.workingMeta }}</small
-              >
-            </div>
-            <div class="req-actions" @click.stop>
-              <UiButton
-                class="icon-button"
-                size="icon"
-                variant="ghost"
-                :tip="t('dashboard.edit')"
-                @click="openEdit(row.id, row.name, row.note)"
-              >
-                <Pencil :size="14" />
-              </UiButton>
-              <UiButton
-                class="icon-button"
-                size="icon"
-                variant="ghost"
-                :tip="row.archived ? t('dashboard.unarchive') : t('dashboard.archive')"
-                @click="toggleArchive(row.id, row.archived)"
-              >
-                <ArchiveRestore v-if="row.archived" :size="14" />
-                <Archive v-else :size="14" />
-              </UiButton>
-              <UiButton
-                class="icon-button req-delete"
-                size="icon"
-                variant="danger"
-                :tip="t('dashboard.delete')"
-                @click="askRemoveProject(row.id, row.name)"
-              >
-                <Trash2 :size="14" />
-              </UiButton>
-              <UiButton
-                size="small"
-                variant="ghost"
-                :tip="t('dashboard.addWorkspaceTitle')"
-                @click="openWorkspacePicker(row.id)"
-              >
-                <FolderPlus :size="14" /> {{ t("workspace.addTitle") }}
-              </UiButton>
-              <UiButton
-                size="small"
-                :disabled="!canOpenProject(row.id, row.workspaces.length)"
-                :tip="store.isProjectPreparing(row.id) ? t('dashboard.preparingBlocked') : ''"
-                @click="router.push(`/projects/${row.id}`)"
-              >
-                {{ store.isProjectPreparing(row.id) ? t("dashboard.preparing") : t("common.open") }}
-                <ArrowRight v-if="!store.isProjectPreparing(row.id)" :size="13" />
-              </UiButton>
-            </div>
-          </div>
-
-          <div
-            class="req-extra-wrap"
-            :class="{ 'is-open': expandedProjects.has(row.id) }"
-            @click.stop
-          >
-            <div class="req-extra">
-              <template v-if="row.pill === 'setup' && !projectJobs(row.id).length">
-                <p class="req-setup">
-                  {{ t("dashboard.noWorkspaces") }}
-                </p>
-              </template>
-              <template v-else>
-                <p v-if="!row.workers.length" class="req-idle">{{ row.idleLine }}</p>
-                <div v-if="row.workers.length" class="req-block">
-                  <div class="req-block-label">{{ t("dashboard.working") }}</div>
-                  <div class="req-workers">
-                    <div class="req-faces">
-                      <template v-for="worker in row.workers" :key="worker.key">
-                        <UiTooltip :content="worker.title">
-                          <span class="req-face" :class="worker.kind">
-                            <img
-                              v-if="worker.image"
-                              :src="worker.image"
-                              :alt="worker.name"
-                            />
-                            <template v-else>{{ worker.initial }}</template>
-                          </span>
-                        </UiTooltip>
-                      </template>
-                    </div>
-                    <p>
-                      <template
-                        v-for="(part, index) in row.workerParts"
-                        :key="`${row.id}-${index}`"
-                      >
-                        <b v-if="part.bold">{{ part.text }}</b>
-                        <template v-else>{{ part.text }}</template>
-                      </template>
-                    </p>
-                  </div>
-                </div>
-                <div class="req-block">
-                  <div class="req-block-label">
-                    {{ workspaceKindLabel(row.gitCount, row.folderCount) }}
-                  </div>
-                  <WorkspaceClipGrid
-                    :active="expandedProjects.has(row.id)"
-                    :items="row.workspaces.length + projectJobs(row.id).length"
+      <div v-if="visibleRows.length" class="ds-table-wrap req-table-wrap">
+        <table class="ds-table req-table">
+          <thead>
+            <tr>
+              <th class="req-col-name">{{ t("dashboard.col.name") }}</th>
+              <th class="req-col-fluid">{{ t("dashboard.col.tags") }}</th>
+              <th class="req-col-fluid">{{ t("dashboard.col.projects") }}</th>
+              <th class="req-col-fluid">{{ t("dashboard.col.agents") }}</th>
+              <th class="req-col-actions">{{ t("dashboard.col.actions") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in visibleRows"
+              :key="row.id"
+              class="req-table-row"
+              :class="{ 'is-archived': row.archived }"
+              tabindex="0"
+              @click="openProject(row)"
+              @keydown.enter="openProject(row)"
+            >
+              <td class="req-col-name">
+                <div class="req-table-name">
+                  <strong>{{ row.name }}</strong>
+                  <span
+                    v-if="row.pillText"
+                    class="ds-badge"
+                    :data-tone="row.pill === 'running' ? 'primary' : undefined"
                   >
-                    <div
-                      v-for="job in projectJobs(row.id)"
-                      :key="job.id"
-                      class="req-ws is-preparing"
-                      :class="{ 'is-failed': job.status === 'failed' }"
-                    >
-                      <div class="req-ws-top">
-                        <strong>{{ job.name }}</strong>
-                        <span class="req-mode pill-mute">{{
-                          job.status === "preparing" ? t("dashboard.jobPreparing") : t("dashboard.jobFailed")
-                        }}</span>
-                      </div>
-                      <p>{{ job.status === "preparing" ? t("dashboard.jobPreparingHint") : job.error }}</p>
-                      <UiButton
-                        v-if="job.status === 'failed'"
-                        size="small"
-                        @click="store.dismissWorkspaceJob(job.id)"
-                      >
-                        {{ t("common.close") }}
-                      </UiButton>
-                    </div>
-                    <div
-                      v-for="workspace in row.workspaces"
-                      :key="workspace.id"
-                      class="req-ws"
-                      @contextmenu="openWorkspaceMenu($event, workspace.id)"
-                    >
-                      <div class="req-ws-top">
-                        <strong>{{ workspace.name }}</strong>
-                        <span
-                          class="req-mode"
-                          :class="{
-                            'pill-worktree':
-                              workspaceMode(workspace) === 'worktree',
-                            'pill-direct':
-                              workspaceMode(workspace) === 'direct',
-                            'pill-folder':
-                              workspaceMode(workspace) === 'folder',
-                          }"
-                          >{{ workspaceModeLabel(workspace) }}</span
-                        >
-                      </div>
-                      <p v-if="workspace.kind === 'git'">
-                        {{ workspace.branch || "HEAD" }}
-                      </p>
-                    </div>
-                  </WorkspaceClipGrid>
+                    <i v-if="row.pill === 'running'" class="ds-dot" data-tone="primary" />
+                    {{ row.pillText }}
+                  </span>
+                  <span v-if="row.archived" class="ds-badge">{{ t("dashboard.archivedBadge") }}</span>
                 </div>
-              </template>
-            </div>
-          </div>
-        </article>
+                <p v-if="row.note.trim()" class="req-note">{{ row.note }}</p>
+              </td>
+              <td class="req-col-fluid">
+                <OverflowSummary
+                  :items="tagItems(row.id)"
+                  :preview="CELL_PREVIEW"
+                  :unit="t('dashboard.unit.tag')"
+                  :dialog-title="t('dashboard.overflowTagsTitle')"
+                  empty-text="—"
+                />
+              </td>
+              <td class="req-col-fluid">
+                <OverflowSummary
+                  :items="projectItems(row)"
+                  count-only
+                  :unit="t('dashboard.unit.project')"
+                  :dialog-title="t('dashboard.overflowProjectsTitle')"
+                  empty-text="—"
+                />
+              </td>
+              <td class="req-col-fluid">
+                <AvatarStack
+                  :items="workerItems(row)"
+                  :max="AVATAR_VISIBLE"
+                  :dialog-title="t('dashboard.overflowAgentsTitle')"
+                />
+              </td>
+              <td class="req-col-actions" @click.stop>
+                <div class="req-actions">
+                  <UiButton
+                    class="icon-button"
+                    size="icon"
+                    variant="ghost"
+                    :tip="t('dashboard.edit')"
+                    @click="openEdit(row.id, row.name, row.note)"
+                  >
+                    <Pencil :size="14" />
+                  </UiButton>
+                  <UiButton
+                    class="icon-button"
+                    size="icon"
+                    variant="ghost"
+                    :tip="row.archived ? t('dashboard.unarchive') : t('dashboard.archive')"
+                    @click="toggleArchive(row.id, row.archived)"
+                  >
+                    <ArchiveRestore v-if="row.archived" :size="14" />
+                    <Archive v-else :size="14" />
+                  </UiButton>
+                  <UiButton
+                    class="icon-button req-delete"
+                    size="icon"
+                    variant="danger"
+                    :tip="t('dashboard.delete')"
+                    @click="askRemoveProject(row.id, row.name)"
+                  >
+                    <Trash2 :size="14" />
+                  </UiButton>
+                  <UiButton
+                    class="icon-button"
+                    size="icon"
+                    variant="ghost"
+                    :tip="t('dashboard.addWorkspaceTitle')"
+                    @click="openWorkspacePicker(row.id)"
+                  >
+                    <FolderPlus :size="14" />
+                  </UiButton>
+                  <UiButton
+                    size="small"
+                    :disabled="!canOpenProject(row.id, row.workspaces.length)"
+                    :tip="store.isProjectPreparing(row.id) ? t('dashboard.preparingBlocked') : ''"
+                    @click="openProject(row)"
+                  >
+                    {{ store.isProjectPreparing(row.id) ? t("dashboard.preparing") : t("common.open") }}
+                    <ArrowRight v-if="!store.isProjectPreparing(row.id)" :size="13" />
+                  </UiButton>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div v-else class="ds-card ds-empty req-filter-empty">
@@ -644,15 +542,6 @@ function openWorkbenchFromDelete() {
       </div>
       </section>
     </template>
-
-    <ContextMenu
-      v-if="workspaceMenu"
-      :x="workspaceMenu.x"
-      :y="workspaceMenu.y"
-      :items="workspaceMenuItems"
-      @select="onWorkspaceMenuSelect"
-      @close="workspaceMenu = null"
-    />
 
     <DeleteProjectDialog
       v-if="deleteTarget"

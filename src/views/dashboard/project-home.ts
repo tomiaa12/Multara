@@ -147,7 +147,7 @@ function targetWorker(session: ChatSession, index: HomeIndex, kind?: HomeWorker[
     name,
     kind: kind ?? "agent",
     initial: initialOf(name, "智"),
-    image: avatar.startsWith("data:image/") ? avatar : "",
+    image: avatar,
     title: t("projectHome.agentTitle", { name }),
   };
 }
