@@ -12,6 +12,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } 
 import { Check, ChevronDown, Plus, Search, X } from "@lucide/vue";
 import { matchText, pinyinInitial, splitByRange, type MatchRange } from "../../utils/pinyin-match";
 import type { SelectGroup, SelectOption, SelectValue } from "./select-types";
+import { bindDismissableLayer } from "./dismissable-layer";
 import AgentAvatar from "../AgentAvatar.vue";
 import { useI18n } from "../../i18n";
 
@@ -363,12 +364,7 @@ function updatePosition() {
   };
 }
 
-function onOutsidePointer(event: PointerEvent) {
-  const target = event.target as Node;
-  if (rootEl.value?.contains(target) || popoverEl.value?.contains(target)) return;
-  // 点击外部关闭时不抢回焦点，让焦点自然落到用户点击的位置
-  setOpen(false, { restoreFocus: false });
-}
+let unbindDismiss: (() => void) | undefined;
 
 function setOpen(next: boolean, { restoreFocus = true } = {}) {
   if (next === open.value || (next && props.disabled)) return;
@@ -379,7 +375,12 @@ function setOpen(next: boolean, { restoreFocus = true } = {}) {
     updatePosition();
     const selectedIndex = view.value.items.findIndex((item) => item.option && isSelected(item.option.value));
     setActive(selectedIndex >= 0 ? selectedIndex : nextEnabled(-1, 1));
-    document.addEventListener("pointerdown", onOutsidePointer, true);
+    unbindDismiss?.();
+    // 点击外部关闭时不抢回焦点，让焦点自然落到用户点击的位置
+    unbindDismiss = bindDismissableLayer({
+      contains: (target) => Boolean(rootEl.value?.contains(target) || popoverEl.value?.contains(target)),
+      onDismiss: () => setOpen(false, { restoreFocus: false }),
+    });
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     nextTick(() => {
@@ -398,7 +399,8 @@ function setOpen(next: boolean, { restoreFocus = true } = {}) {
 }
 
 function removeListeners() {
-  document.removeEventListener("pointerdown", onOutsidePointer, true);
+  unbindDismiss?.();
+  unbindDismiss = undefined;
   window.removeEventListener("resize", updatePosition);
   window.removeEventListener("scroll", updatePosition, true);
 }

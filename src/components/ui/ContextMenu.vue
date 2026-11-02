@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { bindDismissableLayer } from "./dismissable-layer";
 import { nextPopupZIndex } from "./popup-z-index";
 
 export type ContextMenuItem = {
@@ -32,6 +33,7 @@ const style = computed(() => ({
   top: `${top.value}px`,
   zIndex: String(zIndex.value),
 }));
+let unbindDismiss: (() => void) | undefined;
 
 function place() {
   const el = menuEl.value;
@@ -40,22 +42,21 @@ function place() {
   top.value = Math.min(props.y, window.innerHeight - el.offsetHeight - 8);
 }
 
-function onDoc(event: MouseEvent) {
-  if (!menuEl.value?.contains(event.target as Node)) emit("close");
-}
-
 function onKey(event: KeyboardEvent) {
   if (event.key === "Escape") emit("close");
 }
 
 onMounted(() => {
   nextTick(place);
-  document.addEventListener("mousedown", onDoc);
+  unbindDismiss = bindDismissableLayer({
+    contains: (target) => Boolean(menuEl.value?.contains(target)),
+    onDismiss: () => emit("close"),
+  });
   document.addEventListener("keydown", onKey);
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", onDoc);
+  unbindDismiss?.();
   document.removeEventListener("keydown", onKey);
 });
 
