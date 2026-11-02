@@ -2,6 +2,13 @@ import type { ComposerEntityKind, ComposerNode, ComposerReferenceChipNode } from
 
 export type ComposerSuggestCategory = ComposerEntityKind;
 
+/** @ / + 菜单一级分类（含动作项与实体类） */
+export type ComposerSuggestCategoryId =
+  | ComposerSuggestCategory
+  | "file"
+  | "issue"
+  | "pullRequest";
+
 export type ComposerEntityItem = {
   id: string;
   kind: ComposerEntityKind;
@@ -13,7 +20,7 @@ export type ComposerEntityItem = {
 
 export type ComposerTrigger = {
   symbol: "@" | "/" | "#";
-  category: ComposerSuggestCategory;
+  category: ComposerSuggestCategoryId;
   query: string;
 };
 
@@ -68,4 +75,25 @@ export function replaceTriggerWithReference(
   }
   next.push(referenceNode(item), { type: "text", value: " " });
   return next;
+}
+
+/** 去掉末尾触发符（如 @query），不插入引用；+ 菜单选文件时用 */
+export function removeComposerTrigger(
+  nodes: ComposerNode[],
+  trigger: ComposerTrigger,
+): ComposerNode[] {
+  const tokenPattern = new RegExp(`(^|\\s)\\${trigger.symbol}[^\\s]*$`);
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const node = nodes[index];
+    if (node.type !== "text") continue;
+    const match = node.value.match(tokenPattern);
+    if (!match) continue;
+    const next = nodes.map((item) => (item.type === "text" ? { ...item } : item));
+    const text = next[index];
+    if (text.type !== "text") return nodes;
+    const token = match[0].slice(match[1].length);
+    text.value = text.value.slice(0, text.value.length - token.length);
+    return next;
+  }
+  return nodes;
 }

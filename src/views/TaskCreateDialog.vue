@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { Maximize2, Minimize2, Paperclip, X } from "@lucide/vue";
+import { Maximize2, Minimize2, Plus, X } from "@lucide/vue";
 import type { EditorSelectionContext, MessageAttachmentInput, TaskStatus } from "../domain/types";
 import { isMiku } from "../domain/types";
 import { useAppStore } from "../stores/app";
@@ -35,6 +35,7 @@ import { TASK_COLUMNS } from "./task-board";
 import { writeTaskMeta } from "./task-meta";
 import { requirementIds, syncRequirementChips } from "./task-project-links";
 import { escapeClosesDialog } from "./dialog-escape";
+import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { t } from "../i18n";
 
 const props = defineProps<{
@@ -61,6 +62,7 @@ const composer = ref<{
   restore: (nodes: ComposerNode[]) => void;
   snapshot: () => ComposerNode[];
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
+  openAttachMenu: (defaultCategory?: string) => void;
 } | null>(null);
 let syncingProjectChips = false;
 
@@ -189,6 +191,20 @@ function rememberChip(context: EditorSelectionContext) {
   contexts.value = [...contexts.value, context];
   composer.value?.insertChip(context);
   composer.value?.focus();
+  recordComposerRecent("task", {
+    path: context.path,
+    workspaceId: context.workspaceId,
+    isDirectory: context.isDirectory,
+  });
+}
+
+async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
+  if (file.workspaceId) {
+    await addWorkspaceChip(file);
+    return;
+  }
+  const name = file.path.split(/[\\/]/).pop() || file.path;
+  await addExternalChip({ path: file.path, name, isDirectory: Boolean(file.isDirectory) });
 }
 
 async function pasteImages(files: File[]) {
@@ -375,6 +391,8 @@ async function create() {
         ref="composer"
         embedded
         dictation
+        recent-place="task"
+        :project-id="form.projectIds[0] ?? null"
         :placeholder="t('tasks.addDescription')"
         :initial-nodes="[]"
         :contexts="contexts"
@@ -390,6 +408,7 @@ async function create() {
         @drop-os-files="onDropOs"
         @paste-image="pasteImages"
         @pick-files-or-folders="pickFilesOrFolders"
+        @attach-file-context="attachFileFromSuggest"
       >
         <ComposerPasteImages
           :images="pastes.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
@@ -420,8 +439,15 @@ async function create() {
           </div>
         </template>
         <template #actions>
-          <UiButton type="button" size="icon" variant="ghost" :tip="t('tasks.addFileOrFolder')" @click="pickFilesOrFolders">
-            <Paperclip :size="16" />
+          <UiButton
+            type="button"
+            size="icon"
+            variant="ghost"
+            data-composer-attach
+            :tip="t('chat.addContext')"
+            @click="composer?.openAttachMenu('file')"
+          >
+            <Plus :size="16" />
           </UiButton>
           <UiTooltip :content="planSupported ? t('tasks.planFirstHint') : modeUnsupportedReason(assigneeRuntime)">
             <label class="task-create-keep" :class="{ 'is-disabled': !planSupported }">

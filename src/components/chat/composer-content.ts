@@ -11,7 +11,7 @@ export type ComposerFileChipNode = {
   source?: "terminal";
 };
 
-export type ComposerEntityKind = "agent" | "squad" | "skill" | "task" | "requirement";
+export type ComposerEntityKind = "agent" | "squad" | "skill" | "task" | "requirement" | "session";
 
 export type ComposerReferenceChipNode = {
   type: "chip";
@@ -43,7 +43,7 @@ export function fencedBlock(text: string) {
   return `${fence}\n${text}\n${fence}`;
 }
 const REFERENCE_PATTERN =
-  /\[实体引用\][ \t]+(agent|squad|skill|task|requirement)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
+  /\[实体引用\][ \t]+(agent|squad|skill|task|requirement|session)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
 const ASSIGNMENT_PATTERN =
   /\[指派要求\][^\n]*\n(?:-[^\n]*\n?)+/g;
 
@@ -77,12 +77,15 @@ const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
   skill: "/",
   task: "#",
   requirement: "",
+  session: "",
 };
 
 export function chipLabel(item: ComposerChipNode) {
   if (isReferenceChip(item)) {
+    if (item.referenceKind === "requirement") return t("chat.chip.requirement", { name: item.label });
+    if (item.referenceKind === "session") return t("chat.chip.session", { name: item.label });
     const prefix = REFERENCE_PREFIX[item.referenceKind];
-    return item.referenceKind === "requirement" ? `需求 · ${item.label}` : `${prefix}${item.label}`;
+    return `${prefix}${item.label}`;
   }
   if (item.source === "terminal") return t("chat.chip.terminal", { range: lineRange(item) });
   if (item.isDirectory || isWholeFileChip(item)) return fileName(item.path) || item.path;
