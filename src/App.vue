@@ -490,10 +490,12 @@ onBeforeUnmount(() => {
       @resize-start="beginSidebarResize"
     >
       <template #footer>
-        <UiTooltip :content="sidebarCollapsed ? t('app.expandSidebar') : t('app.collapseSidebar')"><button
+        <UiTooltip
+          placement="right"
+          :content="sidebarCollapsed ? t('app.expandSidebar') : t('app.collapseSidebar')"
+        ><button
           type="button"
           class="nav-item sidebar-collapse"
-         
           @click="toggleSidebar"
         >
           <PanelLeftOpen v-if="sidebarCollapsed" :size="16" />
