@@ -29,11 +29,8 @@ const TARGET: Record<string, typescript.ScriptTarget> = {
 const THEME_LIGHT = "multara-light";
 const THEME_DARK = "multara-dark";
 
-let editorThemesDefined = false;
-
 function defineEditorThemes() {
-  if (editorThemesDefined) return;
-  editorThemesDefined = true;
+  // 允许重复 define：HMR / 主题色更新后需覆盖旧定义
   monaco.editor.defineTheme(THEME_DARK, {
     base: "vs-dark",
     inherit: true,
@@ -42,6 +39,12 @@ function defineEditorThemes() {
       "editorStickyScroll.background": "#1E1E1E",
       "editorStickyScrollGutter.background": "#1E1E1E",
       "editorStickyScrollHover.background": "#2A2D2E",
+      // VS Code Dark+ diff（经 theme 注入，避免被 monaco 内联 CSS 变量盖掉）
+      "diffEditor.insertedLineBackground": "#347d3926",
+      "diffEditor.insertedTextBackground": "#57ab5a33",
+      "diffEditor.removedLineBackground": "#c93c3726",
+      "diffEditor.removedTextBackground": "#f4706733",
+      "diffEditor.diagonalFill": "#cccccc33",
     },
   });
   monaco.editor.defineTheme(THEME_LIGHT, {
@@ -52,6 +55,11 @@ function defineEditorThemes() {
       "editorStickyScroll.background": "#FFFFFE",
       "editorStickyScrollGutter.background": "#FFFFFE",
       "editorStickyScrollHover.background": "#F0F0F0",
+      "diffEditor.insertedLineBackground": "#587c0c1a",
+      "diffEditor.insertedTextBackground": "#587c0c26",
+      "diffEditor.removedLineBackground": "#ad07071a",
+      "diffEditor.removedTextBackground": "#ad070726",
+      "diffEditor.diagonalFill": "#22222233",
     },
   });
 }

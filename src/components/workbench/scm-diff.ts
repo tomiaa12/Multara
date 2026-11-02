@@ -1,12 +1,16 @@
 import { t } from "../../i18n";
+import { languageFromFilePath } from "../../monaco-language";
 import type { ScmGroupId, ScmOpenTarget } from "./scm-groups";
 import { scmGroupLabel } from "./scm-groups";
+import { fileNameOf } from "./workspace-mode";
 
 export type ScmDiffPlan = {
   original: "empty" | "head" | "index" | { rev: string };
   modified: "empty" | "worktree" | "index" | { rev: string };
   label: string;
   short: string;
+  /** 有值时编辑器 tab 主文案用它（对齐 VS Code history diff 标题） */
+  tabName?: string;
 };
 
 export type ScmDiffContent = {
@@ -16,19 +20,52 @@ export type ScmDiffContent = {
   language: string;
   label: string;
   short: string;
+  tabName?: string;
 };
 
 type RevisionText = { content: string; binary: boolean };
 
-export function scmDiffPlan(target: Pick<ScmOpenTarget, "group" | "commit" | "parent" | "status">): ScmDiffPlan {
+const SHORT_HASH_LEN = 7;
+
+function shortRev(rev: string) {
+  return rev.slice(0, SHORT_HASH_LEN);
+}
+
+/** 对齐 VS Code scmHistoryViewPane：name (parent) ↔ name (commit) */
+export function scmCommitDiffTabName(input: {
+  path: string;
+  commit: string;
+  parent: string | null | undefined;
+  status?: string;
+}) {
+  const name = fileNameOf(input.path);
+  const commitId = shortRev(input.commit);
+  const parentId = input.parent ? shortRev(input.parent) : "";
+  const added = input.status === "A" || input.status === "C" || !input.parent;
+  const deleted = input.status === "D";
+  if (added) return `${name} (${commitId})`;
+  if (deleted) return `${name} (${parentId})`;
+  return `${name} (${parentId}) \u2194 ${name} (${commitId})`;
+}
+
+export function scmDiffPlan(
+  target: Pick<ScmOpenTarget, "group" | "commit" | "parent" | "status"> & { path?: string },
+): ScmDiffPlan {
   if (target.group === "commit" && target.commit) {
     const added = target.status === "A" || target.status === "C";
     const deleted = target.status === "D";
+    const tabName = scmCommitDiffTabName({
+      path: target.path ?? "",
+      commit: target.commit,
+      parent: target.parent,
+      status: target.status,
+    });
     return {
       original: added || !target.parent ? "empty" : { rev: target.parent },
       modified: deleted ? "empty" : { rev: target.commit },
-      label: t("scm.diff.commitFile"),
-      short: t("scm.diff.short.commit"),
+      label: tabName,
+      short: "",
+      tabName,
     };
   }
   if (target.group === "staged") {
@@ -62,20 +99,6 @@ export function scmDiffPlan(target: Pick<ScmOpenTarget, "group" | "commit" | "pa
     label: scmGroupLabel("changes"),
     short: t("scm.diff.short.changes"),
   };
-}
-
-function languageFromPath(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".ts") || lower.endsWith(".tsx") || lower.endsWith(".mts")) return "typescript";
-  if (lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".mjs")) return "javascript";
-  if (lower.endsWith(".vue")) return "html";
-  if (lower.endsWith(".json")) return "json";
-  if (lower.endsWith(".md")) return "markdown";
-  if (lower.endsWith(".css")) return "css";
-  if (lower.endsWith(".rs")) return "rust";
-  if (lower.endsWith(".py")) return "python";
-  if (lower.endsWith(".html")) return "html";
-  return "plaintext";
 }
 
 type ScmDiffSide = ScmDiffPlan["original"] | ScmDiffPlan["modified"];
@@ -117,9 +140,10 @@ export async function loadScmDiff(
     original: original.binary ? "" : original.content,
     modified: modified.binary ? "" : modified.content,
     binary: original.binary || modified.binary,
-    language: modified.language || original.language || languageFromPath(target.path),
+    language: modified.language || original.language || languageFromFilePath(target.path),
     label: plan.label,
     short: plan.short,
+    tabName: plan.tabName,
   };
 }
 

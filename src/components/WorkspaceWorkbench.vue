@@ -47,6 +47,7 @@ import AddWorkspaceModal from "./dashboard/AddWorkspaceModal.vue";
 import ExplorerTreeList from "./workbench/ExplorerTreeList.vue";
 import FileTypeIcon from "./FileTypeIcon.vue";
 import SourceControlPanel from "./SourceControlPanel.vue";
+import CommitMultiDiffEditor, { type CommitDiffFile } from "./scm/CommitMultiDiffEditor.vue";
 import GitDiffEditor from "./scm/GitDiffEditor.vue";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { explorerKey, explorerShortcutLabels, type ExplorerKeyResult } from "./workbench/explorer-keys";
@@ -96,7 +97,7 @@ import QuickOpen from "./workbench/QuickOpen.vue";
 import type { QuickOpenFile } from "./workbench/quick-open";
 import { loadScmDiff, scmDiffId } from "./workbench/scm-diff";
 import { localHistoryEntry, recordLocalHistory, renameLocalHistoryPath } from "./workbench/local-history";
-import { scmGroups, type ScmOpenTarget } from "./workbench/scm-groups";
+import { scmGroups, type ScmOpenChangesPayload, type ScmOpenTarget } from "./workbench/scm-groups";
 import { bindEditorZoom } from "./workbench/monaco-zoom";
 import { createRefreshScheduler } from "./workbench/refresh-scheduler";
 import EditorWithDiff from "./workbench/EditorWithDiff.vue";
@@ -242,6 +243,9 @@ type EditorTab = {
     binary: boolean;
     label: string;
     short: string;
+    tabName?: string;
+    /** VS Code MultiDiff：一次打开整个提交 */
+    commitFiles?: CommitDiffFile[];
   };
 };
 const editorTabs = ref<EditorTab[]>([]);
@@ -1678,7 +1682,12 @@ function treeGitBadgeTitle(workspaceId: string, entry: FileEntry) {
   return count > 0 ? t("git.folderDirty", { count }) : gitStatusTitle(letter);
 }
 
+function editorTabName(tab: EditorTab) {
+  return tab.gitDiff?.tabName || fileNameOf(tab.path);
+}
+
 function editorTabTitle(tab: EditorTab) {
+  if (tab.gitDiff?.tabName) return tab.gitDiff.tabName;
   const diff = tab.gitDiff ? ` · ${tab.gitDiff.label}` : "";
   const base = tab.pinned ? tab.path : `${tab.path} · ${t("workbench.tabPreview")}`;
   if (!isEditorTabDirty(tab)) return `${base}${diff}`;
@@ -4017,8 +4026,9 @@ async function loadLocalHistoryDiff(workspaceId: string, path: string, localId: 
   };
 }
 
-async function openSourceControlChange(target: ScmOpenTarget) {
+async function openSourceControlChange(target: ScmOpenTarget, opts?: { activate?: boolean }) {
   error.value = "";
+  const activate = opts?.activate !== false;
   if (target.group === "merge") {
     await openEditorFile(target.workspaceId, target.path, { pin: true, force: true });
     return;
@@ -4066,7 +4076,7 @@ async function openSourceControlChange(target: ScmOpenTarget) {
       existing.file = file;
       existing.original = loaded.modified;
       existing.detectedLanguage = loaded.language;
-      activateEditorTab(existing);
+      if (activate) activateEditorTab(existing);
       return;
     }
     const tab: EditorTab = {
@@ -4077,6 +4087,92 @@ async function openSourceControlChange(target: ScmOpenTarget) {
       original: loaded.modified,
       detectedLanguage: loaded.language,
       gitDiff: { id, ...loaded },
+    };
+    editorTabs.value = [...editorTabs.value, tab];
+    if (activate) activateEditorTab(tab);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
+/** 对齐 VS Code Open Changes：单个 MultiDiff tab，标题 `hash - subject` */
+async function openSourceControlChanges(payload: ScmOpenChangesPayload) {
+  if (!payload.targets.length) return;
+  error.value = "";
+  try {
+    const files: CommitDiffFile[] = [];
+    for (const target of payload.targets) {
+      const loaded = await loadScmDiff(target, {
+        readWorktree: async (path) => {
+          if (props.preview) {
+            const file = previewFileContent(path, target.workspaceId);
+            return { content: file.content, language: file.language };
+          }
+          try {
+            const file = await backend.readWorkspaceFile(target.workspaceId, path);
+            return { content: file.content, language: file.language };
+          } catch (cause) {
+            if (cause instanceof backend.FileMissingError) return null;
+            throw cause;
+          }
+        },
+        readIndex: async (path) => {
+          if (props.preview) return { content: "", binary: false };
+          const file = await backend.gitIndexFile(target.workspaceId, path);
+          return { content: file.content, binary: file.binary };
+        },
+        readRevision: async (revision, path) => {
+          if (props.preview) return { content: "", binary: false };
+          const file = await backend.gitRevisionFile(target.workspaceId, revision, path);
+          return { content: file.content, binary: file.binary };
+        },
+      });
+      files.push({
+        path: target.path,
+        status: target.status || "M",
+        original: loaded.original,
+        modified: loaded.modified,
+        language: loaded.language,
+        binary: loaded.binary,
+      });
+    }
+    const id = `${payload.workspaceId}:commit-multi:${payload.commit}`;
+    const first = files[0];
+    const existing = editorTabs.value.find((tab) => tab.gitDiff?.id === id);
+    const file: FileContent = {
+      workspaceId: payload.workspaceId,
+      path: first?.path ?? payload.commit,
+      content: first?.modified ?? "",
+      language: first?.language || "plaintext",
+      size: first?.modified.length ?? 0,
+      readOnly: true,
+    };
+    const gitDiff = {
+      id,
+      original: first?.original ?? "",
+      modified: first?.modified ?? "",
+      binary: false,
+      label: payload.title,
+      short: "",
+      tabName: payload.title,
+      commitFiles: files,
+    };
+    if (existing?.gitDiff) {
+      existing.gitDiff = gitDiff;
+      existing.file = file;
+      existing.original = file.content;
+      existing.detectedLanguage = file.language;
+      activateEditorTab(existing);
+      return;
+    }
+    const tab: EditorTab = {
+      workspaceId: payload.workspaceId,
+      path: file.path,
+      pinned: true,
+      file,
+      original: file.content,
+      detectedLanguage: file.language,
+      gitDiff,
     };
     editorTabs.value = [...editorTabs.value, tab];
     activateEditorTab(tab);
@@ -5311,6 +5407,7 @@ defineExpose({
         :project-id="preview ? PREVIEW_PROJECT_ID : projectId"
         :workspaces="workspaces"
         @open-change="openSourceControlChange"
+        @open-changes="openSourceControlChanges"
         @open-file="(target) => openEditorFile(target.workspaceId, target.path, { pin: true })"
         @updated="onGitStatusUpdated"
         @worktree-changed="reconcileOpenEditors"
@@ -5373,8 +5470,9 @@ defineExpose({
                 @auxclick="onOpenEditorAux($event, tab)"
                 @contextmenu="openOpenEditorsMenu(tab, $event)"
               >
-                <FileTypeIcon :name="fileNameOf(tab.path)" />
-                <span :class="{ 'is-preview-name': !tab.pinned }">{{ fileNameOf(tab.path) }}</span>
+                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+                <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
+                <span :class="{ 'is-preview-name': !tab.pinned }">{{ editorTabName(tab) }}</span>
                 <i v-if="isEditorTabDirty(tab)" class="ui-pane-dirty" />
                 <UiButton
                   class="ui-pane-close"
@@ -5868,9 +5966,10 @@ defineExpose({
                 @mousedown="$event.button === 2 && $event.preventDefault()"
                 @contextmenu="openTabMenu(tab, $event)"
               >
-                <FileTypeIcon :name="fileNameOf(tab.path)" />
-                <span class="editor-tab-name">{{ fileNameOf(tab.path) }}</span>
-                <span v-if="tab.gitDiff" class="editor-tab-diff">{{ tab.gitDiff.short }}</span>
+                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+                <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
+                <span class="editor-tab-name">{{ editorTabName(tab) }}</span>
+                <span v-if="tab.gitDiff?.short" class="editor-tab-diff">{{ tab.gitDiff.short }}</span>
                 <UiTooltip :content="t('common.close')">
                   <span
                     class="tab-close"
@@ -6023,12 +6122,19 @@ defineExpose({
           :src="activeFile.content"
           :name="activeFile.path"
         />
+        <CommitMultiDiffEditor
+          v-else-if="activeGitDiff?.commitFiles?.length"
+          :diff-id="activeGitDiff.id"
+          :files="activeGitDiff.commitFiles"
+          :theme="editorTheme"
+        />
         <GitDiffEditor
           v-else-if="activeGitDiff"
           :diff-id="activeGitDiff.id"
           :original="activeGitDiff.original"
           :modified="activeGitDiff.modified"
           :language="activeFile.language"
+          :file-path="activeFile.path"
           :theme="editorTheme"
           :binary="activeGitDiff.binary"
         />

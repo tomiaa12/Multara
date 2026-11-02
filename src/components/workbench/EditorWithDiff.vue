@@ -3,6 +3,7 @@ import { computed, nextTick, onUnmounted, shallowRef, watch } from "vue";
 import { loader, VueMonacoEditor } from "@guolao/vue-monaco-editor";
 import type * as MonacoNS from "monaco-editor";
 import { monaco, monacoLanguageId } from "../../monaco";
+import { monacoReadOnlyMessage } from "../../editor/monaco-nls";
 import { currentDocumentTheme, monacoThemeName } from "../../editor/monaco-workspace";
 import { DiffOverlayManager, groupAnchorLine, groupConsecutiveChunks } from "./DiffOverlayManager";
 import { MergeConflictEditor } from "./merge-conflict-editor";
@@ -60,22 +61,26 @@ function replaceEditorValue(editor: MonacoNS.editor.IStandaloneCodeEditor, next:
   }
 }
 const isRunning = computed(() => props.writing === true);
-const editorOptions = computed(() => ({
-  scrollBeyondLastLine: false,
-  lineNumbers: "on" as const,
-  lineNumbersMinChars: 3,
-  lineDecorationsWidth: 10,
-  glyphMargin: false,
-  readOnly: Boolean(props.readOnly || props.writing),
-  minimap: { enabled: false },
-  automaticLayout: true,
-  tabSize: props.tabSize ?? 4,
-  insertSpaces: props.insertSpaces ?? true,
-  detectIndentation: false,
-  dropIntoEditor: { enabled: false },
-  stickyScroll: { enabled: props.stickyScroll ?? true },
-  ...monacoZoomOptions,
-}));
+const editorOptions = computed(() => {
+  const readOnly = Boolean(props.readOnly || props.writing);
+  return {
+    scrollBeyondLastLine: false,
+    lineNumbers: "on" as const,
+    lineNumbersMinChars: 3,
+    lineDecorationsWidth: 10,
+    glyphMargin: false,
+    readOnly,
+    ...(readOnly ? { readOnlyMessage: monacoReadOnlyMessage() } : {}),
+    minimap: { enabled: false },
+    automaticLayout: true,
+    tabSize: props.tabSize ?? 4,
+    insertSpaces: props.insertSpaces ?? true,
+    detectIndentation: false,
+    dropIntoEditor: { enabled: false },
+    stickyScroll: { enabled: props.stickyScroll ?? true },
+    ...monacoZoomOptions,
+  };
+});
 
 function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
   editorDisposables.splice(0).forEach((item) => item.dispose());
