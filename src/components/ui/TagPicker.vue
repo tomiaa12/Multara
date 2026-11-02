@@ -10,11 +10,15 @@ export interface TagOption {
   color: string;
 }
 
-const props = defineProps<{
-  tags: TagOption[];
-  modelValue: string[];
-  placeholder?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    tags: TagOption[];
+    modelValue: string[];
+    placeholder?: string;
+    size?: "sm" | "md";
+  }>(),
+  { size: "md" },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [ids: string[]];
@@ -24,6 +28,8 @@ const emit = defineEmits<{
 
 const POPOVER_GAP = 4;
 const VIEWPORT_MARGIN = 12;
+/** 与 `.tag-pop` 的 `width: min(320px, …)` 一致 */
+const POPOVER_MAX_WIDTH = 320;
 /** 与 UiSelect 一致：下方空间不足时改向上展开 */
 const FLIP_THRESHOLD = 320;
 
@@ -75,12 +81,21 @@ function updatePosition() {
   if (!trigger) return;
   const rect = trigger.getBoundingClientRect();
   const below = window.innerHeight - rect.bottom;
-  placement.value = below < FLIP_THRESHOLD && rect.top > below ? "top" : "bottom";
-  const width = popover.value?.offsetWidth ?? Math.max(rect.width, 200);
-  const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN));
+  const above = rect.top;
+  placement.value = below < FLIP_THRESHOLD && above > below ? "top" : "bottom";
+  // offsetWidth 在首帧常为 0（?? 不会回退），不能拿来算 left，否则右侧会画出视口。
+  const maxWidth = Math.max(0, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const width = Math.min(Math.max(rect.width, 200), POPOVER_MAX_WIDTH, maxWidth);
+  const left = Math.max(
+    VIEWPORT_MARGIN,
+    Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN),
+  );
+  const space = (placement.value === "top" ? above : below) - POPOVER_GAP - VIEWPORT_MARGIN;
   popoverStyle.value = {
     left: `${left}px`,
-    minWidth: `${Math.max(rect.width, 200)}px`,
+    width: `${width}px`,
+    maxWidth: `${maxWidth}px`,
+    maxHeight: `${Math.max(160, space)}px`,
     ...(placement.value === "top"
       ? { bottom: `${window.innerHeight - rect.top + POPOVER_GAP}px`, top: "auto" }
       : { top: `${rect.bottom + POPOVER_GAP}px`, bottom: "auto" }),
@@ -123,19 +138,19 @@ onBeforeUnmount(unbindPopover);
 </script>
 
 <template>
-  <div ref="root" class="tag-anchor" @click.stop>
+  <div ref="root" class="tag-anchor" :data-size="size" @click.stop>
     <div class="tag-trigger" role="button" tabindex="0" @click="open = !open" @keydown.enter.prevent="open = !open">
       <template v-if="selected.length">
         <span v-for="tag in selected" :key="tag.id" class="tag-chip">
           <i class="tag-dot" :style="{ background: tag.color }" />
           <span>{{ tag.name }}</span>
           <button type="button" class="tag-chip-remove" :aria-label="t('tags.remove', { name: tag.name })" @click="remove(tag.id, $event)">
-            <X :size="12" />
+            <X :size="size === 'sm' ? 10 : 12" />
           </button>
         </span>
       </template>
       <template v-else>
-        <Tag :size="14" />
+        <Tag :size="size === 'sm' ? 12 : 14" />
         <span>{{ placeholder || t("tasks.selectTags") }}</span>
       </template>
     </div>
