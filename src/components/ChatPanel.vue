@@ -67,6 +67,13 @@ const props = withDefaults(defineProps<{
    * 父组件可关；默认开。
    */
   stickyUserTurn?: boolean;
+  /**
+   * 输入框占位文案场景。不传则按 embedded / compact / showEditingBar 推断：
+   * 收件箱 → inbox，右下角气泡 → float，需求工作台 → workbench，聊天页 → chat。
+   */
+  placeholderPlace?: "workbench" | "float" | "chat" | "inbox";
+  /** 完整占位文案；传入时优先生效（不再拼 name）。 */
+  placeholder?: string;
 }>(), {
   projectId: null,
   sessionId: null,
@@ -86,6 +93,8 @@ const props = withDefaults(defineProps<{
   sessionCommands: false,
   showEditingBar: true,
   stickyUserTurn: true,
+  placeholderPlace: undefined,
+  placeholder: undefined,
 });
 const reaskTarget = ref<{
   messageId: string;
@@ -298,9 +307,19 @@ const headerSubtitle = computed(() =>
     ? t("chat.executingQueued", { n: sessionQueue.value.length })
     : targetLabel.value,
 );
-const composerPlaceholder = computed(() =>
-  session.value ? t("chat.messageTo", { name: targetLabel.value }) : t("chat.pickTargetFirst"),
-);
+const resolvedPlaceholderPlace = computed(() => {
+  if (props.placeholderPlace) return props.placeholderPlace;
+  if (props.embedded) return "inbox";
+  if (props.compact && !props.showEditingBar) return "float";
+  if (props.compact) return "workbench";
+  return "chat";
+});
+const composerPlaceholder = computed(() => {
+  if (props.placeholder) return props.placeholder;
+  if (!session.value) return t("chat.pickTargetFirst");
+  const key = `chat.placeholder.${resolvedPlaceholderPlace.value}` as const;
+  return t(key, { name: targetLabel.value });
+});
 const targetAvatar = computed(() =>
   props.preview
     ? "M"
