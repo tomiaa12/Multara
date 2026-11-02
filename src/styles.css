@@ -510,10 +510,13 @@
   padding-top: 15vh;
   text-align: center;
 }
-/* 末轮至少一屏高：跟到底时提问在视口顶，回答在下方展开（配合 .user-turn sticky） */
+/* 末轮至少一屏高：跟到底时提问在视口顶，回答在下方展开（配合 .user-turn sticky）。
+ * 明确高度由 syncStickyExchangeMinHeight 写成像素（overflow 里 100% 不可靠）；此处仅作无脚本时的兜底。 */
 .message-exchange:last-child {
-  min-height: 100%;
   box-sizing: border-box;
+}
+.shared-chat-panel.is-sticky-user-turn .message-exchange:last-child {
+  min-height: 100%;
 }
 .message-exchange + .message-exchange {
   margin-top: var(--spacing-8);
@@ -532,14 +535,19 @@
   margin-top: var(--spacing-2-5);
 }
 .user-turn {
+  display: block;
+  background: var(--color-bg);
+}
+/* 聊天面板粘性提问（默认）与任务活动里的用户气泡 */
+.shared-chat-panel.is-sticky-user-turn .user-turn,
+.task-activity .user-turn {
   position: sticky;
   top: 0;
   z-index: 2;
-  display: block;
-  background: var(--color-bg);
   box-shadow: 0 -16px 0 0 var(--color-bg);
 }
-.user-turn::before {
+.shared-chat-panel.is-sticky-user-turn .user-turn::before,
+.task-activity .user-turn::before {
   content: "";
   position: absolute;
   z-index: 0;

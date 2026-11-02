@@ -28,7 +28,12 @@ import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
-import { listIsAtBottom, stickListToBottom } from "./chat/chat-scroll";
+import {
+  listIsAtBottom,
+  pinLastExchangeToTop as pinExchange,
+  stickListToBottom,
+  syncStickyExchangeMinHeight,
+} from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { lastUnansweredUser } from "./chat/unanswered-turn";
 import { decodeTextBytes } from "./workbench/text-encoding";
@@ -57,6 +62,11 @@ const props = withDefaults(defineProps<{
   sessionCommands?: boolean;
   /** 输入框上方的待审改文件条；右下角气泡关掉。 */
   showEditingBar?: boolean;
+  /**
+   * 发送后粘性提问：末轮撑满一屏、用户气泡 sticky 顶住，回答在下方展开。
+   * 父组件可关；默认开。
+   */
+  stickyUserTurn?: boolean;
 }>(), {
   projectId: null,
   sessionId: null,
@@ -75,6 +85,7 @@ const props = withDefaults(defineProps<{
   previewBusy: false,
   sessionCommands: false,
   showEditingBar: true,
+  stickyUserTurn: true,
 });
 const reaskTarget = ref<{
   messageId: string;
@@ -968,6 +979,8 @@ function removeAttachment(path: string) {
 
 /** 程序化滚底时忽略 scroll 事件，避免误关 followBottom。 */
 let suppressScrollFollow = false;
+/** 粘性置顶进行中：挡住并发 scrollToBottom / ResizeObserver，避免先顶后底闪动。 */
+let pinStickLock = false;
 let messageListResize: ResizeObserver | null = null;
 
 function handleScroll() {
@@ -989,8 +1002,10 @@ function rememberSessionScroll(sessionId: string | undefined) {
 function scheduleStickToBottom(behavior: ScrollBehavior = "auto") {
   const run = () => {
     const element = messageList.value;
-    if (!element || !followBottom.value) return;
+    if (!element || !followBottom.value || pinStickLock) return;
     suppressScrollFollow = true;
+    // 粘性提问开启时先保证末轮一屏高，再贴底，否则短气泡会被甩到输入框上方
+    if (props.stickyUserTurn) syncStickyExchangeMinHeight(element, true);
     stickListToBottom(element, behavior);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -1041,27 +1056,32 @@ function scrollToBottom(behavior: ScrollBehavior = "smooth") {
   scheduleStickToBottom(behavior);
 }
 
-/** 发送后把最新一轮顶到视口顶部，配合末轮 min-height:100% 与 .user-turn sticky。 */
+/** 发送后把最新一轮顶到视口顶部，配合末轮撑满与 .user-turn sticky。 */
 function pinLastExchangeToTop() {
   const list = messageList.value;
-  const last = list?.querySelector<HTMLElement>(".message-exchange:last-child");
-  if (!list || !last) {
+  if (!list) {
     scrollToBottom("auto");
     return;
   }
   followBottom.value = true;
+  pinStickLock = true;
   suppressScrollFollow = true;
-  const align = () => {
-    const delta = last.getBoundingClientRect().top - list.getBoundingClientRect().top;
-    if (Math.abs(delta) > 1) list.scrollTop += delta;
+  const pin = () => {
+    const last = syncStickyExchangeMinHeight(list, props.stickyUserTurn);
+    if (!last) {
+      stickListToBottom(list, "auto");
+      return;
+    }
+    pinExchange(list, last);
   };
-  align();
+  pin();
+  // 等布局把 min-height 算进 scrollHeight 后再贴一次；期间 pinStickLock 挡住并发贴底
   requestAnimationFrame(() => {
-    align();
-    // 末轮撑满一屏后，再贴一次绝对底部，短回答时提问仍停在顶部
-    stickListToBottom(list, "auto");
+    pin();
     requestAnimationFrame(() => {
+      pinStickLock = false;
       suppressScrollFollow = false;
+      followBottom.value = true;
     });
   });
 }
@@ -1072,7 +1092,8 @@ function bindMessageListResize() {
   const element = messageList.value;
   if (!element || typeof ResizeObserver === "undefined") return;
   messageListResize = new ResizeObserver(() => {
-    if (!followBottom.value) return;
+    if (!followBottom.value || pinStickLock) return;
+    if (props.stickyUserTurn) syncStickyExchangeMinHeight(element, true);
     stickListToBottom(element, "auto");
   });
   // 观察子节点高度：Markdown / 卡片异步撑高时继续贴底（观察列表自身不会因 scrollHeight 变化触发）。
@@ -1238,10 +1259,13 @@ watch(
       applySessionScroll(typeof current[0] === "string" ? current[0] : undefined);
       return;
     }
-    // 刚发出的用户消息：把这一轮顶到视口顶部（粘性提问）。
+    // 刚发出的用户消息：粘性提问开启时顶到视口顶部，否则普通贴底。
     if (lengthAfter > lengthBefore && sessionMessages.value.at(-1)?.role === "user") {
       followBottom.value = true;
-      void nextTick(() => pinLastExchangeToTop());
+      void nextTick(() => {
+        if (props.stickyUserTurn) pinLastExchangeToTop();
+        else scrollToBottom("auto");
+      });
       return;
     }
     if (!followBottom.value) return;
@@ -1314,6 +1338,15 @@ watch(
   () => [visibleGroups.value.length, sessionMessages.value.length, showWorking.value] as const,
   () => {
     void nextTick(() => bindMessageListResize());
+  },
+);
+watch(
+  () => props.stickyUserTurn,
+  (enabled) => {
+    const list = messageList.value;
+    if (!list) return;
+    syncStickyExchangeMinHeight(list, enabled);
+    if (enabled && followBottom.value) scheduleStickToBottom("auto");
   },
 );
 onBeforeUnmount(() => {
@@ -1420,7 +1453,11 @@ defineExpose({
   <div
     ref="chatRoot"
     class="shared-chat-panel"
-    :class="{ compact, 'with-session-list': showSessionList }"
+    :class="{
+      compact,
+      'with-session-list': showSessionList,
+      'is-sticky-user-turn': stickyUserTurn,
+    }"
     tabindex="-1"
     @pointerdown="onChatPointerDown"
     @keydown="onChatKeydown"
