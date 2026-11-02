@@ -4280,7 +4280,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 .scm-commit-field {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   min-height: 32px;
   padding: 0 4px 0 10px;
   border: 1px solid var(--color-border);
@@ -4306,12 +4306,14 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   outline: none;
 }
 .scm-commit-field .ui-button {
+  flex: 0 0 auto;
   width: 28px;
   height: 28px;
   min-width: 28px;
   min-height: 28px;
   max-width: 28px;
   max-height: 28px;
+  margin-top: 2px;
   padding: 0;
   overflow: hidden;
   border: 0;
@@ -4677,9 +4679,17 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  overflow-x: hidden;
+  overflow-y: hidden;
   resize: none;
   font-size: var(--font-size-sm);
   line-height: 18px;
+  scrollbar-width: none;
+}
+.scm-commit-field .ui-textarea::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .scm-commit-field .ui-textarea:hover,
 .scm-commit-field .ui-textarea:focus {
