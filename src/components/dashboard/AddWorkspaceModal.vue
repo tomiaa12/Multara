@@ -77,23 +77,28 @@ function submit() {
 <template>
   <UiModal @close="emit('close')">
     <form class="modal workspace-picker-modal" @submit.prevent="submit">
-      <div class="workspace-picker-head">
-        <h2>{{ t("workspace.addTitle") }}</h2>
-        <p v-if="alreadyAddedCount">{{ t("workspace.alreadyCount", { count: alreadyAddedCount }) }}</p>
-        <p v-else-if="items.length">{{ t("workspace.addedCount", { count: items.length }) }}</p>
-        <p v-else>{{ t("workspace.addHint") }}</p>
+      <header class="modal-heading workspace-picker-head">
+        <div>
+          <h2>{{ t("workspace.addTitle") }}</h2>
+          <p v-if="alreadyAddedCount">{{ t("workspace.alreadyCount", { count: alreadyAddedCount }) }}</p>
+          <p v-else-if="items.length">{{ t("workspace.addedCount", { count: items.length }) }}</p>
+          <p v-else>{{ t("workspace.addHint") }}</p>
+        </div>
+      </header>
+      <div class="modal-body vs-scroll">
+        <WorkspacePickerFields
+          ref="picker"
+          v-model="items"
+          :requirement-name="requirementName"
+          :bound="bound"
+          :known-branches="knownBranches"
+          :branch-prefix="branchPrefix"
+          :initial-paths="initialPaths"
+          allow-branch-settings
+          @settings="openBranchSettings"
+        />
+        <p v-if="error" class="error-card">{{ error }}</p>
       </div>
-      <WorkspacePickerFields
-        ref="picker"
-        v-model="items"
-        :requirement-name="requirementName"
-        :bound="bound"
-        :known-branches="knownBranches"
-        :branch-prefix="branchPrefix"
-        :initial-paths="initialPaths"
-        allow-branch-settings
-        @settings="openBranchSettings"
-      />
       <div class="modal-actions">
         <UiButton type="button" :disabled="busy" @click="emit('close')">{{ t("common.cancel") }}</UiButton>
         <UiButton v-if="items.length" type="submit" variant="primary" :disabled="!canSubmit">

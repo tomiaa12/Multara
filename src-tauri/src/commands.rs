@@ -1173,15 +1173,23 @@ pub fn update_project(
 }
 
 #[tauri::command]
-pub async fn detach_workspace(workspace_id: String, app: AppHandle) -> Result<(), String> {
+pub async fn detach_workspace(
+    workspace_id: String,
+    options: Option<DeleteProjectWorkspaceOptions>,
+    app: AppHandle,
+) -> Result<(), String> {
     let _span = crate::diag::span("detach_workspace");
     off_main(app, move |state| {
-        detach_workspace_blocking(state, &workspace_id)
+        detach_workspace_blocking(state, &workspace_id, options.as_ref())
     })
     .await
 }
 
-fn detach_workspace_blocking(state: &AppState, workspace_id: &str) -> Result<(), String> {
+fn detach_workspace_blocking(
+    state: &AppState,
+    workspace_id: &str,
+    options: Option<&DeleteProjectWorkspaceOptions>,
+) -> Result<(), String> {
     let project_id = get_workspace(&*state.lock_db()?, workspace_id)?.project_id;
     // 锁住需求再放开数据库锁去删 Worktree，期间不会有新的发送或任务派发进来。
     let project_locks = session::project_locks(state, &[project_id])?;
@@ -1189,7 +1197,7 @@ fn detach_workspace_blocking(state: &AppState, workspace_id: &str) -> Result<(),
         .iter()
         .map(|lock| crate::diag::lock_mutex(lock, "project"))
         .collect::<Result<Vec<_>, _>>()?;
-    let (workspace, checkout_git_command) = {
+    let (workspace, git_command, shared) = {
         let db = state.lock_db()?;
         let workspace = get_workspace(&db, workspace_id)?;
         // 智能体还在写这个目录时不能卸，尤其是 Worktree 会被删掉。
@@ -1201,14 +1209,31 @@ fn detach_workspace_blocking(state: &AppState, workspace_id: &str) -> Result<(),
                 |row| row.get(0),
             )
             .map_err(|error| error.to_string())?;
-        // 只有 Worktree 会删检出目录。当前分支和普通文件夹只删数据库关联，真实代码留在磁盘上。
-        // 同一目录还被别的关联使用时也不删，避免把别人的工作树清掉。分支一律保留。
-        let checkout_git_command = (workspace.isolation_mode == "worktree" && shared == 0)
-            .then(|| setting_value(&db, "gitExecutable", "git"));
-        (workspace, checkout_git_command)
+        let git_command = setting_value(&db, "gitExecutable", "git");
+        (workspace, git_command, shared)
     };
-    if let Some(git_command) = checkout_git_command {
-        workspace::drop_worktree_checkout(&workspace, &git_command)?;
+    let remove = workspace::RemoveOptions {
+        delete_local_branch: options.is_some_and(|item| item.delete_local_branch),
+        delete_remote_branch: options.is_some_and(|item| item.delete_remote_branch),
+        delete_copy_directory: options.is_some_and(|item| item.delete_copy_directory),
+    };
+    // Worktree：非共享时删检出目录；分支按勾选从源仓删除。真实目录永不删。
+    if workspace.isolation_mode == "worktree" {
+        if shared == 0 {
+            workspace::drop_worktree_checkout(&workspace, &git_command)?;
+        }
+        if let Some(branch) = workspace.branch.as_deref() {
+            if remove.delete_local_branch {
+                let _ =
+                    crate::git::delete_local_branch(&workspace.source_path, &git_command, branch);
+            }
+            if remove.delete_remote_branch {
+                let _ =
+                    crate::git::delete_remote_branch(&workspace.source_path, &git_command, branch);
+            }
+        }
+    } else {
+        workspace::remove_with_options(&workspace, &git_command, &remove);
     }
     let db = state.lock_db()?;
     db.execute(

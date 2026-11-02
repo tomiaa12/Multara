@@ -1201,9 +1201,29 @@ export async function updateProject(id: string, name: string, note: string): Pro
   return invoke<Project>("update_project", { id, name, note });
 }
 
-export async function detachWorkspace(workspaceId: string): Promise<void> {
+export type DeleteProjectWorkspaceOptions = {
+  workspaceId: string;
+  deleteLocalBranch?: boolean;
+  deleteRemoteBranch?: boolean;
+  deleteCopyDirectory?: boolean;
+};
+
+export async function detachWorkspace(
+  workspaceId: string,
+  options?: DeleteProjectWorkspaceOptions,
+): Promise<void> {
   if (!inTauri()) return;
-  await invoke("detach_workspace", { workspaceId });
+  await invoke("detach_workspace", {
+    workspaceId,
+    options: options
+      ? {
+          workspaceId,
+          deleteLocalBranch: Boolean(options.deleteLocalBranch),
+          deleteRemoteBranch: Boolean(options.deleteRemoteBranch),
+          deleteCopyDirectory: Boolean(options.deleteCopyDirectory),
+        }
+      : null,
+  });
 }
 
 export async function setProjectArchived(projectId: string, archived: boolean): Promise<string | null> {
@@ -1215,13 +1235,6 @@ export async function setProjectArchived(projectId: string, archived: boolean): 
   }
   return invoke<string | null>("set_project_archived", { projectId, archived });
 }
-
-export type DeleteProjectWorkspaceOptions = {
-  workspaceId: string;
-  deleteLocalBranch?: boolean;
-  deleteRemoteBranch?: boolean;
-  deleteCopyDirectory?: boolean;
-};
 
 export async function deleteProject(
   projectId: string,

@@ -1801,6 +1801,19 @@ button.ds-stat.is-on {
   box-shadow: var(--shadow-lg);
   animation: ds-pop-in var(--motion-duration-normal) var(--motion-ease);
 }
+/* 有 modal-body（或包着它的 ds-scroll-fade）时：header / footer 固定，仅内容区滚动 */
+.modal:has(> .modal-body),
+.modal:has(> .ds-modal-body),
+.modal:has(> .ds-scroll-fade),
+.ds-modal:has(> .modal-body),
+.ds-modal:has(> .ds-modal-body),
+.ds-modal:has(> .ds-scroll-fade),
+form.modal:has(> .modal-body),
+form.modal:has(> .ds-scroll-fade) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .modal h2,
 .ds-modal h2 {
   margin: 0;
@@ -1812,9 +1825,45 @@ button.ds-stat.is-on {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-3);
+  flex-shrink: 0;
 }
 .modal-heading h2 {
   margin: 0;
+}
+.modal-body,
+.ds-modal-body {
+  display: grid;
+  gap: var(--spacing-4);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+/* 滚动未到底时的底部渐变（与 req-clip / composer has-overflow 同思路） */
+.ds-scroll-fade {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.ds-scroll-fade > .modal-body,
+.ds-scroll-fade > .ds-modal-body,
+.ds-scroll-fade > .ds-scroll-fade-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.ds-scroll-fade.has-more-below::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 42px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--scroll-fade-to, var(--color-surface-raised)) 72%
+  );
+  pointer-events: none;
+  z-index: 1;
 }
 .modal label {
   display: grid;
@@ -1842,6 +1891,7 @@ button.ds-stat.is-on {
   align-items: center;
   justify-content: flex-end;
   gap: var(--spacing-2);
+  flex-shrink: 0;
   padding-top: var(--spacing-1);
 }
 .domain-modal {
