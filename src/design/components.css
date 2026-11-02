@@ -780,11 +780,20 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
   color: var(--color-text-strong);
 }
 .ds-select-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   border: 0;
   background: transparent;
   color: var(--color-primary);
-  text-align: left;
+  text-align: center;
+}
+.ds-select-load-more .ds-select-option-body {
+  flex: 0 1 auto;
+}
+.ds-select-load-more .ds-select-option-label {
+  text-align: center;
 }
 .ds-select-option[aria-selected="true"] .ds-select-option-label {
   font-weight: var(--font-weight-medium);

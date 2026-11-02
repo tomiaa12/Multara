@@ -284,6 +284,7 @@ const targetOptions = computed(() =>
     store.data?.agents ?? [],
     store.data?.squads ?? [],
     (name) => t("chat.squadLabel", { name }),
+    store.data?.runtimes ?? [],
   ),
 );
 const targetValue = computed({

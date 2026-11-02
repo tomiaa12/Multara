@@ -1661,6 +1661,45 @@ textarea:not(.inputarea) {
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
+/* 智能体下拉第二行：浮层 Teleport 到 body，不能挂在 .target-picker 下 */
+.ds-select-option-desc:has(.target-option-runtime) {
+  display: flex;
+  align-items: center;
+}
+.ds-select-option-desc .target-option-runtime {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  line-height: 1.2;
+}
+.ds-select-option-desc .target-option-runtime-logo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+}
+.ds-select-option-desc .target-option-runtime-name {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-select-option-desc .target-option-runtime-model {
+  flex: none;
+  font-family: var(--font-family-mono);
+}
+.ds-select-option-desc .target-option-runtime-desc {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .chat-fab {
   position: fixed;
@@ -8975,6 +9014,7 @@ body.is-dragging-workspace-file * {
   color: var(--color-primary);
   font: inherit;
   font-size: var(--font-size-sm);
+  text-align: center;
   cursor: pointer;
 }
 .composer-suggest-more[data-active] {
