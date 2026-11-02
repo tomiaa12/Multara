@@ -8770,6 +8770,12 @@ body.is-dragging-workspace-file * {
 .inbox-page.has-file-review {
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 4px var(--inbox-review-width, 420px);
 }
+.inbox-page.has-task-side {
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 300px;
+}
+.inbox-page.has-task-side > .task-issue-side {
+  min-height: 0;
+}
 .inbox-rail {
   display: flex;
   flex-direction: column;
@@ -9040,6 +9046,15 @@ body.is-dragging-workspace-file * {
   .inbox-page {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(160px, 40%) minmax(0, 1fr);
+  }
+  .inbox-page.has-task-side {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(160px, 40%) minmax(0, 1fr) auto;
+  }
+  .inbox-page.has-task-side > .task-issue-side {
+    overflow: visible;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
   }
   .inbox-rail {
     border-right: 0;
