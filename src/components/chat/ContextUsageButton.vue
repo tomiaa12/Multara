@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
+import { bindDismissableLayer } from "../ui/dismissable-layer";
 import {
   chatMessagesKey,
   estimateContextUsage,
@@ -29,20 +30,22 @@ const tone = computed(() => {
 });
 const barTotal = computed(() => usage.value.slices.reduce((sum, slice) => sum + slice.tokens, 0));
 
-function onDocumentPointer(event: PointerEvent) {
-  if (!open.value) return;
-  const target = event.target as Node | null;
-  if (target && root.value?.contains(target)) return;
-  open.value = false;
-}
+let unbindDismiss: (() => void) | undefined;
 
 watch(open, (value) => {
-  if (value) document.addEventListener("pointerdown", onDocumentPointer, true);
-  else document.removeEventListener("pointerdown", onDocumentPointer, true);
+  unbindDismiss?.();
+  unbindDismiss = undefined;
+  if (!value) return;
+  unbindDismiss = bindDismissableLayer({
+    contains: (target) => Boolean(root.value?.contains(target)),
+    onDismiss: () => {
+      open.value = false;
+    },
+  });
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener("pointerdown", onDocumentPointer, true);
+  unbindDismiss?.();
 });
 </script>
 

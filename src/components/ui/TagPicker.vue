@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { Check, Plus, Settings2, Tag, X } from "@lucide/vue";
 import { t } from "../../i18n";
+import { bindDismissableLayer } from "./dismissable-layer";
 
 export interface TagOption {
   id: string;
@@ -86,20 +87,23 @@ function updatePosition() {
   };
 }
 
-function onPointerDown(event: PointerEvent) {
-  const target = event.target instanceof Node ? event.target : null;
-  if (root.value?.contains(target) || popover.value?.contains(target)) return;
-  open.value = false;
-}
+let unbindDismiss: (() => void) | undefined;
 
 function bindPopover() {
-  document.addEventListener("pointerdown", onPointerDown, true);
+  unbindDismiss?.();
+  unbindDismiss = bindDismissableLayer({
+    contains: (target) => Boolean(root.value?.contains(target) || popover.value?.contains(target)),
+    onDismiss: () => {
+      open.value = false;
+    },
+  });
   window.addEventListener("resize", updatePosition);
   window.addEventListener("scroll", updatePosition, true);
 }
 
 function unbindPopover() {
-  document.removeEventListener("pointerdown", onPointerDown, true);
+  unbindDismiss?.();
+  unbindDismiss = undefined;
   window.removeEventListener("resize", updatePosition);
   window.removeEventListener("scroll", updatePosition, true);
 }

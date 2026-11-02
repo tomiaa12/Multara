@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { bindDismissableLayer } from "../ui/dismissable-layer";
 import UiButton from "../ui/UiButton.vue";
 import TerminalPeek from "./TerminalPeek.vue";
 import {
@@ -45,14 +46,7 @@ async function toggle(event: MouseEvent) {
   placeMenu();
 }
 
-function onDocumentPointer(event: PointerEvent) {
-  if (!open.value) return;
-  const target = event.target;
-  if (!(target instanceof Node)) return;
-  if (menu.value?.contains(target)) return;
-  if (target instanceof Element && target.closest(".terminal-activity-button")) return;
-  open.value = false;
-}
+let unbindDismiss: (() => void) | undefined;
 
 function onKey(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
@@ -84,8 +78,19 @@ watch(serving, (list) => {
 });
 
 watch(open, (value) => {
-  if (value) document.addEventListener("pointerdown", onDocumentPointer, true);
-  else document.removeEventListener("pointerdown", onDocumentPointer, true);
+  unbindDismiss?.();
+  unbindDismiss = undefined;
+  if (!value) return;
+  unbindDismiss = bindDismissableLayer({
+    contains: (target) =>
+      Boolean(
+        menu.value?.contains(target)
+        || (target instanceof Element && target.closest(".terminal-activity-button")),
+      ),
+    onDismiss: () => {
+      open.value = false;
+    },
+  });
 });
 
 onMounted(() => {
@@ -93,7 +98,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener("pointerdown", onDocumentPointer, true);
+  unbindDismiss?.();
   document.removeEventListener("keydown", onKey);
 });
 </script>

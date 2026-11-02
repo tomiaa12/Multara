@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { Bot, ChevronRight, FolderKanban, Hash, Paperclip, Search, Sparkles } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
+import { bindDismissableLayer } from "../ui/dismissable-layer";
 import { nextPopupZIndex } from "../ui/popup-z-index";
 import type { ComposerSuggestCategory } from "./composer-entities";
 import {
@@ -226,12 +227,24 @@ function onViewportChange() {
   updatePosition();
 }
 
+let unbindDismiss: (() => void) | undefined;
+
 onMounted(() => {
   void layout();
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("scroll", onViewportChange, true);
+  unbindDismiss = bindDismissableLayer({
+    // 点在输入区继续改 @ 查询时不关；点到页内其它区域或窗口失焦才关
+    contains: (target) =>
+      Boolean(
+        root.value?.contains(target)
+        || (target instanceof Element && target.closest(".composer-field")),
+      ),
+    onDismiss: () => emit("close"),
+  });
 });
 onBeforeUnmount(() => {
+  unbindDismiss?.();
   window.removeEventListener("resize", onViewportChange);
   window.removeEventListener("scroll", onViewportChange, true);
 });
