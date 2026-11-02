@@ -98,6 +98,7 @@ const targetOptions = computed(() =>
     agents.value,
     squads.value,
     (name) => t("chat.squadLabel", { name }),
+    store.data?.runtimes ?? [],
   ),
 );
 /** 创建入口只给待规划 / 待办；开跑后系统会同步到进行中等后续状态。 */

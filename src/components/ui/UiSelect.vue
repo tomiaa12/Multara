@@ -752,7 +752,15 @@ onBeforeUnmount(() => {
                 </slot>
                 <span class="ds-select-option-body">
                   <span class="ds-select-option-label">{{ item.label[0] }}<mark v-if="item.label[1]">{{ item.label[1] }}</mark>{{ item.label[2] }}</span>
-                  <span v-if="item.description" class="ds-select-option-desc">{{ item.description[0] }}<mark v-if="item.description[1]">{{ item.description[1] }}</mark>{{ item.description[2] }}</span>
+                  <span v-if="item.description" class="ds-select-option-desc">
+                    <slot
+                      name="option-description"
+                      :option="item.option"
+                      :parts="item.description"
+                    >
+                      {{ item.description[0] }}<mark v-if="item.description[1]">{{ item.description[1] }}</mark>{{ item.description[2] }}
+                    </slot>
+                  </span>
                 </span>
                 <span v-if="item.option.meta" class="ds-select-option-meta">{{ item.option.meta }}</span>
                 <span class="ds-select-check"><Check :size="14" /></span>
