@@ -5322,6 +5322,12 @@ fn load_session_timelines(
                         "error" => "error",
                         "plan" => "plan",
                         "permission" => "permission",
+                        "mode_change" => "mode_change",
+                        "todo" => "todo",
+                        "agent_start" => "agent_start",
+                        "agent_end" => "agent_end",
+                        // 批准/拒绝写入 run_events；若落成 text，前端 derivePlanStates 认不出，卡片会一直「待确认」
+                        "plan_action" => "plan_action",
                         _ => "text",
                     },
                     call_id: row.get(3)?,
