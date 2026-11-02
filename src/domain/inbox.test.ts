@@ -29,6 +29,17 @@ describe("shouldNotifyInbox", () => {
     }))).toBe(false);
   });
 
+  it("stays quiet while the user is viewing that session in the inbox", () => {
+    expect(shouldNotifyInbox(notice({
+      currentPath: "/inbox",
+      activeInboxSessionId: "session-1",
+    }))).toBe(false);
+    expect(shouldNotifyInbox(notice({
+      currentPath: "/inbox",
+      activeInboxSessionId: "other-session",
+    }))).toBe(true);
+  });
+
   it("notifies a task chat from anywhere except its own detail page", () => {
     expect(shouldNotifyInbox(notice({
       taskId: "task-1",

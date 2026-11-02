@@ -1097,6 +1097,12 @@ function revealTranscript(sessionId: string | undefined) {
     followBottom.value = false;
     return;
   }
+  // 收件箱：无未读时贴底，不恢复上次滚到一半的位置。
+  if (props.embedded) {
+    followBottom.value = true;
+    scheduleStickToBottom("auto");
+    return;
+  }
   applySessionScroll(sessionId);
 }
 
@@ -1305,9 +1311,9 @@ watch(
     const element = messageList.value;
     if (!element) return;
     // 新对话是空的，切到已有对话时历史会一次出现。高度增量经常不到一屏，
-    // 不能走平滑滚动，否则会从顶部滑到底部。直接落到这个对话上次的位置。
+    // 不能走平滑滚动，否则会从顶部滑到底部。按未读 / 收件箱贴底 / 上次位置揭示。
     if (lengthBefore === 0 && lengthAfter > 0) {
-      applySessionScroll(typeof current[0] === "string" ? current[0] : undefined);
+      revealTranscript(typeof current[0] === "string" ? current[0] : undefined);
       return;
     }
     // 刚发出的用户消息（含批准计划：末条可能已是助手占位，不能只看 at(-1)）：
