@@ -56,6 +56,10 @@ const composer = ref<{
 } | null>(null);
 const expanded = ref(false);
 const draftEmpty = ref(false);
+/** 收起为 3 行时内容是否被裁切（用于底部渐变提示） */
+const clipped = ref(false);
+const OVERFLOW_TOLERANCE_PX = 1;
+let clipObserver: ResizeObserver | undefined;
 
 const nodes = computed(() => parseUserPromptNodes(props.message.content));
 const pastedImages = computed(() => props.message.attachments.filter(isPastedImage));
@@ -101,9 +105,28 @@ function startReask() {
   emit("start-reask", props.message.id, content, replayAttachments.value);
 }
 
+function measureClip() {
+  const field = root.value?.querySelector<HTMLElement>(".composer-field");
+  if (!field || expanded.value) {
+    clipped.value = false;
+    return;
+  }
+  clipped.value = field.scrollHeight > field.clientHeight + OVERFLOW_TOLERANCE_PX;
+}
+
+function bindClipObserver() {
+  clipObserver?.disconnect();
+  clipObserver = undefined;
+  const field = root.value?.querySelector<HTMLElement>(".composer-field");
+  if (!field || typeof ResizeObserver === "undefined") return;
+  clipObserver = new ResizeObserver(() => measureClip());
+  clipObserver.observe(field);
+}
+
 function openComposer() {
   if (expanded.value) return;
   expanded.value = true;
+  clipped.value = false;
   if (props.viewOnly) return;
   void nextTick(() => composer.value?.focusEnd());
 }
@@ -151,11 +174,21 @@ const root = ref<HTMLElement | null>(null);
 const seen = ref(false);
 let disposed = false;
 watch(root, (el, _, onCleanup) => {
-  if (el) onCleanup(watchOffscreen(el, (offscreen) => { seen.value ||= !offscreen; }));
+  if (!el) return;
+  onCleanup(watchOffscreen(el, (offscreen) => { seen.value ||= !offscreen; }));
+  void nextTick(() => {
+    bindClipObserver();
+    measureClip();
+  });
 }, { flush: "post" });
+
+watch([expanded, () => props.message.content], () => {
+  void nextTick(measureClip);
+});
 
 onBeforeUnmount(() => {
   disposed = true;
+  clipObserver?.disconnect();
   previews.value = {};
 });
 
@@ -184,7 +217,7 @@ watch(
     <ChatComposer
       ref="composer"
       class="user-prompt"
-      :class="{ 'is-expanded': expanded, 'is-view-only': viewOnly }"
+      :class="{ 'is-expanded': expanded, 'is-view-only': viewOnly, 'has-overflow': clipped }"
       @focusin="onFieldFocus"
       placeholder=""
       :initial-nodes="nodes"

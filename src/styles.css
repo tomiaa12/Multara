@@ -7513,6 +7513,19 @@ body.is-dragging-workspace-file * {
   max-height: calc(var(--composer-line-height, 20px) * 3);
   overflow-y: hidden;
 }
+/* 超过 3 行被裁切时，底部渐变提示还有内容（点开后消失） */
+.chat-composer.user-prompt:not(.is-expanded).has-overflow .composer-field {
+  position: relative;
+}
+.chat-composer.user-prompt:not(.is-expanded).has-overflow .composer-field::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: calc(var(--composer-line-height, 20px) * 1.4);
+  background: linear-gradient(to bottom, transparent, var(--color-field));
+  pointer-events: none;
+  z-index: 1;
+}
 .chat-composer.user-prompt.is-expanded .composer-field,
 .shared-chat-panel.compact .chat-composer.user-prompt.is-expanded .composer-field {
   max-height: calc(var(--composer-line-height, 20px) * 11);
