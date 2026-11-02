@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{
   /** Initial height in pixels, including the header. Dragging stores a new size. */
   defaultSize?: number;
   sizeKey?: string;
-  /** Smallest body height while expanded. VS Code's vertical pane floor is 120. */
+  /** Smallest body height while expanded (vertical pane floor 120). */
   minBody?: number;
 }>(), {
   fill: false,

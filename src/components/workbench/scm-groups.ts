@@ -31,7 +31,7 @@ export type ScmOpenTarget = {
   localId?: string;
 };
 
-/** 对齐 VS Code Open Changes → MultiDiffEditor 的一次打开 */
+/** Open Changes → MultiDiffEditor 的一次打开 */
 export type ScmOpenChangesPayload = {
   workspaceId: string;
   /** 例如 `f788968 - Merge branch 'x' into 'y'` */

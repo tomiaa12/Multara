@@ -1,6 +1,6 @@
 import type { IBufferLine, IDisposable, IMarker, Terminal } from "@xterm/xterm";
 
-/** VS Code 的 OSC 633 序列：A 提示符开始、B 输入开始、C 命令执行、D 命令结束、P 属性。 */
+/** OSC 633 序列：A 提示符开始、B 输入开始、C 命令执行、D 命令结束、P 属性。 */
 export type ShellSequence =
   | { kind: "promptStart" }
   | { kind: "commandStart" }

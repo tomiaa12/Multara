@@ -47,7 +47,7 @@ describe("scmDiffPlan", () => {
 });
 
 describe("scmCommitDiffTabName", () => {
-  test("matches VS Code history diff titles", () => {
+  test("matches history diff titles", () => {
     expect(
       scmCommitDiffTabName({
         path: "src/foo.ts",

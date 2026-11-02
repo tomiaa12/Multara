@@ -1,5 +1,5 @@
 /**
- * 资源管理器多选模型（对应 VS Code 列表的 selection/focus/anchor）。
+ * 资源管理器多选模型（selection / focus / anchor）。
  * key 形如 `${workspaceId}:${path}`，工作区根的 path 为空串。
  */
 export interface SelectionState {
@@ -87,7 +87,7 @@ export function pruneSelection(state: SelectionState, order: readonly string[], 
   return { selected, focus, anchor };
 }
 
-/** 跟 VS Code `distinctParents` 一样：父文件夹已选中时去掉它下面的子项。 */
+/** 父文件夹已选中时去掉它下面的子项。 */
 export function distinctParents<T extends { workspaceId: string; path: string }>(items: readonly T[]): T[] {
   return items.filter(
     (item) =>

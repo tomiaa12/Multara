@@ -21,7 +21,7 @@ export type CliCatalogEntry = {
   skillsHome?: string;
   /** 相对用户主目录的 MCP 配置路径 */
   mcpHome?: string;
-  /** 特殊 MCP 路径解析（如 VS Code 用户目录） */
+  /** 特殊 MCP 路径解析（如编辑器用户目录） */
   mcpSpecial?: "vscode";
   supported?: boolean;
 };

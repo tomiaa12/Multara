@@ -77,7 +77,7 @@ function sortBySpan(items: OutlineItem[]) {
 
 let registered = false;
 
-/** 对齐 VS Code DiffEditorBreadcrumbsSource：隐藏未改区域时显示可点击的符号路径。 */
+/** 隐藏未改区域时显示可点击的符号路径。 */
 export function registerDiffBreadcrumbs() {
   if (registered) return;
   registered = true;

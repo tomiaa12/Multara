@@ -244,7 +244,7 @@ type EditorTab = {
     label: string;
     short: string;
     tabName?: string;
-    /** VS Code MultiDiff：一次打开整个提交 */
+    /** MultiDiff：一次打开整个提交 */
     commitFiles?: CommitDiffFile[];
   };
 };
@@ -419,7 +419,7 @@ function isWorkspaceTreeSelected(workspaceId: string) {
   return explorer.isSelected(explorerItemKey(workspaceId, ""));
 }
 
-/** 没有选中项时与 VS Code 一样落到上次使用的工作区（否则第一个）的根目录。 */
+/** 没有选中项时落到上次使用的工作区（否则第一个）的根目录。 */
 function startCreateInSelection(isFolder: boolean) {
   const selected = selectedTree.value;
   if (!selected) {
@@ -1538,7 +1538,7 @@ async function loadTreeDirectory(workspaceId: string, path: string) {
   }
 }
 
-/** 对齐 VS Code `autoExpandCompressedChildren`：展开后若会压成 `a/b`，继续展开链尾以露出子文件。 */
+/** 展开后若会压成 `a/b`，继续展开链尾以露出子文件。 */
 async function autoExpandCompressedChildren(workspaceId: string, path: string) {
   if (!explorer.settings.value.compactFolders) return;
   let current = path;
@@ -1971,7 +1971,7 @@ function startRename(workspaceId: string, entry: FileEntry) {
 async function commitTreeEdit() {
   const edit = treeEdit.value;
   if (!edit) return;
-  // 失焦提交时名称有错就直接放弃，与 VS Code 一致。
+  // 失焦提交时名称有错就直接放弃。
   if (treeEditProblem.value?.severity === "error") {
     treeEdit.value = null;
     return;
@@ -4096,7 +4096,7 @@ async function openSourceControlChange(target: ScmOpenTarget, opts?: { activate?
 }
 
 /**
- * 对齐 VS Code Open Changes：单个 MultiDiff tab，标题 `hash - subject`。
+ * 打开更改：单个 MultiDiff tab，标题 `hash - subject`。
  * 斜体预览 tab（pinned=false）：单击打开；再开其它文件会顶替；双击 / 钉住 / 编辑后固定。
  */
 async function openSourceControlChanges(payload: ScmOpenChangesPayload) {
@@ -4314,7 +4314,7 @@ async function finishTreeDrag(
     return;
   }
   if (zone === "explorer" && !target) {
-    // 拖到文件树空白处：移动 / 复制到被拖项所在工作区的根目录（VS Code 同样）。
+    // 拖到文件树空白处：移动 / 复制到被拖项所在工作区的根目录。
     await explorer.dropOnTarget(treeItem(payload.workspaceId, "", true), copy);
     return;
   }

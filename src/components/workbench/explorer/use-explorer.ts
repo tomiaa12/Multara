@@ -232,7 +232,7 @@ export function useExplorer(host: ExplorerHost) {
     return true;
   }
 
-  /** 右键：点在已选项上保留多选，否则改为只选它（VS Code 行为）。 */
+  /** 右键：点在已选项上保留多选，否则改为只选它。 */
   function contextSelect(item: ExplorerItem) {
     remember(item);
     if (isSelected(item.key)) selection.value = { ...selection.value, focus: item.key };

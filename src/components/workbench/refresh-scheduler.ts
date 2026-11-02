@@ -6,7 +6,7 @@ export interface RefreshScheduler {
 export interface RefreshSchedulerOptions {
   debounceMs?: number;
   cooldownMs?: number;
-  /** When false, refresh waits until focused again (VS Code whenIdleAndFocused). */
+  /** When false, refresh waits until focused again. */
   isFocused?: () => boolean;
 }
 

@@ -316,7 +316,7 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     label,
     items: entities.filter((item) => item.group === id).map(suggestItem),
   });
-  // 一级顺序对齐 VS Code Attach Context：文件 / 会话 / Issue / PR，再是原有 @ 分类
+  // 一级顺序：文件 / 会话 / Issue / PR，再是原有 @ 分类
   const categories: ComposerSuggestCategoryItem[] = [];
   if (props.allowFilePicker) {
     categories.push({
@@ -502,7 +502,7 @@ function onSuggestCategoryAction(action: "pick-files-or-folders") {
   if (action === "pick-files-or-folders") emit("pick-files-or-folders");
 }
 
-/** 发送旁 + 打开与 @ 相同的引用面板；再点一次关闭（对齐 VS Code） */
+/** 发送旁 + 打开与 @ 相同的引用面板；再点一次关闭 */
 function openAttachMenu(defaultCategory: ComposerSuggestCategoryId = "file") {
   if (props.disabled) return;
   if (suggestTrigger.value) {

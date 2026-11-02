@@ -161,7 +161,7 @@ export function absoluteTimelineTime(at: number) {
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-/** 文件重命名后把本地历史跟过去，对应 VS Code Timeline 对 rename 的跟踪。 */
+/** 文件重命名后把本地历史跟过去。 */
 export function renameLocalHistoryPath(workspaceId: string, from: string, to: string) {
   const all = readStored();
   let changed = false;

@@ -3,7 +3,7 @@ import "../../assets/codicons/codicon.css";
 
 withDefaults(defineProps<{
   name: string;
-  /** Glyph size in px. VS Code draws these at 16, and tree twisties at 10. */
+  /** Glyph size in px. Default icons at 16, tree twisties at 10. */
   size?: number;
   spin?: boolean;
 }>(), {

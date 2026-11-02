@@ -79,7 +79,7 @@ function visibleChildren(
 }
 
 /**
- * VS Code `autoExpandCompressedChildren`：可见子项恰好为一个目录时返回它，
+ * 可见子项恰好为一个目录时返回它，
  * 否则 null（压缩后需连同展开，否则只剩折叠的 `a/b` 行）。
  */
 export function soleCompressibleChild(
