@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Archive, ArrowRight, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
@@ -161,6 +161,18 @@ watch(items, (list) => {
     dividerMessageId.value = null;
     reviewFile.value = null;
   }
+});
+
+watch(
+  selected,
+  (item) => {
+    store.setActiveInboxSession(item?.sessionId ?? null);
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  store.setActiveInboxSession(null);
 });
 </script>
 

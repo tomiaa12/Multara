@@ -7,11 +7,13 @@ export type InboxNoticeInput = {
   projectId: string | null;
   taskId: string | null;
   currentPath: string;
+  /** 收件箱里当前打开的会话；正在看则不再当未读通知。 */
+  activeInboxSessionId?: string | null;
 };
 
 /**
  * 只在一次运行从「运行中」进入结束态时通知。
- * 正在看这条需求的工作台，或正在看这个任务的详情时，结果已经在眼前，不再进收件箱。
+ * 正在看这条需求的工作台、任务详情，或收件箱里这条会话时，结果已经在眼前，不再当未读。
  * 自动化会话由后端直接写入收件箱，这里不再走工作台聊天那条通知。
  */
 export function shouldNotifyInbox(input: InboxNoticeInput): boolean {
@@ -22,6 +24,13 @@ export function shouldNotifyInbox(input: InboxNoticeInput): boolean {
     || input.status === "needs_permission";
   if (!finished || input.previousStatus !== "running") return false;
   if (input.sessionId.startsWith("automation-run:")) return false;
+  if (
+    input.currentPath === "/inbox"
+    && input.activeInboxSessionId
+    && input.activeInboxSessionId === input.sessionId
+  ) {
+    return false;
+  }
   if (input.taskId) return input.currentPath !== `/tasks/${input.taskId}`;
   if (input.projectId) return input.currentPath !== `/projects/${input.projectId}`;
   return false;
