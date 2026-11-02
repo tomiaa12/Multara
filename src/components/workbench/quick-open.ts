@@ -11,7 +11,7 @@ export interface QuickOpenFile {
   detail: string;
 }
 
-/** 与 VS Code Quick Open 相同：路径末尾的 `:行`、`:行:列`、`:行-行` 不参与文件名匹配。 */
+/** 路径末尾的 `:行`、`:行:列`、`:行-行` 不参与文件名匹配。 */
 const LINE_COLON_PATTERN = /\s?[#:(](?:line )?(\d+)(?:[#:,](\d*))?(?:-(\d+)(?:[#:,](\d*))?)?\)?:?\s*$/;
 
 const MAX_RESULTS = 100;

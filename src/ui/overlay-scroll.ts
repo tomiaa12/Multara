@@ -1,5 +1,5 @@
 /**
- * VS Code 风格悬浮滚动条：原生 overflow 继续负责滚动，
+ * 悬浮滚动条：原生 overflow 继续负责滚动，
  * 系统滚动条藏掉，滑块 absolute 叠在宿主上（宿主 transform 关进本地 stacking），
  * 每帧用 scrollTop/Left 贴齐可视区；层级用 --z-overlay-scroll。
  *

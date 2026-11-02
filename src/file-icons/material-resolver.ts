@@ -9,7 +9,7 @@ interface ManifestMaps {
   folderNamesExpanded?: IconMap;
 }
 
-/** `material-icon-theme/dist/material-icons.json` 中用到的字段（VS Code 文件图标主题格式）。 */
+/** `material-icon-theme/dist/material-icons.json` 中用到的字段。 */
 export interface MaterialManifest extends ManifestMaps {
   iconDefinitions: Record<string, { iconPath: string }>;
   file: string;
@@ -25,7 +25,7 @@ interface NormalizedMaps {
   folderNamesExpanded: Map<string, string>;
 }
 
-// VS Code 按小写文件名匹配图标，清单里少量带大写的键也统一转小写。
+// 按小写文件名匹配图标，清单里少量带大写的键也统一转小写。
 function normalize(maps: ManifestMaps | undefined): NormalizedMaps {
   const lower = (map: IconMap | undefined) =>
     new Map(Object.entries(map ?? {}).map(([key, icon]) => [key.toLowerCase(), icon]));
@@ -53,7 +53,7 @@ function lookup(maps: NormalizedMaps, query: FileIconQuery, name: string): strin
 }
 
 /**
- * 按 VS Code 的匹配顺序解析 Material Icon Theme 图标：
+ * 按文件图标主题的匹配顺序解析 Material Icon Theme 图标：
  * 浅色覆盖表 → 默认表 → 主题默认文件 / 文件夹图标。
  * `urlFor` 把清单里的 iconPath 映射成可加载的地址。
  */

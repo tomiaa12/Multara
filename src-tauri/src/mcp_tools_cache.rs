@@ -1,5 +1,5 @@
 //! MCP 工具列表统一缓存：后台串行探测，前台只读缓存，避免进列表卡死。
-//! 类似 Cursor：先缓存，再按需/后台刷新。
+//! 先缓存，再按需/后台刷新。
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -20,7 +20,7 @@ use crate::mcp_probe::McpProbe;
 use crate::resources;
 
 const EVENT_UPDATED: &str = "mcp-tools-cache-updated";
-/// 未强制刷新时，成功缓存的复用窗口（与 Cursor「复用工具列表」接近）。
+/// 未强制刷新时，成功缓存的复用窗口。
 const FRESH_SECS: u64 = 30 * 60;
 /// 失败或需要授权的探测，未强制刷新时这段时间内不重新排队，避免反复起 `npx`。
 const FAILURE_BACKOFF_SECS: u64 = 10 * 60;

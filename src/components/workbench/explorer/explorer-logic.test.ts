@@ -22,7 +22,7 @@ import { ExplorerUndoStack } from "./explorer-undo";
 
 beforeAll(() => applyLanguageSetting("zh-CN"));
 
-describe("incrementFileName (VS Code fileActions.test.ts)", () => {
+describe("incrementFileName", () => {
   test.each([
     ["test.js", false, "test copy.js"],
     ["test copy.js", false, "test copy 2.js"],
@@ -90,7 +90,7 @@ describe("validateFileName", () => {
   });
 });
 
-describe("comparers (VS Code FileSorter)", () => {
+describe("comparers (FileSorter)", () => {
   const options = { sortOrder: "default", lexicographic: "default", reverse: false } as const;
   const names = (list: Array<{ name: string }>) => list.map((item) => item.name);
 
@@ -135,7 +135,7 @@ describe("comparers (VS Code FileSorter)", () => {
   });
 });
 
-describe("file nesting trie (VS Code explorerFileNestingTrie.test.ts)", () => {
+describe("file nesting trie", () => {
   test("nests captures and simple names", () => {
     const trie = new ExplorerFileNestingTrie([
       ["*.ts", ["${capture}.js"]],
@@ -169,7 +169,7 @@ describe("file nesting trie (VS Code explorerFileNestingTrie.test.ts)", () => {
 });
 
 describe("glob exclude", () => {
-  test("matches VS Code style patterns", () => {
+  test("matches glob exclude patterns", () => {
     expect(globMatch("**/.git", ".git")).toBe(true);
     expect(globMatch("**/.git", "a/b/.git")).toBe(true);
     expect(globMatch("**/.git", "a/.gitignore")).toBe(false);
@@ -236,7 +236,7 @@ describe("selection model", () => {
   });
 });
 
-describe("drag and drop rules (VS Code FileDragAndDrop)", () => {
+describe("drag and drop rules", () => {
   const src = (path: string, isDirectory = false) => ({ workspaceId: "w", path, isDirectory });
   test("rejects self, same parent move and descendants", () => {
     expect(canDropInExplorer([src("a", true)], { workspaceId: "w", path: "a" }, false)).toBe(false);
@@ -295,7 +295,7 @@ describe("row building", () => {
     expect(rows[2].nestParent).toBe(true);
   });
 
-  test("soleCompressibleChild matches VS Code autoExpandCompressedChildren", () => {
+  test("soleCompressibleChild matches autoExpandCompressedChildren", () => {
     const hide = (entry: { path: string; name: string }, siblings: ReadonlySet<string>) =>
       isExcluded(entry.path, entry.name, DEFAULT_EXPLORER_SETTINGS.filesExclude, (name) => siblings.has(name));
     expect(

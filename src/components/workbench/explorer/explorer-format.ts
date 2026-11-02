@@ -1,4 +1,4 @@
-/** VS Code 资源管理器悬停提示里的体积与时间。 */
+/** 资源管理器悬停提示里的体积与时间。 */
 
 export function formatByteSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

@@ -14,7 +14,7 @@ function resolveToken(name: string, fallback: string) {
   return value;
 }
 
-/** 与 VS Code Dark+/Light+ 的终端 ANSI 调色板一致。 */
+/** 终端 ANSI 调色板（Dark+ / Light+）。 */
 const DARK_ANSI = {
   black: "#000000",
   red: "#cd3131",

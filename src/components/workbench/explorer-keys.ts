@@ -45,7 +45,7 @@ export interface ExplorerKeyResult {
 }
 
 /**
- * VS Code 资源管理器（files.contribution / listCommands）在各平台的默认键位。
+ * 资源管理器在各平台的默认键位。
  * `chordK` 表示上一键是 Ctrl/Cmd+K（用于 Ctrl+K Ctrl+Shift+C 复制相对路径）。
  */
 export function explorerKey(
@@ -98,7 +98,7 @@ export function explorerKey(
   if (only({ primary: true }) && key === "Enter") return { action: "open-side" };
   if (noMods && key === " ") return { action: "open-preserve-focus" };
 
-  // 不改变选择地移动焦点，再用 Ctrl+Space 切换当前项（VS Code 列表的不连续多选）。
+  // 不改变选择地移动焦点，再用 Ctrl+Space 切换当前项（不连续多选）。
   const ctrlOnly = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
   if (ctrlOnly && key === "ArrowDown") return { action: "focus-next" };
   if (ctrlOnly && key === "ArrowUp") return { action: "focus-previous" };

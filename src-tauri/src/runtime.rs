@@ -684,7 +684,7 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str, mode: RunMode) -> V
         // 需求 / 任务 / 收件箱 / 右下角聊天都可能没有 Git（临时工作区或纯文件夹）。
         // Codex exec 默认要求仓库根，否则直接退出；由 Multara 管 cwd，统一跳过该检查。
         // 默认 sandbox 是只读且常断网，模型会自称「只读、离线」只给复制命令；
-        // 与 Claude bypassPermissions / Cursor --yolo 对齐，无头跑通改文件与装依赖。
+        // 无头跑通改文件与装依赖（bypass / 宽松权限）。
         "codex" => {
             let mut args = vec![
                 "exec".into(),
@@ -1325,7 +1325,7 @@ fn load_login_path_once(force: bool) -> Vec<PathBuf> {
     dirs
 }
 
-/// 与 VS Code `shellEnv.ts` 一致：用标记包住 PATH，避免 oh-my-zsh 等往 stdout 打横幅污染首行。
+/// 用标记包住 PATH，避免 oh-my-zsh 等往 stdout 打横幅污染首行。
 #[cfg(unix)]
 const PATH_MARK: &str = "__MULTARA_PATH__";
 
@@ -1368,7 +1368,7 @@ fn dump_login_path(shell: &str, args: &[&str]) -> Option<String> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    // VS Code 默认 10s；nvm 初始化经常超过原先的 2s。
+    // 默认 10s；nvm 初始化经常超过原先的 2s。
     if !wait_with_timeout(&mut child, Duration::from_secs(10)) {
         let _ = child.kill();
         let _ = child.wait();

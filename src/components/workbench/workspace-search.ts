@@ -148,7 +148,7 @@ function matchesPatternList(path: string, raw: string, emptyMatches: boolean): b
 export function globMatch(path: string, pattern: string): boolean {
   const normalized = pattern.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+|\/+$/g, "");
   if (!normalized) return false;
-  // 没有通配符时按文件夹前缀匹配，和 VS Code「在文件夹中查找」填的 ./src/components 一样。
+  // 没有通配符时按文件夹前缀匹配（如 ./src/components）。
   if (!/[*?]/.test(normalized)) {
     return path === normalized || path.startsWith(`${normalized}/`);
   }

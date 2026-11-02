@@ -285,7 +285,7 @@ fn profile(id: &str, name: &str, path: PathBuf, args: &[&str], kind: &str) -> Te
     }
 }
 
-/// 顺序即默认优先级：和 VS Code 一样优先 PowerShell。
+/// 顺序即默认优先级：优先 PowerShell。
 fn windows_profiles() -> Vec<TerminalProfile> {
     let system_root = std::env::var_os("SystemRoot")
         .map(PathBuf::from)
@@ -413,7 +413,7 @@ fn unix_profiles() -> Vec<TerminalProfile> {
 }
 
 // ---------------------------------------------------------------------------
-// shell 集成：用 OSC 633 报告提示符、命令开始/结束、退出码和当前目录（与 VS Code 同一套序列）。
+// shell 集成：用 OSC 633 报告提示符、命令开始/结束、退出码和当前目录。
 
 const INTEGRATION_DIR: &str = "shell-integration";
 

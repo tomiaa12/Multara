@@ -14,7 +14,7 @@ export interface DropTarget {
   readonly?: boolean;
 }
 
-/** VS Code：Windows/Linux 按 Ctrl 复制，macOS 按 Option(Alt) 复制。 */
+/** Windows/Linux 按 Ctrl 复制，macOS 按 Option(Alt) 复制。 */
 export function isCopyDrag(event: { ctrlKey: boolean; altKey: boolean }, isMac: boolean) {
   return isMac ? event.altKey : event.ctrlKey;
 }
@@ -30,7 +30,7 @@ function isEqualOrParent(path: string, candidateParent: string) {
 }
 
 /**
- * 移植 VS Code `FileDragAndDrop.handleDragOver` 里文件树内部拖放的判定：
+ * 文件树内部拖放的判定：
  * 不能拖到自己上；不复制时不能拖回原父目录；不能把文件夹拖进它自己的子目录；
  * 只读目标不接受；全部只读的源只能复制。
  */
@@ -47,7 +47,7 @@ export function canDropInExplorer(sources: readonly DragSource[], target: DropTa
   });
 }
 
-/** 落点为文件时改投到它所在的文件夹（VS Code 的 bubble up）。 */
+/** 落点为文件时改投到它所在的文件夹。 */
 export function dropFolderFor(entry: { path: string; isDirectory: boolean } | null): string {
   if (!entry) return "";
   return entry.isDirectory ? entry.path : parentOf(entry.path);
@@ -67,7 +67,7 @@ export function moveConfirmMessage(sources: readonly { path: string }[], targetN
   };
 }
 
-/** VS Code `getFileNamesMessage`：最多列 10 个，剩余的合并成一行。 */
+/** 最多列 10 个文件名，剩余的合并成一行。 */
 export function fileNamesMessage(names: readonly string[]) {
   const max = 10;
   const lines = names.slice(0, max);

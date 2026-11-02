@@ -8,7 +8,7 @@ function extname(name: string) {
   return dot > 0 ? name.slice(dot) : "";
 }
 
-/** VS Code `fileActions.ts` 中 `incrementFileName` 的移植。 */
+/** 重名时递增文件名。 */
 export function incrementFileName(name: string, isFolder: boolean, naming: "simple" | "smart"): string {
   if (naming === "simple") {
     let namePrefix = name;
@@ -120,7 +120,7 @@ const WINDOWS_INVALID_FILE_CHARS = /[\\/:*?"<>|]/;
 const UNIX_INVALID_FILE_CHARS = /[/]/;
 const WINDOWS_FORBIDDEN_NAMES = /^(con|prn|aux|clock\$|nul|lpt[0-9]|com[0-9])(\.(.*?))?$/i;
 
-/** VS Code `extpath.isValidBasename`。 */
+/** 校验 basename 是否合法。 */
 export function isValidBasename(name: string | null | undefined, isWindows: boolean): boolean {
   if (!name || name.length === 0 || /^\s+$/.test(name)) return false;
   if ((isWindows ? WINDOWS_INVALID_FILE_CHARS : UNIX_INVALID_FILE_CHARS).test(name)) return false;
@@ -132,7 +132,7 @@ export function isValidBasename(name: string | null | undefined, isWindows: bool
   return true;
 }
 
-/** 去掉首尾制表符与末尾斜杠，对应 VS Code `getWellFormedFileName`。 */
+/** 去掉首尾制表符与末尾斜杠。 */
 export function wellFormedFileName(name: string): string {
   if (!name) return name;
   return name.replace(/^\t+|\t+$/g, "").replace(/[\\/]+$/, "");
@@ -148,7 +148,7 @@ function trimLongName(name: string) {
 }
 
 /**
- * VS Code `validateFileName`：名字可以含 `/` 表示多级（会自动创建中间文件夹），
+ * 名字可以含 `/` 表示多级（会自动创建中间文件夹），
  * 但不能以斜杠开头，也不能与同级已有项重名。
  */
 export function validateFileName(
@@ -175,7 +175,7 @@ export function validateFileName(
   return null;
 }
 
-/** 重命名时默认只选中主文件名（不含扩展名），与 VS Code 一致。 */
+/** 重命名时默认只选中主文件名（不含扩展名）。 */
 export function renameSelection(name: string, isDirectory: boolean): [number, number] {
   const lastDot = name.lastIndexOf(".");
   if (isDirectory || lastDot <= 0) return [0, name.length];

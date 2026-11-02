@@ -26,7 +26,7 @@ function repo(partial: Partial<GitRepositoryStatus>): GitRepositoryStatus {
 }
 
 describe("scm branch bar", () => {
-  test("marks a dirty and staged branch the way VS Code does", () => {
+  test("marks a dirty and staged branch", () => {
     const action = branchAction(repo({
       changes: [
         { path: "a.ts", indexStatus: " ", worktreeStatus: "M", staged: false },

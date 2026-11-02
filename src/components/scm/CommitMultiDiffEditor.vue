@@ -24,7 +24,7 @@ const props = defineProps<{
   theme: string;
 }>();
 
-/** 对齐 VS Code：header 高度 + 未测量前默认内容高度 */
+/** header 高度 + 未测量前默认内容高度 */
 const HEADER_HEIGHT = 28;
 const DEFAULT_CONTENT_HEIGHT = 500;
 const ITEM_GAP = 8;
