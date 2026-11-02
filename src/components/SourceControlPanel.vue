@@ -27,11 +27,12 @@ import {
   rememberCommitMessage,
 } from "./workbench/scm-commit-action";
 import { renameBranchNotice } from "./workbench/scm-branch";
-import type { ScmGroupId, ScmOpenTarget } from "./workbench/scm-groups";
+import type { ScmGroupId, ScmOpenChangesPayload, ScmOpenTarget } from "./workbench/scm-groups";
 
 const props = defineProps<{ projectId: string; workspaces: Workspace[] }>();
 const emit = defineEmits<{
   openChange: [target: ScmOpenTarget];
+  openChanges: [payload: ScmOpenChangesPayload];
   openFile: [target: { workspaceId: string; path: string }];
   updated: [repositories: GitRepositoryStatus[]];
   worktreeChanged: [workspaceId: string, paths: string[]];
@@ -515,6 +516,7 @@ defineExpose({ refresh });
       :branch="repositories.find((item) => item.workspaceId === selectedWorkspaceId)?.branch"
       :upstream="repositories.find((item) => item.workspaceId === selectedWorkspaceId)?.upstream"
       @open="emit('openChange', $event)"
+      @open-changes="emit('openChanges', $event)"
       @error="error = $event"
       @updated="refresh()"
     />

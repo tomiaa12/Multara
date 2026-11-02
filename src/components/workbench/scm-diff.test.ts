@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, test } from "vitest";
 import { applyLanguageSetting } from "../../i18n";
-import { loadScmDiff, scmDiffPlan } from "./scm-diff";
+import { loadScmDiff, scmCommitDiffTabName, scmDiffPlan } from "./scm-diff";
 
 beforeEach(() => {
   applyLanguageSetting("zh-CN");
@@ -36,12 +36,32 @@ describe("scmDiffPlan", () => {
   });
 
   test("compares a commit file with its parent", () => {
-    expect(scmDiffPlan({ group: "commit", commit: "abc", parent: "def", status: "M" })).toMatchObject({
+    expect(scmDiffPlan({ group: "commit", commit: "abc", parent: "def", status: "M", path: "a.ts" })).toMatchObject({
       original: { rev: "def" },
       modified: { rev: "abc" },
+      tabName: "a.ts (def) ↔ a.ts (abc)",
     });
     expect(scmDiffPlan({ group: "commit", commit: "abc", parent: "def", status: "A" }).original).toBe("empty");
     expect(scmDiffPlan({ group: "commit", commit: "abc", parent: "def", status: "D" }).modified).toBe("empty");
+  });
+});
+
+describe("scmCommitDiffTabName", () => {
+  test("matches VS Code history diff titles", () => {
+    expect(
+      scmCommitDiffTabName({
+        path: "src/foo.ts",
+        commit: "abcdef012345",
+        parent: "1234567890ab",
+        status: "M",
+      }),
+    ).toBe("foo.ts (1234567) ↔ foo.ts (abcdef0)");
+    expect(
+      scmCommitDiffTabName({ path: "src/foo.ts", commit: "abcdef012345", parent: "1234567890ab", status: "A" }),
+    ).toBe("foo.ts (abcdef0)");
+    expect(
+      scmCommitDiffTabName({ path: "src/foo.ts", commit: "abcdef012345", parent: "1234567890ab", status: "D" }),
+    ).toBe("foo.ts (1234567)");
   });
 });
 

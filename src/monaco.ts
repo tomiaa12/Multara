@@ -1,3 +1,4 @@
+import "./editor/monaco-nls-boot";
 import * as monaco from "monaco-editor";
 import { json, typescript } from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
@@ -10,6 +11,7 @@ import {
   resolveMonacoLanguageId,
   shouldSuppressEmbeddedDiagnostics,
 } from "./monaco-language";
+import { watchMonacoNls } from "./editor/monaco-nls";
 import { registerEmmetCompletions, watchDocumentTheme } from "./editor/monaco-workspace";
 
 self.MonacoEnvironment = {
@@ -61,6 +63,7 @@ function configureMonacoLanguageServices() {
 
   registerEmmetCompletions();
   watchDocumentTheme();
+  watchMonacoNls();
 }
 
 export function monacoLanguageId(language: string): string {
