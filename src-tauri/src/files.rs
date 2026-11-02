@@ -286,7 +286,7 @@ struct MediaKind {
     mime: &'static str,
 }
 
-/// 与 VS Code media-preview 相同：图片、音频、视频。
+/// 媒体预览：图片、音频、视频。
 fn media_preview(path: &Path) -> Option<MediaKind> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match extension.as_str() {

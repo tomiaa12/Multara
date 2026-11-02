@@ -30,7 +30,7 @@ describe("resolveMonacoLanguageId", () => {
 });
 
 describe("jsonc diagnostics", () => {
-  test("ignores comments and trailing commas like VS Code jsonc", () => {
+  test("ignores comments and trailing commas in jsonc", () => {
     expect(jsoncDiagnosticsOptions.comments).toBe("ignore");
     expect(jsoncDiagnosticsOptions.trailingCommas).toBe("ignore");
     expect(jsoncDiagnosticsOptions.allowComments).toBe(true);

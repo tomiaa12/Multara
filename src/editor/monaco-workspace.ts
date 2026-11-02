@@ -39,7 +39,7 @@ function defineEditorThemes() {
       "editorStickyScroll.background": "#1E1E1E",
       "editorStickyScrollGutter.background": "#1E1E1E",
       "editorStickyScrollHover.background": "#2A2D2E",
-      // VS Code Dark+ diff（经 theme 注入，避免被 monaco 内联 CSS 变量盖掉）
+      // Dark+ diff（经 theme 注入，避免被 monaco 内联 CSS 变量盖掉）
       "diffEditor.insertedLineBackground": "#347d3926",
       "diffEditor.insertedTextBackground": "#57ab5a33",
       "diffEditor.removedLineBackground": "#c93c3726",

@@ -8,7 +8,7 @@ export function isMacPlatform() {
 }
 
 /**
- * VS Code `registerSendSequenceKeybinding` 里、终端获得焦点时发给 shell 的序列。
+ * 终端获得焦点时发给 shell 的按键序列。
  * macOS 上 Option 是 Alt，Command 是 Meta。
  */
 export function terminalSendSequence(event: KeyboardEvent, mac = isMacPlatform()): string | null {
@@ -60,7 +60,7 @@ export type TerminalKeyCommand =
   | "recentDirectory"
   | "suggest";
 
-/** 终端获得焦点时由工作台处理、不发给 shell 的按键，对应 VS Code 的默认快捷键。 */
+/** 终端获得焦点时由工作台处理、不发给 shell 的按键。 */
 export function terminalKeyCommand(
   event: KeyboardEvent,
   options: { mac?: boolean; hasSelection?: boolean } = {},

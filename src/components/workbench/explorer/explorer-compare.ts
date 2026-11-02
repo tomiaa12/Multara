@@ -123,7 +123,7 @@ function comparers(lexicographic: ExplorerLexicographic) {
   }
 }
 
-/** VS Code `FileSorter.compare` 的移植（不含工作区根的排序，根按添加顺序）。 */
+/** 文件排序比较（不含工作区根的排序，根按添加顺序）。 */
 export function compareExplorerEntries(a: SortableEntry, b: SortableEntry, options: SortOptions): number {
   if (options.reverse) [a, b] = [b, a];
   const { names, extensions } = comparers(options.lexicographic);

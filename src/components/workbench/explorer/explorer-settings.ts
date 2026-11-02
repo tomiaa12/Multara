@@ -5,7 +5,7 @@ export type ExplorerPathSeparator = "/" | "\\" | "auto";
 export type ExplorerConfirmUndo = "verbose" | "default" | "light";
 export type ExplorerExcludeValue = boolean | { when: string };
 
-/** 与 VS Code `files.contribution.ts` 中 explorer.* / files.exclude 的默认值保持一致。 */
+/** explorer.* / files.exclude 的默认值。 */
 export interface ExplorerSettings {
   sortOrder: ExplorerSortOrder;
   sortOrderLexicographicOptions: ExplorerLexicographic;

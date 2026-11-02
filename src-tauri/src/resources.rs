@@ -310,7 +310,7 @@ fn missing_inputs(name: &str, entry: &Value) -> Vec<String> {
         .collect()
 }
 
-/// VS Code 的 mcp.json 用 `servers`，其余工具用 `mcpServers`。
+/// 部分编辑器的 mcp.json 用 `servers`，其余工具用 `mcpServers`。
 fn servers_key(owner: &str) -> &'static str {
     let vscode =
         owner == "vscode" || workspace_part(owner).is_some_and(|(_, _, key)| key == "vscode");
@@ -457,7 +457,7 @@ fn json_mcp_server_map(value: &Value, owner: &str) -> Vec<(String, Value)> {
     Vec::new()
 }
 
-/// 对照 VS Code 的 MCP 配置：stdio 看 command，远程看 url / type，授权看 oauth。
+/// MCP 配置：stdio 看 command，远程看 url / type，授权看 oauth。
 /// 停用：JSON 用 `disabled: true`，Codex 用 `enabled = false`。
 /// Cursor 全局启停在 state.vscdb，见 `mcp_profile_for`。
 fn mcp_profile(entry: &Value) -> McpProfile {
@@ -1772,7 +1772,7 @@ fn parse_json_text(text: &str) -> Option<Value> {
         .or_else(|| serde_json::from_str(&strip_jsonc(text)).ok())
 }
 
-/// VS Code 的 mcp.json 允许注释和尾逗号，去掉后再按 JSON 解析。
+/// 部分编辑器的 mcp.json 允许注释和尾逗号，去掉后再按 JSON 解析。
 fn strip_jsonc(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());

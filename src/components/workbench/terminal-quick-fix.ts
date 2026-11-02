@@ -9,7 +9,7 @@ const MAX_FIXES = 5;
 /** 引用名、分支名来自终端输出，会被拼进 shell 命令执行，只放行不含 shell 元字符的名字。 */
 const SAFE_REF = /^[\w./-]+$/;
 
-/** 根据刚结束的命令与输出给出修复建议，规则与 VS Code 内置的终端快速修复对应。 */
+/** 根据刚结束的命令与输出给出修复建议。 */
 export function detectQuickFixes(command: string, output: string, exitCode: number | undefined): TerminalQuickFix[] {
   const fixes: TerminalQuickFix[] = [];
   const push = (fix: TerminalQuickFix) => {

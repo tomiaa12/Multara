@@ -1,5 +1,5 @@
 /**
- * VS Code `explorerFileNestingTrie.ts` 的移植：父模式可含一个 `*`，子模式里用
+ * 文件嵌套：父模式可含一个 `*`，子模式里用
  * `${capture}`/`${basename}`/`${extname}`/`${dirname}` 引用父文件的对应部分。
  */
 type FilenameAttributes = {
@@ -173,7 +173,7 @@ export function nestingTrie(patterns: Record<string, string>): ExplorerFileNesti
 
 /**
  * 只对同一目录下的文件做嵌套；返回 父文件名 → 子文件名列表，没有子文件的不出现。
- * 文件夹不参与（VS Code 同样只嵌套文件）。
+ * 文件夹不参与（只嵌套文件）。
  */
 export function nestDirectoryFiles(
   fileNames: string[],

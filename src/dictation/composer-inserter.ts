@@ -1,4 +1,4 @@
-/** DOM LiveTranscriptInserter for ChatComposerField (VS Code Monaco counterpart). */
+/** DOM LiveTranscriptInserter for ChatComposerField. */
 
 const DICTATION_ATTR = "data-dictation";
 const INTERIM_CLASS = "dictation-interim";

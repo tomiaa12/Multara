@@ -9,7 +9,7 @@ export type ScmDiffPlan = {
   modified: "empty" | "worktree" | "index" | { rev: string };
   label: string;
   short: string;
-  /** 有值时编辑器 tab 主文案用它（对齐 VS Code history diff 标题） */
+  /** 有值时编辑器 tab 主文案用它 */
   tabName?: string;
 };
 
@@ -31,7 +31,7 @@ function shortRev(rev: string) {
   return rev.slice(0, SHORT_HASH_LEN);
 }
 
-/** 对齐 VS Code scmHistoryViewPane：name (parent) ↔ name (commit) */
+/** history diff 标题：name (parent) ↔ name (commit) */
 export function scmCommitDiffTabName(input: {
   path: string;
   commit: string;

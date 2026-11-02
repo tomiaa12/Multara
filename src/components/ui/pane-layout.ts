@@ -1,4 +1,4 @@
-/** VS Code Pane header. Keep in sync with `.ui-pane-header`. */
+/** Pane header. Keep in sync with `.ui-pane-header`. */
 export const PANE_HEADER = 22;
 
 export interface PaneBox {
@@ -71,7 +71,7 @@ export function layoutPaneHeights(total: number, panes: PaneBox[]): number[] {
   return heights.map((height) => Math.max(0, height));
 }
 
-/** Horizontal sash cursor, matching VS Code's ns / n / s resize cursors. */
+/** Horizontal sash cursor (ns / n / s resize). */
 export function sashCursor(resizingBelow: boolean, atMin: boolean, atMax: boolean): "ns-resize" | "n-resize" | "s-resize" {
   if (atMin === atMax) return "ns-resize";
   if (resizingBelow) return atMin ? "n-resize" : "s-resize";

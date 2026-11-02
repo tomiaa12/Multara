@@ -1,4 +1,4 @@
-/** Copyright-shaped port of VS Code chat dictation capture → system SpeechRecognition. */
+/** Chat dictation capture → system SpeechRecognition. */
 import { createSegmentAccumulator } from "./segment-accumulator";
 
 export type SystemSpeechTranscript = {

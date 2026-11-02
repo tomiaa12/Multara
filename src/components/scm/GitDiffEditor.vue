@@ -105,7 +105,7 @@ async function mount() {
     renderMarginRevertIcon: false,
     renderGutterMenu: false,
     renderIndicators: true,
-    // MultiDiff 外层滚动：隐藏编辑器滚动条并放行滚轮（对齐 VS Code multiDiff）
+    // MultiDiff 外层滚动：隐藏编辑器滚动条并放行滚轮
     renderOverviewRuler: !props.autoHeight,
     ignoreTrimWhitespace: true,
     hideUnchangedRegions: {
@@ -144,7 +144,7 @@ async function mount() {
     monaco.editor.setModelLanguage(modifiedModel, language);
   }
   if (props.autoHeight) {
-    // 对齐 VS Code：先算 diff/折叠区，再 setModel，避免先全文再折叠
+    // 先算 diff/折叠区，再 setModel，避免先全文再折叠
     const viewModel = editor.createViewModel({
       original: originalModel,
       modified: modifiedModel,

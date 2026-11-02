@@ -79,7 +79,7 @@
   /* ── Z-index ──────────────────────────────────────────────────
    * 页面内浮层用低档；Teleport 到 body 的叠层用高档。
    * 弹窗内的 tip / select：Teleport + nextPopupZIndex()（起步 --z-popup）。
-   * 对齐 Element Plus：打开时递增，后开盖先开。 */
+   * 打开时递增，后开盖先开。 */
   --z-overlay-scroll: 2; /* 宿主内悬浮滚动条，须低于同面板的输入/提问 dock */
   --z-dropdown: 40;
   --z-floating: 60;
@@ -150,7 +150,7 @@
   --color-purple-subtle: rgb(179 157 255 / 14%);
   --color-purple-border: rgb(179 157 255 / 36%);
 
-  /* Git 文件状态（与 VS Code 语义一致） */
+  /* Git 文件状态语义色 */
   --color-git-modified: #e2c08d;
   --color-git-added: #81b88b;
   --color-git-untracked: #73c991;

@@ -1,4 +1,4 @@
-/** 资源管理器文件操作的撤销/重做栈（对应 VS Code UndoRedoService 的 explorer 来源）。 */
+/** 资源管理器文件操作的撤销/重做栈。 */
 export interface UndoableFileOperation {
   label: string;
   /** 撤销会删掉文件（例如撤销新建/复制），按 confirmUndo=default 需要确认。 */

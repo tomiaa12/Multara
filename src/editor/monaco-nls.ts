@@ -4,7 +4,7 @@ import { locale, t, type Locale } from "../i18n";
 /**
  * Monaco 打包后 localize(index, fallback) 读 globalThis._VSCODE_NLS_MESSAGES[index]。
  * 索引随 monaco 小版本可能变动；当前对齐 monaco-editor@0.56。
- * 文案取自 VS Code 各语言包对同名 key 的翻译。
+ * 文案取自各语言包对同名 key 的翻译。
  */
 const MONACO_NLS: Record<number, string> = {
   // diff hide unchanged

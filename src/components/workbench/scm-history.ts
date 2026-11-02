@@ -37,7 +37,7 @@ export type HistoryRowLayout = {
 export const SCM_LANE_WIDTH = 11;
 /** 轮转泳道色数量（scmGraph.foreground1–5） */
 export const SCM_LANE_COLORS = 5;
-/** 对齐 VS Code：当前分支 / 远端跟踪 / merge-base */
+/** 当前分支 / 远端跟踪 / merge-base 的固定色位 */
 export const SCM_COLOR_REF = 5;
 export const SCM_COLOR_REMOTE = 6;
 export const SCM_COLOR_BASE = 7;
@@ -277,7 +277,7 @@ export function layoutHistoryGraph(
   };
   const byHash = new Map(commits.map((item) => [item.hash, item]));
   const map: HistoryColorMap = new Map(colorMap);
-  // 未映射的 ref 占位为 undefined，徽章回落到该 commit 泳道色（对齐 VS Code）
+  // 未映射的 ref 占位为 undefined，徽章回落到该 commit 泳道色
   for (const commit of commits) {
     for (const ref of historyRefs(commit)) {
       if (!map.has(ref.name)) map.set(ref.name, undefined);
@@ -335,7 +335,7 @@ export function historyCircleIndex(row: HistoryGraphRow) {
   return inputIndex === -1 ? row.input.length : inputIndex;
 }
 
-/** 单行图宽：跟 VS Code 一样按本行泳道数算，文字从圆点右侧起排，不跟全表最大宽度对齐。 */
+/** 单行图宽：按本行泳道数算，文字从圆点右侧起排，不跟全表最大宽度对齐。 */
 export function historyRowGraphWidth(row: HistoryGraphRow) {
   return SCM_LANE_WIDTH * (Math.max(row.input.length, row.output.length, 1) + 1);
 }
@@ -417,7 +417,7 @@ export function historyGraph(row: HistoryGraphRow, expanded = false): { paths: H
     });
   }
 
-  // 圆点半径对齐 VS Code：HEAD 外圈 7 / 内圈 2；多父提交外 6 / 内 3；普通 5。
+  // 圆点半径：HEAD 外圈 7 / 内圈 2；多父提交外 6 / 内 3；普通 5。
   const dots: HistoryGraphDot[] = row.kind === "head"
     ? [
         { index: circleIndex, r: CIRCLE_RADIUS + 3, color: circleColor, hole: false },

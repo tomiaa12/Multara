@@ -1,5 +1,5 @@
 /**
- * 对齐 VS Code MultiDiff：少量 DiffEditor 模板轮换绑定可见文件，
+ * 少量 DiffEditor 模板轮换绑定可见文件，
  * 滚出视口即 release（清 model、归还池），避免 N 文件 = N 个 DiffEditor。
  */
 import { registerDiffBreadcrumbs } from "../../editor/diff-breadcrumbs";
@@ -128,7 +128,7 @@ class Template {
   private sizeDisposable: { dispose: () => void } | null = null;
   private loadToken = 0;
   private boundPath = "";
-  /** diff 未就绪前不回写高度（对齐 VS Code isDiffUpToDate 门闩） */
+  /** diff 未就绪前不回写高度 */
   private heightReady = false;
 
   constructor() {
@@ -225,7 +225,7 @@ class Template {
     this.originalModel = monaco.editor.createModel(file.original, language, originalUri);
     this.modifiedModel = monaco.editor.createModel(file.modified, language, modifiedUri);
 
-    // 对齐 VS Code：先 createViewModel + waitForDiff，折叠区算完再 setModel，避免「全文 → N 隐藏行」
+    // 先 createViewModel + waitForDiff，折叠区算完再 setModel，避免「全文 → N 隐藏行」
     const viewModel = this.editor.createViewModel({
       original: this.originalModel,
       modified: this.modifiedModel,

@@ -22,7 +22,7 @@ export interface GitBaselineFile {
   content: string;
 }
 
-/** HEAD 里没有的文件（未跟踪）不画装饰，和 VS Code 的 quick diff 一样。 */
+/** HEAD 里没有的文件（未跟踪）不画装饰。 */
 export function gitBaselineText(file: GitBaselineFile | null): string | null {
   if (!file || !file.inRepo || !file.tracked || file.binary) return null;
   return file.content;

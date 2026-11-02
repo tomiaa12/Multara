@@ -1142,7 +1142,7 @@
   width: 100%;
   margin: 0;
 }
-/* 智能体提问卡片：贴在输入框上方，和 VS Code / Cursor 的 question carousel 同位置 */
+/* 智能体提问卡片：贴在输入框上方 */
 .chat-question-card {
   box-sizing: border-box;
   display: flex;
@@ -5110,7 +5110,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .scm-graph-dot.is-hole {
   fill: var(--color-bg);
 }
-/* 悬停：外圈描边透明，内圈/空心跟随 hover 底色（对齐 VS Code scm history） */
+/* 悬停：外圈描边透明，内圈/空心跟随 hover 底色 */
 .scm-history-row:hover .scm-graph-dot:first-of-type {
   stroke: transparent;
 }
@@ -5141,7 +5141,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .scm-history-row.is-selected:hover .scm-graph-dot.is-hole {
   fill: var(--color-selection);
 }
-/* VS Code scmGraph.foreground1–5 + historyItemRef/Remote/Base */
+/* scmGraph.foreground1–5 + historyItemRef/Remote/Base */
 .scm-lane-0 { color: #FFB000; }
 .scm-lane-1 { color: #DC267F; }
 .scm-lane-2 { color: #994F00; }
@@ -5182,7 +5182,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   align-items: center;
   margin-left: var(--spacing-1);
 }
-/* 对齐 VS Code SCM History：悬停时在 commit 右侧显示「打开更改」 */
+/* 悬停时在 commit 右侧显示「打开更改」 */
 .scm-history-actions {
   display: none;
   flex: 0 0 auto;
@@ -5320,12 +5320,12 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
-/* 对齐 VS Code MultiDiff：左侧文件列表 + 右侧当前文件 diff */
+/* MultiDiff：左侧文件列表 + 右侧当前文件 diff */
 .editor-main > .commit-multi-diff {
   position: absolute;
   inset: 0;
 }
-/* 对齐 VS Code MultiDiff：虚拟列表 + DiffEditor 模板池 */
+/* MultiDiff：虚拟列表 + DiffEditor 模板池 */
 .commit-multi-diff {
   position: relative;
   width: 100%;
@@ -6136,7 +6136,7 @@ body.is-dragging-workspace-file * {
 .editor-tab {
   position: relative;
   display: flex;
-  /* 对齐 VS Code tabSizing: fit — 按内容自适应，超出可横向滚动 */
+  /* tabSizing fit：按内容自适应，超出可横向滚动 */
   flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-1-5);
@@ -12283,7 +12283,7 @@ label.settings-row:hover {
 }
 .search-match-line { flex: 0 0 28px; color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
 .search-match mark {
-  /* VS Code editor.findMatchHighlightBackground */
+  /* editor.findMatchHighlightBackground */
   background: #27678280;
   color: inherit;
 }

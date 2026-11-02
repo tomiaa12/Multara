@@ -1,7 +1,7 @@
 import type { ExplorerExcludeValue } from "./explorer-settings";
 
 /**
- * VS Code glob 语法（`files.exclude` 用）：`*`、`?`、`**`、`{a,b}`、`[abc]`、`[!abc]`。
+ * glob 语法（`files.exclude` 用）：`*`、`?`、`**`、`{a,b}`、`[abc]`、`[!abc]`。
  * 路径一律用 `/` 分隔，并相对工作区根目录匹配。
  */
 function splitAlternatives(body: string): string[] {

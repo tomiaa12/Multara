@@ -1,5 +1,5 @@
 //! 资源管理器的文件操作：带撤销备份的回收站删除、复制与移动、二进制导入、
-//! 目录监听、Git 忽略状态、系统剪贴板文件列表。行为对照 VS Code 的 explorer。
+//! 目录监听、Git 忽略状态、系统剪贴板文件列表。
 
 use std::{
     collections::{HashMap, HashSet},
@@ -28,20 +28,20 @@ use crate::{
     files::{self, remove_path},
 };
 
-/// 与 VS Code 的 `MAX_UNDO_FILE_SIZE` 一样：太大的条目不留备份，删除后不能撤销。
+/// 太大的条目不留备份，删除后不能撤销。
 const MAX_BACKUP_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_BACKUP_FILES: usize = 5_000;
 const BACKUP_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_COPY_DEPTH: usize = 64;
 #[cfg(unix)]
 const DEFAULT_FILE_MODE: u32 = 0o644;
-/// 对齐 VS Code watcher：先聚合 75ms，再分批处理并在高负载时让出 200ms。
+/// 先聚合 75ms，再分批处理并在高负载时让出 200ms。
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(75);
 const WATCH_THROTTLE_DELAY: Duration = Duration::from_millis(200);
 const MAX_WATCH_EVENTS_PER_BATCH: usize = 500;
 const MAX_BUFFERED_WATCH_EVENTS: usize = 30_000;
 const MAX_CHANGED_PATHS: usize = 500;
-/// 回收站失败时的错误前缀。前端据此询问是否改为永久删除，与 VS Code 相同。
+/// 回收站失败时的错误前缀。前端据此询问是否改为永久删除。
 pub const TRASH_FAILED: &str = "TRASH_FAILED:";
 /// 目标已存在时的错误前缀。前端据此询问是否覆盖。
 pub const TARGET_EXISTS: &str = "EXISTS:";
