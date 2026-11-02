@@ -642,6 +642,7 @@ function onTabMenuSelect(id: string) {
 
 const composerInput = ref<{
   focus: () => void;
+  focusEnd: () => void;
   clear: () => void;
   insertChip: (item: EditorSelectionContext) => void;
   insertText: (value: string) => void;
@@ -1139,6 +1140,8 @@ async function applyFailedDraft(failure: { content: string; attachments: Message
   ) && failure.attachments.length === 0;
   await nextTick();
   composerInput.value?.restore(nodes);
+  // 停止/撤回后把光标放到文末，方便接着改再发
+  composerInput.value?.focusEnd();
 }
 
 async function stopAgent() {
