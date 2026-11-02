@@ -7,6 +7,7 @@ import {
   onBeforeUnmount,
   onDeactivated,
   onMounted,
+  provide,
   ref,
   shallowRef,
   watch,
@@ -15,6 +16,8 @@ import {
 import { useRoute } from "vue-router";
 import { t } from "../i18n";
 import { titlebarDetail } from "../stores/titlebar";
+import { recordComposerRecent } from "../stores/composer-recent-paths";
+import { composerOpenEditorsKey } from "./chat/composer-attach-sources";
 import {
   ArrowUpRight,
   ChevronDown,
@@ -242,6 +245,16 @@ type EditorTab = {
   };
 };
 const editorTabs = ref<EditorTab[]>([]);
+provide(
+  composerOpenEditorsKey,
+  computed(() =>
+    editorTabs.value.map((tab) => ({
+      workspaceId: tab.workspaceId,
+      path: tab.path,
+      isDirectory: false,
+    })),
+  ),
+);
 const markdownModes = ref<Record<string, "preview" | "source">>({});
 const isMacOS = /Mac|iPhone|iPad/.test(navigator.platform);
 const explorerKeys = explorerShortcutLabels(isMacOS);
@@ -3739,6 +3752,7 @@ async function openEditorFile(
         pendingReveal.value = null;
       }
     }
+    recordComposerRecent("workbench", { path, workspaceId, isDirectory: false }, projectId.value);
     return;
   }
   error.value = "";
@@ -3766,6 +3780,7 @@ async function openEditorFile(
       editorTabs.value = [...editorTabs.value, tab];
     }
     activateEditorTab(tab);
+    recordComposerRecent("workbench", { path, workspaceId, isDirectory: false }, projectId.value);
     pendingReveal.value = reveal;
     await nextTick();
     if (pendingReveal.value) {

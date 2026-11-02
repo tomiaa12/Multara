@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowUp } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import MicButton from "../dictation/MicButton.vue";
 import { dictationService } from "../../dictation/dictation-service";
 import { useDictationStore } from "../../stores/dictation";
+import {
+  listComposerRecent,
+  type ComposerRecentPlace,
+} from "../../stores/composer-recent-paths";
+import * as backend from "../../services/backend";
 import ChatComposerField from "./ChatComposerField.vue";
 import ComposerSuggestMenu, {
   type ComposerSuggestCategoryItem,
+  type ComposerSuggestGroup,
   type ComposerSuggestItem,
 } from "./ComposerSuggestMenu.vue";
 import ContextUsageButton from "./ContextUsageButton.vue";
@@ -23,10 +29,21 @@ import { replaceSlashToken } from "./skill-slash";
 import { groupChatTargetOptions } from "./chat-target-options";
 import {
   activeComposerTrigger,
+  removeComposerTrigger,
   replaceTriggerWithReference,
   type ComposerEntityItem,
+  type ComposerSuggestCategoryId,
   type ComposerTrigger,
 } from "./composer-entities";
+import type { ComposerEntityKind } from "./composer-content";
+import {
+  SYSTEM_PICK_ID,
+  composerOpenEditorsKey,
+  fileSuggestId,
+  parseFileSuggestId,
+  pathFileName,
+  type ComposerAttachOpenFile,
+} from "./composer-attach-sources";
 import { t } from "../../i18n";
 import {
   isWorkspaceFileDrag,
@@ -36,6 +53,8 @@ import {
   type OsDroppedEntry,
   type WorkspaceFileDragPayload,
 } from "./workspace-file-drag";
+
+const ROOT_ENTRY_CAP = 200;
 
 const props = withDefaults(defineProps<{
   placeholder: string;
@@ -57,6 +76,10 @@ const props = withDefaults(defineProps<{
   sessionCommands?: boolean;
   /** 是否在级联一级菜单展示系统文件/文件夹选择入口。 */
   allowFilePicker?: boolean;
+  /** 最近打开隔离场景；工作台再按 projectId 分桶。 */
+  recentPlace?: ComposerRecentPlace;
+  /** 关联项目；用于工作区根列表与 workbench 最近隔离。 */
+  projectId?: string | null;
   /** 传入会话 id 时显示模式选择与计划提示行（只读 / 预览场景不传）。 */
   modeSessionId?: string;
   /** 主输入框开启系统听写；历史气泡等不要传。 */
@@ -74,6 +97,8 @@ const props = withDefaults(defineProps<{
   embedded: false,
   sessionCommands: false,
   allowFilePicker: false,
+  recentPlace: "chat",
+  projectId: null,
   dictation: false,
 });
 
@@ -85,6 +110,7 @@ const emit = defineEmits<{
   "drop-workspace-file": [file: WorkspaceFileDragPayload];
   "drop-os-files": [entries: OsDroppedEntry[]];
   "pick-files-or-folders": [];
+  "attach-file-context": [file: ComposerAttachOpenFile];
 }>();
 
 const store = useAppStore();
@@ -96,6 +122,8 @@ const dropOver = ref(false);
 const suggestTrigger = ref<ComposerTrigger | null>(null);
 const suggestMenu = ref<{ handleKeydown: (event: KeyboardEvent) => boolean } | null>(null);
 const suggestAnchor = ref<{ left: number; top: number; bottom: number; width?: number } | null>(null);
+const workspaceRootItems = ref<ComposerSuggestItem[]>([]);
+const injectedOpenEditors = inject(composerOpenEditorsKey, null);
 const stopDragWatch = onWorkspaceFileDragChange((state) => {
   dropOver.value = state.over === "composer";
 });
@@ -108,6 +136,7 @@ function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
   if (item.kind === "skill") leading = "sparkles";
   if (item.kind === "task") leading = "hash";
   if (item.kind === "requirement") leading = "requirement";
+  if (item.kind === "session") leading = "session";
   return {
     id: item.id,
     kind: item.kind,
@@ -118,8 +147,109 @@ function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
   };
 }
 
+function fileSuggestItem(file: {
+  workspaceId: string;
+  path: string;
+  isDirectory?: boolean;
+  description?: string;
+}): ComposerSuggestItem {
+  const isDirectory = Boolean(file.isDirectory);
+  return {
+    id: fileSuggestId(file.workspaceId, file.path),
+    kind: "file",
+    label: pathFileName(file.path),
+    description: file.description ?? file.path,
+    leading: isDirectory ? "folder" : "file",
+    isDirectory,
+  };
+}
+
+function buildFileGroups(): ComposerSuggestGroup[] {
+  const groups: ComposerSuggestGroup[] = [
+    {
+      id: "system",
+      label: "",
+      items: [{
+        id: SYSTEM_PICK_ID,
+        kind: "file",
+        label: t("chat.context.pickFromSystem"),
+        leading: "picker",
+      }],
+    },
+  ];
+  const recent = listComposerRecent(props.recentPlace, props.projectId).map((item) =>
+    fileSuggestItem({
+      workspaceId: item.workspaceId,
+      path: item.path,
+      isDirectory: item.isDirectory,
+      description: item.path,
+    }),
+  );
+  if (recent.length) {
+    groups.push({ id: "recent", label: t("chat.context.recentFiles"), items: recent });
+  }
+  const openEditors = (injectedOpenEditors?.value ?? []).map((item) =>
+    fileSuggestItem({
+      workspaceId: item.workspaceId,
+      path: item.path,
+      isDirectory: item.isDirectory,
+    }),
+  );
+  if (openEditors.length) {
+    groups.push({ id: "open", label: t("chat.context.openEditors"), items: openEditors });
+  }
+  if (workspaceRootItems.value.length) {
+    groups.push({
+      id: "workspace",
+      label: t("chat.context.workspaceFiles"),
+      items: workspaceRootItems.value,
+    });
+  }
+  return groups;
+}
+
+async function refreshWorkspaceRoots() {
+  if (!props.allowFilePicker || !props.projectId) {
+    workspaceRootItems.value = [];
+    return;
+  }
+  const workspaces = (store.data?.workspaces ?? []).filter((item) => item.projectId === props.projectId);
+  if (!workspaces.length) {
+    workspaceRootItems.value = [];
+    return;
+  }
+  const multi = workspaces.length > 1;
+  const items: ComposerSuggestItem[] = [];
+  for (const workspace of workspaces) {
+    if (items.length >= ROOT_ENTRY_CAP) break;
+    try {
+      const entries = await backend.listWorkspaceDirectory(workspace.id);
+      for (const entry of entries) {
+        if (items.length >= ROOT_ENTRY_CAP) break;
+        items.push(fileSuggestItem({
+          workspaceId: workspace.id,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+          description: multi ? `${workspace.name} · ${entry.path}` : entry.path,
+        }));
+      }
+    } catch {
+      // 单个工作区列失败时跳过，其它继续
+    }
+  }
+  workspaceRootItems.value = items;
+}
+
+watch(
+  () => [suggestTrigger.value, props.projectId, props.allowFilePicker] as const,
+  ([trigger]) => {
+    if (trigger && props.allowFilePicker) void refreshWorkspaceRoots();
+  },
+);
+
 const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
   const data = store.data;
+  const currentSessionId = props.modeSessionId;
   const commands = props.sessionCommands
     ? filterCommands("").map((item) => ({
       id: `command:${item.id}`,
@@ -169,6 +299,15 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       description: item.note,
       group: "requirements",
     })),
+    ...(data?.sessions ?? [])
+      .filter((item) => item.id !== currentSessionId)
+      .map((item) => ({
+        id: item.id,
+        kind: "session" as const,
+        label: item.title || t("chat.untitledSession"),
+        description: item.targetType === "squad" ? t("nav.squads") : t("nav.agents"),
+        group: "sessions",
+      })),
     ...commands,
   ];
   const group = (id: string, label: string) => ({
@@ -176,20 +315,40 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     label,
     items: entities.filter((item) => item.group === id).map(suggestItem),
   });
-  const categories: ComposerSuggestCategoryItem[] = [
-    { id: "agent", label: "智能体", groups: [group("agents", "智能体"), group("squads", "小队")] },
-    { id: "skill", label: "Skills", groups: [group("skills", "Skills"), group("commands", "会话命令")] },
-    { id: "task", label: "任务", groups: [group("tasks", "任务")] },
-    { id: "requirement", label: "需求", groups: [group("requirements", "需求")] },
-  ];
+  // 一级顺序对齐 VS Code Attach Context：文件 / 会话 / Issue / PR，再是原有 @ 分类
+  const categories: ComposerSuggestCategoryItem[] = [];
   if (props.allowFilePicker) {
     categories.push({
       id: "file",
-      label: t("tasks.fileOrFolder"),
-      groups: [],
-      action: "pick-files-or-folders",
+      label: t("chat.context.files"),
+      groups: buildFileGroups(),
+      emptyText: t("chat.context.filesEmpty"),
     });
   }
+  categories.push(
+    {
+      id: "session",
+      label: t("chat.context.sessions"),
+      groups: [group("sessions", t("chat.context.sessions"))],
+      emptyText: t("chat.context.sessionsEmpty"),
+    },
+    {
+      id: "issue",
+      label: t("chat.context.issues"),
+      groups: [],
+      emptyText: t("chat.context.issuesEmpty"),
+    },
+    {
+      id: "pullRequest",
+      label: t("chat.context.pullRequests"),
+      groups: [],
+      emptyText: t("chat.context.pullRequestsEmpty"),
+    },
+    { id: "agent", label: t("chat.context.agents"), groups: [group("agents", t("nav.agents")), group("squads", t("nav.squads"))] },
+    { id: "skill", label: t("chat.context.skills"), groups: [group("skills", "Skills"), group("commands", t("chat.context.commands"))] },
+    { id: "task", label: t("chat.context.tasks"), groups: [group("tasks", t("chat.context.tasks"))] },
+    { id: "requirement", label: t("chat.context.requirements"), groups: [group("requirements", t("chat.context.requirements"))] },
+  );
   return categories;
 });
 
@@ -275,19 +434,56 @@ function onComposerChange(nodes: ComposerNode[]) {
   void refreshSuggestAnchor();
 }
 
+const ENTITY_KINDS = new Set<ComposerEntityKind>([
+  "agent", "squad", "skill", "task", "requirement", "session",
+]);
+
+function stripSuggestTrigger() {
+  const trigger = suggestTrigger.value;
+  if (!trigger) return;
+  // + 菜单假触发没有落在文本里；只有真正打了 @/#/ 才需要剥掉
+  const nodes = field.value?.snapshot() ?? [];
+  const next = removeComposerTrigger(nodes, trigger);
+  if (next === nodes) return;
+  field.value?.restore(next);
+  emit("change", next);
+}
+
 async function onSuggestSelect(item: ComposerSuggestItem) {
   const trigger = suggestTrigger.value;
   if (!trigger) return;
+  if (item.id === SYSTEM_PICK_ID) {
+    stripSuggestTrigger();
+    closeSuggest();
+    emit("pick-files-or-folders");
+    return;
+  }
+  if (item.kind === "file") {
+    const parsed = parseFileSuggestId(item.id);
+    if (!parsed) return;
+    stripSuggestTrigger();
+    closeSuggest();
+    emit("attach-file-context", {
+      workspaceId: parsed.workspaceId,
+      path: parsed.path,
+      isDirectory: item.isDirectory,
+    });
+    await nextTick();
+    field.value?.focusEnd();
+    return;
+  }
+  if (!ENTITY_KINDS.has(item.kind as ComposerEntityKind)) return;
+  const entity: ComposerEntityItem = {
+    id: item.id,
+    kind: item.kind as ComposerEntityKind,
+    label: item.label,
+    description: item.description,
+    avatar: item.avatar,
+    group: "",
+  };
   const next = item.id.startsWith("command:")
     ? replaceSlashToken(field.value?.snapshot() ?? [], item.label.slice(1))
-    : replaceTriggerWithReference(field.value?.snapshot() ?? [], trigger, {
-      id: item.id,
-      kind: item.kind,
-      label: item.label,
-      description: item.description,
-      avatar: item.avatar,
-      group: "",
-    });
+    : replaceTriggerWithReference(field.value?.snapshot() ?? [], trigger, entity);
   field.value?.restore(next);
   emit("change", next);
   closeSuggest();
@@ -303,6 +499,20 @@ function closeSuggest() {
 function onSuggestCategoryAction(action: "pick-files-or-folders") {
   closeSuggest();
   if (action === "pick-files-or-folders") emit("pick-files-or-folders");
+}
+
+/** 发送旁 + 打开与 @ 相同的引用面板；再点一次关闭（对齐 VS Code） */
+function openAttachMenu(defaultCategory: ComposerSuggestCategoryId = "file") {
+  if (props.disabled) return;
+  if (suggestTrigger.value) {
+    closeSuggest();
+    return;
+  }
+  const category = suggestCategories.value.some((item) => item.id === defaultCategory)
+    ? defaultCategory
+    : (suggestCategories.value[0]?.id ?? "agent");
+  suggestTrigger.value = { symbol: "@", category, query: "" };
+  void refreshSuggestAnchor();
 }
 
 function onComposerKeydown(event: KeyboardEvent) {
@@ -353,6 +563,7 @@ defineExpose({
   serialize: () =>
     field.value?.serialize() ?? { text: "", nodes: [] as ComposerNode[], empty: true },
   isEmpty: () => field.value?.isEmpty() ?? true,
+  openAttachMenu,
 });
 </script>
 

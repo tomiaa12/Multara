@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { t } from "../i18n";
-import { ArrowDown, ArrowUp, ChevronDown, FileText, LoaderCircle, MessageSquare, MessageSquarePlus, Paperclip, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, ChevronDown, FileText, LoaderCircle, MessageSquare, MessageSquarePlus, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
 import AgentAvatar from "./AgentAvatar.vue";
 import ChatComposer from "./chat/ChatComposer.vue";
 import { chatMessagesKey } from "./chat/context-usage";
@@ -23,6 +23,7 @@ import ChatMessageItem from "./ChatMessageItem.vue";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
+import { recordComposerRecent } from "../stores/composer-recent-paths";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput, RunMode } from "../domain/types";
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
@@ -667,6 +668,7 @@ const composerInput = ref<{
   insertText: (value: string) => void;
   restore: (nodes: ComposerNode[]) => void;
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
+  openAttachMenu: (defaultCategory?: string) => void;
 } | null>(null);
 
 function canEditComposer() {
@@ -817,13 +819,38 @@ function insertLocalWorkspaceChip(file: { workspaceId: string; path: string; isD
   composerInput.value?.focus();
 }
 
+function rememberComposerFile(file: { workspaceId?: string; path: string; isDirectory?: boolean }) {
+  if (!file.path) return;
+  recordComposerRecent(
+    resolvedPlaceholderPlace.value,
+    {
+      path: file.path,
+      workspaceId: file.workspaceId ?? "",
+      isDirectory: file.isDirectory,
+    },
+    props.projectId,
+  );
+}
+
 async function attachWorkspaceFile(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
   if (!canEditComposer()) return;
   if (props.preview) {
     insertLocalWorkspaceChip(file);
+    rememberComposerFile(file);
     return;
   }
   await store.addWorkspaceFileContext(file.workspaceId, file.path, { isDirectory: file.isDirectory });
+  rememberComposerFile(file);
+}
+
+async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
+  if (!canEditComposer()) return;
+  if (file.workspaceId) {
+    await attachWorkspaceFile(file);
+    return;
+  }
+  const name = file.path.split(/[\\/]/).pop() || file.path;
+  await attachOsFiles([{ path: file.path, name, isDirectory: Boolean(file.isDirectory) }]);
 }
 
 function formatDroppedListing(entries: { name: string; isDirectory: boolean }[]) {
@@ -862,6 +889,7 @@ async function attachExternalEntry(entry: OsDroppedEntry) {
   const path = entry.path || entry.name || t("chat.externalFile");
   if (props.preview) {
     insertLocalWorkspaceChip({ workspaceId: "", path, isDirectory: entry.isDirectory });
+    rememberComposerFile({ path, isDirectory: entry.isDirectory });
     return;
   }
   try {
@@ -874,6 +902,7 @@ async function attachExternalEntry(entry: OsDroppedEntry) {
       text: loaded.text,
       isDirectory: loaded.isDirectory,
     });
+    rememberComposerFile({ path: loaded.path, isDirectory: loaded.isDirectory });
   } catch {
     const name = path.split(/[\\/]/).pop() || path;
     store.reportComposerNotice(t("chat.attachEmpty", { name }));
@@ -885,6 +914,7 @@ async function attachExternalEntry(entry: OsDroppedEntry) {
       text: "",
       isDirectory: Boolean(entry.isDirectory),
     });
+    rememberComposerFile({ path, isDirectory: entry.isDirectory });
   }
 }
 
@@ -981,15 +1011,13 @@ async function chooseAttachments() {
     addPreviewAttachment("notes.md", "text/markdown");
     return;
   }
-  const selected = await backend.selectMessageAttachments();
-  const current = pendingAttachments.value[session.value.id] ?? [];
-  const incoming = selected.filter(
-    (item) => !current.some((candidate) => candidate.path === item.path),
-  );
-  const room = Math.max(0, MAX_ATTACHMENTS - current.length - pastedImages.value.length);
-  const accepted = incoming.slice(0, room);
-  noteAttachmentOverflow(incoming.length - accepted.length);
-  pendingAttachments.value[session.value.id] = [...current, ...accepted];
+  // 「文件/文件夹 → 从系统中选择」走上下文芯片，与拖入一致
+  const picked = await backend.selectFilesOrFolders();
+  if (!picked.length) return;
+  for (const item of picked) {
+    const name = item.path.split(/[\\/]/).pop() || item.path;
+    await attachOsFiles([{ path: item.path, name, isDirectory: item.isDirectory }]);
+  }
 }
 
 function removeAttachment(path: string) {
@@ -1705,6 +1733,9 @@ defineExpose({
         :key="session?.id ?? 'none'"
         ref="composerInput"
         dictation
+        allow-file-picker
+        :recent-place="resolvedPlaceholderPlace"
+        :project-id="projectId"
         :placeholder="composerPlaceholder"
         :initial-nodes="composerDraft"
         :contexts="composerContexts"
@@ -1723,6 +1754,8 @@ defineExpose({
         @target-change="updateTarget"
         @drop-workspace-file="attachWorkspaceFile"
         @drop-os-files="attachOsFiles"
+        @pick-files-or-folders="chooseAttachments"
+        @attach-file-context="attachFileFromSuggest"
       >
         <ComposerPasteImages
           removable
@@ -1754,8 +1787,16 @@ defineExpose({
           </span>
         </p>
         <template #actions>
-            <UiButton type="button" class="icon-button" variant="ghost" :tip="t('chat.addAttachment')" @click="chooseAttachments">
-              <Paperclip :size="15" />
+            <UiButton
+              type="button"
+              class="icon-button"
+              variant="ghost"
+              data-composer-attach
+              :tip="t('chat.addContext')"
+              :disabled="composerLocked"
+              @click="composerInput?.openAttachMenu('file')"
+            >
+              <Plus :size="16" />
             </UiButton>
             <UiButton
               v-if="canStop"
