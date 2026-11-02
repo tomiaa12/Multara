@@ -200,11 +200,10 @@ async function ensureCommitFiles(hash: string) {
   }
 }
 
-/** 对齐 VS Code「打开更改」：一个 MultiDiff tab，标题为 `hash - subject` */
+/** 对齐 VS Code「打开更改」：一个 MultiDiff tab，标题为 `hash - subject`（不展开行内文件列表） */
 async function openChanges(row: HistoryGraphRow) {
   const hash = row.commit.hash;
   const files = await ensureCommitFiles(hash);
-  openHash.value = hash;
   if (!files.length) return;
   const parent = row.commit.parents[0] ?? null;
   const shortHash = hash.slice(0, 7);

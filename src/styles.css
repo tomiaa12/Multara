@@ -5315,61 +5315,116 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   position: absolute;
   inset: 0;
 }
+/* 对齐 VS Code MultiDiff：虚拟列表 + DiffEditor 模板池 */
 .commit-multi-diff {
-  display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
+  background: var(--color-surface-raised);
 }
-.commit-multi-diff-files {
+.commit-multi-diff-space {
+  position: relative;
+  width: 100%;
+}
+.commit-multi-diff-pool-garage {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.commit-multi-diff-entry {
+  position: absolute;
+  left: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-.commit-multi-diff-files .scm-file {
-  flex: 0 0 auto;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.commit-multi-diff-header {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--spacing-1-5);
+  align-items: center;
+  min-width: 0;
+  height: 28px;
   padding: 0 var(--spacing-2);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  text-align: left;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+  cursor: pointer;
+  user-select: none;
+  will-change: transform;
 }
-.commit-multi-diff-files .scm-file.is-selected {
-  background: var(--color-selection);
+.commit-multi-diff-entry.is-collapsed .commit-multi-diff-header {
+  border-bottom-color: transparent;
 }
-.commit-multi-diff-files .scm-file > .file-type-icon {
+.commit-multi-diff-twistie {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+}
+.commit-multi-diff-header > .file-type-icon {
   flex: 0 0 auto;
 }
-.commit-multi-diff-files .scm-file-name {
+.commit-multi-diff-name {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 45%;
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.commit-multi-diff-files .scm-file-path {
+.commit-multi-diff-path {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.commit-multi-diff-files .scm-file > b {
-  position: static;
-  top: auto;
-  right: auto;
-  flex: 0 0 12px;
+.commit-multi-diff-status {
+  flex: 0 0 auto;
   margin-left: auto;
-  transform: none;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  opacity: 0.85;
+}
+.commit-multi-diff-status.git-modified { color: var(--color-git-modified); }
+.commit-multi-diff-status.git-added { color: var(--color-git-added); }
+.commit-multi-diff-status.git-untracked { color: var(--color-git-untracked); }
+.commit-multi-diff-status.git-deleted { color: var(--color-git-deleted); }
+.commit-multi-diff-status.git-renamed { color: var(--color-git-untracked); }
+.commit-multi-diff-status.git-conflict { color: var(--color-error); }
+.commit-multi-diff-body {
+  position: relative;
+  z-index: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
 }
 .commit-multi-diff .git-diff-editor,
 .commit-multi-diff .monaco-host {
+  width: 100%;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+}
+/* createViewModel/waitForDiff 完成前隐藏（含内联 visibility 双保险） */
+.commit-multi-diff .git-diff-editor.is-diff-pending,
+.git-diff-editor.is-diff-pending {
+  visibility: hidden !important;
 }
 /* Diff 颜色：挂在 host 上继承，并用 !important 压过 monaco 内联变量为空的情况 */
 .git-diff-editor,
