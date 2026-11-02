@@ -12,6 +12,7 @@ import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import InboxFileReview from "./InboxFileReview.vue";
 import TaskActivity from "./TaskActivity.vue";
+import TaskIssueSide from "./TaskIssueSide.vue";
 import { relativeTime } from "./task-board";
 
 const store = useAppStore();
@@ -198,7 +199,7 @@ onUnmounted(() => {
 <template>
   <div
     class="inbox-page"
-    :class="{ 'has-file-review': reviewFile }"
+    :class="{ 'has-file-review': reviewFile, 'has-task-side': selected?.taskId && !reviewFile }"
     :style="reviewFile ? { '--inbox-review-width': `${reviewWidth}px` } : undefined"
   >
     <aside class="inbox-rail">
@@ -300,6 +301,11 @@ onUnmounted(() => {
         <p>{{ t("inbox.noneSelectedHint") }}</p>
       </div>
     </section>
+    <TaskIssueSide
+      v-if="selected?.taskId && !reviewFile"
+      :key="`side-${selected.taskId}`"
+      :task-id="selected.taskId"
+    />
     <div
       v-if="reviewFile"
       class="panel-resize-handle"
