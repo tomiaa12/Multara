@@ -1,6 +1,34 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
+
+/** macOS / Chromium：右键会先选中光标下的词；阻止默认即可，不影响 contextmenu。 */
+document.addEventListener(
+  "mousedown",
+  (event) => {
+    if (event.button === 2) event.preventDefault();
+  },
+  true,
+);
+
+/**
+ * 禁用系统默认右键菜单（含 macOS「查询 / 翻译」）。
+ * 自定义 ContextMenu 仍走各处的 @contextmenu；输入框保留系统菜单以便复制粘贴。
+ */
+document.addEventListener(
+  "contextmenu",
+  (event) => {
+    const target = event.target;
+    if (
+      target instanceof Element
+      && target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']")
+    ) {
+      return;
+    }
+    event.preventDefault();
+  },
+  true,
+);
 import Codicon from "./components/ui/Codicon.vue";
 import UiButton from "./components/ui/UiButton.vue";
 import UiInput from "./components/ui/UiInput.vue";
