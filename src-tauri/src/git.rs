@@ -630,15 +630,78 @@ fn split_upstream<'a>(
         .max_by_key(|(remote, _)| remote.len())
 }
 
+pub fn is_protected_branch(branch: &str) -> bool {
+    PROTECTED_BRANCHES.contains(&branch)
+}
+
 /// main / master 和远程默认分支（`<remote>/HEAD` 指向的分支）不随重命名删除。
 fn is_protected_remote_branch(git_command: &str, root: &str, remote: &str, branch: &str) -> bool {
-    PROTECTED_BRANCHES.contains(&branch)
+    is_protected_branch(branch)
         || output(
             git_command,
             root,
             &["rev-parse", "--abbrev-ref", &format!("{remote}/HEAD")],
         )
         .is_ok_and(|head| head.trim() == format!("{remote}/{branch}"))
+}
+
+fn branch_upstream(git_command: &str, root: &str, branch: &str) -> Option<String> {
+    output(
+        git_command,
+        root,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            &format!("{branch}@{{upstream}}"),
+        ],
+    )
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
+
+/// 强制删除本地分支；受保护分支或当前检出分支会拒绝。
+pub fn delete_local_branch(root: &str, git_command: &str, branch: &str) -> Result<(), String> {
+    validate_branch(git_command, root, branch)?;
+    if is_protected_branch(branch) {
+        return Err(tr!("不能删除受保护分支 {branch}", branch = branch));
+    }
+    let head = output(git_command, root, &["symbolic-ref", "--short", "HEAD"])
+        .ok()
+        .map(|value| value.trim().to_string());
+    if head.as_deref() == Some(branch) {
+        return Err(tr!("不能删除当前检出的分支 {branch}", branch = branch));
+    }
+    run_strings(git_command, root, &["branch", "-D", branch])
+}
+
+/// 删除远程分支：优先用本地分支的上游，否则尝试默认远程上的同名分支。
+pub fn delete_remote_branch(root: &str, git_command: &str, branch: &str) -> Result<(), String> {
+    validate_branch(git_command, root, branch)?;
+    if is_protected_branch(branch) {
+        return Err(tr!("不能删除受保护分支 {branch}", branch = branch));
+    }
+    let upstream = branch_upstream(git_command, root, branch).or_else(|| {
+        let remote = remotes(git_command, root).ok()?.into_iter().next()?;
+        Some(format!("{remote}/{branch}"))
+    });
+    let Some(upstream) = upstream else {
+        return Err(tr!("没有可删除的远程分支"));
+    };
+    let Some((remote, remote_branch)) = split_upstream(git_command, root, &upstream) else {
+        return Err(tr!("无法解析远程分支 {upstream}", upstream = upstream));
+    };
+    if is_protected_remote_branch(git_command, root, &remote, remote_branch) {
+        return Err(tr!("不能删除受保护远程分支 {upstream}", upstream = upstream));
+    }
+    run_with_timeout(
+        git_command,
+        root,
+        &["push", &remote, "--delete", remote_branch],
+        Duration::from_secs(180),
+        true,
+    )
 }
 
 fn push_renamed_remote(
