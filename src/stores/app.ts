@@ -704,9 +704,12 @@ export const useAppStore = defineStore("app", () => {
     if (project) project.archivedAt = archivedAt;
   }
 
-  async function deleteProject(projectId: string) {
+  async function deleteProject(
+    projectId: string,
+    workspaceOptions: backend.DeleteProjectWorkspaceOptions[] = [],
+  ) {
     if (!data.value) return;
-    await backend.deleteProject(projectId);
+    await backend.deleteProject(projectId, workspaceOptions);
     data.value.projects = data.value.projects.filter((project) => project.id !== projectId);
     data.value.workspaces = data.value.workspaces.filter((workspace) => workspace.projectId !== projectId);
     data.value.sessions = data.value.sessions.filter((session) => session.projectId !== projectId);

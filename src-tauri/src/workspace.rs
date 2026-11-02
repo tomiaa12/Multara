@@ -221,37 +221,72 @@ fn git_branches(path: &Path, git_command: &str) -> Vec<String> {
     branches
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct RemoveOptions {
+    pub delete_local_branch: bool,
+    pub delete_remote_branch: bool,
+    pub delete_copy_directory: bool,
+}
+
+/// 创建失败回滚：Worktree 删检出和分支，副本删目录。
 pub fn cleanup(prepared: &PreparedWorkspace, git_command: &str) {
-    let workspace = &prepared.workspace;
-    if workspace.isolation_mode == "worktree" {
-        let _ = git_cmd(git_command)
-            .args([
-                "-C",
-                &workspace.source_path,
-                "worktree",
-                "remove",
-                "--force",
-                &workspace.work_path,
-            ])
-            .output();
-        if let Some(branch) = &prepared.branch {
-            let _ = git_cmd(git_command)
-                .args(["-C", &workspace.source_path, "branch", "-D", branch])
-                .output();
-        }
-    } else if workspace.isolation_mode == "copy" {
-        let _ = fs::remove_dir_all(&workspace.work_path);
-    }
+    remove_with_options(
+        &prepared.workspace,
+        git_command,
+        &RemoveOptions {
+            delete_local_branch: true,
+            delete_remote_branch: false,
+            delete_copy_directory: true,
+        },
+    );
 }
 
 pub fn remove(workspace: &Workspace, git_command: &str) {
-    cleanup(
-        &PreparedWorkspace {
-            workspace: workspace.clone(),
-            branch: workspace.branch.clone(),
-        },
+    remove_with_options(
+        workspace,
         git_command,
+        &RemoveOptions {
+            delete_local_branch: true,
+            delete_remote_branch: false,
+            delete_copy_directory: true,
+        },
     );
+}
+
+/// 按选项清理磁盘。真实分支目录永不删除；Worktree 检出目录总会移除。
+pub fn remove_with_options(workspace: &Workspace, git_command: &str, options: &RemoveOptions) {
+    let git_root = if workspace.kind == "git" {
+        Some(workspace.source_path.as_str())
+    } else {
+        None
+    };
+    if workspace.isolation_mode == "worktree" {
+        let _ = drop_worktree_checkout(workspace, git_command);
+        if let (Some(root), Some(branch)) = (git_root, workspace.branch.as_deref()) {
+            if options.delete_local_branch {
+                let _ = crate::git::delete_local_branch(root, git_command, branch);
+            }
+            if options.delete_remote_branch {
+                let _ = crate::git::delete_remote_branch(root, git_command, branch);
+            }
+        }
+        return;
+    }
+    if workspace.isolation_mode == "copy" {
+        if options.delete_copy_directory {
+            let _ = fs::remove_dir_all(&workspace.work_path);
+        }
+        return;
+    }
+    // direct：只可选删远程分支；本地当前分支不可删，真实目录也不动。
+    if let (Some(root), Some(branch)) = (git_root, workspace.branch.as_deref()) {
+        if options.delete_remote_branch {
+            let _ = crate::git::delete_remote_branch(root, git_command, branch);
+        }
+        if options.delete_local_branch {
+            let _ = crate::git::delete_local_branch(root, git_command, branch);
+        }
+    }
 }
 
 /// 从需求里卸掉 Worktree 时只删独立检出目录，不删分支，也不动 source_path。

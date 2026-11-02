@@ -1260,16 +1260,36 @@ pub fn set_project_archived(
     Ok(archived_at)
 }
 
+#[derive(Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteProjectWorkspaceOptions {
+    pub workspace_id: String,
+    #[serde(default)]
+    pub delete_local_branch: bool,
+    #[serde(default)]
+    pub delete_remote_branch: bool,
+    #[serde(default)]
+    pub delete_copy_directory: bool,
+}
+
 #[tauri::command]
-pub async fn delete_project(project_id: String, app: AppHandle) -> Result<(), String> {
+pub async fn delete_project(
+    project_id: String,
+    workspace_options: Option<Vec<DeleteProjectWorkspaceOptions>>,
+    app: AppHandle,
+) -> Result<(), String> {
     let _span = crate::diag::span("delete_project");
     off_main(app, move |state| {
-        delete_project_blocking(state, &project_id)
+        delete_project_blocking(state, &project_id, workspace_options.as_deref())
     })
     .await
 }
 
-fn delete_project_blocking(state: &AppState, project_id: &str) -> Result<(), String> {
+fn delete_project_blocking(
+    state: &AppState,
+    project_id: &str,
+    workspace_options: Option<&[DeleteProjectWorkspaceOptions]>,
+) -> Result<(), String> {
     let project_locks = session::project_locks(state, &[project_id.to_string()])?;
     let _project_guards = project_locks
         .iter()
@@ -1282,8 +1302,22 @@ fn delete_project_blocking(state: &AppState, project_id: &str) -> Result<(), Str
             setting_value(&db, "gitExecutable", "git"),
         )
     };
+    let option_map = workspace_options
+        .unwrap_or(&[])
+        .iter()
+        .map(|item| (item.workspace_id.as_str(), item))
+        .collect::<HashMap<_, _>>();
     for item in &workspaces {
-        workspace::remove(item, &git_command);
+        let chosen = option_map.get(item.id.as_str());
+        workspace::remove_with_options(
+            item,
+            &git_command,
+            &workspace::RemoveOptions {
+                delete_local_branch: chosen.is_some_and(|item| item.delete_local_branch),
+                delete_remote_branch: chosen.is_some_and(|item| item.delete_remote_branch),
+                delete_copy_directory: chosen.is_some_and(|item| item.delete_copy_directory),
+            },
+        );
     }
     let mut connection = state.lock_db()?;
     let db = connection

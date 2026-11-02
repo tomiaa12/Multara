@@ -1216,13 +1216,23 @@ export async function setProjectArchived(projectId: string, archived: boolean): 
   return invoke<string | null>("set_project_archived", { projectId, archived });
 }
 
-export async function deleteProject(projectId: string): Promise<void> {
+export type DeleteProjectWorkspaceOptions = {
+  workspaceId: string;
+  deleteLocalBranch?: boolean;
+  deleteRemoteBranch?: boolean;
+  deleteCopyDirectory?: boolean;
+};
+
+export async function deleteProject(
+  projectId: string,
+  workspaceOptions: DeleteProjectWorkspaceOptions[] = [],
+): Promise<void> {
   if (!inTauri()) {
     previewData.projects = previewData.projects.filter((project) => project.id !== projectId);
     previewData.workspaces = previewData.workspaces.filter((workspace) => workspace.projectId !== projectId);
     return;
   }
-  await invoke("delete_project", { projectId });
+  await invoke("delete_project", { projectId, workspaceOptions });
 }
 
 export async function selectFolder(): Promise<string | null> {
