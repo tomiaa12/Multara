@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from "vue";
 import type { GitRepositoryStatus, Workspace } from "../../domain/types";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
@@ -18,8 +18,10 @@ const props = withDefaults(
     workspaces: Workspace[];
     /** 每行右侧显示单独删除 */
     rowDelete?: boolean;
+    /** footer 左侧全选本地/远程 */
+    bulkSelect?: boolean;
   }>(),
-  { rowDelete: false },
+  { rowDelete: false, bulkSelect: false },
 );
 
 const emit = defineEmits<{
@@ -34,6 +36,9 @@ const syncBusyId = ref("");
 const actionError = ref("");
 const bodyEl = ref<HTMLElement | null>(null);
 const moreBelow = ref(false);
+const localBulkEl = ref<HTMLInputElement | null>(null);
+const remoteBulkEl = ref<HTMLInputElement | null>(null);
+const slots = useSlots();
 let bodyObserver: ResizeObserver | undefined;
 
 function updateScrollFade() {
@@ -198,6 +203,33 @@ watch(
 
 watch(rows, () => nextTick(updateScrollFade));
 
+function syncBulkIndeterminate() {
+  if (localBulkEl.value) {
+    localBulkEl.value.indeterminate = localPartial.value && !allLocal.value;
+  }
+  if (remoteBulkEl.value) {
+    remoteBulkEl.value.indeterminate = remotePartial.value && !allRemote.value;
+  }
+}
+
+watch([localPartial, remotePartial, allLocal, allRemote], () => nextTick(syncBulkIndeterminate));
+
+function onBulkLocal(event: Event) {
+  const input = event.target as HTMLInputElement;
+  input.indeterminate = false;
+  allLocal.value = input.checked;
+  void nextTick(syncBulkIndeterminate);
+}
+
+function onBulkRemote(event: Event) {
+  const input = event.target as HTMLInputElement;
+  input.indeterminate = false;
+  allRemote.value = input.checked;
+  void nextTick(syncBulkIndeterminate);
+}
+
+const showFooter = computed(() => props.bulkSelect || Boolean(slots.footer));
+
 defineExpose({
   choices,
   rows,
@@ -305,6 +337,34 @@ defineExpose({
 
       <p v-if="statusError" class="delete-project-warn">{{ statusError }}</p>
       <p v-if="actionError" class="delete-project-warn">{{ actionError }}</p>
+    </div>
+  </div>
+
+  <div v-if="showFooter" class="modal-actions delete-project-foot">
+    <div v-if="bulkSelect" class="delete-project-bulk">
+      <label v-if="localIds.length" class="check-row">
+        <input
+          ref="localBulkEl"
+          type="checkbox"
+          class="ui-checkbox"
+          :checked="allLocal"
+          @change="onBulkLocal"
+        />
+        <span>{{ t("dashboard.deleteAllLocal") }}</span>
+      </label>
+      <label v-if="remoteIds.length" class="check-row">
+        <input
+          ref="remoteBulkEl"
+          type="checkbox"
+          class="ui-checkbox"
+          :checked="allRemote"
+          @change="onBulkRemote"
+        />
+        <span>{{ t("dashboard.deleteAllRemote") }}</span>
+      </label>
+    </div>
+    <div class="delete-project-foot-end">
+      <slot name="footer" />
     </div>
   </div>
 </template>

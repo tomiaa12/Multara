@@ -926,7 +926,9 @@ input.ds-checkbox[type="checkbox"]:hover {
   border-color: var(--color-border-strong, var(--color-text-tertiary));
 }
 input.ui-checkbox[type="checkbox"]:not(.ds-switch):checked,
-input.ds-checkbox[type="checkbox"]:checked {
+input.ds-checkbox[type="checkbox"]:checked,
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):indeterminate,
+input.ds-checkbox[type="checkbox"]:indeterminate {
   border-color: var(--color-primary);
   background: var(--color-primary);
 }
@@ -942,6 +944,20 @@ input.ds-checkbox[type="checkbox"]:checked::after {
   border-width: 0 1.5px 1.5px 0;
   /* 勾形偏左下，略向右上补偿视觉中心 */
   transform: translate(-30%, -65%) rotate(45deg);
+}
+/* 半选：横杠（appearance:none 后需自绘） */
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):indeterminate::after,
+input.ds-checkbox[type="checkbox"]:indeterminate::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 1.5px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--color-on-primary);
+  transform: translate(-50%, -50%);
 }
 input.ui-checkbox[type="checkbox"]:not(.ds-switch):focus-visible,
 input.ds-checkbox[type="checkbox"]:focus-visible {
