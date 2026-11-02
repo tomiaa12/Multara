@@ -17,6 +17,9 @@ import {
 import { useRouter } from "vue-router";
 import { t } from "../i18n";
 import AddWorkspaceModal from "../components/dashboard/AddWorkspaceModal.vue";
+import DeleteProjectDialog, {
+  type DeleteWorkspaceChoice,
+} from "../components/dashboard/DeleteProjectDialog.vue";
 import RequirementEmptyState from "../components/dashboard/RequirementEmptyState.vue";
 import WorkspaceClipGrid from "../components/dashboard/WorkspaceClipGrid.vue";
 import WorkspacePickerFields from "../components/dashboard/WorkspacePickerFields.vue";
@@ -87,6 +90,7 @@ const tagChips = ref<HTMLElement | null>(null);
 const workspaceMenu = ref<{ x: number; y: number; workspaceId: string } | null>(
   null,
 );
+const deleteTarget = ref<{ id: string; name: string } | null>(null);
 const workspaceMenuItems: ContextMenuItem[] = [
   { id: "reveal", label: t("dashboard.reveal") },
 ];
@@ -308,10 +312,38 @@ async function toggleArchive(projectId: string, archived: boolean) {
   }
 }
 
-async function removeProject(projectId: string, projectName: string) {
-  if (!window.confirm(t("dashboard.deleteConfirm", { name: projectName })))
+const deleteWorkspaces = computed(() =>
+  (store.data?.workspaces ?? []).filter((item) => item.projectId === deleteTarget.value?.id),
+);
+
+function askRemoveProject(projectId: string, projectName: string) {
+  const row = rows.value.find((item) => item.id === projectId);
+  if (row?.filters.includes("running")) {
+    error.value = t("dashboard.deleteBlockedRunning");
     return;
-  await store.deleteProject(projectId);
+  }
+  error.value = "";
+  deleteTarget.value = { id: projectId, name: projectName };
+}
+
+async function confirmRemoveProject(choices: DeleteWorkspaceChoice[]) {
+  const target = deleteTarget.value;
+  if (!target) return;
+  deleteTarget.value = null;
+  error.value = "";
+  try {
+    await store.deleteProject(target.id, choices);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
+function openWorkbenchFromDelete() {
+  const target = deleteTarget.value;
+  if (!target) return;
+  error.value = t("dashboard.deleteConflictGotoWorkbench");
+  deleteTarget.value = null;
+  void router.push(`/projects/${target.id}`);
 }
 </script>
 
@@ -470,7 +502,7 @@ async function removeProject(projectId: string, projectName: string) {
                 size="icon"
                 variant="danger"
                 :tip="t('dashboard.delete')"
-                @click="removeProject(row.id, row.name)"
+                @click="askRemoveProject(row.id, row.name)"
               >
                 <Trash2 :size="14" />
               </UiButton>
@@ -620,6 +652,16 @@ async function removeProject(projectId: string, projectName: string) {
       :items="workspaceMenuItems"
       @select="onWorkspaceMenuSelect"
       @close="workspaceMenu = null"
+    />
+
+    <DeleteProjectDialog
+      v-if="deleteTarget"
+      :project-id="deleteTarget.id"
+      :project-name="deleteTarget.name"
+      :workspaces="deleteWorkspaces"
+      @cancel="deleteTarget = null"
+      @confirm="confirmRemoveProject"
+      @open-workbench="openWorkbenchFromDelete"
     />
 
     <UiModal

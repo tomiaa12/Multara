@@ -901,6 +901,59 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
   cursor: pointer;
 }
 
+/* 深色主题 primary 近白时，系统 accent 勾常不可见；checkbox 自绘勾号 */
+input.ui-checkbox[type="checkbox"]:not(.ds-switch),
+input.ds-checkbox[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-block;
+  box-sizing: border-box;
+  position: relative;
+  flex: 0 0 15px;
+  width: 15px;
+  min-width: 15px;
+  max-width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-bg);
+  vertical-align: middle;
+}
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):hover,
+input.ds-checkbox[type="checkbox"]:hover {
+  border-color: var(--color-border-strong, var(--color-text-tertiary));
+}
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):checked,
+input.ds-checkbox[type="checkbox"]:checked {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):checked::after,
+input.ds-checkbox[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 48%;
+  width: 4px;
+  height: 7.5px;
+  border: solid var(--color-on-primary);
+  border-width: 0 1.5px 1.5px 0;
+  /* 勾形偏左下，略向右上补偿视觉中心 */
+  transform: translate(-30%, -65%) rotate(45deg);
+}
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):focus-visible,
+input.ds-checkbox[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+input.ui-checkbox[type="checkbox"]:not(.ds-switch):disabled,
+input.ds-checkbox[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .ds-switch,
 .ui-checkbox.ds-switch {
   appearance: none;
@@ -955,7 +1008,7 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
 .check-row,
 .ds-check {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
   gap: var(--spacing-2);
   min-height: 24px;
@@ -975,12 +1028,19 @@ input[type="search"].ui-input::-webkit-search-cancel-button {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-regular);
 }
-.check-row input:not(.ds-switch) {
-  width: auto;
-  margin-top: 3px;
+.check-row input[type="checkbox"]:not(.ds-switch),
+.check-row input[type="radio"]:not(.ds-switch) {
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
 }
-.check-row .ds-switch,
-.check-row .ui-checkbox.ds-switch {
+/* 有副文案时勾对齐首行，避免相对整块居中显得漂 */
+.check-row:has(small) {
+  align-items: flex-start;
+}
+.check-row:has(small) input:not(.ds-switch),
+.check-row:has(small) .ds-switch,
+.check-row:has(small) .ui-checkbox.ds-switch {
   margin-top: 3px;
 }
 
@@ -1751,11 +1811,18 @@ button.ds-stat.is-on {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
 }
+/* 勾选默认左右排，不必再手动加 check-row */
+.modal label:has(> input[type="checkbox"]:not(.ds-switch)),
+.modal label:has(> .ui-checkbox:not(.ds-switch)),
 .modal label.check-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  gap: var(--spacing-2);
   font-weight: var(--font-weight-regular);
   font-size: var(--font-size-md);
+}
+.modal label.check-row:has(small) {
+  align-items: flex-start;
 }
 .modal-actions,
 .ds-modal-footer {

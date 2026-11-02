@@ -11408,6 +11408,98 @@ label.settings-row:hover {
   color: var(--color-text-strong);
   font-weight: var(--font-weight-medium);
 }
+.delete-project-dialog {
+  width: min(520px, 92vw);
+  gap: var(--spacing-3);
+}
+.delete-project-intro {
+  display: grid;
+  gap: var(--spacing-1);
+}
+.delete-project-intro p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+.delete-project-lead,
+.delete-project-hint,
+.delete-project-meta,
+.delete-project-warn {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+.delete-project-list {
+  display: grid;
+  gap: var(--spacing-2);
+  max-height: min(360px, 50vh);
+  margin: 0;
+}
+.delete-project-row {
+  display: grid;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+.delete-project-row header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+.delete-project-row header strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delete-project-warn {
+  color: var(--color-warning);
+}
+.delete-project-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  line-height: 16px;
+  cursor: pointer;
+}
+.delete-project-sync:hover:not(:disabled) {
+  background: var(--color-surface-emphasis);
+}
+.delete-project-sync:disabled {
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+  cursor: default;
+}
+.delete-project-sync > .codicon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+}
+.delete-project-link {
+  margin-left: var(--spacing-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
 .req-clip {
   position: relative;
 }
