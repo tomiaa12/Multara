@@ -4095,47 +4095,51 @@ async function openSourceControlChange(target: ScmOpenTarget, opts?: { activate?
   }
 }
 
-/** 对齐 VS Code Open Changes：单个 MultiDiff tab，标题 `hash - subject` */
+/**
+ * 对齐 VS Code Open Changes：单个 MultiDiff tab，标题 `hash - subject`。
+ * 斜体预览 tab（pinned=false）：单击打开；再开其它文件会顶替；双击 / 钉住 / 编辑后固定。
+ */
 async function openSourceControlChanges(payload: ScmOpenChangesPayload) {
   if (!payload.targets.length) return;
   error.value = "";
   try {
-    const files: CommitDiffFile[] = [];
-    for (const target of payload.targets) {
-      const loaded = await loadScmDiff(target, {
-        readWorktree: async (path) => {
-          if (props.preview) {
-            const file = previewFileContent(path, target.workspaceId);
-            return { content: file.content, language: file.language };
-          }
-          try {
-            const file = await backend.readWorkspaceFile(target.workspaceId, path);
-            return { content: file.content, language: file.language };
-          } catch (cause) {
-            if (cause instanceof backend.FileMissingError) return null;
-            throw cause;
-          }
-        },
-        readIndex: async (path) => {
-          if (props.preview) return { content: "", binary: false };
-          const file = await backend.gitIndexFile(target.workspaceId, path);
-          return { content: file.content, binary: file.binary };
-        },
-        readRevision: async (revision, path) => {
-          if (props.preview) return { content: "", binary: false };
-          const file = await backend.gitRevisionFile(target.workspaceId, revision, path);
-          return { content: file.content, binary: file.binary };
-        },
-      });
-      files.push({
-        path: target.path,
-        status: target.status || "M",
-        original: loaded.original,
-        modified: loaded.modified,
-        language: loaded.language,
-        binary: loaded.binary,
-      });
-    }
+    const files = await Promise.all(
+      payload.targets.map(async (target) => {
+        const loaded = await loadScmDiff(target, {
+          readWorktree: async (path) => {
+            if (props.preview) {
+              const file = previewFileContent(path, target.workspaceId);
+              return { content: file.content, language: file.language };
+            }
+            try {
+              const file = await backend.readWorkspaceFile(target.workspaceId, path);
+              return { content: file.content, language: file.language };
+            } catch (cause) {
+              if (cause instanceof backend.FileMissingError) return null;
+              throw cause;
+            }
+          },
+          readIndex: async (path) => {
+            if (props.preview) return { content: "", binary: false };
+            const file = await backend.gitIndexFile(target.workspaceId, path);
+            return { content: file.content, binary: file.binary };
+          },
+          readRevision: async (revision, path) => {
+            if (props.preview) return { content: "", binary: false };
+            const file = await backend.gitRevisionFile(target.workspaceId, revision, path);
+            return { content: file.content, binary: file.binary };
+          },
+        });
+        return {
+          path: target.path,
+          status: target.status || "M",
+          original: loaded.original,
+          modified: loaded.modified,
+          language: loaded.language,
+          binary: loaded.binary,
+        } satisfies CommitDiffFile;
+      }),
+    );
     const id = `${payload.workspaceId}:commit-multi:${payload.commit}`;
     const first = files[0];
     const existing = editorTabs.value.find((tab) => tab.gitDiff?.id === id);
@@ -4168,13 +4172,20 @@ async function openSourceControlChanges(payload: ScmOpenChangesPayload) {
     const tab: EditorTab = {
       workspaceId: payload.workspaceId,
       path: file.path,
-      pinned: true,
+      pinned: false,
       file,
       original: file.content,
       detectedLanguage: file.language,
       gitDiff,
     };
-    editorTabs.value = [...editorTabs.value, tab];
+    const dirtyPreview = editorTabs.value.find((item) => !item.pinned);
+    if (dirtyPreview && isEditorTabDirty(dirtyPreview)) dirtyPreview.pinned = true;
+    const replaceable = editorTabs.value.find((item) => !item.pinned);
+    if (replaceable) {
+      editorTabs.value = editorTabs.value.map((item) => (item === replaceable ? tab : item));
+    } else {
+      editorTabs.value = [...editorTabs.value, tab];
+    }
     activateEditorTab(tab);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
