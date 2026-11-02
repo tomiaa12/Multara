@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import type { GitRepositoryStatus } from "../../domain/types";
+import Codicon from "../ui/Codicon.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiTextarea from "../ui/UiTextarea.vue";
 import {
@@ -9,6 +10,8 @@ import {
   stepCommitMessage,
   type ScmPrimaryAction,
 } from "../workbench/scm-commit-action";
+
+const COMMIT_INPUT_MAX_HEIGHT = 120;
 
 const message = defineModel<string>({ required: true });
 const props = defineProps<{
@@ -58,13 +61,23 @@ function onKeydown(event: KeyboardEvent) {
   message.value = next;
 }
 
-function onInput() {
-  resetCommitMessageCursor(props.workspaceId);
+function syncInputHeight() {
   const input = field.value?.el;
   if (!input) return;
   input.style.height = "auto";
-  input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+  const next = Math.min(input.scrollHeight, COMMIT_INPUT_MAX_HEIGHT);
+  input.style.height = `${next}px`;
+  // 未顶满时 hidden，避免 placeholder/单行也冒出滚动条；顶满后可滚但不画条
+  input.style.overflowY = input.scrollHeight > COMMIT_INPUT_MAX_HEIGHT ? "auto" : "hidden";
 }
+
+function onInput() {
+  resetCommitMessageCursor(props.workspaceId);
+  syncInputHeight();
+}
+
+watch(message, () => void nextTick(syncInputHeight));
+onMounted(() => void nextTick(syncInputHeight));
 </script>
 
 <template>
