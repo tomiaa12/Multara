@@ -48,6 +48,25 @@ function sourceOf(item: InboxItem): "project" | "task" | "chat" {
   return "chat";
 }
 
+/** 按类型筛过时列表里已经是同一类，不再重复打来源标签。 */
+const showSourceTag = computed(
+  () => sourceFilter.value !== "project" && sourceFilter.value !== "task" && sourceFilter.value !== "chat",
+);
+
+function sourceLabel(item: InboxItem) {
+  const source = sourceOf(item);
+  if (source === "project") return t("inbox.filter.project");
+  if (source === "task") return t("nav.tasks");
+  return t("inbox.filter.chat");
+}
+
+function sourceTone(item: InboxItem): "primary" | "accent" | "purple" {
+  const source = sourceOf(item);
+  if (source === "project") return "primary";
+  if (source === "task") return "accent";
+  return "purple";
+}
+
 const sourceCounts = computed(() => {
   const counts: Record<InboxSource, number> = { all: 0, unread: 0, waiting: 0, project: 0, task: 0, chat: 0 };
   for (const item of items.value) {
@@ -205,7 +224,8 @@ onUnmounted(() => {
             <span>
               <strong>
                 <i v-if="item.unreadCount" class="inbox-unread-dot" />
-                {{ item.title }}
+                <span v-if="showSourceTag" class="ds-badge" :data-tone="sourceTone(item)">{{ sourceLabel(item) }}</span>
+                <span class="inbox-item-title">{{ item.title }}</span>
               </strong>
               <small>{{ plainInboxLine(item.preview) }}</small>
             </span>

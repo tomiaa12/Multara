@@ -8879,6 +8879,7 @@ body.is-dragging-workspace-file * {
   display: flex;
   align-items: center;
   gap: var(--spacing-1-5);
+  min-width: 0;
   color: var(--color-text);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
@@ -8886,6 +8887,15 @@ body.is-dragging-workspace-file * {
 .inbox-list button.unread strong {
   color: var(--color-text-strong);
   font-weight: var(--font-weight-semibold);
+}
+.inbox-list strong > .ds-badge {
+  flex: 0 0 auto;
+}
+.inbox-item-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .inbox-list strong,
 .inbox-list small {
