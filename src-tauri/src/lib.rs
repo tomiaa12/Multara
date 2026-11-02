@@ -38,6 +38,7 @@ pub mod process;
 pub mod protocol;
 pub mod resources;
 pub mod runtime;
+pub mod runtime_accounts;
 pub mod runtime_brief;
 pub mod runtime_models;
 pub mod session;
@@ -441,6 +442,12 @@ pub fn run() {
             list_agent_runs,
             agent_system_context,
             list_runtime_models,
+            runtime_accounts::commands::runtime_account_summaries,
+            runtime_accounts::commands::runtime_account_status,
+            runtime_accounts::commands::runtime_account_switch,
+            runtime_accounts::commands::runtime_account_remove,
+            runtime_accounts::commands::runtime_account_rename,
+            runtime_accounts::commands::runtime_account_login,
             list_task_runs,
             list_chat_messages,
             upsert_inbox_item,

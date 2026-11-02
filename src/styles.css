@@ -7391,8 +7391,13 @@ body.is-dragging-workspace-file * {
   .skill-files {
     grid-template-columns: 1fr;
   }
-  .agent-directory-row > span:not(.agent-directory-identity) {
+  .agent-directory-head,
+  .agent-directory-row > :not(.agent-directory-identity):not(.agent-directory-hit),
+  .agent-directory-hit > :not(.agent-directory-identity) {
     display: none;
+  }
+  .agent-directory-row {
+    grid-template-columns: minmax(0, 1fr);
   }
   .agent-detail-header {
     padding-inline: 16px;
@@ -8721,9 +8726,8 @@ body.is-dragging-workspace-file * {
     border-bottom: 1px solid var(--color-border);
   }
 }
-.squad-directory .agent-directory-head,
-.squad-directory .agent-directory-row {
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.9fr) minmax(120px, 1fr) 36px;
+.squad-directory {
+  --ui-directory-columns: minmax(0, 1.5fr) minmax(0, 0.9fr) minmax(120px, 1fr) 36px;
 }
 .skill-title-line {
   display: flex;
