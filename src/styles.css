@@ -8601,8 +8601,11 @@ body.is-dragging-workspace-file * {
   font-size: var(--font-size-md);
 }
 .task-prop-row > .task-prop-select,
-.task-prop-row > input.task-prop-input {
+.task-prop-row > input.task-prop-input,
+.task-prop-row > .tag-anchor {
   margin-left: calc(var(--spacing-1-5) * -1);
+  min-width: 0;
+  max-width: 100%;
 }
 .task-issue-side input.task-prop-input:hover {
   background: var(--color-surface-hover);

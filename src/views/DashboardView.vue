@@ -94,21 +94,13 @@ const rows = computed(() => {
   );
 });
 
-const statusRows = computed(() =>
-  rows.value.filter((row) => matchesHomeFilter(row, filter.value, "")),
-);
 const visibleRows = computed(() =>
   rows.value.filter((row) => {
     if (!matchesHomeFilter(row, filter.value, query.value)) return false;
     return projectMatchesTags(categories.value.assignments[row.id], categoryFilter.value);
   }),
 );
-const categoryTabs = computed(() =>
-  categories.value.categories.map((item) => ({
-    ...item,
-    count: statusRows.value.filter((row) => categories.value.assignments[row.id]?.includes(item.id)).length,
-  })),
-);
+const categoryTabs = computed(() => categories.value.categories);
 const saveLabel = computed(() => {
   if (busy.value) return t("common.saving");
   if (editingId.value) return t("common.save");
@@ -386,6 +378,7 @@ function openWorkbenchFromManage() {
             </label>
           </div>
           <div class="req-filter-bar">
+            <UiButton size="small" variant="ghost" @click="showManage = true">{{ t("dashboard.manageTags") }}</UiButton>
             <div class="tag-filter">
               <div
                 ref="tagChips"
@@ -402,7 +395,6 @@ function openWorkbenchFromManage() {
                 >
                   <i class="tag-dot" :style="{ background: item.color }" />
                   {{ item.name }}
-                  <em>{{ item.count }}</em>
                 </button>
               </div>
               <button
@@ -414,7 +406,6 @@ function openWorkbenchFromManage() {
                 {{ tagsExpanded ? t("dashboard.tagsCollapse") : t("dashboard.tagsExpand") }}
               </button>
             </div>
-            <UiButton size="small" variant="ghost" @click="showManage = true">{{ t("dashboard.manageTags") }}</UiButton>
           </div>
         </div>
 

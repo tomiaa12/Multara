@@ -2537,7 +2537,8 @@ form.modal:has(> .ds-scroll-fade) {
 /* 标签选择器：触发器、下拉、筛选条 */
 .tag-anchor {
   position: relative;
-  min-width: 220px;
+  min-width: 0;
+  max-width: 100%;
 }
 .tag-trigger {
   display: flex;
@@ -2551,6 +2552,17 @@ form.modal:has(> .ds-scroll-fade) {
   background: var(--color-bg);
   color: var(--color-text-tertiary);
   cursor: pointer;
+}
+.tag-anchor[data-size="sm"] .tag-trigger {
+  gap: var(--spacing-1);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--spacing-1-5);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+.tag-anchor[data-size="sm"] .tag-chip {
+  height: 18px;
+  padding: 0 var(--spacing-1);
 }
 .tag-trigger:hover,
 .tag-trigger:focus-visible {
@@ -2604,12 +2616,19 @@ form.modal:has(> .ds-scroll-fade) {
   z-index: 300;
   top: auto;
   left: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 .tag-pop-list {
   display: grid;
   max-height: 256px;
   margin-top: var(--spacing-2);
   overflow: auto;
+}
+.tag-pop.is-floating .tag-pop-list {
+  max-height: none;
+  min-height: 0;
 }
 .tag-option,
 .tag-pop-foot {
@@ -2655,21 +2674,21 @@ form.modal:has(> .ds-scroll-fade) {
 .req-filter-bar {
   display: flex;
   align-items: flex-start;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--spacing-2);
   min-width: 0;
 }
 .tag-filter {
   display: flex;
   align-items: flex-start;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--spacing-1);
   min-width: 0;
 }
 .tag-filter-chips {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--spacing-1);
   min-width: 0;
 }

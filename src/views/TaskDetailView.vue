@@ -426,6 +426,7 @@ function openLatestRunLog() {
           <div class="task-prop-row">
             <span>{{ t('tasks.tags') }}</span>
             <TagPicker
+              size="sm"
               :model-value="taskLabelIds"
               :tags="categories.categories"
               :placeholder="t('tasks.addTags')"
