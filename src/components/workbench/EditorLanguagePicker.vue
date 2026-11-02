@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
+import { bindDismissableLayer } from "../ui/dismissable-layer";
 import {
   AUTO_DETECT_LANGUAGE,
   filterSelectableLanguages,
@@ -65,12 +66,7 @@ function move(delta: number) {
   active?.scrollIntoView({ block: "nearest" });
 }
 
-function onDoc(event: MouseEvent) {
-  const target = event.target as Node | null;
-  if (panelEl.value?.contains(target)) return;
-  if (target instanceof Element && target.closest(".statusbar-item")) return;
-  emit("close");
-}
+let unbindDismiss: (() => void) | undefined;
 
 function onKey(event: KeyboardEvent) {
   if (event.isComposing) return;
@@ -118,12 +114,19 @@ onMounted(() => {
     focusSearch();
     requestAnimationFrame(focusSearch);
   });
-  document.addEventListener("mousedown", onDoc);
+  unbindDismiss = bindDismissableLayer({
+    contains: (target) =>
+      Boolean(
+        panelEl.value?.contains(target)
+        || (target instanceof Element && target.closest(".statusbar-item")),
+      ),
+    onDismiss: () => emit("close"),
+  });
   document.addEventListener("keydown", onKey);
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", onDoc);
+  unbindDismiss?.();
   document.removeEventListener("keydown", onKey);
 });
 
