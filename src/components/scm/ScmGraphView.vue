@@ -23,7 +23,7 @@ import {
   SCM_LANE_WIDTH,
   type HistoryGraphRow,
 } from "../workbench/scm-history";
-import type { ScmOpenTarget } from "../workbench/scm-groups";
+import type { ScmOpenChangesPayload, ScmOpenTarget } from "../workbench/scm-groups";
 import { gitStatusClass } from "../workbench/tree-git-status";
 import { t } from "../../i18n";
 
@@ -37,6 +37,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   open: [target: ScmOpenTarget];
+  openChanges: [payload: ScmOpenChangesPayload];
   error: [message: string];
   updated: [];
 }>();
@@ -144,7 +145,7 @@ async function onMenu(id: string) {
     return;
   }
   if (id === "changes") {
-    if (openHash.value !== current.commit.hash) toggleCommit(current.commit.hash);
+    void openChanges(current.row);
     return;
   }
   if (id === "copy-hash" || id === "copy-message") {
@@ -169,19 +170,7 @@ async function toggleCommit(hash: string) {
     return;
   }
   openHash.value = hash;
-  if (filesByHash.value[hash] || !props.workspaceId) return;
-  const workspaceId = props.workspaceId;
-  filesLoading.value = hash;
-  try {
-    filesByHash.value = {
-      ...filesByHash.value,
-      [hash]: await backend.gitCommitFiles(workspaceId, hash),
-    };
-  } catch (cause) {
-    emit("error", cause instanceof Error ? cause.message : String(cause));
-  } finally {
-    filesLoading.value = "";
-  }
+  await ensureCommitFiles(hash);
 }
 
 function openFile(row: HistoryGraphRow, file: GitCommitFile) {
@@ -192,6 +181,47 @@ function openFile(row: HistoryGraphRow, file: GitCommitFile) {
     commit: row.commit.hash,
     parent: row.commit.parents[0] ?? null,
     status: file.status,
+  });
+}
+
+async function ensureCommitFiles(hash: string) {
+  if (filesByHash.value[hash] || !props.workspaceId) return filesByHash.value[hash] ?? [];
+  const workspaceId = props.workspaceId;
+  filesLoading.value = hash;
+  try {
+    const files = await backend.gitCommitFiles(workspaceId, hash);
+    filesByHash.value = { ...filesByHash.value, [hash]: files };
+    return files;
+  } catch (cause) {
+    emit("error", cause instanceof Error ? cause.message : String(cause));
+    return [];
+  } finally {
+    filesLoading.value = "";
+  }
+}
+
+/** 对齐 VS Code「打开更改」：一个 MultiDiff tab，标题为 `hash - subject` */
+async function openChanges(row: HistoryGraphRow) {
+  const hash = row.commit.hash;
+  const files = await ensureCommitFiles(hash);
+  openHash.value = hash;
+  if (!files.length) return;
+  const parent = row.commit.parents[0] ?? null;
+  const shortHash = hash.slice(0, 7);
+  const subject = row.commit.subject || shortHash;
+  emit("openChanges", {
+    workspaceId: props.workspaceId,
+    title: `${shortHash} - ${subject}`,
+    commit: hash,
+    parent,
+    targets: files.map((file) => ({
+      workspaceId: props.workspaceId,
+      path: file.path,
+      group: "commit" as const,
+      commit: hash,
+      parent,
+      status: file.status,
+    })),
   });
 }
 
@@ -248,50 +278,62 @@ function letter(status: string) {
         class="scm-history"
         :class="{ 'is-head': isHistoryHead(row.commit), 'is-open': openHash === row.commit.hash }"
       >
-        <UiTooltip :content="`${row.commit.subject}\n${row.commit.author}`">
-          <button
-            type="button"
-            class="scm-history-row"
-            :class="{ 'is-current': isHistoryHead(row.commit), 'is-selected': openHash === row.commit.hash }"
-            @click="toggleCommit(row.commit.hash)"
-            @contextmenu="openMenu($event, row)"
-          >
-            <span class="scm-history-graph" :class="{ 'is-current': isHistoryHead(row.commit) }">
-              <svg class="scm-history-lane" :width="rowGraphWidth(row)" :height="SCM_LANE_HEIGHT" aria-hidden="true">
-                <path
-                  v-for="(path, index) in historyGraph(row, openHash === row.commit.hash).paths"
-                  :key="`p-${index}`"
-                  :class="`scm-lane scm-lane-${path.color}`"
-                  :d="path.d"
-                  :stroke-width="path.width"
-                />
-                <circle
-                  v-for="(dot, index) in historyGraph(row, openHash === row.commit.hash).dots"
-                  :key="`d-${index}`"
-                  :class="dotClass(dot.hole, dot.color)"
-                  :cx="dotX(dot.index)"
-                  :cy="SCM_LANE_WIDTH"
-                  :r="dot.r"
-                />
-              </svg>
-            </span>
-            <span class="scm-history-copy">
-              <span class="scm-history-subject">{{ row.commit.subject || row.commit.hash.slice(0, 7) }}</span>
-              <span v-if="row.commit.author" class="scm-history-author">{{ row.commit.author }}</span>
-            </span>
-            <span class="scm-history-refs">
-              <template v-for="badge in rowBadges(row)" :key="badge.key">
-                <UiTooltip :content="badge.title">
-                  <em :class="`scm-ref scm-lane-${badge.color}`">
-                    <span v-if="badge.count" class="scm-ref-count">{{ badge.count }}</span>
-                    <Codicon :name="HISTORY_REF_ICON[badge.kind]" :size="12" />
-                    <span v-if="badge.name" class="scm-ref-name">{{ badge.name }}</span>
-                  </em>
-                </UiTooltip>
-              </template>
-            </span>
-          </button>
-        </UiTooltip>
+        <div
+          class="scm-history-row"
+          :class="{ 'is-current': isHistoryHead(row.commit), 'is-selected': openHash === row.commit.hash }"
+          role="button"
+          tabindex="0"
+          :title="`${row.commit.subject}\n${row.commit.author}`"
+          @click="toggleCommit(row.commit.hash)"
+          @keydown.enter.prevent="toggleCommit(row.commit.hash)"
+          @keydown.space.prevent="toggleCommit(row.commit.hash)"
+          @contextmenu="openMenu($event, row)"
+        >
+          <span class="scm-history-graph" :class="{ 'is-current': isHistoryHead(row.commit) }">
+            <svg class="scm-history-lane" :width="rowGraphWidth(row)" :height="SCM_LANE_HEIGHT" aria-hidden="true">
+              <path
+                v-for="(path, index) in historyGraph(row, openHash === row.commit.hash).paths"
+                :key="`p-${index}`"
+                :class="`scm-lane scm-lane-${path.color}`"
+                :d="path.d"
+                :stroke-width="path.width"
+              />
+              <circle
+                v-for="(dot, index) in historyGraph(row, openHash === row.commit.hash).dots"
+                :key="`d-${index}`"
+                :class="dotClass(dot.hole, dot.color)"
+                :cx="dotX(dot.index)"
+                :cy="SCM_LANE_WIDTH"
+                :r="dot.r"
+              />
+            </svg>
+          </span>
+          <span class="scm-history-copy">
+            <span class="scm-history-subject">{{ row.commit.subject || row.commit.hash.slice(0, 7) }}</span>
+            <span v-if="row.commit.author" class="scm-history-author">{{ row.commit.author }}</span>
+          </span>
+          <span class="scm-history-refs">
+            <template v-for="badge in rowBadges(row)" :key="badge.key">
+              <UiTooltip :content="badge.title">
+                <em :class="`scm-ref scm-lane-${badge.color}`">
+                  <span v-if="badge.count" class="scm-ref-count">{{ badge.count }}</span>
+                  <Codicon :name="HISTORY_REF_ICON[badge.kind]" :size="12" />
+                  <span v-if="badge.name" class="scm-ref-name">{{ badge.name }}</span>
+                </em>
+              </UiTooltip>
+            </template>
+          </span>
+          <span class="scm-history-actions" @click.stop @mousedown.stop>
+            <UiButton
+              variant="ghost"
+              size="icon"
+              :tip="t('scm.graph.openChanges')"
+              @click.stop="openChanges(row)"
+            >
+              <Codicon name="diff-multiple" :size="12" />
+            </UiButton>
+          </span>
+        </div>
         <div v-if="openHash === row.commit.hash" class="scm-history-files">
           <p v-if="filesLoading === row.commit.hash" class="tree-empty">{{ t('scm.graph.loadingFiles') }}</p>
           <div

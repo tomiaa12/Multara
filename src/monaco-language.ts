@@ -75,6 +75,39 @@ export function resolveMonacoLanguageId(
   return isRegistered(id) ? id : "plaintext";
 }
 
+/** 与后端 `language_for_path` 对齐，供 scm-diff 等无后端 language 的场景使用 */
+export function languageFromFilePath(path: string): string {
+  const lower = path.toLowerCase();
+  const base = lower.split(/[/\\]/).pop() ?? lower;
+  const ext = base.includes(".") ? base.slice(base.lastIndexOf(".") + 1) : "";
+  if (ext === "ts" || ext === "tsx" || ext === "mts" || ext === "cts") return "typescript";
+  if (ext === "js" || ext === "jsx" || ext === "mjs" || ext === "cjs") return "javascript";
+  if (ext === "vue") return "html";
+  if (ext === "rs") return "rust";
+  if (ext === "py") return "python";
+  if (ext === "go") return "go";
+  if (ext === "java") return "java";
+  if (ext === "kt" || ext === "kts") return "kotlin";
+  if (ext === "swift") return "swift";
+  if (ext === "c" || ext === "h" || ext === "cc" || ext === "cpp" || ext === "cxx" || ext === "hpp") {
+    return "cpp";
+  }
+  if (ext === "cs") return "csharp";
+  if (ext === "rb") return "ruby";
+  if (ext === "php") return "php";
+  if (ext === "sql") return "sql";
+  if (ext === "graphql" || ext === "gql") return "graphql";
+  if (ext === "xml" || ext === "svg") return "xml";
+  if (ext === "json") return "json";
+  if (ext === "md" || ext === "markdown" || ext === "mdx") return "markdown";
+  if (ext === "css" || ext === "scss" || ext === "less") return "css";
+  if (ext === "html" || ext === "htm") return "html";
+  if (ext === "toml" || ext === "ini" || ext === "conf") return "ini";
+  if (ext === "yml" || ext === "yaml") return "yaml";
+  if (ext === "sh" || ext === "zsh" || ext === "bash") return "shell";
+  return "plaintext";
+}
+
 export function shouldSuppressEmbeddedDiagnostics(languageId: string, path = ""): boolean {
   // .vue 按 HTML 高亮，但没有 Vue 语言服务，校验会把整篇标成波浪线。
   if (path.toLowerCase().endsWith(".vue")) return true;

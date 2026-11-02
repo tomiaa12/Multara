@@ -5066,6 +5066,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-text);
   font-size: var(--font-size-md);
   text-align: left;
+  cursor: pointer;
+}
+.scm-history-row:focus-visible {
+  outline: 1px solid var(--color-focus-ring, var(--color-accent));
+  outline-offset: -1px;
 }
 .scm-history-row:hover {
   background: var(--color-surface-active);
@@ -5167,6 +5172,38 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   align-items: center;
   margin-left: var(--spacing-1);
 }
+/* 对齐 VS Code SCM History：悬停时在 commit 右侧显示「打开更改」 */
+.scm-history-actions {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: var(--spacing-0-5);
+}
+.scm-history-row:hover .scm-history-actions,
+.scm-history-row.is-selected .scm-history-actions,
+.scm-history-row:focus-visible .scm-history-actions {
+  display: inline-flex;
+}
+.scm-history-actions .ui-button,
+.scm-history-actions .ui-button[data-size="icon"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  max-width: 18px;
+  max-height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+}
+.scm-history-actions .ui-button:hover,
+.scm-history-actions .ui-button[data-size="icon"]:hover {
+  color: var(--color-text-strong);
+  background: var(--color-surface-emphasis);
+}
 .scm-ref {
   display: flex;
   align-items: center;
@@ -5217,6 +5254,35 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   background: transparent;
   box-shadow: none;
 }
+/* 图标固定；文件名/路径可挤成 …；M/A 永远贴最右 */
+.scm-history-file .scm-file > .file-type-icon {
+  flex: 0 0 auto;
+}
+.scm-history-file .scm-file-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+.scm-history-file .scm-file > .ds-tooltip-trigger {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+}
+.scm-history-file .scm-file-path {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+.scm-history-file .scm-file > b {
+  position: static;
+  top: auto;
+  right: auto;
+  flex: 0 0 12px;
+  margin-left: auto;
+  transform: none;
+}
 .scm-history-file .scm-file:hover,
 .scm-history-file .scm-file:focus-visible {
   background: var(--color-surface-active);
@@ -5244,22 +5310,116 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
-/* VS Code dark diff: a light line wash, with the changed text highlighted behind the glyphs. */
-.git-diff-editor .monaco-editor {
+/* 对齐 VS Code MultiDiff：左侧文件列表 + 右侧当前文件 diff */
+.editor-main > .commit-multi-diff {
+  position: absolute;
+  inset: 0;
+}
+.commit-multi-diff {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.commit-multi-diff-files {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.commit-multi-diff-files .scm-file {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0 var(--spacing-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+.commit-multi-diff-files .scm-file.is-selected {
+  background: var(--color-selection);
+}
+.commit-multi-diff-files .scm-file > .file-type-icon {
+  flex: 0 0 auto;
+}
+.commit-multi-diff-files .scm-file-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+.commit-multi-diff-files .scm-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.commit-multi-diff-files .scm-file > b {
+  position: static;
+  top: auto;
+  right: auto;
+  flex: 0 0 12px;
+  margin-left: auto;
+  transform: none;
+}
+.commit-multi-diff .git-diff-editor,
+.commit-multi-diff .monaco-host {
+  min-width: 0;
+  min-height: 0;
+}
+/* Diff 颜色：挂在 host 上继承，并用 !important 压过 monaco 内联变量为空的情况 */
+.git-diff-editor,
+.git-diff-editor .monaco-editor,
+.git-diff-editor .monaco-diff-editor {
   --vscode-diffEditor-insertedLineBackground: #347d3926;
   --vscode-diffEditor-insertedTextBackground: #57ab5a33;
   --vscode-diffEditor-removedLineBackground: #c93c3726;
   --vscode-diffEditor-removedTextBackground: #f4706733;
+  --vscode-diffEditor-diagonalFill: #cccccc33;
 }
-.git-diff-editor .cdr.char-insert,
-.git-diff-editor .cdr.char-delete {
-  background-color: transparent;
-}
-[data-theme="light"] .git-diff-editor .monaco-editor {
+[data-theme="light"] .git-diff-editor,
+[data-theme="light"] .git-diff-editor .monaco-editor,
+[data-theme="light"] .git-diff-editor .monaco-diff-editor {
   --vscode-diffEditor-insertedLineBackground: #587c0c1a;
   --vscode-diffEditor-insertedTextBackground: #587c0c26;
   --vscode-diffEditor-removedLineBackground: #ad07071a;
   --vscode-diffEditor-removedTextBackground: #ad070726;
+  --vscode-diffEditor-diagonalFill: #22222233;
+}
+.git-diff-editor .line-insert,
+.git-diff-editor .monaco-diff-editor .line-insert {
+  background-color: var(--vscode-diffEditor-insertedLineBackground) !important;
+}
+.git-diff-editor .line-delete,
+.git-diff-editor .monaco-diff-editor .line-delete {
+  background-color: var(--vscode-diffEditor-removedLineBackground) !important;
+}
+.git-diff-editor .char-insert,
+.git-diff-editor .monaco-diff-editor .char-insert,
+.git-diff-editor .cdr.char-insert {
+  background-color: var(--vscode-diffEditor-insertedTextBackground) !important;
+}
+.git-diff-editor .char-delete,
+.git-diff-editor .monaco-diff-editor .char-delete,
+.git-diff-editor .cdr.char-delete {
+  background-color: var(--vscode-diffEditor-removedTextBackground) !important;
+}
+.git-diff-editor .diagonal-fill {
+  background-image: linear-gradient(
+    -45deg,
+    var(--vscode-diffEditor-diagonalFill) 12.5%,
+    #0000 12.5%,
+    #0000 50%,
+    var(--vscode-diffEditor-diagonalFill) 50%,
+    var(--vscode-diffEditor-diagonalFill) 62.5%,
+    #0000 62.5%,
+    #0000 100%
+  ) !important;
+  background-size: 8px 8px !important;
 }
 .workspace-mode-pill {
   display: inline-flex;
@@ -5911,10 +6071,13 @@ body.is-dragging-workspace-file * {
 .editor-tab {
   position: relative;
   display: flex;
+  /* 对齐 VS Code tabSizing: fit — 按内容自适应，超出可横向滚动 */
   flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-1-5);
-  max-width: 188px;
+  width: auto;
+  min-width: fit-content;
+  max-width: none;
   /* 高度随 .editor-tabs 拉伸（35px 栏高减去底边框），否则底部会被 overflow 裁掉 1px */
   align-self: stretch;
   min-height: 0;
@@ -5931,6 +6094,7 @@ body.is-dragging-workspace-file * {
   user-select: none;
 }
 .editor-tab-name {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6103,6 +6267,19 @@ body.is-dragging-workspace-file * {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+/* DiffEditor fixed tip：挂 body，避开 .vs-scroll transform；不挡点击 */
+.monaco-overflow-widgets-root {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  z-index: var(--z-floating);
+  pointer-events: none;
+}
+.monaco-overflow-widgets-root > * {
+  pointer-events: auto;
 }
 .editor-fallback,
 .monaco-canvas {
