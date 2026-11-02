@@ -26,7 +26,8 @@ import { useAppStore } from "../../stores/app";
 import { getCaretClientRect } from "./composer-caret";
 import { filterCommands } from "./composer-mentions";
 import { replaceSlashToken } from "./skill-slash";
-import { groupChatTargetOptions } from "./chat-target-options";
+import { groupChatTargetOptions, type ChatTargetOption } from "./chat-target-options";
+import ProviderLogo from "../ProviderLogo.vue";
 import {
   activeComposerTrigger,
   removeComposerTrigger,
@@ -552,6 +553,10 @@ const targetGroups = computed(() =>
   groupChatTargetOptions(props.targetOptions, { agents: t("nav.agents"), squads: t("nav.squads") }),
 );
 
+function isAgentTargetOption(option: SelectOption | null | undefined): option is ChatTargetOption {
+  return Boolean(option && String(option.value).startsWith("agent:"));
+}
+
 defineExpose({
   focus: () => field.value?.focus(),
   focusEnd: () => field.value?.focusEnd(),
@@ -619,7 +624,25 @@ defineExpose({
             :page-size="5"
             aria-label="选择要询问的智能体或小队"
             :groups="targetGroups"
-          />
+          >
+            <template #option-description="{ option, parts }">
+              <span
+                v-if="isAgentTargetOption(option)"
+                class="target-option-runtime"
+              >
+                <ProviderLogo
+                  v-if="option.runtimeProvider"
+                  class="target-option-runtime-logo"
+                  :provider="option.runtimeProvider"
+                  :size="12"
+                />
+                <span v-if="option.runtimeName" class="target-option-runtime-name">{{ option.runtimeName }}</span>
+                <span class="target-option-runtime-model">{{ option.runtimeModel || "auto" }}</span>
+                <span v-if="option.agentDescription" class="target-option-runtime-desc">{{ option.agentDescription }}</span>
+              </span>
+              <template v-else-if="parts">{{ parts[0] }}<mark v-if="parts[1]">{{ parts[1] }}</mark>{{ parts[2] }}</template>
+            </template>
+          </UiSelect>
           <template v-else>
             <AgentAvatar :value="targetAvatar" :name="targetLabel" :size="22" />
             <span>{{ targetLabel }}</span>
