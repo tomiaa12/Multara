@@ -1182,7 +1182,19 @@ input.ds-checkbox[type="checkbox"]:disabled {
 }
 .ds-avatar-stack > * + * {
   margin-left: -6px;
-  box-shadow: 0 0 0 2px var(--color-bg);
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+.ds-avatar-stack-more {
+  padding: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+.ds-avatar-stack-more:hover {
+  color: var(--color-text-strong);
+  background: var(--color-surface-hover);
 }
 
 /* ════════════════════════════════════════════════════════════════

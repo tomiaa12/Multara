@@ -11117,6 +11117,179 @@ label.settings-row:hover {
 }
 
 /* 列表：单一容器 + 分隔行，展开内容内嵌在行内 */
+.req-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.req-table {
+  width: 100%;
+  max-width: 100%;
+  table-layout: auto;
+}
+.req-table th,
+.req-table td {
+  overflow: hidden;
+}
+.req-table td {
+  height: auto;
+  padding-top: var(--spacing-2-5);
+  padding-bottom: var(--spacing-2-5);
+  vertical-align: middle;
+}
+.req-col-name {
+  width: auto;
+  min-width: 0;
+  max-width: 22rem;
+}
+.req-col-fluid {
+  width: 1%;
+  max-width: 12rem;
+  white-space: nowrap;
+}
+.req-col-actions {
+  width: 1%;
+  text-align: left;
+  white-space: nowrap;
+}
+.req-table-row {
+  cursor: pointer;
+}
+.req-table-row:focus-visible td {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.req-table-row.is-archived .req-table-name strong {
+  color: var(--color-text-secondary);
+}
+.req-table-name {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+.req-table-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-table-name .ds-badge .ds-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+.req-table td .req-note {
+  margin-top: 2px;
+}
+.req-col-actions .req-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--spacing-0-5);
+  white-space: nowrap;
+}
+.req-col-fluid .overflow-summary,
+.req-col-fluid .ds-avatar-stack {
+  max-width: 100%;
+}
+.overflow-summary {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-width: 0;
+  max-width: 100%;
+}
+.overflow-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 var(--spacing-2);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+.overflow-summary-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-col-fluid .overflow-summary-more {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.overflow-summary-more {
+  height: 22px;
+  padding: 0 var(--spacing-1-5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.overflow-summary-more:hover,
+.overflow-summary-more.is-quiet:hover {
+  color: var(--color-text-strong);
+  background: var(--color-surface-emphasis);
+}
+.overflow-summary-empty,
+.avatar-stack-empty {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.overflow-summary-dialog,
+.avatar-stack-dialog {
+  width: min(420px, 92vw);
+}
+.overflow-summary-list,
+.avatar-stack-list {
+  display: grid;
+  gap: var(--spacing-1);
+  max-height: min(360px, 50vh);
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.overflow-summary-list > li,
+.avatar-stack-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+  padding: var(--spacing-2);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+.overflow-summary-meta,
+.avatar-stack-meta {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+.overflow-summary-meta strong,
+.avatar-stack-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overflow-summary-meta small,
+.avatar-stack-meta small {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .req-list {
   display: grid;
   overflow: hidden;
