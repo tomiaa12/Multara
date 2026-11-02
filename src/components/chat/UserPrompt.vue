@@ -241,16 +241,23 @@ watch(
     >
       <template #actions>
         <template v-if="!viewOnly">
+          <!-- mousedown.prevent：footer-on-focus 下若等 click，失焦会先把页脚 display:none，点击落空；与底栏 Ctrl+C 同走 stop -->
           <UiButton
             v-if="running"
             type="button"
             class="icon-button"
-            tip="停止当前任务"
-            @click="emit('stop')"
+            :tip="t('chat.stopTaskShortcut')"
+            @mousedown.prevent="emit('stop')"
           >
             <Square :size="14" />
           </UiButton>
-          <UiButton class="ds-send-button send-button" type="submit" :disabled="draftEmpty" :tip="running ? '加入队列' : '发送'">
+          <UiButton
+            v-else
+            class="ds-send-button send-button"
+            type="submit"
+            :disabled="draftEmpty"
+            :tip="t('chat.send')"
+          >
             <ArrowUp :size="16" />
           </UiButton>
         </template>
