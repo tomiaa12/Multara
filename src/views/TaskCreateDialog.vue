@@ -175,17 +175,6 @@ function hasInput() {
   );
 }
 
-/** 与聊天 Tab 一致：先截断原文，再异步生成短标题。 */
-async function nameTaskFromPrompt(taskId: string, content: string) {
-  try {
-    const generated = (await backend.generateChatSessionTitle(content)).trim();
-    if (!generated) return;
-    await store.updateTask({ taskId, title: generated });
-  } catch {
-    // 保留创建时的截断标题。
-  }
-}
-
 async function onKey(event: KeyboardEvent) {
   if (!escapeClosesDialog(event)) return;
   if (hasInput() && !(await confirmDialog(t("common.discardUnsavedConfirm"), { type: "warning" }))) return;
@@ -312,7 +301,7 @@ async function create() {
       if (attachments.length) {
         store.send(description || title, task.sessionId, attachments, { mode: requestedMode.value });
       }
-      if (titleSeed) void nameTaskFromPrompt(task.id, titleSeed);
+      if (titleSeed) void store.nameTaskFromFirstPrompt(task.id, titleSeed, title);
     }
     form.labels = [];
     form.projectIds = [];
