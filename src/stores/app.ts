@@ -1051,6 +1051,7 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
+  /** 首条提问：截断占位 → 异步 LLM 短标题；手改过则不覆盖。 */
   async function nameSessionFromFirstPrompt(sessionId: string, content: string) {
     const session = data.value?.sessions.find((item) => item.id === sessionId);
     if (!session || !isUntitledSession(session.title)) return;
@@ -1059,6 +1060,31 @@ export const useAppStore = defineStore("app", () => {
       await updateSessionTitle(sessionId, fallback);
     } catch {
       // Keep the untitled session name when rename fails.
+      return;
+    }
+    try {
+      const generated = (await backend.generateChatSessionTitle(content)).trim();
+      if (!generated) return;
+      const current = data.value?.sessions.find((item) => item.id === sessionId);
+      if (!current || current.title !== fallback) return;
+      await updateSessionTitle(sessionId, generated);
+    } catch {
+      // Keep truncated title when generation fails.
+    }
+  }
+
+  /** 任务：创建时已截断；再异步升级，标题仍为 expectedTitle 才写入。 */
+  async function nameTaskFromFirstPrompt(taskId: string, content: string, expectedTitle: string) {
+    const baseline = expectedTitle.trim();
+    if (!baseline) return;
+    try {
+      const generated = (await backend.generateChatSessionTitle(content)).trim();
+      if (!generated || generated === baseline) return;
+      const task = data.value?.tasks.find((item) => item.id === taskId);
+      if (!task || task.title !== baseline) return;
+      await updateTask({ taskId, title: generated });
+    } catch {
+      // Keep truncated title when generation fails.
     }
   }
 
@@ -1647,6 +1673,7 @@ export const useAppStore = defineStore("app", () => {
     deleteSquad,
     createTask,
     updateTask,
+    nameTaskFromFirstPrompt,
     updateTaskMeta,
     updateTaskStatus,
     startTask,
