@@ -517,7 +517,7 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- 需求工作台/预览自带聊天：只隐藏不销毁，避免切菜单后再开气泡回到最早提问 -->
-    <FloatingChat :hidden="isWorkbenchPath(route.path)" />
+    <FloatingChat :hidden="isWorkbenchPath(route.path) || route.path === '/inbox'" />
     <UpdateNotification />
     <UnsavedChangesDialog
       v-if="unsavedPrompt"

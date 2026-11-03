@@ -11,8 +11,9 @@ import type { InboxItem } from "../domain/types";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import InboxFileReview from "./InboxFileReview.vue";
+import InboxToolRail from "./inbox/InboxToolRail.vue";
+import { inboxProjectIds, workspacesForProjects } from "./inbox/inbox-workspaces";
 import TaskActivity from "./TaskActivity.vue";
-import TaskIssueSide from "./TaskIssueSide.vue";
 import { relativeTime } from "./task-board";
 
 const store = useAppStore();
@@ -24,6 +25,12 @@ const REVIEW_DEFAULT_WIDTH = 420;
 const reviewFile = ref<{ workspaceId: string; filePath: string } | null>(null);
 const reviewWidth = ref(REVIEW_DEFAULT_WIDTH);
 const reviewPane = ref<{ layout: () => void } | null>(null);
+const toolRail = ref<{ closeAll: () => void } | null>(null);
+const stageContent = ref(false);
+const stagePanelWidth = ref(0);
+const stageTerminal = ref(false);
+const pickedWorkspaceId = ref("");
+const stageWidth = computed(() => (stageContent.value ? stagePanelWidth.value : 0));
 
 const items = computed(() =>
   [...(store.data?.inbox ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -94,6 +101,31 @@ const visibleItems = computed(() =>
   }),
 );
 const selected = computed(() => items.value.find((item) => item.id === selectedId.value) ?? null);
+const selectedSession = computed(() =>
+  store.data?.sessions.find((item) => item.id === selected.value?.sessionId),
+);
+const toolWorkspaces = computed(() => workspacesForProjects(
+  inboxProjectIds({
+    itemProjectId: selected.value?.projectId,
+    sessionProjectId: selectedSession.value?.projectId,
+    sessionProjectIds: selectedSession.value?.projectIds,
+  }),
+  store.data?.workspaces ?? [],
+));
+const activeWorkspace = computed(() =>
+  toolWorkspaces.value.find((item) => item.id === pickedWorkspaceId.value) ?? toolWorkspaces.value[0] ?? null,
+);
+
+function onToolLayout(payload: { content: boolean; files: boolean; width: number; terminal: boolean }) {
+  stageContent.value = payload.content;
+  stagePanelWidth.value = payload.width;
+  stageTerminal.value = payload.terminal;
+}
+
+function openReview(file: { workspaceId: string; filePath: string }, origin: "chat" | "tool") {
+  reviewFile.value = file;
+  if (origin === "chat") toolRail.value?.closeAll();
+}
 const selectedTask = computed(() =>
   store.data?.tasks.find((task) => task.id === selected.value?.taskId) ?? null,
 );
@@ -183,6 +215,10 @@ watch(items, (list) => {
   }
 });
 
+watch(selectedId, () => {
+  pickedWorkspaceId.value = "";
+});
+
 watch(
   selected,
   (item) => {
@@ -199,8 +235,15 @@ onUnmounted(() => {
 <template>
   <div
     class="inbox-page"
-    :class="{ 'has-file-review': reviewFile, 'has-task-side': selected?.taskId && !reviewFile }"
-    :style="reviewFile ? { '--inbox-review-width': `${reviewWidth}px` } : undefined"
+    :class="{
+      'has-file-review': reviewFile,
+      'has-stage': selected && stageWidth,
+      'has-terminal': selected && stageTerminal,
+    }"
+    :style="{
+      ...(reviewFile ? { '--inbox-review-width': `${reviewWidth}px` } : {}),
+      ...(stageWidth ? { '--inbox-stage-width': `${stageWidth}px` } : {}),
+    }"
   >
     <aside class="inbox-rail">
       <header>
@@ -291,7 +334,7 @@ onUnmounted(() => {
         :project-id="selected.projectId"
         :unread-message-id="dividerMessageId"
         review-in-place
-        @review-file="reviewFile = $event"
+        @review-file="openReview($event, 'chat')"
       />
     </section>
     <section v-else class="inbox-detail inbox-detail-empty">
@@ -301,11 +344,6 @@ onUnmounted(() => {
         <p>{{ t("inbox.noneSelectedHint") }}</p>
       </div>
     </section>
-    <TaskIssueSide
-      v-if="selected?.taskId && !reviewFile"
-      :key="`side-${selected.taskId}`"
-      :task-id="selected.taskId"
-    />
     <div
       v-if="reviewFile"
       class="panel-resize-handle"
@@ -322,6 +360,17 @@ onUnmounted(() => {
       :workspace-id="reviewFile.workspaceId"
       :file-path="reviewFile.filePath"
       @close="reviewFile = null"
+    />
+    <InboxToolRail
+      v-if="selected"
+      ref="toolRail"
+      :workspaces="toolWorkspaces"
+      :workspace-id="activeWorkspace?.id ?? ''"
+      :session-id="selected.sessionId"
+      :kind="sourceOf(selected)"
+      :task-id="selected.taskId"
+      @pick-workspace="pickedWorkspaceId = $event"
+      @layout="onToolLayout"
     />
   </div>
 </template>

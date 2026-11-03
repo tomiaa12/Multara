@@ -17,6 +17,7 @@ const props = defineProps<{
   x: number;
   y: number;
   items: ContextMenuItem[];
+  fit?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -66,7 +67,7 @@ watch(() => [props.x, props.y], () => nextTick(place));
 <template>
   <!-- Teleport 到 body，避免被 UiPane overflow / 容器裁剪（如 SCM 分支 … 菜单） -->
   <Teleport to="body">
-    <div ref="menuEl" class="context-menu" :style="style" role="menu">
+    <div ref="menuEl" class="context-menu" :class="{ 'is-fit': fit }" :style="style" role="menu">
       <template v-for="(item, index) in items" :key="index">
         <hr v-if="item.type === 'sep'" />
         <button
@@ -95,6 +96,13 @@ watch(() => [props.x, props.y], () => nextTick(place));
   display: block;
   flex: 1 1 auto;
   text-align: left;
+}
+.context-menu.is-fit {
+  min-width: 0;
+  width: max-content;
+}
+.context-menu.is-fit > button[role="menuitem"] {
+  width: auto;
 }
 .context-menu-check {
   flex: 0 0 auto;

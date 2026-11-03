@@ -63,7 +63,7 @@ export interface TerminalTab {
   busy?: boolean;
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   sessions: TerminalTab[];
   activeId: string;
   height: number;
@@ -71,7 +71,11 @@ const props = defineProps<{
   profiles?: TerminalProfile[];
   defaultProfile?: string;
   open?: boolean;
-}>();
+  /** 铺满父级，不画底栏标签、新建和拆分。收件箱侧栏用这个。 */
+  fill?: boolean;
+}>(), {
+  fill: false,
+});
 
 const emit = defineEmits<{
   close: [];
@@ -1343,18 +1347,19 @@ defineExpose({
 <template>
   <section
     class="bottom-panel"
-    :class="{ 'is-bell': bell }"
+    :class="{ 'is-bell': bell, 'is-fill': fill }"
     data-workspace-drop="terminal"
-    :style="{ height: `${height}px` }"
+    :style="fill ? undefined : { height: `${height}px` }"
   >
     <div
+      v-if="!fill"
       class="bottom-panel-resize"
       role="separator"
       aria-orientation="horizontal"
       :aria-label="t('terminal.resizeHeight')"
       @pointerdown="onResize"
     />
-    <header class="bottom-panel-bar">
+    <header v-if="!fill" class="bottom-panel-bar">
       <div
         ref="tabsEl"
         class="bottom-panel-tabs vs-scroll"

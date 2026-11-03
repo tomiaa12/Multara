@@ -29,7 +29,16 @@ import {
 import { renameBranchNotice } from "./workbench/scm-branch";
 import type { ScmGroupId, ScmOpenChangesPayload, ScmOpenTarget } from "./workbench/scm-groups";
 
-const props = defineProps<{ projectId: string; workspaces: Workspace[] }>();
+const props = withDefaults(defineProps<{
+  projectId: string;
+  workspaces: Workspace[];
+  readonly?: boolean;
+  /** 列表 / 树状视图的本地存储键。只读时不读也不写。 */
+  viewModeStorageKey?: string;
+}>(), {
+  readonly: false,
+  viewModeStorageKey: "multara.scm.viewMode",
+});
 const emit = defineEmits<{
   openChange: [target: ScmOpenTarget];
   openChanges: [payload: ScmOpenChangesPayload];
@@ -72,9 +81,13 @@ const messages = reactive<Record<string, string>>({});
 const collapsedRepos = ref(new Set<string>());
 const selectedWorkspaceId = ref("");
 const historyEpoch = ref(0);
-const viewMode = ref<"list" | "tree">(
-  localStorage.getItem("multara.scm.viewMode") === "tree" ? "tree" : "list",
-);
+function storedViewMode(): "list" | "tree" {
+  if (props.readonly) return "list";
+  if (localStorage.getItem(props.viewModeStorageKey) === "tree") return "tree";
+  return "list";
+}
+
+const viewMode = ref<"list" | "tree">(storedViewMode());
 
 const items = computed(() =>
   props.workspaces.map((workspace) => ({
@@ -95,8 +108,9 @@ watch(
 );
 
 function setViewMode(next: "list" | "tree") {
+  if (props.readonly) return;
   viewMode.value = next;
-  localStorage.setItem("multara.scm.viewMode", next);
+  localStorage.setItem(props.viewModeStorageKey, next);
 }
 
 let refreshTicket = 0;
@@ -434,6 +448,7 @@ defineExpose({ refresh });
     <UiPane class="scm-changes-pane" :title="t('scm.changes')" fill actions-visible storage-key="multara.scm.changesCollapsed" :min-body="120">
       <template #actions>
         <UiButton
+          v-if="!readonly"
           variant="ghost"
           size="icon"
           :tip="viewMode === 'list' ? t('scm.viewFolders') : t('scm.viewFlat')"
@@ -472,6 +487,7 @@ defineExpose({ refresh });
       :loading="loading"
       :view-mode="viewMode"
       :compact="items.length === 1"
+      :readonly="readonly"
       :selected="item.workspace.id === selectedWorkspaceId"
       :merge-session="store.mergeSessionFor(item.workspace.id)"
       @select="selectedWorkspaceId = item.workspace.id"
@@ -488,10 +504,6 @@ defineExpose({ refresh });
       @fetch="item.repository && run(`fetch:${item.workspace.id}`, () => backend.gitFetchWorkspace(item.workspace.id))"
       @pull="item.repository && pullRepo(item.workspace, item.repository)"
       @push="item.repository && pushRepo(item.workspace, item.repository)"
-      @abort="run(`abort:${item.workspace.id}`, async () => {
-        await backend.gitAbortWorkspaceMerge(item.workspace.id);
-        emit('worktreeChanged', item.workspace.id, []);
-      })"
       @generate="generateMessage(item.workspace.id)"
       @open-settings="openGitSettings"
       @refresh="refresh()"
@@ -508,7 +520,7 @@ defineExpose({ refresh });
     </UiPane>
 
     <ScmGraphView
-      v-if="workspaces.some((item) => item.kind === 'git')"
+      v-if="!readonly && workspaces.some((item) => item.kind === 'git')"
       :workspaces="workspaces"
       :workspace-id="selectedWorkspaceId"
       :epoch="historyEpoch"
