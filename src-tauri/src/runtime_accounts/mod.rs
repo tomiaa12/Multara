@@ -542,6 +542,60 @@ mod tests {
     }
 
     #[test]
+    fn copilot_prefers_own_login_over_gh_and_switches_slots() {
+        let home = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let keychain = MemoryKeychain::default();
+        let ctx = ctx(home.path(), &keychain);
+        let config = home.path().join(".copilot/config.json");
+        let hosts = home.path().join(".config/gh/hosts.yml");
+        item::write_private(
+            &config,
+            br#"// comment
+{"lastLoggedInUser":{"host":"https://github.com","login":"alice"}}
+"#,
+        )
+        .unwrap();
+        item::write_private(&hosts, b"github.com:\n    user: gh-only\n").unwrap();
+        keychain
+            .write("copilot-cli", "https://github.com:alice", "token-alice")
+            .unwrap();
+        keychain
+            .write("copilot-cli", "https://github.com:alice:github", "token-alice")
+            .unwrap();
+        keychain
+            .write("copilot-cli", "https://github.com:bob", "token-bob")
+            .unwrap();
+        keychain
+            .write("copilot-cli", "https://github.com:bob:github", "token-bob")
+            .unwrap();
+        keychain.write("gh:github.com", "gh-only", "gh-token").unwrap();
+
+        let first = status(&ctx, data.path(), "copilot").unwrap();
+        assert_eq!(first.live.label.as_deref(), Some("alice"));
+        let alice = first.live.account_id.clone().unwrap();
+
+        item::write_private(
+            &config,
+            br#"{"lastLoggedInUser":{"host":"https://github.com","login":"bob"}}"#,
+        )
+        .unwrap();
+        let switched = switch(&ctx, data.path(), "copilot", &alice, "copilot-missing").unwrap();
+        assert_eq!(switched.live.label.as_deref(), Some("alice"));
+        assert_eq!(
+            keychain
+                .read("copilot-cli", "https://github.com:alice")
+                .unwrap()
+                .as_deref(),
+            Some("token-alice")
+        );
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        assert_eq!(saved["lastLoggedInUser"]["login"], "alice");
+        assert_eq!(switched.accounts.len(), 2);
+    }
+
+    #[test]
     fn codex_keyring_mode_is_not_switchable() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();

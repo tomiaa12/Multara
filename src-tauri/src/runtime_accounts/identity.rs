@@ -113,7 +113,13 @@ fn visit_field(key: &str, value: &Value, found: &mut Found, depth: usize) {
         "active" if text.contains('@') => {
             found.email.get_or_insert(text);
         }
-        "login" | "username" | "displayname" | "nickname" | "name" if depth < NAME_MAX_DEPTH => {
+        "login" | "username" if depth < NAME_MAX_DEPTH => {
+            if looks_like_github_login(&text) {
+                found.id.get_or_insert(text.clone());
+            }
+            found.name.get_or_insert(text);
+        }
+        "displayname" | "nickname" | "name" if depth < NAME_MAX_DEPTH => {
             found.name.get_or_insert(text);
         }
         "defaultprovider" | "defaultmodel" | "model" => {
@@ -123,21 +129,49 @@ fn visit_field(key: &str, value: &Value, found: &mut Found, depth: usize) {
     }
 }
 
-/// YAML / .env 这类文本：只取 `defaultModel: xxx` 这样的一行作为显示名。
+/// YAML / .env 这类文本：取 `defaultModel` 作提示；GitHub CLI 的 `hosts.yml` 取 `user:`。
 fn scan_lines(text: &str, found: &mut Found) {
     for line in text.lines() {
-        let Some((key, value)) = line.split_once(':').or_else(|| line.split_once('=')) else {
+        let trimmed = line.trim();
+        // 只认 YAML 的 `user:`（含缩进），不认 `.env` 的 `USER=`，避免误伤
+        if let Some(login) = yaml_github_user(trimmed) {
+            found.id.get_or_insert(login.to_string());
+            found.name.get_or_insert(login.to_string());
+            continue;
+        }
+        if line.starts_with([' ', '\t']) {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':').or_else(|| trimmed.split_once('=')) else {
             continue;
         };
         let key = key.trim().to_ascii_lowercase();
         let value = value.trim().trim_matches(['"', '\'']);
-        if value.is_empty() || line.starts_with([' ', '\t']) {
+        if value.is_empty() {
             continue;
         }
         if matches!(key.as_str(), "defaultmodel" | "model" | "default_model") {
             found.hint.get_or_insert(value.to_string());
         }
     }
+}
+
+fn yaml_github_user(trimmed: &str) -> Option<&str> {
+    let value = trimmed
+        .strip_prefix("user:")?
+        .trim()
+        .trim_matches(['"', '\'']);
+    looks_like_github_login(value).then_some(value)
+}
+
+fn looks_like_github_login(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_alphanumeric()
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        && value.len() <= 39
 }
 
 fn digest(values: &[Option<Vec<u8>>]) -> String {
@@ -218,5 +252,23 @@ mod tests {
     #[test]
     fn nothing_present_is_signed_out() {
         assert_eq!(identify(&[None, None]), None);
+    }
+
+    #[test]
+    fn gh_hosts_yml_user_is_login() {
+        let hosts = b"github.com:\n    git_protocol: https\n    users:\n        alice:\n    user: alice\n";
+        let identity = identify(&[Some(hosts.to_vec()), Some(b"opaque-token".to_vec())]).unwrap();
+        assert_eq!(identity.key, "id:alice");
+        assert_eq!(identity.label.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn copilot_last_logged_in_user_json() {
+        let identity = identify(&[Some(
+            br#"{"host":"https://github.com","login":"k1306161643"}"#.to_vec(),
+        )])
+        .unwrap();
+        assert_eq!(identity.key, "id:k1306161643");
+        assert_eq!(identity.label.as_deref(), Some("k1306161643"));
     }
 }

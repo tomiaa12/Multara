@@ -290,6 +290,7 @@ const catalog: MessageCatalog = {
   "runtimeAccount.currentOnly": "目前登入 {name}",
   "runtimeAccount.terminalTitle": "登入 {name}",
   "runtimeAccount.terminalHint": "登入完成後會自動儲存帳號並關閉這個視窗。",
+  "runtimeAccount.loginFailed": "登入失敗，請重試或檢查網路。",
   "runtimeAccount.switched": "已切換，新任務會使用這個帳號",
   "runtimeAccount.restartHint": "已切換。這個 CLI 還在別處執行，重新啟動它才會使用新帳號",
   "runtime.createTitle": "添加執行環境",

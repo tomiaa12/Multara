@@ -290,6 +290,7 @@ const catalog: MessageCatalog = {
   "runtimeAccount.currentOnly": "{name}(으)로 로그인됨",
   "runtimeAccount.terminalTitle": "{name} 로그인",
   "runtimeAccount.terminalHint": "로그인을 마치면 계정이 자동으로 저장되고 이 창이 닫힙니다.",
+  "runtimeAccount.loginFailed": "로그인에 실패했습니다. 다시 시도하거나 네트워크를 확인하세요.",
   "runtimeAccount.switched": "전환했습니다. 새 작업은 이 계정을 사용합니다",
   "runtimeAccount.restartHint": "전환했습니다. 이 CLI가 다른 곳에서 실행 중이니 다시 시작해야 새 계정이 적용됩니다",
   "runtime.createTitle": "Add runtime",
