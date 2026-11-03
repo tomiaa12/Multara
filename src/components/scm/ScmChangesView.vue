@@ -42,6 +42,7 @@ const props = defineProps<{
   viewMode: "list" | "tree";
   compact: boolean;
   selected: boolean;
+  readonly?: boolean;
   /** 这个工作区是解决冲突用的临时合并 Worktree 时传入 */
   mergeSession?: MergeSession | null;
 }>();
@@ -55,7 +56,6 @@ const emit = defineEmits<{
   fetch: [];
   pull: [];
   push: [];
-  abort: [];
   mergeInto: [];
   finishMerge: [];
   pullMerge: [];
@@ -395,7 +395,7 @@ function onPrimary() {
         <span class="scm-repo-name">{{ workspace.name }}</span>
         <span v-if="workspace.kind === 'git'" class="scm-repo-kind">Git</span>
       </button></UiTooltip>
-      <div v-if="repository && branchBar" class="scm-repo-actions">
+      <div v-if="!readonly && repository && branchBar" class="scm-repo-actions">
         <UiTooltip :content="branchTitle"><button
           type="button"
           class="scm-status-action"
@@ -475,7 +475,7 @@ function onPrimary() {
             {{ unresolvedCount ? t("scm.conflictsLeft", { count: unresolvedCount }) : t("scm.conflictsDone") }}
             · {{ t("scm.mergeCleanup", { action: mergeSession.push ? t("scm.mergeThenPush") : t("scm.mergeThenLocal") }) }}
           </p>
-          <div class="scm-merge-session-actions">
+          <div v-if="!readonly" class="scm-merge-session-actions">
             <UiButton
               size="small"
               :disabled="Boolean(busy)"
@@ -514,7 +514,7 @@ function onPrimary() {
           </div>
         </div>
         <ScmCommitBox
-          v-if="!mergeSession"
+          v-if="!readonly && !mergeSession"
           v-model="message"
           :workspace-id="workspace.id"
           :repository="repository"
@@ -527,22 +527,12 @@ function onPrimary() {
           @generate="emit('generate')"
           @settings="emit('openSettings', 'commit')"
         />
-        <div v-if="repository.merging && !mergeSession" class="scm-merge-banner">
-          <span>{{ t("scm.resolvingMerge") }}</span>
-          <UiButton
-            size="small"
-            :disabled="Boolean(busy)"
-            :tip="scmBusyTitle(busy, `abort:${workspace.id}`, t('scm.abortMergeShortTitle'))"
-            @click="emit('abort')"
-          >
-            {{ t("scm.abortMergeShort") }}
-          </UiButton>
-        </div>
         <ScmResourceList
           :workspace-id="workspace.id"
           :groups="groups"
           :view-mode="viewMode"
           :busy="busy"
+          :readonly="readonly"
           @open="emit('open', $event)"
           @open-file="emit('openFile', $event)"
           @stage="emit('stage', $event)"

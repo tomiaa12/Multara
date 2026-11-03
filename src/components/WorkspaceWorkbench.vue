@@ -24,7 +24,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  X,
 } from "@lucide/vue";
 import { monaco } from "../monaco";
 import {
@@ -46,6 +45,7 @@ import ChatPanel from "./ChatPanel.vue";
 import AddWorkspaceModal from "./dashboard/AddWorkspaceModal.vue";
 import ExplorerTreeList from "./workbench/ExplorerTreeList.vue";
 import FileTypeIcon from "./FileTypeIcon.vue";
+import EditorTabButton from "./workbench/EditorTabButton.vue";
 import SourceControlPanel from "./SourceControlPanel.vue";
 import CommitMultiDiffEditor, { type CommitDiffFile } from "./scm/CommitMultiDiffEditor.vue";
 import GitDiffEditor from "./scm/GitDiffEditor.vue";
@@ -151,6 +151,7 @@ import {
 import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
+import { activeTerminalSessionId, terminalSessions } from "../stores/terminal-sessions";
 import { useAppStore } from "../stores/app";
 import { useEditorStatusStore } from "../stores/editor-status";
 
@@ -305,8 +306,10 @@ const searchView = ref<{
 } | null>(null);
 const terminalOpen = ref(false);
 const terminalHeight = ref(Number(localStorage.getItem("multara.panel.terminalHeight")) || 240);
-const terminalTabs = ref<TerminalTab[]>([]);
-const activeTerminalId = ref("");
+const previewTerminals = ref<TerminalTab[]>([]);
+const previewActiveTerminalId = ref("");
+const terminalTabs = props.preview ? previewTerminals : terminalSessions;
+const activeTerminalId = props.preview ? previewActiveTerminalId : activeTerminalSessionId;
 const terminalProfiles = ref<backend.TerminalProfile[]>([]);
 const defaultTerminalProfile = ref(localStorage.getItem("multara.terminal.defaultProfile") || "");
 const pendingTerminalProfile = ref<string | undefined>();
@@ -5960,39 +5963,23 @@ defineExpose({
     <section class="editor-area" data-workspace-drop="editor">
       <header class="editor-tabbar">
         <div ref="editorTabsEl" class="editor-tabs vs-scroll">
-          <template v-for="tab in editorTabs" :key="tabKey(tab)">
-            <UiTooltip :content="editorTabTitle(tab)">
-              <button
-                type="button"
-                class="editor-tab"
-                :class="{
-                  active: activeEditorKey === tabKey(tab),
-                  'is-preview': !tab.pinned,
-                  'is-dirty': isEditorTabDirty(tab),
-                }"
-                @click="activateEditorTab(tab)"
-                @dblclick="pinEditorTab(tab)"
-                @click.middle.prevent="closeEditorTab(tab, $event)"
-                @mousedown.middle.prevent
-                @mousedown="$event.button === 2 && $event.preventDefault()"
-                @contextmenu="openTabMenu(tab, $event)"
-              >
-                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
-                <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
-                <span class="editor-tab-name">{{ editorTabName(tab) }}</span>
-                <span v-if="tab.gitDiff?.short" class="editor-tab-diff">{{ tab.gitDiff.short }}</span>
-                <UiTooltip :content="t('common.close')">
-                  <span
-                    class="tab-close"
-                    :class="{ 'is-dirty': isEditorTabDirty(tab) }"
-                    @click="closeEditorTab(tab, $event)"
-                  >
-                    <X :size="12" />
-                  </span>
-                </UiTooltip>
-              </button>
-            </UiTooltip>
-          </template>
+          <EditorTabButton
+            v-for="tab in editorTabs"
+            :key="tabKey(tab)"
+            :tip="editorTabTitle(tab)"
+            :name="editorTabName(tab)"
+            :active="activeEditorKey === tabKey(tab)"
+            :preview="!tab.pinned"
+            :dirty="isEditorTabDirty(tab)"
+            :diff-short="tab.gitDiff?.short || ''"
+            @select="activateEditorTab(tab)"
+            @pin="pinEditorTab(tab)"
+            @close="closeEditorTab(tab, $event)"
+            @contextmenu="openTabMenu(tab, $event)"
+          >
+            <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+            <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
+          </EditorTabButton>
         </div>
         <div
           v-if="markdownToggleVisible"

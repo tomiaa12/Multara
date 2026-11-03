@@ -21,6 +21,7 @@ const props = defineProps<{
   groups: Array<{ id: ScmGroupId; files: GitFileStatus[] }>;
   viewMode: "list" | "tree";
   busy: string;
+  readonly?: boolean;
 }>();
 const emit = defineEmits<{
   open: [payload: { group: ScmGroupId; path: string }];
@@ -43,6 +44,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     { id: "open", label: many ? t("scm.resource.openSelected") : t("workbench.gitOpenChanges"), disabled: many },
     { id: "openFile", label: t("scm.resource.openFile"), disabled: many },
   ];
+  if (props.readonly) return items;
   if (group === "staged") {
     items.push({ id: "unstage", label: many ? t("scm.resource.unstageSelected") : t("scm.unstage") });
   } else {
@@ -202,7 +204,7 @@ function guideLeft(level: number) {
         {{ SCM_GROUP_LABEL[group.id] }}
       </button>
       <small class="scm-group-count">{{ group.files.length }}</small>
-      <div class="scm-group-actions">
+      <div v-if="!readonly" class="scm-group-actions">
         <UiButton
           v-if="group.id !== 'staged'"
           variant="ghost"
