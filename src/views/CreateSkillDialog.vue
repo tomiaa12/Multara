@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Download, FolderOpen, Plus, Sparkles, Store, X
 import type { CatalogItem, ResourceSource } from "../domain/types";
 import CliSourceIcon from "../components/CliSourceIcon.vue";
 import { cliSkillsDisplay } from "../domain/cli-catalog";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
@@ -62,11 +63,11 @@ function submitLabel() {
   return t("skills.create.submitImport");
 }
 
-function onKey(event: KeyboardEvent) {
+async function onKey(event: KeyboardEvent) {
   if (busy.value || !escapeClosesDialog(event)) return;
   const hasInput = [form.name, form.description, form.body, form.url, form.requirement, folderPath.value]
     .some((value) => value.trim());
-  if (hasInput && !window.confirm(t("common.discardUnsavedConfirm"))) return;
+  if (hasInput && !(await confirmDialog(t("common.discardUnsavedConfirm"), { type: "warning" }))) return;
   emit("close");
 }
 

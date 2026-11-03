@@ -14,6 +14,7 @@ import {
   watchEffect,
 } from "vue";
 import { useRoute } from "vue-router";
+import { confirmDialog } from "./ui/confirm-dialog";
 import { t } from "../i18n";
 import { titlebarDetail } from "../stores/titlebar";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
@@ -148,6 +149,7 @@ import {
   readWorkspaceFileDragData,
   resolvePathInWorkspaces,
 } from "./chat/workspace-file-drag";
+import { isOversizedInlineSelection } from "./chat/composer-content";
 import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
@@ -1758,7 +1760,7 @@ async function confirmDetachWorkspace(workspace: Workspace) {
     unsavedCount,
     sharedCheckout,
   });
-  if (!window.confirm(message)) return;
+  if (!(await confirmDialog(message, { danger: true, type: "warning" }))) return;
   try {
     if (props.preview) {
       detachedWorkspaceIds.value = new Set([
@@ -2834,7 +2836,7 @@ async function confirmCloseTab(tab: EditorTab) {
 
 async function confirmLeaveDirtyEditors() {
   if (terminalTabs.value.some((item) => item.busy)) {
-    if (!window.confirm(t("workbench.terminalBusyLeave"))) return false;
+    if (!(await confirmDialog(t("workbench.terminalBusyLeave"), { type: "warning" }))) return false;
   }
   return confirmDirtyEditorTabs();
 }
@@ -4663,6 +4665,8 @@ async function attachDroppedFiles(event: DragEvent) {
 function addTerminalSelectionToChat(payload: { text: string; startLine: number; endLine: number }) {
   const tab = terminalTabs.value.find((item) => item.id === activeTerminalId.value);
   if (!payload.text.trim()) return;
+  // 超大终端选区无法回读文件，静默跳过（对齐代码选区：不打扰用户）。
+  if (isOversizedInlineSelection(payload.text, payload.startLine, payload.endLine)) return;
   const context: EditorSelectionContext = {
     id: crypto.randomUUID(),
     workspaceId: tab?.workspaceId ?? workspaces.value[0]?.id ?? "",
@@ -4699,13 +4703,14 @@ function addSelectionToChat(
     store.reportComposerNotice(t("workbench.emptyLineReference"));
     return;
   }
+  const oversized = isOversizedInlineSelection(text, range.startLineNumber, range.endLineNumber);
   const context = {
     id: crypto.randomUUID(),
     workspaceId: file.workspaceId,
     path: file.path,
     startLine: range.startLineNumber,
     endLine: range.endLineNumber,
-    text,
+    text: oversized ? "" : text,
   };
   if (props.preview) {
     chatPanel.value?.insertChip(context);
@@ -5181,7 +5186,7 @@ watch(leftTab, async (next, previous) => {
     const prompt = dirtyTabs.length === 1
       ? t("workbench.openGitSaveOne", { name: fileNameOf(dirtyTabs[0].path) })
       : t("workbench.openGitSaveMany", { count: dirtyTabs.length });
-    if (!window.confirm(prompt)) {
+    if (!(await confirmDialog(prompt, { type: "warning" }))) {
       revertSidebarTab = true;
       leftTab.value = previous && previous !== "git" ? previous : "files";
       return;

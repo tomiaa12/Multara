@@ -2,6 +2,7 @@
 import { computed, nextTick, ref } from "vue";
 import { X } from "@lucide/vue";
 import type { Workspace } from "../../domain/types";
+import { confirmDialog } from "../ui/confirm-dialog";
 import { t } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import {
@@ -32,7 +33,7 @@ const title = computed(() =>
   t("dashboard.workspacesManageTitle", { name: props.projectName }),
 );
 
-function confirmRemove(choice: WorkspaceDeleteChoice) {
+async function confirmRemove(choice: WorkspaceDeleteChoice) {
   const workspace = props.workspaces.find((item) => item.id === choice.workspaceId);
   if (!workspace || busyId.value) return;
   const row = panel.value?.rows.find((item) => item.workspace.id === workspace.id);
@@ -49,14 +50,14 @@ function confirmRemove(choice: WorkspaceDeleteChoice) {
     unsavedCount: 0,
     sharedCheckout,
   });
-  if (!window.confirm(message)) return;
+  if (!(await confirmDialog(message, { danger: true, type: "warning" }))) return;
 
   if (row?.dirty) {
     const dirtyMessage = t("dashboard.removeWorkspaceDirtyConfirm", {
       name: workspace.name,
       count: row.changeCount,
     });
-    if (!window.confirm(dirtyMessage)) return;
+    if (!(await confirmDialog(dirtyMessage, { danger: true, type: "warning" }))) return;
   }
 
   const branchBits: string[] = [];
@@ -68,7 +69,7 @@ function confirmRemove(choice: WorkspaceDeleteChoice) {
       name: workspace.name,
       options: branchBits.join("、"),
     });
-    if (!window.confirm(branchMessage)) return;
+    if (!(await confirmDialog(branchMessage, { danger: true, type: "warning" }))) return;
   }
 
   void runRemove(choice);

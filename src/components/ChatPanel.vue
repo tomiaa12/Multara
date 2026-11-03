@@ -37,8 +37,6 @@ import {
 } from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { lastUnansweredUser } from "./chat/unanswered-turn";
-import { decodeTextBytes } from "./workbench/text-encoding";
-
 const emit = defineEmits<{
   "review-file": [file: { workspaceId: string; filePath: string }];
 }>();
@@ -803,16 +801,13 @@ function projectWorkspaces() {
 }
 
 function insertLocalWorkspaceChip(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
-  const listing = file.isDirectory
-    ? "App.vue\ncomposer.ts\nutils.ts"
-    : "export const demo = true;\n";
   const context: EditorSelectionContext = {
     id: crypto.randomUUID(),
     workspaceId: file.workspaceId,
     path: file.path,
     startLine: 0,
-    endLine: file.isDirectory ? 0 : Math.max(1, listing.split("\n").length),
-    text: listing,
+    endLine: 0,
+    text: "",
     isDirectory: Boolean(file.isDirectory),
   };
   previewContexts.value = [...previewContexts.value, context].slice(-8);
@@ -854,35 +849,16 @@ async function attachFileFromSuggest(file: { workspaceId: string; path: string; 
   await attachOsFiles([{ path: file.path, name, isDirectory: Boolean(file.isDirectory) }]);
 }
 
-function formatDroppedListing(entries: { name: string; isDirectory: boolean }[]) {
-  return entries.map((entry) => (entry.isDirectory ? `${entry.name}/` : entry.name)).join("\n");
-}
-
-async function readExternalDroppedEntry(entry: OsDroppedEntry) {
+async function resolveExternalDroppedKind(entry: OsDroppedEntry) {
   const path = entry.path || entry.name || t("chat.externalFile");
-  if (entry.isDirectory) {
-    if (!entry.path) return { path, text: "", isDirectory: true };
-    return {
-      path,
-      text: formatDroppedListing(await backend.listExternalDirectory(entry.path)),
-      isDirectory: true,
-    };
-  }
-  if (entry.file) {
-    const bytes = new Uint8Array(await entry.file.arrayBuffer());
-    const text = decodeTextBytes(bytes);
-    return { path, text, isDirectory: false };
-  }
-  if (!entry.path) throw new Error(t("chat.dragReadFail"));
+  if (entry.isDirectory) return { path, isDirectory: true };
+  if (entry.isDirectory === false || entry.file) return { path, isDirectory: false };
+  if (!entry.path) return { path, isDirectory: false };
   try {
-    const file = await backend.readExternalFile(entry.path);
-    return { path: file.path || path, text: file.content, isDirectory: false };
+    await backend.listExternalDirectory(entry.path);
+    return { path, isDirectory: true };
   } catch {
-    return {
-      path,
-      text: formatDroppedListing(await backend.listExternalDirectory(entry.path)),
-      isDirectory: true,
-    };
+    return { path, isDirectory: false };
   }
 }
 
@@ -893,30 +869,16 @@ async function attachExternalEntry(entry: OsDroppedEntry) {
     rememberComposerFile({ path, isDirectory: entry.isDirectory });
     return;
   }
-  try {
-    const loaded = await readExternalDroppedEntry(entry);
-    store.addComposerContext({
-      workspaceId: "",
-      path: loaded.path,
-      startLine: 0,
-      endLine: loaded.isDirectory ? 0 : Math.max(1, loaded.text.split(/\r\n|\r|\n/).length),
-      text: loaded.text,
-      isDirectory: loaded.isDirectory,
-    });
-    rememberComposerFile({ path: loaded.path, isDirectory: loaded.isDirectory });
-  } catch {
-    const name = path.split(/[\\/]/).pop() || path;
-    store.reportComposerNotice(t("chat.attachEmpty", { name }));
-    store.addComposerContext({
-      workspaceId: "",
-      path,
-      startLine: 0,
-      endLine: entry.isDirectory ? 0 : 1,
-      text: "",
-      isDirectory: Boolean(entry.isDirectory),
-    });
-    rememberComposerFile({ path, isDirectory: entry.isDirectory });
-  }
+  const loaded = await resolveExternalDroppedKind(entry);
+  store.addComposerContext({
+    workspaceId: "",
+    path: loaded.path,
+    startLine: 0,
+    endLine: 0,
+    text: "",
+    isDirectory: loaded.isDirectory,
+  });
+  rememberComposerFile({ path: loaded.path, isDirectory: loaded.isDirectory });
 }
 
 async function attachOsFiles(entries: OsDroppedEntry[]) {

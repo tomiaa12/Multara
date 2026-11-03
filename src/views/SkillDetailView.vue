@@ -13,6 +13,7 @@ import type { ExplorerRowNode } from "../components/workbench/explorer/explorer-
 import { nestExplorerRows, type ExplorerTreeNode } from "../components/workbench/explorer-tree";
 import { monaco, monacoLanguageId } from "../monaco";
 import { currentDocumentTheme, monacoThemeName, watchDocumentTheme } from "../editor/monaco-workspace";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { relativeTime } from "./task-board";
 import * as backend from "../services/backend";
@@ -153,7 +154,7 @@ async function openEntry(entry: FileEntry) {
   }
   if (dirty.value) {
     if (entry.path === selectedPath.value) return;
-    if (!window.confirm(t("common.discardUnsavedConfirm"))) return;
+    if (!(await confirmDialog(t("common.discardUnsavedConfirm"), { type: "warning" }))) return;
   }
   const token = ++openToken;
   fileError.value = "";
@@ -247,7 +248,7 @@ async function reveal() {
 
 async function removeSkill() {
   if (!skill.value) return;
-  if (!window.confirm(t("skills.deleteConfirm", { name: skill.value.name }))) return;
+  if (!(await confirmDialog(t("skills.deleteConfirm", { name: skill.value.name }), { danger: true }))) return;
   try {
     await store.deleteSkill(skill.value.id);
     await router.push("/skills");

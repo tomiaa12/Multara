@@ -9,6 +9,7 @@ import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.
 import type { DirectoryColumn } from "../components/ui/directory-table";
 import * as backend from "../services/backend";
 import { cliMcpDisplay } from "../domain/cli-catalog";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { mcpBrandFallbackColor, mcpBrandIconUrl, mcpBrandInitial } from "./mcp-brand-icon";
 import { argsToText, detectedNeedsAuth, emptyMcpInput, jsonToMcpInputs, mcpInputToJson, parseArgsText } from "./mcp-json";
@@ -223,7 +224,7 @@ async function save() {
 }
 
 async function remove(item: GlobalResource) {
-  if (!window.confirm(t("mcp.deleteConfirm", { name: item.name }))) return;
+  if (!(await confirmDialog(t("mcp.deleteConfirm", { name: item.name }), { danger: true }))) return;
   try {
     await store.deleteMcp(item.name, item.owner);
   } catch (cause) {

@@ -10,6 +10,7 @@ import ScmGraphView from "./scm/ScmGraphView.vue";
 import MergeIntoDialog from "./scm/MergeIntoDialog.vue";
 import { useAppStore } from "../stores/app";
 import { parseGitHookFailure, type GitHookFailure } from "./workbench/git-hook-error";
+import { confirmDialog } from "./ui/confirm-dialog";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
 import {
@@ -188,9 +189,12 @@ async function run(
   }
 }
 
-function confirmDirect(workspace: Workspace, repository: GitRepositoryStatus, action: string) {
+async function confirmDirect(workspace: Workspace, repository: GitRepositoryStatus, action: string) {
   if (workspaceMode(workspace) !== "direct") return true;
-  return window.confirm(t("scm.confirmDirect", { action, name: workspace.name, branch: repository.branch }));
+  return confirmDialog(
+    t("scm.confirmDirect", { action, name: workspace.name, branch: repository.branch }),
+    { type: "warning" },
+  );
 }
 
 function stage(workspaceId: string, paths: string[], staged: boolean) {
@@ -231,14 +235,20 @@ async function generateMessage(workspaceId: string) {
   }
 }
 
-function commit(workspace: Workspace, repository: GitRepositoryStatus, next?: "push" | "sync") {
+async function commit(workspace: Workspace, repository: GitRepositoryStatus, next?: "push" | "sync") {
   const message = messages[workspace.id]?.trim();
   if (!message || !repository.changes.some((item) => item.staged)) return;
-  if (workspaceMode(workspace) === "direct" && !window.confirm(t("scm.confirmCommitDirect", { name: workspace.name, branch: repository.branch }))) {
+  if (
+    workspaceMode(workspace) === "direct"
+    && !(await confirmDialog(
+      t("scm.confirmCommitDirect", { name: workspace.name, branch: repository.branch }),
+      { type: "warning" },
+    ))
+  ) {
     return;
   }
-  if (next === "push" && !confirmDirect(workspace, repository, t("scm.commitPush"))) return;
-  if (next === "sync" && !confirmDirect(workspace, repository, t("scm.commitSync"))) return;
+  if (next === "push" && !(await confirmDirect(workspace, repository, t("scm.commitPush")))) return;
+  if (next === "sync" && !(await confirmDirect(workspace, repository, t("scm.commitSync")))) return;
   const kind: HookPlanKind = next === "push" ? "commit-push" : next === "sync" ? "commit-sync" : "commit";
   return run(`commit:${workspace.id}`, async () => {
     rememberCommitMessage(workspace.id, message);
@@ -252,49 +262,52 @@ function commit(workspace: Workspace, repository: GitRepositoryStatus, next?: "p
   }, { workspaceId: workspace.id, kind });
 }
 
-function publishBranch(workspace: Workspace, repository: GitRepositoryStatus) {
+async function publishBranch(workspace: Workspace, repository: GitRepositoryStatus) {
   if (!canPublishBranch(repository)) return;
   const message = messages[workspace.id] ?? "";
   if (message.trim() && repository.changes.some((item) => item.staged)) {
     return commit(workspace, repository, "push");
   }
   const stagedCount = repository.changes.filter((item) => item.staged).length;
-  if (publishSkipsStagedChanges(message, stagedCount) && !window.confirm(publishWithoutCommitConfirm(stagedCount))) {
+  if (
+    publishSkipsStagedChanges(message, stagedCount)
+    && !(await confirmDialog(publishWithoutCommitConfirm(stagedCount), { type: "warning" }))
+  ) {
     return;
   }
-  if (!confirmDirect(workspace, repository, t("scm.action.publish"))) return;
+  if (!(await confirmDirect(workspace, repository, t("scm.action.publish")))) return;
   return run(`push:${workspace.id}`, async () => {
     await backend.gitPushWorkspace(workspace.id);
     if (publishSkipsStagedChanges(message, stagedCount)) notice.value = publishStagedLeftNotice();
   }, { workspaceId: workspace.id, kind: "push" });
 }
 
-function syncRepo(workspace: Workspace, repository: GitRepositoryStatus) {
-  if (!confirmDirect(workspace, repository, t("scm.sync"))) return;
+async function syncRepo(workspace: Workspace, repository: GitRepositoryStatus) {
+  if (!(await confirmDirect(workspace, repository, t("scm.sync")))) return;
   return run(`sync:${workspace.id}`, async () => {
     await backend.gitSyncWorkspace(workspace.id);
     emit("worktreeChanged", workspace.id, []);
   }, { workspaceId: workspace.id, kind: "sync" });
 }
 
-function pullRepo(workspace: Workspace, repository: GitRepositoryStatus) {
-  if (!confirmDirect(workspace, repository, t("scm.pull"))) return;
+async function pullRepo(workspace: Workspace, repository: GitRepositoryStatus) {
+  if (!(await confirmDirect(workspace, repository, t("scm.pull")))) return;
   return run(`pull:${workspace.id}`, async () => {
     await backend.gitPullWorkspace(workspace.id);
     emit("worktreeChanged", workspace.id, []);
   }, { workspaceId: workspace.id, kind: "pull" });
 }
 
-function pushRepo(workspace: Workspace, repository: GitRepositoryStatus) {
-  if (!confirmDirect(workspace, repository, t("scm.push"))) return;
+async function pushRepo(workspace: Workspace, repository: GitRepositoryStatus) {
+  if (!(await confirmDirect(workspace, repository, t("scm.push")))) return;
   return run(`push:${workspace.id}`, () => backend.gitPushWorkspace(workspace.id), {
     workspaceId: workspace.id,
     kind: "push",
   });
 }
 
-function renameBranch(workspace: Workspace, repository: GitRepositoryStatus, branch: string, renameRemote = false) {
-  if (!confirmDirect(workspace, repository, t("scm.action.rename"))) return;
+async function renameBranch(workspace: Workspace, repository: GitRepositoryStatus, branch: string, renameRemote = false) {
+  if (!(await confirmDirect(workspace, repository, t("scm.action.rename")))) return;
   return run(`switch:${workspace.id}`, async () => {
     const report = await backend.gitRenameWorkspaceBranch(workspace.id, branch, renameRemote);
     notice.value = renameBranchNotice(report);
@@ -311,7 +324,7 @@ function setUpstream(workspace: Workspace, upstream: string) {
   });
 }
 
-function switchBranch(
+async function switchBranch(
   workspace: Workspace,
   repository: GitRepositoryStatus,
   branch: string,
@@ -320,7 +333,7 @@ function switchBranch(
   detach = false,
 ) {
   const verb = detach ? t("scm.action.detachCheckout") : create ? t("scm.action.createSwitch") : t("scm.action.switchTo");
-  if (!confirmDirect(workspace, repository, verb)) return;
+  if (!(await confirmDirect(workspace, repository, verb))) return;
   return run(`switch:${workspace.id}`, async () => {
     await backend.gitSwitchWorkspaceBranch(workspace.id, branch, create, from || null, detach);
     emit("worktreeChanged", workspace.id, []);
@@ -354,10 +367,13 @@ function finishMerge(workspace: Workspace) {
   });
 }
 
-function abortMergeSession(workspace: Workspace) {
+async function abortMergeSession(workspace: Workspace) {
   const merge = store.mergeSessionFor(workspace.id);
   if (!merge) return;
-  if (!window.confirm(t("scm.abortMergeConfirm", { source: merge.sourceLabel, target: merge.targetBranch }))) return;
+  if (!(await confirmDialog(
+    t("scm.abortMergeConfirm", { source: merge.sourceLabel, target: merge.targetBranch }),
+    { danger: true, type: "warning" },
+  ))) return;
   return run(`abort-merge:${workspace.id}`, async () => {
     await store.abortMergeSession(merge.id);
     notice.value = t("scm.abortMergeDone");
