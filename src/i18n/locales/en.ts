@@ -291,6 +291,7 @@ const catalog: MessageCatalog = {
   "runtimeAccount.currentOnly": "Signed in as {name}",
   "runtimeAccount.terminalTitle": "Sign in to {name}",
   "runtimeAccount.terminalHint": "Once you're signed in, the account is saved and this window closes automatically.",
+  "runtimeAccount.loginFailed": "Sign-in failed. Try again or check your network.",
   "runtimeAccount.switched": "Switched. New tasks will use this account",
   "runtimeAccount.restartHint": "Switched. This CLI is still running elsewhere; restart it to use the new account",
   "runtime.createTitle": "Add runtime",

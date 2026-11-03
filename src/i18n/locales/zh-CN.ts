@@ -291,6 +291,7 @@ const catalog: MessageCatalog = {
   "runtimeAccount.currentOnly": "当前登录 {name}",
   "runtimeAccount.terminalTitle": "登录 {name}",
   "runtimeAccount.terminalHint": "登录完成后会自动保存账号并关闭这个窗口。",
+  "runtimeAccount.loginFailed": "登录失败，请重试或检查网络。",
   "runtimeAccount.switched": "已切换，新任务会使用这个账号",
   "runtimeAccount.restartHint": "已切换。这个 CLI 还在别处运行，重启它才会用新账号",
   "runtime.createTitle": "添加运行时",
