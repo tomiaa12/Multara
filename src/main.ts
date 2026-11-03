@@ -2,11 +2,48 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
 
-/** macOS / Chromium：右键会先选中光标下的词；阻止默认即可，不影响 contextmenu。 */
+function isEditableTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element
+    && Boolean(target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']"))
+  );
+}
+
+function clientPointInRange(range: Range, x: number, y: number) {
+  for (const rect of range.getClientRects()) {
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
+  }
+  return false;
+}
+
+/**
+ * macOS / WKWebView：右键会先划选光标下的词（供「查询 / 翻译」）。
+ * preventDefault 拦不住划词，需再清掉；若用户已拖选且点在选区内则保留。
+ */
 document.addEventListener(
   "mousedown",
   (event) => {
-    if (event.button === 2) event.preventDefault();
+    if (event.button !== 2 || isEditableTarget(event.target)) return;
+    event.preventDefault();
+
+    const selection = window.getSelection();
+    const preserved =
+      selection
+      && !selection.isCollapsed
+      && selection.rangeCount > 0
+      && clientPointInRange(selection.getRangeAt(0), event.clientX, event.clientY)
+        ? selection.getRangeAt(0).cloneRange()
+        : null;
+
+    const restore = () => {
+      const next = window.getSelection();
+      if (!next) return;
+      next.removeAllRanges();
+      if (preserved) next.addRange(preserved);
+    };
+    restore();
+    queueMicrotask(restore);
+    requestAnimationFrame(restore);
   },
   true,
 );
@@ -18,13 +55,7 @@ document.addEventListener(
 document.addEventListener(
   "contextmenu",
   (event) => {
-    const target = event.target;
-    if (
-      target instanceof Element
-      && target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']")
-    ) {
-      return;
-    }
+    if (isEditableTarget(event.target)) return;
     event.preventDefault();
   },
   true,
