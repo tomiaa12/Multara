@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import { ChevronDown, ChevronUp, History, Pencil, Play, Plus, Trash2, Workflow, X } from "@lucide/vue";
 import type { Automation, AutomationRun, WebhookDelivery } from "../domain/types";
 import { listAutomationRuns, listWebhookDeliveries } from "../services/backend";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import { runStatusLabel, runStatusTone } from "../components/run-log";
@@ -137,7 +138,7 @@ async function save() {
 }
 
 async function remove(item: Automation) {
-  if (!window.confirm(t("automation.deleteConfirm", { name: item.name }))) return;
+  if (!(await confirmDialog(t("automation.deleteConfirm", { name: item.name }), { danger: true }))) return;
   try {
     await store.deleteAutomation(item.id);
   } catch (cause) {

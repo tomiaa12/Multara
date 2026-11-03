@@ -24,9 +24,17 @@ const props = withDefaults(defineProps<{
   initialNodes?: ComposerNode[];
   contexts: EditorSelectionContext[];
   disabled?: boolean;
+  /** 可点选复制，但不能改内容（不同于 disabled 的灰显/不可聚焦）。 */
+  readonly?: boolean;
+  /** false 时 Enter 插入换行（创建任务弹窗等）。 */
+  enterToSubmit?: boolean;
 }>(), {
   disabled: false,
+  readonly: false,
+  enterToSubmit: true,
 });
+
+const locked = computed(() => props.disabled || props.readonly);
 
 const emit = defineEmits<{
   change: [nodes: ComposerNode[]];
@@ -427,8 +435,25 @@ function deleteChipForKey(key: "Backspace" | "Delete") {
   return true;
 }
 
+function isModifierCopyOrSelect(event: KeyboardEvent) {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return false;
+  const key = event.key.toLowerCase();
+  return key === "c" || key === "a";
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (props.disabled) return;
+  if (props.readonly) {
+    if (isModifierCopyOrSelect(event)) return;
+    const nav = new Set([
+      "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+      "Home", "End", "PageUp", "PageDown", "Escape", "Tab",
+      "Shift", "Meta", "Control", "Alt", "CapsLock",
+    ]);
+    if (nav.has(event.key) || event.key.startsWith("F")) return;
+    event.preventDefault();
+    return;
+  }
   if ((event.key === "Backspace" || event.key === "Delete") && !event.isComposing) {
     if (deleteChipForKey(event.key)) {
       event.preventDefault();
@@ -439,6 +464,13 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === "Enter" && !event.shiftKey) {
     const action = ime.classifyEnter(event);
     if (action === "ime") return;
+    if (!props.enterToSubmit) {
+      if (action === "confirm") return;
+      event.preventDefault();
+      if (editor.value) insertComposerLineBreak(editor.value);
+      emitChange();
+      return;
+    }
     event.preventDefault();
     if (action === "submit") emit("submit");
     return;
@@ -476,7 +508,7 @@ function onCopy(event: ClipboardEvent, cut = false) {
   const plain = plainClipboardText(selected.nodes);
   event.clipboardData?.setData("text/plain", plain);
   event.clipboardData?.setData("text/html", composerClipboardHtml(selected.nodes, plain));
-  if (!cut) return;
+  if (!cut || locked.value) return;
   for (const chip of [...(editor.value?.querySelectorAll<HTMLElement>(".composer-chip") ?? [])]) {
     if (selected.range.intersectsNode(chip)) unmountChip(chip);
   }
@@ -525,7 +557,7 @@ function insertNodesAtCaret(nodes: ComposerNode[]) {
 }
 
 function onPaste(event: ClipboardEvent) {
-  if (props.disabled) {
+  if (locked.value) {
     event.preventDefault();
     return;
   }
@@ -587,11 +619,16 @@ function beginExternalDrop() {
 }
 
 function onBeforeInput(event: InputEvent) {
+  if (props.readonly) {
+    event.preventDefault();
+    return;
+  }
   if (externalDropHtml === null) return;
   event.preventDefault();
 }
 
 function onInput() {
+  if (props.readonly) return;
   if (externalDropHtml !== null) {
     restoreExternalDrop();
     return;
@@ -640,9 +677,11 @@ defineExpose({
   <div
     ref="editor"
     class="composer-field vs-scroll is-empty"
+    :class="{ 'is-readonly': readonly }"
     :contenteditable="disabled ? 'false' : 'true'"
     role="textbox"
     aria-multiline="true"
+    :aria-readonly="readonly || undefined"
     :data-placeholder="placeholder"
     spellcheck="false"
     @keydown="onKeydown"

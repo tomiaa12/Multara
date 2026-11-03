@@ -22,6 +22,7 @@ import { applyAssistantChunk } from "../domain/assistant-text";
 import { extractQuestions } from "../components/chat/question-block";
 import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unanswered-turn";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t, translate } from "../i18n";
 
 // 跳过的提问按消息 id 记在本地，刷新后卡片不会再弹出来；只留最近 200 条
@@ -640,13 +641,15 @@ export const useAppStore = defineStore("app", () => {
     const prompt = running
       ? t("app.taskDeleteRunning", { title: task.title })
       : t("app.taskDeleteConfirm", { title: task.title });
-    if (!window.confirm(prompt)) return false;
+    if (!(await confirmDialog(prompt, { danger: true }))) return false;
     try {
       await deleteTask(taskId, { force: running });
       return true;
     } catch (cause) {
       if (running || !isTaskRunningDeleteError(cause)) throw cause;
-      if (!window.confirm(t("app.taskDeleteRunning", { title: task.title }))) return false;
+      if (!(await confirmDialog(t("app.taskDeleteRunning", { title: task.title }), { danger: true }))) {
+        return false;
+      }
       await deleteTask(taskId, { force: true });
       return true;
     }
@@ -1346,53 +1349,22 @@ export const useAppStore = defineStore("app", () => {
     options?: { isDirectory?: boolean },
   ) {
     if (!workspaceId || !path) return;
-    let isDirectory = options?.isDirectory ?? false;
-    let text = "";
-    let endLine = 1;
-    let resolvedPath = path;
-    let unreadable = false;
+    let isDirectory = Boolean(options?.isDirectory);
+    // 未标明时用列目录探测（文件会失败），不再读全文。
     if (options?.isDirectory === undefined) {
       try {
-        const file = await backend.readWorkspaceFile(workspaceId, path);
-        resolvedPath = file.path || path;
-        text = file.content;
-        endLine = Math.max(1, file.content.split(/\r\n|\r|\n/).length);
+        await backend.listWorkspaceDirectory(workspaceId, path);
+        isDirectory = true;
       } catch {
-        try {
-          const entries = await backend.listWorkspaceDirectory(workspaceId, path);
-          isDirectory = true;
-          text = entries.map((entry) => (entry.isDirectory ? `${entry.name}/` : entry.name)).join("\n");
-        } catch {
-          unreadable = true;
-        }
+        isDirectory = false;
       }
-    } else if (isDirectory) {
-      try {
-        const entries = await backend.listWorkspaceDirectory(workspaceId, path);
-        text = entries.map((entry) => (entry.isDirectory ? `${entry.name}/` : entry.name)).join("\n");
-      } catch {
-        unreadable = true;
-      }
-    } else {
-      try {
-        const file = await backend.readWorkspaceFile(workspaceId, path);
-        resolvedPath = file.path || path;
-        text = file.content;
-        endLine = Math.max(1, file.content.split(/\r\n|\r|\n/).length);
-      } catch {
-        unreadable = true;
-      }
-    }
-    if (unreadable) {
-      const name = resolvedPath.split(/[\\/]/).pop() || resolvedPath;
-      composerNotice.value = t("chat.attachEmpty", { name });
     }
     addComposerContext({
       workspaceId,
-      path: resolvedPath,
+      path,
       startLine: 0,
-      endLine: isDirectory ? 0 : endLine,
-      text,
+      endLine: 0,
+      text: "",
       isDirectory,
     });
   }

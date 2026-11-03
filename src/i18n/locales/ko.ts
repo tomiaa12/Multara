@@ -1884,6 +1884,7 @@ const catalog: MessageCatalog = {
   "scm.graph.tagNamePrompt": "태그 이름",
 
   "common.ok": "OK",
+  "common.confirm": "확인",
   "common.listSep": ", ",
   "common.joinAnd": ", and ",
   "scm.busyOtherWorkspace": "Another workspace is running a Git operation",

@@ -8248,37 +8248,60 @@ body.is-dragging-workspace-file * {
   color: var(--color-text-tertiary);
 }
 .task-issue-title {
-  margin: 18px 0 8px;
-  padding: 0;
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.35;
-  letter-spacing: -0.01em;
-}
-.task-create-description {
-  min-height: 120px;
-  resize: none;
-}
-.task-issue-description {
   display: block;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: calc(var(--font-size-lg) * 1.65);
+  margin: 18px 0 8px;
   padding: 0;
   resize: none;
   overflow: hidden;
-  max-height: none;
-  color: var(--color-text);
-  font-size: var(--font-size-lg);
-  line-height: 1.65;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+  field-sizing: content;
 }
-.task-issue-title::placeholder,
-.task-issue-description::placeholder {
+.task-create-description {
+  min-height: 120px;
+  resize: none;
+}
+.task-issue-description.chat-composer {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  line-height: 1.65;
+}
+.task-issue-description.chat-composer .composer-field {
+  min-height: calc(var(--font-size-lg) * 1.65);
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+  font-size: var(--font-size-lg);
+  line-height: 1.65;
+}
+.task-issue-description.chat-composer .composer-field.is-empty::before {
+  content: none;
+}
+.task-issue-description.chat-composer .composer-footer,
+.task-issue-description.chat-composer.footer-on-focus .composer-footer,
+.task-issue-description.chat-composer.footer-on-focus:focus-within .composer-footer {
+  display: none !important;
+}
+.task-issue-title::placeholder {
   color: var(--color-text-tertiary);
 }
 .task-create-description {

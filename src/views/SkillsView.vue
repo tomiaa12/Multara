@@ -11,6 +11,7 @@ import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.
 import type { DirectoryColumn } from "../components/ui/directory-table";
 import { cliLabel, cliSkillsDisplay } from "../domain/cli-catalog";
 import { highlightParts } from "./resource-text";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import * as backend from "../services/backend";
@@ -174,7 +175,7 @@ async function reveal(skill: GlobalResource) {
 }
 
 async function removeSkill(skill: GlobalResource) {
-  if (!window.confirm(t("skills.deleteConfirm", { name: skill.name }))) return;
+  if (!(await confirmDialog(t("skills.deleteConfirm", { name: skill.name }), { danger: true }))) return;
   try {
     await store.deleteSkill(skill.id);
   } catch (cause) {

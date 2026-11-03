@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowLeft, Plug, X } from "@lucide/vue";
 import type { CustomRuntimeForm, Runtime } from "../domain/types";
 import ProviderLogo from "../components/ProviderLogo.vue";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import * as backend from "../services/backend";
@@ -60,9 +61,9 @@ function markEdited() {
   edited = true;
 }
 
-function onKey(event: KeyboardEvent) {
+async function onKey(event: KeyboardEvent) {
   if (busy.value || !escapeClosesDialog(event)) return;
-  if (edited && !window.confirm(t("common.discardUnsavedConfirm"))) return;
+  if (edited && !(await confirmDialog(t("common.discardUnsavedConfirm"), { type: "warning" }))) return;
   emit("close");
 }
 

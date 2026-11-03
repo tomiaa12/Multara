@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import type { Agent, Squad } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import { useAppStore } from "../stores/app";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { syncDraft } from "./draft-sync";
 
@@ -106,9 +107,11 @@ async function persist() {
   }
 }
 
-function selectPane(next: Pane) {
+async function selectPane(next: Pane) {
   if (next === pane.value) return;
-  if (instructionsDirty.value && !window.confirm(t("squad.discardInstructionsConfirm"))) return;
+  if (instructionsDirty.value && !(await confirmDialog(t("squad.discardInstructionsConfirm"), { type: "warning" }))) {
+    return;
+  }
   if (squad.value) draft.instructions = squad.value.instructions ?? "";
   pane.value = next;
 }
@@ -149,7 +152,9 @@ async function removeMember(agentId: string) {
 }
 
 async function remove() {
-  if (!squad.value || !window.confirm(t("squad.deleteConfirm", { name: squad.value.name }))) return;
+  if (!squad.value || !(await confirmDialog(t("squad.deleteConfirm", { name: squad.value.name }), { danger: true }))) {
+    return;
+  }
   await store.deleteSquad(squad.value.id);
   await router.push("/squads");
 }

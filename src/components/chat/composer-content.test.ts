@@ -1,6 +1,14 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
-import { formatAgentPrompt, isPastedImage, parseUserPromptNodes, visiblePromptText, type ComposerNode } from "./composer-content";
+import {
+  formatAgentPrompt,
+  isOversizedInlineSelection,
+  isPastedImage,
+  MAX_INLINE_SELECTION_LINES,
+  parseUserPromptNodes,
+  visiblePromptText,
+  type ComposerNode,
+} from "./composer-content";
 
 const chip: ComposerNode = {
   type: "chip",
@@ -57,11 +65,47 @@ describe("parseUserPromptNodes", () => {
     expect(parsed).toEqual([{ ...chip, text }, { type: "text", value: " 看看" }]);
   });
 
-  test("round-trips folder and whole-file chips containing fences", () => {
+  test("emits path-only refs for folder and whole-file chips", () => {
     const folder: ComposerNode = { type: "chip", id: "docs:folder", path: "docs", startLine: 0, endLine: 0, text: "a.md\n```", isDirectory: true };
     const file: ComposerNode = { type: "chip", id: "README.md:file", path: "README.md", startLine: 0, endLine: 0, text: "# t\n```sh\nls\n```" };
-    const parsed = parseUserPromptNodes(formatAgentPrompt([folder, file]));
-    expect(parsed).toEqual([folder, file]);
+    const content = formatAgentPrompt([folder, file]);
+    expect(content).toContain("[文件夹] docs");
+    expect(content).toContain("[文件] README.md");
+    expect(content).not.toContain("```");
+    expect(content).not.toContain("# t");
+    expect(content).not.toContain("a.md");
+    expect(parseUserPromptNodes(content)).toEqual([
+      { ...folder, text: "" },
+      { ...file, text: "" },
+    ]);
+  });
+
+  test("still parses older whole-file and folder prompts that inlined content", () => {
+    const content = "[文件夹] docs\n```\na.md\n```\n\n[文件] README.md\n```\n# t\n```";
+    const parsed = parseUserPromptNodes(content);
+    expect(parsed).toEqual([
+      { type: "chip", id: "docs:folder", path: "docs", startLine: 0, endLine: 0, text: "a.md", isDirectory: true },
+      { type: "chip", id: "README.md:file", path: "README.md", startLine: 0, endLine: 0, text: "# t" },
+    ]);
+  });
+
+  test("oversized code selections emit path-range only", () => {
+    const lines = Array.from({ length: MAX_INLINE_SELECTION_LINES + 1 }, (_, i) => `line ${i}`).join("\n");
+    const big: ComposerNode = {
+      type: "chip",
+      id: "big.ts:1-401",
+      path: "big.ts",
+      startLine: 1,
+      endLine: MAX_INLINE_SELECTION_LINES + 1,
+      text: lines,
+    };
+    expect(isOversizedInlineSelection(lines, 1, MAX_INLINE_SELECTION_LINES + 1)).toBe(true);
+    const content = formatAgentPrompt([big]);
+    expect(content).toContain("[代码引用] big.ts:1-401");
+    expect(content).not.toContain("line 0");
+    expect(parseUserPromptNodes("[代码引用] big.ts:1-401")).toEqual([
+      { type: "chip", id: "big.ts:1-401", path: "big.ts", startLine: 1, endLine: 401, text: "" },
+    ]);
   });
 
   test("round-trips structured references with stable ids", () => {

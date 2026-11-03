@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
 import type { ChannelInstallation, ChannelInstallationInput, ChannelUser } from "../domain/types";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import * as backend from "../services/backend";
@@ -132,7 +133,7 @@ async function toggle(item: ChannelInstallation) {
 }
 
 async function remove(item: ChannelInstallation) {
-  if (!window.confirm(t("channels.deleteConfirm", { name: item.name }))) return;
+  if (!(await confirmDialog(t("channels.deleteConfirm", { name: item.name }), { danger: true }))) return;
   try {
     await backend.deleteChannelInstallation(item.id);
     if (expandedId.value === item.id) expandedId.value = null;

@@ -9,6 +9,7 @@ import AvatarPicker from "../components/AvatarPicker.vue";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import RuntimeModelSelect from "../components/RuntimeModelSelect.vue";
 import RuntimeSelect from "../components/RuntimeSelect.vue";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { locale, t } from "../i18n";
 import { agentSystemContext, getRunStatistics, listAgentRuns, type AgentSystemContext } from "../services/backend";
 import { useAppStore } from "../stores/app";
@@ -268,7 +269,9 @@ async function save() {
 }
 
 async function remove() {
-  if (!agent.value || !window.confirm(t("agent.deleteConfirm", { name: agent.value.name }))) return;
+  if (!agent.value || !(await confirmDialog(t("agent.deleteConfirm", { name: agent.value.name }), { danger: true }))) {
+    return;
+  }
   await store.deleteAgent(agent.value.id);
   await router.push("/agents");
 }

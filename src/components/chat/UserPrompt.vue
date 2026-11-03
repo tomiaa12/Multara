@@ -127,7 +127,7 @@ function openComposer() {
   if (expanded.value) return;
   expanded.value = true;
   clipped.value = false;
-  if (props.viewOnly) return;
+  // 只读也可聚焦以便选中复制
   void nextTick(() => composer.value?.focusEnd());
 }
 
@@ -228,7 +228,7 @@ watch(
       :target-options="targetOptions"
       :allow-target-change="allowTargetChange && !viewOnly"
       :can-send="!viewOnly && !draftEmpty"
-      :disabled="viewOnly"
+      :readonly="viewOnly"
       :show-context-usage="false"
       footer-mode="focus"
       @change="onChange"

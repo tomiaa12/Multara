@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { ChevronDown, ChevronUp, LogIn, Plus } from "@lucide/vue";
 import type { Runtime } from "../domain/types";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import {
   removeRuntimeAccount,
@@ -65,8 +66,10 @@ function switchTo(account: RuntimeAccount) {
   });
 }
 
-function remove(account: RuntimeAccount) {
-  if (!window.confirm(t("runtimeAccount.removeConfirm", { name: accountTitle(account) }))) return;
+async function remove(account: RuntimeAccount) {
+  if (!(await confirmDialog(t("runtimeAccount.removeConfirm", { name: accountTitle(account) }), { danger: true }))) {
+    return;
+  }
   return act(`remove:${account.id}`, () => removeRuntimeAccount(props.runtime.id, account.id));
 }
 

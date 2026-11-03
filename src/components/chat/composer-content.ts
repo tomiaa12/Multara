@@ -28,13 +28,30 @@ export type ComposerNode =
   | ComposerChipNode;
 
 // 围栏长度可变（见 fencedBlock），收尾用反向引用匹配同长围栏；旧内容固定 ``` 同样能解析。
+// 代码引用围栏可选：超大选区只发 path:range，不内联正文。
 const CITATION_PATTERN =
-  /\[代码引用\][ \t]+(.+):(\d+)(?:-(\d+))?\n(`{3,})[^\n]*\n([\s\S]*?)\4(?!`)/g;
+  /\[代码引用\][ \t]+(.+):(\d+)(?:-(\d+))?(?:\n(`{3,})[^\n]*\n([\s\S]*?)\4(?!`))?/g;
 const FOLDER_PATTERN =
   /\[文件夹\][ \t]+([^\n]+)(?:\n(`{3,})[^\n]*\n([\s\S]*?)\2(?!`))?/g;
 const FILE_PATTERN =
   /\[文件\][ \t]+([^\n]+)(?:\n(`{3,})[^\n]*\n([\s\S]*?)\2(?!`))?/g;
 const MIN_FENCE_LENGTH = 3;
+
+/** 选区内联正文行数上限；超过则只发路径+行号（参考 VS Code 超预算丢弃选区正文）。 */
+export const MAX_INLINE_SELECTION_LINES = 400;
+/** 选区内联正文字节近似上限（按 UTF-16 length）。 */
+export const MAX_INLINE_SELECTION_CHARS = 32_000;
+
+export function isOversizedInlineSelection(
+  text: string,
+  startLine: number,
+  endLine: number,
+): boolean {
+  const lineSpan = Math.max(0, endLine - startLine) + 1;
+  const textLines = text.length ? text.split(/\r\n|\r|\n/).length : 0;
+  const lines = Math.max(lineSpan, textLines);
+  return lines > MAX_INLINE_SELECTION_LINES || text.length > MAX_INLINE_SELECTION_CHARS;
+}
 
 /** 围栏比内容里最长的连续反引号多一个，内容含 ``` 时不会提前截断。 */
 export function fencedBlock(text: string) {
@@ -120,23 +137,26 @@ export function formatAgentPrompt(nodes: ComposerNode[], options: { directMentio
     }
     if (!isFileChip(node) || !node.path) return [];
     if (node.source === "terminal") {
+      if (!node.text.trim() || isOversizedInlineSelection(node.text, node.startLine, node.endLine)) {
+        return [];
+      }
       const location = node.startLine === node.endLine ? `${node.startLine}` : `${node.startLine}-${node.endLine}`;
       return [`[终端] ${location}\n${fencedBlock(node.text)}`];
     }
+    // 整文件 / 文件夹只发路径引用（对齐 VS Code Agent Host），正文由运行时按需读取。
+    // 小选区仍内联；超大选区只发 path:range。历史全文围栏仍可由 parseUserPromptNodes 回放。
     if (node.isDirectory) {
-      return node.text.trim()
-        ? [`[文件夹] ${node.path}\n${fencedBlock(node.text)}`]
-        : [`[文件夹] ${node.path}`];
+      return [`[文件夹] ${node.path}`];
     }
     if (isWholeFileChip(node)) {
-      return node.text.trim()
-        ? [`[文件] ${node.path}\n${fencedBlock(node.text)}`]
-        : [`[文件] ${node.path}`];
+      return [`[文件] ${node.path}`];
     }
-    if (!node.text.trim()) return [];
     const location = node.startLine === node.endLine
       ? `${node.path}:${node.startLine}`
       : `${node.path}:${node.startLine}-${node.endLine}`;
+    const inline = node.text.trim()
+      && !isOversizedInlineSelection(node.text, node.startLine, node.endLine);
+    if (!inline) return [`[代码引用] ${location}`];
     return [`[代码引用] ${location}\n${fencedBlock(node.text)}`];
   });
   const visible = nodes
@@ -173,14 +193,14 @@ export function parseUserPromptNodes(content: string): ComposerNode[] {
       });
       return "";
     })
-    .replace(CITATION_PATTERN, (_raw, path: string, start: string, end: string | undefined, _fence: string, code: string) => {
+    .replace(CITATION_PATTERN, (_raw, path: string, start: string, end: string | undefined, _fence: string | undefined, code: string | undefined) => {
       citations.push({
         type: "chip",
         id: `${path}:${start}-${end ?? start}`,
         path,
         startLine: Number(start),
         endLine: Number(end ?? start),
-        text: code.replace(/\n$/, ""),
+        text: code?.replace(/\n$/, "") ?? "",
       });
       return "";
     })
