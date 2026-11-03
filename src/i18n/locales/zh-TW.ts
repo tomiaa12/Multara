@@ -1883,6 +1883,7 @@ const catalog: MessageCatalog = {
   "scm.graph.branchNamePrompt": "分支名稱",
   "scm.graph.tagNamePrompt": "標記名稱",
   "common.ok": "好",
+  "common.confirm": "確定",
   "common.listSep": "、",
   "common.joinAnd": "，並",
   "scm.busyOtherWorkspace": "另一個工作區正在執行 Git 操作",

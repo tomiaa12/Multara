@@ -15,11 +15,10 @@ import {
   type ComposerNode,
 } from "../components/chat/composer-content";
 import {
-  resolvePathInWorkspaces,
   type OsDroppedEntry,
   type WorkspaceFileDragPayload,
 } from "../components/chat/workspace-file-drag";
-import { decodeTextBytes } from "../components/workbench/text-encoding";
+import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import {
@@ -35,6 +34,7 @@ import { TASK_COLUMNS } from "./task-board";
 import { writeTaskMeta } from "./task-meta";
 import { requirementIds, syncRequirementChips } from "./task-project-links";
 import { escapeClosesDialog } from "./dialog-escape";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { t } from "../i18n";
 
@@ -55,6 +55,7 @@ const showTagManage = ref(false);
 const categories = sharedRequirementCategories();
 const contexts = ref<EditorSelectionContext[]>([]);
 const pastes = ref<Array<MessageAttachmentInput & { previewUrl: string }>>([]);
+const composerEmpty = ref(true);
 const composer = ref<{
   clear: () => void;
   insertChip: (item: EditorSelectionContext) => void;
@@ -70,7 +71,6 @@ const PASTE_LIMIT = 8;
 const PASTE_MAX_BYTES = 25 * 1024 * 1024;
 
 const form = reactive({
-  title: "",
   status: props.initialStatus,
   agentId: "",
   projectIds: [] as string[],
@@ -109,7 +109,9 @@ const statusOptions = computed(() =>
     .map((column) => ({ value: column.id, label: column.label })),
 );
 const projectOptions = computed(() => projects.value.map((item) => ({ value: item.id, label: item.name })));
-const canCreate = computed(() => Boolean(form.title.trim() && assigneeId.value && !busy.value));
+const canCreate = computed(() =>
+  Boolean(assigneeId.value && !busy.value && (!composerEmpty.value || pastes.value.length)),
+);
 const planFirst = ref(false);
 /** 小队按队长的运行时判断能否先出计划 */
 const assigneeRuntime = computed(() => agentRuntime(store.data, assigneeId.value));
@@ -145,6 +147,9 @@ function sameIds(left: string[], right: string[]) {
 }
 
 function onComposerChange(nodes: ComposerNode[]) {
+  composerEmpty.value = !nodes.some((node) =>
+    node.type === "chip" || (node.type === "text" && node.value.replace(/\u00a0/g, " ").trim()),
+  );
   if (syncingProjectChips) return;
   const ids = requirementIds(nodes);
   if (!sameIds(ids, form.projectIds)) form.projectIds = ids;
@@ -163,17 +168,27 @@ watch(
 
 function hasInput() {
   return Boolean(
-    form.title.trim()
-    || form.labels.length
+    form.labels.length
     || form.projectIds.length
     || pastes.value.length
     || composer.value?.serialize().empty === false,
   );
 }
 
-function onKey(event: KeyboardEvent) {
+/** 与聊天 Tab 一致：先截断原文，再异步生成短标题。 */
+async function nameTaskFromPrompt(taskId: string, content: string) {
+  try {
+    const generated = (await backend.generateChatSessionTitle(content)).trim();
+    if (!generated) return;
+    await store.updateTask({ taskId, title: generated });
+  } catch {
+    // 保留创建时的截断标题。
+  }
+}
+
+async function onKey(event: KeyboardEvent) {
   if (!escapeClosesDialog(event)) return;
-  if (hasInput() && !window.confirm(t("common.discardUnsavedConfirm"))) return;
+  if (hasInput() && !(await confirmDialog(t("common.discardUnsavedConfirm"), { type: "warning" }))) return;
   emit("close");
 }
 
@@ -232,71 +247,11 @@ function removePaste(path: string) {
 }
 
 async function addWorkspaceChip(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
-  let text = "";
-  let isDirectory = Boolean(file.isDirectory);
-  try {
-    if (isDirectory) {
-      const entries = await backend.listWorkspaceDirectory(file.workspaceId, file.path);
-      text = entries.map((entry) => (entry.isDirectory ? `${entry.name}/` : entry.name)).join("\n");
-    } else {
-      const content = await backend.readWorkspaceFile(file.workspaceId, file.path);
-      text = content.content;
-    }
-  } catch {
-    const name = file.path.split(/[\\/]/).pop() || file.path;
-    error.value = t("chat.attachEmpty", { name });
-  }
-  rememberChip({
-    id: crypto.randomUUID(),
-    workspaceId: file.workspaceId,
-    path: file.path,
-    startLine: 0,
-    endLine: isDirectory ? 0 : Math.max(1, text.split(/\r\n|\r|\n/).length),
-    text,
-    isDirectory,
-  });
+  rememberChip(await workspacePathChip(file));
 }
 
 async function addExternalChip(entry: OsDroppedEntry) {
-  const path = entry.path || entry.name || t("chat.externalFile");
-  const resolved = entry.path ? resolvePathInWorkspaces(entry.path, workspaces.value) : null;
-  if (resolved) {
-    await addWorkspaceChip({ ...resolved, isDirectory: entry.isDirectory });
-    return;
-  }
-  let text = "";
-  let isDirectory = Boolean(entry.isDirectory);
-  try {
-    if (entry.file && !isDirectory) {
-      text = decodeTextBytes(new Uint8Array(await entry.file.arrayBuffer()));
-    } else if (isDirectory && entry.path) {
-      const entries = await backend.listExternalDirectory(entry.path);
-      text = entries.map((item) => (item.isDirectory ? `${item.name}/` : item.name)).join("\n");
-    } else if (entry.path) {
-      const file = await backend.readExternalFile(entry.path);
-      text = file.content;
-    }
-  } catch {
-    if (entry.path) {
-      try {
-        const entries = await backend.listExternalDirectory(entry.path);
-        text = entries.map((item) => (item.isDirectory ? `${item.name}/` : item.name)).join("\n");
-        isDirectory = true;
-      } catch {
-        const name = path.split(/[\\/]/).pop() || path;
-        error.value = t("chat.attachEmpty", { name });
-      }
-    }
-  }
-  rememberChip({
-    id: crypto.randomUUID(),
-    workspaceId: "",
-    path,
-    startLine: 0,
-    endLine: isDirectory ? 0 : Math.max(1, text.split(/\r\n|\r|\n/).length),
-    text,
-    isDirectory,
-  });
+  rememberChip(await externalPathChip(entry, workspaces.value, t("chat.externalFile")));
 }
 
 async function onDropWorkspace(file: WorkspaceFileDragPayload) {
@@ -338,10 +293,12 @@ async function create() {
     const nodes = composer.value?.serialize().nodes ?? [];
     const description = formatAgentPrompt(nodes);
     const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));
+    const titleSeed = description || attachments[0]?.name || "";
+    const title = backend.titleFromPrompt(titleSeed);
     // 有粘贴附件时先建为 backlog，再 send 带附件开跑，避免 todo 创建时无附件先排队。
     const createStatus = attachments.length && form.status === "todo" ? "backlog" : form.status;
     const task = await store.createTask({
-      title: form.title.trim(),
+      title,
       description,
       agentId: assigneeId.value,
       projectId: form.projectIds[0] ?? null,
@@ -353,14 +310,15 @@ async function create() {
       writeTaskMeta(task.id, { priority: "none", labels: [...form.labels] });
       await store.updateTaskMeta({ taskId: task.id, labels: [...form.labels] });
       if (attachments.length) {
-        store.send(description || form.title.trim(), task.sessionId, attachments, { mode: requestedMode.value });
+        store.send(description || title, task.sessionId, attachments, { mode: requestedMode.value });
       }
+      if (titleSeed) void nameTaskFromPrompt(task.id, titleSeed);
     }
-    form.title = "";
     form.labels = [];
     form.projectIds = [];
     contexts.value = [];
     clearPastes();
+    composerEmpty.value = true;
     composer.value?.clear();
     if (!keepOpen.value) emit("close");
   } catch (cause) {
@@ -387,7 +345,6 @@ async function create() {
           <UiTooltip :content="t('common.close')"><button type="button" class="task-icon-button" @click="emit('close')"><X :size="16" /></button></UiTooltip>
         </div>
       </header>
-      <input v-model="form.title" class="task-create-title" :placeholder="t('tasks.titlePlaceholder')" />
       <ChatComposer
         ref="composer"
         embedded
@@ -402,6 +359,7 @@ async function create() {
         target-label="Miku"
         target-avatar="M"
         :show-context-usage="false"
+        :enter-to-submit="false"
         allow-file-picker
         @change="onComposerChange"
         @target-change="form.agentId = $event"

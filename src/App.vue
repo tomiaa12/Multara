@@ -35,6 +35,12 @@ import FloatingChat from "./components/FloatingChat.vue";
 import UpdateNotification from "./components/UpdateNotification.vue";
 import { RunLogHost } from "./components/run-log";
 import UnsavedChangesDialog from "./components/workbench/UnsavedChangesDialog.vue";
+import UiConfirmDialog from "./components/ui/UiConfirmDialog.vue";
+import {
+  finishConfirmDialog,
+  getConfirmDialogRequest,
+  onConfirmDialogChange,
+} from "./components/ui/confirm-dialog";
 import {
   confirmLeaveUnsavedEditors,
   finishUnsavedPrompt,
@@ -181,11 +187,13 @@ const isMacOS = /Mac|iPhone|iPad/.test(navigator.platform);
 const isWindows = /Win/i.test(navigator.platform);
 const maximized = ref(false);
 const unsavedPrompt = ref(getUnsavedPrompt());
+const confirmRequest = ref(getConfirmDialogRequest());
 let closing = false;
 let forceQuit = false;
 let stopWindowResize: (() => void) | undefined;
 let stopWindowClose: (() => void) | undefined;
 let stopUnsavedPrompt: (() => void) | undefined;
+let stopConfirmDialog: (() => void) | undefined;
 
 function onPageUnload(event: BeforeUnloadEvent) {
   if (!hasUnsavedEditors()) return;
@@ -377,6 +385,9 @@ onMounted(async () => {
   stopUnsavedPrompt = onUnsavedPromptChange(() => {
     unsavedPrompt.value = getUnsavedPrompt();
   });
+  stopConfirmDialog = onConfirmDialogChange(() => {
+    confirmRequest.value = getConfirmDialogRequest();
+  });
   try {
     const windowRef = await currentWindow();
     stopWindowClose = await windowRef.onCloseRequested(async (event) => {
@@ -411,6 +422,7 @@ onBeforeUnmount(() => {
   themeObserver?.disconnect();
   window.removeEventListener("beforeunload", onPageUnload);
   stopUnsavedPrompt?.();
+  stopConfirmDialog?.();
   stopWindowClose?.();
   stopWindowResize?.();
 });
@@ -526,6 +538,11 @@ onBeforeUnmount(() => {
       @save="finishUnsavedPrompt('save')"
       @discard="finishUnsavedPrompt('discard')"
       @cancel="finishUnsavedPrompt('cancel')"
+    />
+    <UiConfirmDialog
+      v-if="confirmRequest"
+      :request="confirmRequest"
+      @resolve="finishConfirmDialog"
     />
     <footer class="statusbar">
       <div class="statusbar-end">

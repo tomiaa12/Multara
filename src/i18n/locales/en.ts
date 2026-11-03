@@ -1884,6 +1884,7 @@ Who is this for? Any constraints?
   "scm.graph.branchNamePrompt": "Branch name",
   "scm.graph.tagNamePrompt": "Tag name",
   "common.ok": "OK",
+  "common.confirm": "Confirm",
   "common.listSep": ", ",
   "common.joinAnd": ", and ",
   "scm.busyOtherWorkspace": "Another workspace is running a Git operation",

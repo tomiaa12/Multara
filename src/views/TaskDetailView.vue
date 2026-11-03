@@ -2,6 +2,13 @@
 import { computed, nextTick, onActivated, onDeactivated, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowLeft, ListTodo, PanelRight, Trash2 } from "@lucide/vue";
+import type { EditorSelectionContext } from "../domain/types";
+import ChatComposer from "../components/chat/ChatComposer.vue";
+import {
+  isFileChip,
+  parseUserPromptNodes,
+  type ComposerNode,
+} from "../components/chat/composer-content";
 import { useAppStore } from "../stores/app";
 import TaskActivity from "./TaskActivity.vue";
 import TaskIssueSide from "./TaskIssueSide.vue";
@@ -13,13 +20,19 @@ const router = useRouter();
 const sideOpen = ref(true);
 const error = ref("");
 const titleDraft = ref("");
-const descriptionDraft = ref("");
-const titleEl = ref<HTMLInputElement | null>(null);
+const titleEl = ref<HTMLTextAreaElement | null>(null);
 const issueScroll = ref<HTMLElement | null>(null);
 const followBottom = ref(true);
-const descriptionEl = ref<HTMLTextAreaElement | null>(null);
+const contexts = ref<EditorSelectionContext[]>([]);
+const descriptionNodes = ref<ComposerNode[]>([{ type: "text", value: "" }]);
+const descriptionKey = ref(0);
 
 const task = computed(() => store.data?.tasks.find((item) => item.id === route.params.taskId));
+const hasDescription = computed(() =>
+  descriptionNodes.value.some((node) =>
+    node.type === "chip" || (node.type === "text" && node.value.replace(/\u00a0/g, " ").trim()),
+  ),
+);
 
 let pinningIssue = false;
 
@@ -68,38 +81,43 @@ const followStream = watch(
 onDeactivated(() => followStream.pause());
 onActivated(() => followStream.resume());
 
-/** WebView 对 field-sizing 支持不稳，按内容撑开，避免多行描述被 overflow:hidden 裁掉。 */
-function fitDescription() {
-  const el = descriptionEl.value;
+function fitTitle() {
+  const el = titleEl.value;
   if (!el) return;
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;
 }
 
+function syncDescriptionFromTask(description: string) {
+  const nodes = parseUserPromptNodes(description);
+  descriptionNodes.value = nodes.length ? nodes : [{ type: "text", value: "" }];
+  contexts.value = nodes.filter(isFileChip).map((node) => ({
+    id: node.id,
+    workspaceId: "",
+    path: node.path,
+    startLine: node.startLine,
+    endLine: node.endLine,
+    text: node.text,
+    isDirectory: node.isDirectory,
+  }));
+  descriptionKey.value += 1;
+}
+
 watch(task, (value) => {
   if (!value) return;
   if (document.activeElement !== titleEl.value) titleDraft.value = value.title;
-  if (document.activeElement !== descriptionEl.value) descriptionDraft.value = value.description;
-  void nextTick(fitDescription);
+  syncDescriptionFromTask(value.description);
+  void nextTick(fitTitle);
 }, { immediate: true });
 
-watch(descriptionDraft, () => {
-  void nextTick(fitDescription);
+watch(titleDraft, () => {
+  void nextTick(fitTitle);
 });
 
 async function saveTitle() {
   if (!task.value || titleDraft.value.trim() === task.value.title) return;
   try {
     await store.updateTask({ taskId: task.value.id, title: titleDraft.value.trim() });
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
-  }
-}
-
-async function saveDescription() {
-  if (!task.value || descriptionDraft.value === task.value.description) return;
-  try {
-    await store.updateTask({ taskId: task.value.id, description: descriptionDraft.value });
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   }
@@ -139,22 +157,29 @@ async function removeTask() {
       <main class="task-issue-main">
         <div ref="issueScroll" class="task-issue-scroll vs-scroll" @scroll.passive="onIssueScroll">
           <div class="task-issue-content">
-            <input
+            <textarea
               ref="titleEl"
               v-model="titleDraft"
               class="task-issue-title"
-              :aria-label="t('tasks.titleField')"
-              @blur="saveTitle"
-              @keydown.enter.prevent="titleEl?.blur()"
-            />
-            <textarea
-              ref="descriptionEl"
-              v-model="descriptionDraft"
-              class="task-issue-description"
-              :placeholder="t('tasks.addDescription')"
               rows="1"
-              @input="fitDescription"
-              @blur="saveDescription"
+              :aria-label="t('tasks.titleField')"
+              @input="fitTitle"
+              @blur="saveTitle"
+            />
+            <ChatComposer
+              v-if="hasDescription"
+              :key="descriptionKey"
+              class="task-issue-description is-view-only"
+              embedded
+              readonly
+              placeholder=""
+              :initial-nodes="descriptionNodes"
+              :contexts="contexts"
+              :show-context-usage="false"
+              :allow-target-change="false"
+              :can-send="false"
+              target-label=""
+              target-avatar=""
             />
             <section class="task-feed">
               <header>{{ t('tasks.activity') }}</header>

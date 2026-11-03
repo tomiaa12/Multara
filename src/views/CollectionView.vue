@@ -10,6 +10,7 @@ import ProviderLogo from "../components/ProviderLogo.vue";
 import RuntimeModelSelect from "../components/RuntimeModelSelect.vue";
 import RuntimeSelect from "../components/RuntimeSelect.vue";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { gatewayHost } from "./runtime-catalog";
 import {
@@ -245,7 +246,7 @@ async function saveEditor() {
 }
 
 async function removeRuntime(runtime: Runtime) {
-  if (!window.confirm(t("runtime.deleteConfirm", { name: runtime.name }))) return;
+  if (!(await confirmDialog(t("runtime.deleteConfirm", { name: runtime.name }), { danger: true }))) return;
   try {
     await store.deleteCustomRuntime(runtime.id);
   } catch (cause) {
@@ -255,7 +256,7 @@ async function removeRuntime(runtime: Runtime) {
 
 async function removeAgent(agent: Agent) {
   if (isMiku(agent)) return;
-  if (!window.confirm(t("collection.deleteAgentConfirm", { name: agent.name }))) return;
+  if (!(await confirmDialog(t("collection.deleteAgentConfirm", { name: agent.name }), { danger: true }))) return;
   try {
     await store.deleteAgent(agent.id);
   } catch (cause) {
@@ -264,7 +265,7 @@ async function removeAgent(agent: Agent) {
 }
 
 async function removeSquad(squad: Squad) {
-  if (!window.confirm(t("collection.deleteSquadConfirm", { name: squad.name }))) return;
+  if (!(await confirmDialog(t("collection.deleteSquadConfirm", { name: squad.name }), { danger: true }))) return;
   await store.deleteSquad(squad.id);
 }
 

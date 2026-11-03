@@ -69,6 +69,8 @@ const props = withDefaults(defineProps<{
   footerMode?: "always" | "focus";
   canSend?: boolean;
   disabled?: boolean;
+  /** 可点选复制，不能编辑；不走 disabled 灰显。 */
+  readonly?: boolean;
   usagePlacement?: "up" | "down";
   showContextUsage?: boolean;
   /** 嵌在别的表单里时用 div，避免再套一层 form。 */
@@ -85,6 +87,8 @@ const props = withDefaults(defineProps<{
   modeSessionId?: string;
   /** 主输入框开启系统听写；历史气泡等不要传。 */
   dictation?: boolean;
+  /** false 时 Enter 插入换行，不触发提交（仅创建任务弹窗等）。 */
+  enterToSubmit?: boolean;
 }>(), {
   modeSessionId: "",
   targetValue: "",
@@ -93,6 +97,7 @@ const props = withDefaults(defineProps<{
   footerMode: "always",
   canSend: true,
   disabled: false,
+  readonly: false,
   usagePlacement: "up",
   showContextUsage: true,
   embedded: false,
@@ -101,6 +106,7 @@ const props = withDefaults(defineProps<{
   recentPlace: "chat",
   projectId: null,
   dictation: false,
+  enterToSubmit: true,
 });
 
 const emit = defineEmits<{
@@ -382,7 +388,7 @@ async function refreshSuggestAnchor() {
 }
 
 function onDragOver(event: DragEvent) {
-  if (props.disabled) return;
+  if (props.disabled || props.readonly) return;
   if (!isWorkspaceFileDrag(event.dataTransfer)) return;
   event.preventDefault();
   event.stopPropagation();
@@ -399,7 +405,7 @@ function onDragLeave(event: DragEvent) {
 
 function onDrop(event: DragEvent) {
   dropOver.value = false;
-  if (props.disabled) {
+  if (props.disabled || props.readonly) {
     event.preventDefault();
     return;
   }
@@ -504,7 +510,7 @@ function onSuggestCategoryAction(action: "pick-files-or-folders") {
 
 /** 发送旁 + 打开与 @ 相同的引用面板；再点一次关闭 */
 function openAttachMenu(defaultCategory: ComposerSuggestCategoryId = "file") {
-  if (props.disabled) return;
+  if (props.disabled || props.readonly) return;
   if (suggestTrigger.value) {
     closeSuggest();
     return;
@@ -578,7 +584,12 @@ defineExpose({
     ref="rootEl"
     class="chat-composer"
     data-workspace-drop="composer"
-    :class="{ 'footer-on-focus': footerMode === 'focus', 'is-drop-over': dropOver, 'is-disabled': disabled }"
+    :class="{
+      'footer-on-focus': footerMode === 'focus',
+      'is-drop-over': dropOver,
+      'is-disabled': disabled,
+      'is-readonly': readonly,
+    }"
     @submit.prevent="onSubmit"
     @keydown.capture="onComposerKeydown"
     @dragover.capture="onDragOver"
@@ -608,6 +619,8 @@ defineExpose({
       :initial-nodes="initialNodes"
       :contexts="contexts"
       :disabled="disabled"
+      :readonly="readonly"
+      :enter-to-submit="enterToSubmit"
       @change="onComposerChange"
       @submit="onSubmit"
       @paste-image="emit('paste-image', $event)"
