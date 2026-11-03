@@ -22,6 +22,11 @@ import {
 const LOGIN_POLL_MS = 3000;
 /** 最多等 10 分钟 */
 const LOGIN_POLL_LIMIT = 200;
+/** 成功文案出现后，凭据落盘可能稍晚，多试几次 */
+const LOGIN_SUCCESS_RETRY = 5;
+const LOGIN_SUCCESS_RETRY_MS = 400;
+const LOGIN_OK_RE = /Signed in successfully/i;
+const LOGIN_FAIL_RE = /Login failed/i;
 
 const props = defineProps<{ runtime: Runtime }>();
 const emit = defineEmits<{ close: []; done: [status: RuntimeAccountStatus] }>();
@@ -33,6 +38,9 @@ let fitAddon: FitAddon | undefined;
 let terminalId = "";
 let pollTimer = 0;
 let unmounted = false;
+let finished = false;
+let beforeAccountId: string | null = null;
+let beforeLabel: string | null = null;
 const unlisteners: UnlistenFn[] = [];
 
 function refit() {
@@ -41,23 +49,60 @@ function refit() {
   if (terminalId) void terminalResize(terminalId, term.cols, term.rows);
 }
 
-/** 当前登录换成另一个账号就算登录完成。 */
-function waitForLogin(before: string | null, attempt: number) {
-  if (unmounted || attempt >= LOGIN_POLL_LIMIT) return;
+function loginChanged(next: RuntimeAccountStatus) {
+  if (!next.live.signedIn) return false;
+  if (next.live.accountId !== beforeAccountId) return true;
+  if ((next.live.label ?? null) !== beforeLabel) return true;
+  return false;
+}
+
+async function completeLogin(force: boolean) {
+  if (unmounted || finished) return false;
+  const next = await getRuntimeAccountStatus(props.runtime.id).catch(() => null);
+  if (!next?.live.signedIn) return false;
+  if (!force && !loginChanged(next)) return false;
+  finished = true;
+  window.clearTimeout(pollTimer);
+  emit("done", next);
+  return true;
+}
+
+async function finishAfterSuccessBanner(attempt = 0) {
+  if (unmounted || finished) return;
+  if (await completeLogin(true)) return;
+  if (attempt + 1 >= LOGIN_SUCCESS_RETRY) return;
+  window.setTimeout(() => {
+    void finishAfterSuccessBanner(attempt + 1);
+  }, LOGIN_SUCCESS_RETRY_MS);
+}
+
+/** 当前登录换成另一个账号就算登录完成；同号重登靠终端成功文案触发。 */
+function waitForLogin(attempt: number) {
+  if (unmounted || finished || attempt >= LOGIN_POLL_LIMIT) return;
   pollTimer = window.setTimeout(async () => {
-    const next = await getRuntimeAccountStatus(props.runtime.id).catch(() => null);
-    if (unmounted) return;
-    if (next?.live.signedIn && next.live.accountId !== before) {
-      emit("done", next);
-      return;
-    }
-    waitForLogin(before, attempt + 1);
+    if (await completeLogin(false)) return;
+    waitForLogin(attempt + 1);
   }, LOGIN_POLL_MS);
+}
+
+function onTerminalData(raw: string) {
+  const chunk = decodeTerminalChunk(raw);
+  term?.write(chunk);
+  if (LOGIN_FAIL_RE.test(chunk)) {
+    error.value = t("runtimeAccount.loginFailed");
+    return;
+  }
+  if (LOGIN_OK_RE.test(chunk)) {
+    error.value = "";
+    void finishAfterSuccessBanner(0);
+  }
 }
 
 async function start() {
   const login = await getRuntimeLoginCommand(props.runtime.id);
   const before = await getRuntimeAccountStatus(props.runtime.id).catch(() => null);
+  beforeAccountId = before?.live.accountId ?? null;
+  beforeLabel = before?.live.label ?? null;
   const opened = await terminalOpen(login.cwd);
   if (unmounted) {
     void terminalClose(opened.id);
@@ -66,7 +111,8 @@ async function start() {
   terminalId = opened.id;
   unlisteners.push(
     await listen<{ id: string; data: string }>("terminal-data", (event) => {
-      if (event.payload.id === terminalId) term?.write(decodeTerminalChunk(event.payload.data));
+      if (event.payload.id !== terminalId) return;
+      onTerminalData(event.payload.data);
     }),
     await listen<{ id: string; exitCode?: number }>("terminal-exit", (event) => {
       if (event.payload.id !== terminalId) return;
@@ -75,7 +121,7 @@ async function start() {
   );
   refit();
   void terminalWrite(terminalId, `${login.command}\r`);
-  waitForLogin(before?.live.accountId ?? null, 0);
+  waitForLogin(0);
 }
 
 onMounted(async () => {

@@ -1,6 +1,7 @@
 //! 单个凭据项的读和写。值一律按字节原样保存，不解析、不改字段。
 
 use std::{
+    borrow::Cow,
     fs,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
@@ -12,6 +13,75 @@ use super::{
     keychain::{self, Keychain},
     registry::{Item, KeyAccount},
 };
+
+/// GitHub CLI `hosts.yml` 里 `github.com` 段的当前 `user`。
+pub fn gh_hosts_user(hosts_yml: &str) -> Option<String> {
+    let mut in_github = false;
+    let mut user = None;
+    for line in hosts_yml.lines() {
+        if line.starts_with("github.com:") {
+            in_github = true;
+            continue;
+        }
+        if !in_github {
+            continue;
+        }
+        if !line.is_empty() && !line.starts_with([' ', '\t', '#']) {
+            break;
+        }
+        let trimmed = line.trim();
+        let Some(value) = trimmed.strip_prefix("user:") else {
+            continue;
+        };
+        let value = value.trim().trim_matches(['"', '\'']);
+        if !value.is_empty() {
+            user = Some(value.to_string());
+        }
+    }
+    user
+}
+
+/// Copilot `config.json` 的 `lastLoggedInUser` → `(host, login)`。支持整行 `//` 注释。
+pub fn copilot_last_user(config_text: &str) -> Option<(String, String)> {
+    let root: Value = serde_json::from_str(&strip_json_line_comments(config_text)).ok()?;
+    let user = root.get("lastLoggedInUser")?;
+    let login = user.get("login")?.as_str()?.trim();
+    if login.is_empty() {
+        return None;
+    }
+    let host = user
+        .get("host")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("https://github.com");
+    Some((host.to_string(), login.to_string()))
+}
+
+fn strip_json_line_comments(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn copilot_cli_account(ctx: &Ctx<'_>, github_suffix: bool) -> Result<String, String> {
+    let path = ctx.path("~/.copilot/config.json");
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(tr!("读不到 Copilot 当前用户（~/.copilot/config.json）"));
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    let (host, login) = copilot_last_user(&text)
+        .ok_or_else(|| tr!("读不到 Copilot 当前用户（config.json 里没有 lastLoggedInUser）"))?;
+    if github_suffix {
+        Ok(format!("{host}:{login}:github"))
+    } else {
+        Ok(format!("{host}:{login}"))
+    }
+}
 
 pub struct Ctx<'a> {
     pub home: PathBuf,
@@ -34,10 +104,25 @@ impl Ctx<'_> {
             .unwrap_or_else(|| PathBuf::from(raw))
     }
 
-    fn account<'s>(&'s self, account: &'s KeyAccount) -> &'s str {
+    fn account<'a>(&'a self, account: &'a KeyAccount) -> Result<Cow<'a, str>, String> {
         match account {
-            KeyAccount::Fixed(name) => name,
-            KeyAccount::CurrentUser => &self.user,
+            KeyAccount::Fixed(name) => Ok(Cow::Borrowed(name)),
+            KeyAccount::CurrentUser => Ok(Cow::Borrowed(&self.user)),
+            KeyAccount::GhHostsUser => {
+                let path = self.path("~/.config/gh/hosts.yml");
+                let text = match fs::read_to_string(&path) {
+                    Ok(text) => text,
+                    Err(error) if error.kind() == ErrorKind::NotFound => {
+                        return Err(tr!("读不到 GitHub CLI 当前用户（~/.config/gh/hosts.yml）"));
+                    }
+                    Err(error) => return Err(error.to_string()),
+                };
+                gh_hosts_user(&text)
+                    .map(Cow::Owned)
+                    .ok_or_else(|| tr!("读不到 GitHub CLI 当前用户（hosts.yml 里没有 user）"))
+            }
+            KeyAccount::CopilotCliUser => copilot_cli_account(self, false).map(Cow::Owned),
+            KeyAccount::CopilotCliUserGithub => copilot_cli_account(self, true).map(Cow::Owned),
         }
     }
 }
@@ -58,10 +143,11 @@ pub fn read(ctx: &Ctx, item: &Item) -> Result<Option<Vec<u8>>, String> {
             if !keychain::supported() {
                 return Ok(None);
             }
-            Ok(ctx
-                .keychain
-                .read(service, ctx.account(account))?
-                .map(String::into_bytes))
+            let Ok(name) = ctx.account(account) else {
+                // 还没登录时 hosts.yml / user 不存在，当成未登录而不是报错
+                return Ok(None);
+            };
+            Ok(ctx.keychain.read(service, &name)?.map(String::into_bytes))
         }
     }
 }
@@ -96,11 +182,11 @@ pub fn write(ctx: &Ctx, item: &Item, value: Option<&[u8]>) -> Result<(), String>
             write_private(&path, &text)
         }
         Item::Keychain { service, account } => match value {
-            Some(bytes) => ctx.keychain.write(
-                service,
-                ctx.account(account),
-                &String::from_utf8_lossy(bytes),
-            ),
+            Some(bytes) => {
+                let name = ctx.account(account)?;
+                ctx.keychain
+                    .write(service, &name, &String::from_utf8_lossy(bytes))
+            }
             None => Ok(()),
         },
     }
@@ -122,7 +208,8 @@ fn read_json(path: &Path) -> Result<Option<Value>, String> {
     let Some(bytes) = read_file(path)? else {
         return Ok(None);
     };
-    serde_json::from_slice(&bytes)
+    let text = String::from_utf8_lossy(&bytes);
+    serde_json::from_str(&strip_json_line_comments(&text))
         .map(Some)
         .map_err(|_| tr!("{path} 不是标准 JSON，无法读取账号", path = path.display()))
 }
@@ -264,6 +351,67 @@ mod tests {
         assert_eq!(read(&ctx, &item).unwrap(), Some(b"{}".to_vec()));
         write(&ctx, &item, None).unwrap();
         assert_eq!(read(&ctx, &item).unwrap(), None);
+    }
+
+    #[test]
+    fn gh_hosts_user_reads_active_login() {
+        assert_eq!(
+            gh_hosts_user("github.com:\n    users:\n        alice:\n    user: alice\n").as_deref(),
+            Some("alice")
+        );
+        assert_eq!(gh_hosts_user("enterprise.example:\n    user: bob\n"), None);
+    }
+
+    #[test]
+    fn gh_hosts_keychain_uses_active_user() {
+        let home = tempfile::tempdir().unwrap();
+        let keychain = MemoryKeychain::default();
+        let ctx = ctx(home.path(), &keychain);
+        let hosts = home.path().join(".config/gh/hosts.yml");
+        write_private(
+            &hosts,
+            b"github.com:\n    users:\n        alice:\n    user: alice\n",
+        )
+        .unwrap();
+        keychain
+            .write("gh:github.com", "alice", "token-a")
+            .unwrap();
+        let item = Item::Keychain {
+            service: "gh:github.com",
+            account: KeyAccount::GhHostsUser,
+        };
+        assert_eq!(read(&ctx, &item).unwrap(), Some(b"token-a".to_vec()));
+        write(&ctx, &item, Some(b"token-b")).unwrap();
+        assert_eq!(
+            keychain.read("gh:github.com", "alice").unwrap().as_deref(),
+            Some("token-b")
+        );
+    }
+
+    #[test]
+    fn copilot_cli_keychain_uses_last_logged_in_user() {
+        let home = tempfile::tempdir().unwrap();
+        let keychain = MemoryKeychain::default();
+        let ctx = ctx(home.path(), &keychain);
+        write_private(
+            &home.path().join(".copilot/config.json"),
+            br#"// header
+{"lastLoggedInUser":{"host":"https://github.com","login":"alice"}}
+"#,
+        )
+        .unwrap();
+        keychain
+            .write("copilot-cli", "https://github.com:alice", "token-a")
+            .unwrap();
+        let item = Item::Keychain {
+            service: "copilot-cli",
+            account: KeyAccount::CopilotCliUser,
+        };
+        assert_eq!(read(&ctx, &item).unwrap(), Some(b"token-a".to_vec()));
+        assert_eq!(
+            copilot_last_user("// x\n{\"lastLoggedInUser\":{\"login\":\"bob\"}}\n"),
+            Some(("https://github.com".into(), "bob".into()))
+        );
     }
 
     #[cfg(unix)]

@@ -22,6 +22,12 @@ pub enum KeyAccount {
     Fixed(&'static str),
     /// 当前系统用户名（Claude Code 用它当 account）
     CurrentUser,
+    /// GitHub CLI：`~/.config/gh/hosts.yml` 里 `github.com.user`
+    GhHostsUser,
+    /// Copilot CLI：`~/.copilot/config.json` 的 `lastLoggedInUser` → `{host}:{login}`
+    CopilotCliUser,
+    /// Copilot 镜像槽：`{host}:{login}:github`
+    CopilotCliUserGithub,
 }
 
 pub enum Item {
@@ -48,6 +54,11 @@ impl Item {
             Item::Keychain { service, account } => match account {
                 KeyAccount::Fixed(name) => format!("keychain:{service}/{name}"),
                 KeyAccount::CurrentUser => format!("keychain:{service}/$USER"),
+                KeyAccount::GhHostsUser => format!("keychain:{service}/$GH_USER"),
+                KeyAccount::CopilotCliUser => format!("keychain:{service}/$COPILOT_USER"),
+                KeyAccount::CopilotCliUserGithub => {
+                    format!("keychain:{service}/$COPILOT_USER_GITHUB")
+                }
             },
         }
     }
@@ -172,6 +183,35 @@ const SPECS: &[Spec] = &[
         env_overrides: &[],
     },
     Spec {
+        runtime: "copilot",
+        tier: Tier::B,
+        // `copilot login` 写入 config.json 的 lastLoggedInUser + 钥匙串 `copilot-cli` /
+        // `{host}:{login}`（另有 `:github` 镜像槽）。未跑过 login 时仍可能吃 GitHub CLI 的登录，
+        // 所以后面保留 gh 回退。Copilot 自有项必须排在前面，身份优先用 lastLoggedInUser。
+        items: &[
+            Item::JsonField {
+                file: "~/.copilot/config.json",
+                pointer: "/lastLoggedInUser",
+            },
+            Item::Keychain {
+                service: "copilot-cli",
+                account: KeyAccount::CopilotCliUser,
+            },
+            Item::Keychain {
+                service: "copilot-cli",
+                account: KeyAccount::CopilotCliUserGithub,
+            },
+            Item::File("~/.config/gh/hosts.yml"),
+            Item::Keychain {
+                service: "gh:github.com",
+                account: KeyAccount::GhHostsUser,
+            },
+        ],
+        mac_only: false,
+        kimi_lock: None,
+        env_overrides: &["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
+    },
+    Spec {
         runtime: "opencode",
         tier: Tier::C,
         items: &[
@@ -261,7 +301,7 @@ pub fn spec(runtime: &str) -> Option<&'static Spec> {
 /// 「在终端登录」时跟在 CLI 后面的参数；没有登录子命令的 CLI 直接打开，在里面用 /login。
 pub fn login_args(runtime: &str) -> &'static [&'static str] {
     match runtime {
-        "codex" | "cursor" | "grok" | "kiro" => &["login"],
+        "codex" | "cursor" | "grok" | "kiro" | "copilot" => &["login"],
         _ => &[],
     }
 }
@@ -279,5 +319,11 @@ mod tests {
             tags.dedup();
             assert_eq!(tags.len(), count, "{}", spec.runtime);
         }
+    }
+
+    #[test]
+    fn copilot_login_uses_login_subcommand() {
+        assert_eq!(login_args("copilot"), &["login"]);
+        assert!(spec("copilot").is_some());
     }
 }
