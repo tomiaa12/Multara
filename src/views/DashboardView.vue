@@ -469,7 +469,11 @@ function openWorkbenchFromManage() {
                 <AvatarStack
                   :items="workerItems(row)"
                   :max="AVATAR_VISIBLE"
-                  :dialog-title="t('dashboard.overflowAgentsTitle')"
+                  :dialog-title="
+                    row.filters.includes('running')
+                      ? t('dashboard.overflowAgentsTitle')
+                      : t('dashboard.overflowAgentsHistoryTitle')
+                  "
                 />
               </td>
               <td class="req-col-actions" @click.stop>

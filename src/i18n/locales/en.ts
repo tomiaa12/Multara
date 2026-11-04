@@ -1311,6 +1311,7 @@ Who is this for? Any constraints?
   "dashboard.overflowTagsTitle": "Tags",
   "dashboard.overflowProjectsTitle": "Projects",
   "dashboard.overflowAgentsTitle": "Working agents",
+  "dashboard.overflowAgentsHistoryTitle": "Agents that worked here",
   "overflowSummary.more": "+{n} {unit}",
   "overflowSummary.count": "{n} {unit}",
   "overflowSummary.viewAll": "View all",

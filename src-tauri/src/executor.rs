@@ -1159,6 +1159,38 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             let _ = builtin_skills::materialize(&skill_root, locale);
             let skill_root_text = skill_root.to_string_lossy().to_string();
             let skill_names = builtin_skills::names();
+            let roster = app
+                .state::<AppState>()
+                .lock_db()
+                .ok()
+                .map(|db| {
+                    let focus_squad_id = db
+                        .query_row(
+                            "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
+                            [&run.session_id],
+                            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                        )
+                        .ok()
+                        .and_then(|(target_type, target_id)| {
+                            (target_type == "squad").then_some(target_id)
+                        });
+                    // 对齐 Multica：非小队会话不拉全表进 prompt，只给 CLI 指引。
+                    let (agents, squads) = if focus_squad_id.is_some() {
+                        (
+                            crate::ops::agent::list(&db).unwrap_or_default(),
+                            crate::ops::squad::list(&db).unwrap_or_default(),
+                        )
+                    } else {
+                        (Vec::new(), Vec::new())
+                    };
+                    runtime_brief::build_roster(runtime_brief::RosterBuild {
+                        locale,
+                        agents: &agents,
+                        squads: &squads,
+                        focus_squad_id: focus_squad_id.as_deref(),
+                    })
+                })
+                .unwrap_or_default();
             let brief = runtime_brief::build(runtime_brief::RuntimeBrief {
                 agent_id: &run.agent_id,
                 agent_name: &run.agent_name,
@@ -1167,6 +1199,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 skill_names: &skill_names,
                 skill_root: &skill_root_text,
                 user_skill_context: &resource_context,
+                roster: &roster,
                 has_project_workspace: workspace_context.2,
                 locale,
             });

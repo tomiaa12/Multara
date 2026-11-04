@@ -9,6 +9,7 @@ import AvatarPicker from "../components/AvatarPicker.vue";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import RuntimeModelSelect from "../components/RuntimeModelSelect.vue";
 import RuntimeSelect from "../components/RuntimeSelect.vue";
+import AvatarStack from "../components/ui/AvatarStack.vue";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
@@ -29,6 +30,7 @@ import type { RuntimeAccountStatus } from "../services/backend";
 
 const RUNTIME_VIEW_KEY = "multara.runtimes.view";
 const RUNTIME_FILTER_KEY = "multara.runtimes.filter";
+const SQUAD_AVATAR_VISIBLE = 3;
 
 function agentListDescription(agent: Agent) {
   if (isMiku(agent)) return t("miku.description");
@@ -187,6 +189,18 @@ const squadForm = reactive<Omit<Squad, "id"> & { id?: string }>({
   memberAgentIds: [],
 });
 const availableAgentResources = computed(() => store.data?.resources ?? []);
+
+function squadMemberItems(squad: Squad) {
+  const agents = store.data?.agents ?? [];
+  return squad.memberAgentIds.map((id) => {
+    const agent = agents.find((item) => item.id === id);
+    return {
+      key: id,
+      name: agent?.name ?? id,
+      image: agent?.avatar,
+    };
+  });
+}
 
 function editAgent(agent?: Agent) {
   Object.assign(agentForm, agent ?? {
@@ -549,16 +563,13 @@ function runtimeSubtitle(runtime: Runtime) {
             />
             <span>{{ store.data?.agents.find((agent) => agent.id === squad.leaderAgentId)?.name ?? t("collection.unspecified") }}</span>
           </span>
-          <span class="squad-member-stack">
-            <AgentAvatar
-              v-for="id in squad.memberAgentIds.slice(0, 4)"
-              :key="id"
-              :value="store.data?.agents.find((agent) => agent.id === id)?.avatar"
-              :name="store.data?.agents.find((agent) => agent.id === id)?.name"
+          <span class="squad-member-stack" @click.stop>
+            <AvatarStack
+              :items="squadMemberItems(squad)"
+              :max="SQUAD_AVATAR_VISIBLE"
               :size="22"
+              :dialog-title="t('collection.members')"
             />
-            <small v-if="squad.memberAgentIds.length > 4">+{{ squad.memberAgentIds.length - 4 }}</small>
-            <small v-else-if="!squad.memberAgentIds.length">{{ t("collection.noMembers") }}</small>
           </span>
         </RouterLink>
         <UiButton class="icon-button" :tip="t('collection.deleteSquad')" @click.stop="removeSquad(squad)"><Trash2 :size="13" /></UiButton>

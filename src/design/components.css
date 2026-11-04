@@ -1196,8 +1196,13 @@ input.ds-checkbox[type="checkbox"]:disabled {
   display: inline-flex;
   align-items: center;
 }
+/* 间距打在堆叠子项上；描边必须打在圆形头像上——AgentAvatar 外包了 tooltip trigger */
 .ds-avatar-stack > * + * {
   margin-left: -6px;
+}
+.ds-avatar-stack > * + * .agent-avatar,
+.ds-avatar-stack > * + * .ds-avatar,
+.ds-avatar-stack > * + *.ds-avatar-stack-more {
   box-shadow: 0 0 0 2px var(--color-surface);
 }
 .ds-avatar-stack-more {

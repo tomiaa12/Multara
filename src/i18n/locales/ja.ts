@@ -1310,6 +1310,7 @@ const catalog: MessageCatalog = {
   "dashboard.overflowTagsTitle": "タグ",
   "dashboard.overflowProjectsTitle": "プロジェクト",
   "dashboard.overflowAgentsTitle": "作業中のエージェント",
+  "dashboard.overflowAgentsHistoryTitle": "参加したエージェント",
   "overflowSummary.more": "他{n}件の{unit}",
   "overflowSummary.count": "{n} 件の{unit}",
   "overflowSummary.viewAll": "すべて表示",
