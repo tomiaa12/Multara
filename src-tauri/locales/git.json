@@ -197,6 +197,12 @@
     "ja": "プッシュが拒否されました：{branch} に新しいコミットがあります。最新の内容をプルしてからマージを完了してください。",
     "ko": "푸시가 거부되었습니다: {branch}에 새 커밋이 있습니다. 최신 내용을 풀한 뒤 병합을 완료하세요."
   },
+  "推送被拒绝：{branch} 受保护或被钩子拦截，无法直接推送。": {
+    "en": "Push rejected: {branch} is protected or blocked by a hook, so it cannot be pushed to directly.",
+    "zh-TW": "推送被拒絕：{branch} 受保護或被勾點攔截，無法直接推送。",
+    "ja": "プッシュが拒否されました：{branch} は保護されているかフックでブロックされているため、直接プッシュできません。",
+    "ko": "푸시가 거부되었습니다: {branch}이(가) 보호되었거나 훅에 막혀 직접 푸시할 수 없습니다."
+  },
   "推送到 {branch} 失败：{detail}": {
     "en": "Failed to push to {branch}: {detail}",
     "zh-TW": "推送到 {branch} 失敗：{detail}",
