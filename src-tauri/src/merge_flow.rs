@@ -383,67 +383,88 @@ pub async fn git_merge_into_branch(
         if source_label == target.branch {
             return Err(tr!("不能把分支合并到它自己"));
         }
-        if let Err(error) = git_merge::fetch_target(&git, &root, &target) {
-            // 只更新本地时，拉不到远程也可以继续；要推送就必须以最新的远程为准。
-            if input.push && !error.contains("couldn't find remote ref") {
-                return Err(tr!(
-                    "获取 {branch} 失败：{error}",
-                    branch = target.display(),
-                    error = error
-                ));
-            }
-        }
-        let base = git_merge::target_base(&git, &root, &target, input.push)?;
-        let head = git_merge::head_commit(&git, &root)?;
         let message = merge_message(&source_label, &target);
         let mut result = MergeIntoResult {
             source_label: source_label.clone(),
             target_display: target.display(),
             ..Default::default()
         };
-        let commit = match git_merge::plan_merge(&git, &root, &base, &head, &message)? {
-            MergePlan::UpToDate => {
-                result.status = "up_to_date";
-                return Ok(result);
+        // 选远程分支时合并底是远程 tip，结果还要 push 回去；若 push 时 tip 又变了，再 fetch 重试一次。
+        for attempt in 0..2 {
+            if let Err(error) = git_merge::fetch_target(&git, &root, &target) {
+                // 只更新本地时，拉不到远程也可以继续；要推送就必须以最新的远程为准。
+                if input.push && !error.contains("couldn't find remote ref") {
+                    return Err(tr!(
+                        "获取 {branch} 失败：{error}",
+                        branch = target.display(),
+                        error = error
+                    ));
+                }
             }
-            MergePlan::FastForward(commit) => {
-                result.fast_forward = true;
-                commit
-            }
-            MergePlan::Merged(commit) => commit,
-            MergePlan::Conflict(_) => {
-                return start_conflict_session(
-                    state,
-                    &app_for_paths,
-                    &input,
-                    &workspace,
-                    &git,
-                    isolation_base,
-                    ConflictStart {
-                        target: &target,
-                        base: &base,
-                        head: &head,
-                        source_label: &source_label,
-                        message: &message,
-                    },
-                    result,
+            let base = git_merge::target_base(&git, &root, &target, input.push)?;
+            let head = git_merge::head_commit(&git, &root)?;
+            let commit = match git_merge::plan_merge(&git, &root, &base, &head, &message)? {
+                MergePlan::UpToDate => {
+                    result.status = "up_to_date";
+                    return Ok(result);
+                }
+                MergePlan::FastForward(commit) => {
+                    result.fast_forward = true;
+                    commit
+                }
+                MergePlan::Merged(commit) => {
+                    result.fast_forward = false;
+                    commit
+                }
+                MergePlan::Conflict(_) => {
+                    return start_conflict_session(
+                        state,
+                        &app_for_paths,
+                        &input,
+                        &workspace,
+                        &git,
+                        isolation_base,
+                        ConflictStart {
+                            target: &target,
+                            base: &base,
+                            head: &head,
+                            source_label: &source_label,
+                            message: &message,
+                        },
+                        result,
+                    );
+                }
+            };
+            if input.push {
+                // 推送会跑 pre-push：worktree 里缺 husky.sh / node_modules 时和普通推送一样先补链接。
+                crate::hook_runtime::link_worktree_runtime(
+                    std::path::Path::new(&workspace.source_path),
+                    std::path::Path::new(&root),
                 );
             }
-        };
-        if input.push {
-            // 推送会跑 pre-push：worktree 里缺 husky.sh / node_modules 时和普通推送一样先补链接。
-            crate::hook_runtime::link_worktree_runtime(
-                std::path::Path::new(&workspace.source_path),
-                std::path::Path::new(&root),
-            );
+            match git_merge::apply(&git, &root, &target, &commit, input.push) {
+                Ok(outcome) => {
+                    result.status = "merged";
+                    result.commit = Some(commit.chars().take(7).collect());
+                    result.pushed = outcome.pushed;
+                    result.local_updated = outcome.local_updated;
+                    result.notes = outcome.notes;
+                    return Ok(result);
+                }
+                Err(error)
+                    if input.push
+                        && attempt == 0
+                        && git_merge::is_non_fast_forward_push(&error) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
         }
-        let outcome = git_merge::apply(&git, &root, &target, &commit, input.push)?;
-        result.status = "merged";
-        result.commit = Some(commit.chars().take(7).collect());
-        result.pushed = outcome.pushed;
-        result.local_updated = outcome.local_updated;
-        result.notes = outcome.notes;
-        Ok(result)
+        Err(tr!(
+            "推送被拒绝：{branch} 有新提交，请先拉取最新再完成合并。",
+            branch = target.display()
+        ))
     })
     .await
 }
