@@ -1309,6 +1309,7 @@ const catalog: MessageCatalog = {
   "dashboard.noProjects": "プロジェクトなし",
   "dashboard.overflowTagsTitle": "タグ",
   "dashboard.overflowProjectsTitle": "プロジェクト",
+  "agentLive.multi": "{n} 件のエージェントが処理中",
   "dashboard.overflowAgentsTitle": "作業中のエージェント",
   "dashboard.overflowAgentsHistoryTitle": "参加したエージェント",
   "overflowSummary.more": "他{n}件の{unit}",
