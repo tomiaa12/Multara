@@ -538,7 +538,7 @@
   display: block;
   background: var(--color-bg);
 }
-/* 聊天面板粘性提问（默认）与任务活动里的用户气泡 */
+/* 各轮提问均可 sticky；重叠时由 syncStickyUserTurnPush 把上一轮 top 推成负值顶走 */
 .shared-chat-panel.is-sticky-user-turn .user-turn,
 .task-activity .user-turn {
   position: sticky;
@@ -557,6 +557,24 @@
   height: 16px;
   background: var(--color-bg);
   pointer-events: none;
+}
+/* 粘住时底边用渐变过渡到下方回答，避免硬白条像 margin */
+.shared-chat-panel.is-sticky-user-turn .user-turn::after,
+.task-activity .user-turn::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: -72px;
+  right: -72px;
+  bottom: -20px;
+  height: 20px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    var(--color-bg) 0%,
+    color-mix(in srgb, var(--color-bg) 70%, transparent) 45%,
+    transparent 100%
+  );
 }
 .user-prompt {
   width: 100%;
@@ -1789,7 +1807,8 @@ textarea:not(.inputarea) {
   padding: 12px 14px;
 }
 /* 与 compact 消息区内边距对齐，避免 sticky 伪元素撑出横向滚动条 */
-.shared-chat-panel.compact .user-turn::before {
+.shared-chat-panel.compact .user-turn::before,
+.shared-chat-panel.compact .user-turn::after {
   left: -14px;
   right: -14px;
 }

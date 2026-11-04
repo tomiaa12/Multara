@@ -12,6 +12,7 @@ import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
+import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
 import { speakerForMessage } from "../components/chat/message-speaker";
 import { liveWorkParts } from "../components/chat/timeline-display";
@@ -313,11 +314,25 @@ function stop() {
   void store.stopSessionRuns(props.sessionId);
 }
 
+function syncUserTurnPush(root: HTMLElement | null = logEl.value) {
+  if (!root) return;
+  syncStickyUserTurnPush(root, true);
+}
+
+function onThreadScroll() {
+  if (!props.thread) return;
+  syncUserTurnPush();
+}
+
 function revealThreadScroll() {
   const list = logEl.value;
   if (!list || !props.thread) return;
-  if (props.unreadMessageId && scrollListToMessage(list, props.unreadMessageId)) return;
+  if (props.unreadMessageId && scrollListToMessage(list, props.unreadMessageId)) {
+    syncUserTurnPush(list);
+    return;
+  }
   list.scrollTop = list.scrollHeight;
+  syncUserTurnPush(list);
 }
 
 onMounted(() => {
@@ -342,7 +357,13 @@ watch(
 <template>
   <div class="task-activity" :class="{ 'is-thread': thread }">
     <!-- 任务详情由外层 task-issue-scroll 负责滚动；仅 inbox thread 自管滚动时挂 vs-scroll -->
-    <div v-if="messages.length" ref="logEl" class="task-activity-log" :class="{ 'vs-scroll': thread }">
+    <div
+      v-if="messages.length"
+      ref="logEl"
+      class="task-activity-log"
+      :class="{ 'vs-scroll': thread }"
+      @scroll.passive="onThreadScroll"
+    >
       <template v-for="message in messages" :key="message.id">
         <div
           v-if="message.id === unreadMessageId"
