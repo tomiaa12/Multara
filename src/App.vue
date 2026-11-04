@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lastProjectsPath, rememberProjectsPath } from "./views/dashboard/last-projects-path";
 import { readStorage, writeStorage } from "./utils/safe-storage";
@@ -194,6 +195,7 @@ let stopWindowResize: (() => void) | undefined;
 let stopWindowClose: (() => void) | undefined;
 let stopUnsavedPrompt: (() => void) | undefined;
 let stopConfirmDialog: (() => void) | undefined;
+let stopMenuWordWrap: UnlistenFn | undefined;
 
 function onPageUnload(event: BeforeUnloadEvent) {
   if (!hasUnsavedEditors()) return;
@@ -389,6 +391,17 @@ onMounted(async () => {
     confirmRequest.value = getConfirmDialogRequest();
   });
   try {
+    stopMenuWordWrap = await listen<boolean>("menu-word-wrap", async ({ payload }) => {
+      try {
+        await store.saveSettings({ wordWrap: String(payload) });
+      } catch {
+        // 菜单勾选已变；持久化失败时下次启动沿用旧值。
+      }
+    });
+  } catch {
+    // Browser preview has no native menu.
+  }
+  try {
     const windowRef = await currentWindow();
     stopWindowClose = await windowRef.onCloseRequested(async (event) => {
       if (forceQuit) return;
@@ -423,6 +436,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", onPageUnload);
   stopUnsavedPrompt?.();
   stopConfirmDialog?.();
+  stopMenuWordWrap?.();
   stopWindowClose?.();
   stopWindowResize?.();
 });

@@ -119,6 +119,7 @@ const activeTerminalId = computed(() => {
 const theme = computed(() => monacoThemeName(currentDocumentTheme()));
 const indent = computed(() => detectIndent(activeEditor.value?.content ?? ""));
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
+const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
 
 const FLOAT_EDGE = 0;
 const FLOAT_DRAG_THRESHOLD = 4;
@@ -884,6 +885,7 @@ onBeforeUnmount(() => {
               :tab-size="indent.tabSize"
               :insert-spaces="indent.insertSpaces"
               :sticky-scroll="stickyScroll"
+              :word-wrap="wordWrap"
               @change="onEditorChange"
             />
           </div>

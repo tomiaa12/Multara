@@ -749,6 +749,7 @@ const dirty = computed(() =>
 );
 const formatOnSave = computed(() => store.data?.settings.formatOnSave === "true");
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
+const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
 const activeEditorOptions = computed(() => {
   const file = activeFile.value;
   if (!file) return { insertSpaces: true, tabSize: 4, eol: "LF" as EditorEol };
@@ -5986,33 +5987,6 @@ defineExpose({
             <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
           </EditorTabButton>
         </div>
-        <div
-          v-if="markdownToggleVisible"
-          class="md-editor-switch"
-          role="tablist"
-          :aria-label="t('workbench.markdownView')"
-        >
-          <UiTooltip :content="t('workbench.markdownPreviewTitle')"><button
-            type="button"
-            role="tab"
-            :class="{ active: markdownMode === 'preview' }"
-            :aria-selected="markdownMode === 'preview'"
-           
-            @click="setMarkdownMode('preview')"
-          >
-            Preview
-          </button></UiTooltip>
-          <UiTooltip :content="t('workbench.markdownSourceTitle')"><button
-            type="button"
-            role="tab"
-            :class="{ active: markdownMode === 'source' }"
-            :aria-selected="markdownMode === 'source'"
-           
-            @click="setMarkdownMode('source')"
-          >
-            Markdown
-          </button></UiTooltip>
-        </div>
       </header>
       <UiNotice
         v-if="error"
@@ -6038,6 +6012,35 @@ defineExpose({
         @reveal="(line) => editorWithDiff?.reveal(line)"
       />
       <div v-if="activeFile" class="editor-main">
+        <div
+          v-if="markdownToggleVisible"
+          class="md-editor-switch"
+          role="tablist"
+          :aria-label="t('workbench.markdownView')"
+        >
+          <UiTooltip :content="t('workbench.markdownPreviewTitle')">
+            <button
+              type="button"
+              role="tab"
+              :class="{ active: markdownMode === 'preview' }"
+              :aria-selected="markdownMode === 'preview'"
+              @click="setMarkdownMode('preview')"
+            >
+              Preview
+            </button>
+          </UiTooltip>
+          <UiTooltip :content="t('workbench.markdownSourceTitle')">
+            <button
+              type="button"
+              role="tab"
+              :class="{ active: markdownMode === 'source' }"
+              :aria-selected="markdownMode === 'source'"
+              @click="setMarkdownMode('source')"
+            >
+              Markdown
+            </button>
+          </UiTooltip>
+        </div>
         <div v-if="pendingDiffFiles.length" class="chat-editor-overlay-widget">
           <UiButton
             variant="ghost"
@@ -6160,6 +6163,7 @@ defineExpose({
           :tab-size="activeEditorOptions.tabSize"
           :insert-spaces="activeEditorOptions.insertSpaces"
           :sticky-scroll="stickyScroll"
+          :word-wrap="wordWrap"
           :git-epoch="gitEpoch"
           :writing="activeFileBeingWritten"
           @change="onEditorContentChange"
