@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { ref } from "vue";
 import { X } from "@lucide/vue";
-import { nextPopupZIndex } from "../ui/popup-z-index";
+import ImagePreviewLightbox from "../ui/ImagePreviewLightbox.vue";
 
-const props = defineProps<{
+defineProps<{
   images: Array<{ key: string; src?: string; name: string }>;
   removable?: boolean;
 }>();
@@ -14,34 +14,16 @@ const emit = defineEmits<{
 }>();
 
 const preview = ref<{ src: string; name: string } | null>(null);
-const overlayZ = ref(0);
 
 function openPreview(image: { key: string; src?: string; name: string }) {
   emit("open", image.key);
   if (!image.src) return;
-  overlayZ.value = nextPopupZIndex();
   preview.value = { src: image.src, name: image.name };
 }
 
 function closePreview() {
   preview.value = null;
 }
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape" && preview.value) {
-    event.preventDefault();
-    event.stopPropagation();
-    closePreview();
-  }
-}
-
-watch(preview, (value, _, onCleanup) => {
-  if (!value) return;
-  window.addEventListener("keydown", onKeydown, true);
-  onCleanup(() => window.removeEventListener("keydown", onKeydown, true));
-});
-
-onBeforeUnmount(closePreview);
 </script>
 
 <template>
@@ -70,17 +52,10 @@ onBeforeUnmount(closePreview);
       </UiTooltip>
     </template>
   </div>
-  <Teleport to="body">
-    <div
-      v-if="preview"
-      class="composer-image-lightbox"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="preview.name"
-      :style="{ zIndex: overlayZ }"
-      @click="closePreview"
-    >
-      <img :src="preview.src" :alt="preview.name" @click.stop />
-    </div>
-  </Teleport>
+  <ImagePreviewLightbox
+    v-if="preview"
+    :src="preview.src"
+    :name="preview.name"
+    @close="closePreview"
+  />
 </template>
