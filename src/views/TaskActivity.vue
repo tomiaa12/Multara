@@ -1,20 +1,27 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
-import { ArrowUp, LoaderCircle, Square } from "@lucide/vue";
-import type { ChatMessage, MessageAttachmentInput } from "../domain/types";
+import { ArrowUp, LoaderCircle, Plus, Square } from "@lucide/vue";
+import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatQuestionCarousel from "../components/chat/ChatQuestionCarousel.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import UserPrompt from "../components/chat/UserPrompt.vue";
+import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
 import { speakerForMessage } from "../components/chat/message-speaker";
 import { liveWorkParts } from "../components/chat/timeline-display";
+import {
+  type OsDroppedEntry,
+  type WorkspaceFileDragPayload,
+} from "../components/chat/workspace-file-drag";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
+import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { useAppStore } from "../stores/app";
 import { t } from "../i18n";
 
@@ -34,11 +41,15 @@ const store = useAppStore();
 const logEl = ref<HTMLElement | null>(null);
 const composer = ref<{
   clear: () => void;
+  focus: () => void;
+  insertChip: (item: EditorSelectionContext) => void;
+  openAttachMenu: (defaultCategory?: string) => void;
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
 } | null>(null);
 const draftEmpty = ref(true);
 const pasteError = ref("");
 const pastes = ref<Array<MessageAttachmentInput & { previewUrl: string }>>([]);
+const contexts = ref<EditorSelectionContext[]>([]);
 const emptyNodes: ComposerNode[] = [{ type: "text", value: "" }];
 const liveClock = ref(Date.now());
 const liveAnchorFallback = ref<number | null>(null);
@@ -46,7 +57,37 @@ let liveTimer = 0;
 const pageActive = ref(true);
 
 const messages = computed(() => store.messages[props.sessionId] ?? []);
+const session = computed(() => store.data?.sessions.find((item) => item.id === props.sessionId) ?? null);
 const agent = computed(() => store.data?.agents.find((item) => item.id === props.agentId));
+const projectId = computed(() =>
+  session.value?.projectIds?.[0] ?? session.value?.projectId ?? null,
+);
+const workspaces = computed(() => {
+  const all = store.data?.workspaces ?? [];
+  const id = projectId.value;
+  return id ? all.filter((item) => item.projectId === id) : all;
+});
+const targetOptions = computed(() =>
+  buildChatTargetOptions(
+    store.data?.agents ?? [],
+    store.data?.squads ?? [],
+    (name) => t("chat.squadLabel", { name }),
+    store.data?.runtimes ?? [],
+  ),
+);
+const targetValue = computed(() =>
+  session.value ? `${session.value.targetType}:${session.value.targetId}` : (props.agentId ? `agent:${props.agentId}` : ""),
+);
+const targetLabel = computed(() =>
+  targetOptions.value.find((option) => option.value === targetValue.value)?.label
+    ?? agent.value?.name
+    ?? t("common.unassigned"),
+);
+const targetAvatar = computed(() =>
+  targetOptions.value.find((option) => option.value === targetValue.value)?.avatar
+    ?? agent.value?.avatar
+    ?? "M",
+);
 const sessionRunning = computed(() =>
   Object.values(store.runStates).some((event) =>
     event.sessionId === props.sessionId
@@ -179,6 +220,53 @@ function messageRunning(message: ChatMessage) {
 
 function onChange(nodes: ComposerNode[]) {
   draftEmpty.value = !formatAgentPrompt(nodes).trim();
+}
+
+async function onTargetChange(value: string) {
+  if (props.historyViewOnly) return;
+  await store.setSessionTarget(props.sessionId, value);
+}
+
+function rememberChip(context: EditorSelectionContext) {
+  contexts.value = [...contexts.value, context];
+  composer.value?.insertChip(context);
+  composer.value?.focus();
+  recordComposerRecent("task", {
+    path: context.path,
+    workspaceId: context.workspaceId,
+    isDirectory: context.isDirectory,
+  });
+}
+
+async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
+  if (file.workspaceId) {
+    rememberChip(await workspacePathChip(file));
+    return;
+  }
+  const name = file.path.split(/[\\/]/).pop() || file.path;
+  rememberChip(await externalPathChip({ path: file.path, name, isDirectory: Boolean(file.isDirectory) }, workspaces.value, t("chat.externalFile")));
+}
+
+async function onDropWorkspace(file: WorkspaceFileDragPayload) {
+  rememberChip(await workspacePathChip(file));
+}
+
+async function onDropOs(entries: OsDroppedEntry[]) {
+  for (const entry of entries) {
+    rememberChip(await externalPathChip(entry, workspaces.value, t("chat.externalFile")));
+  }
+}
+
+async function pickFilesOrFolders() {
+  const picked = await backend.selectFilesOrFolders();
+  for (const item of picked) {
+    const name = item.path.split(/[\\/]/).pop() || item.path;
+    rememberChip(await externalPathChip(
+      { path: item.path, name, isDirectory: item.isDirectory },
+      workspaces.value,
+      t("chat.externalFile"),
+    ));
+  }
 }
 
 async function pasteImages(files: File[]) {
@@ -339,18 +427,28 @@ watch(
     <ChatComposer
       ref="composer"
       dictation
+      allow-file-picker
+      recent-place="task"
+      :project-id="projectId"
       :placeholder="t('tasks.activityReply')"
       :initial-nodes="emptyNodes"
-      :contexts="[]"
-      :target-label="agent?.name ?? t('common.unassigned')"
-      :target-avatar="agent?.avatar ?? 'M'"
-      :allow-target-change="false"
-      :show-context-usage="false"
+      :contexts="contexts"
+      :target-options="targetOptions"
+      :target-value="targetValue"
+      :target-label="targetLabel"
+      :target-avatar="targetAvatar"
+      :allow-target-change="!historyViewOnly"
+      :disabled="historyViewOnly"
       :can-send="canSend"
       :mode-session-id="historyViewOnly ? '' : sessionId"
       @change="onChange"
       @submit="submit"
       @paste-image="pasteImages"
+      @target-change="onTargetChange"
+      @drop-workspace-file="onDropWorkspace"
+      @drop-os-files="onDropOs"
+      @pick-files-or-folders="pickFilesOrFolders"
+      @attach-file-context="attachFileFromSuggest"
     >
       <ComposerPasteImages
         :images="pastes.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
@@ -358,6 +456,17 @@ watch(
         @remove="removePaste"
       />
       <template #actions>
+        <UiButton
+          type="button"
+          class="icon-button"
+          variant="ghost"
+          data-composer-attach
+          :tip="t('chat.addContext')"
+          :disabled="historyViewOnly"
+          @click="composer?.openAttachMenu('file')"
+        >
+          <Plus :size="16" />
+        </UiButton>
         <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" :tip="t('chat.stop')" @click="stop">
           <Square :size="14" />
         </UiButton>
