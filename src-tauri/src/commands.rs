@@ -4358,6 +4358,49 @@ fn explicit_chat_targets(content: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// 消息里 @ 点名的需求（`[实体引用] requirement <id> …`），按出现顺序去重。
+fn referenced_requirement_ids(content: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    content
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.strip_prefix("[实体引用] ")?.split_whitespace();
+            if fields.next()? != "requirement" {
+                return None;
+            }
+            let id = fields.next()?;
+            (!id.is_empty() && seen.insert(id.to_string())).then(|| id.to_string())
+        })
+        .collect()
+}
+
+/// 用户在消息里点名了某个需求并要求改代码时，把该需求的工作区绑进当前会话，
+/// 这样本次运行才有可写的工作区，而不是被提示词限制在临时目录里。
+fn link_referenced_requirements(
+    db: &Connection,
+    session_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    let wanted = referenced_requirement_ids(content);
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    let mut linked = session::linked_project_ids(db, session_id)?;
+    let before = linked.len();
+    for id in wanted {
+        let exists: bool = db
+            .query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)", [&id], |row| row.get(0))
+            .map_err(|error| error.to_string())?;
+        if exists && !linked.contains(&id) {
+            linked.push(id);
+        }
+    }
+    if linked.len() != before {
+        session::replace_linked_projects(db, session_id, &linked)?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn send_message(
     session_id: String,
@@ -4475,6 +4518,7 @@ fn send_message_inner_ext(
 
     let (project_ids, session_default_mode) = {
         let db = state.lock_db()?;
+        link_referenced_requirements(&db, &session_id, content)?;
         let default_mode = db
             .query_row(
                 "SELECT default_mode FROM chat_sessions WHERE id=?1",
@@ -6942,6 +6986,12 @@ pub(crate) fn setting_value(db: &Connection, key: &str, default: &str) -> String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn collects_referenced_requirement_ids_in_order_without_duplicates() {
+        let content = "改一下\n[实体引用] requirement p1 %E9%9C%80%E6%B1%82\n[实体引用] agent a1 x\n[实体引用] requirement p2 y\n[实体引用] requirement p1 z";
+        assert_eq!(super::referenced_requirement_ids(content), ["p1", "p2"]);
+    }
+
     use std::collections::HashMap;
 
     use crate::models::RunMode;
