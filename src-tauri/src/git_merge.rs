@@ -373,14 +373,31 @@ pub fn apply(
     Ok(outcome)
 }
 
+/// 远程 tip 比合并基准更新，普通 push 会被拒绝（可再 fetch 后重试合并）。
+/// 同时识别 git 原文与 explain_push_failure 后的提示文案。
+pub fn is_non_fast_forward_push(detail: &str) -> bool {
+    let lower = detail.to_lowercase();
+    lower.contains("non-fast-forward")
+        || lower.contains("fetch first")
+        || detail.contains("有新提交")
+        || lower.contains("has new commits")
+}
+
 fn explain_push_failure(target: &MergeTarget, detail: &str) -> String {
     let lower = detail.to_lowercase();
-    if lower.contains("non-fast-forward")
-        || lower.contains("fetch first")
-        || lower.contains("rejected")
-    {
+    if is_non_fast_forward_push(detail) {
         return tr!(
             "推送被拒绝：{branch} 有新提交，请先拉取最新再完成合并。",
+            branch = target.display()
+        );
+    }
+    // 不能把所有 rejected 都当成「有新提交」：受保护分支 / 钩子拒绝也会带 rejected。
+    if lower.contains("protected branch")
+        || lower.contains("pre-receive hook declined")
+        || lower.contains("hook declined")
+    {
+        return tr!(
+            "推送被拒绝：{branch} 受保护或被钩子拦截，无法直接推送。",
             branch = target.display()
         );
     }
