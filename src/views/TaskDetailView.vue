@@ -9,6 +9,7 @@ import {
   parseUserPromptNodes,
   type ComposerNode,
 } from "../components/chat/composer-content";
+import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { useAppStore } from "../stores/app";
 import TaskActivity from "./TaskActivity.vue";
 import TaskIssueSide from "./TaskIssueSide.vue";
@@ -42,7 +43,10 @@ function pinIssueToBottom(force = false) {
   pinningIssue = true;
   element.scrollTop = element.scrollHeight;
   requestAnimationFrame(() => {
-    if (issueScroll.value) issueScroll.value.scrollTop = issueScroll.value.scrollHeight;
+    if (issueScroll.value) {
+      issueScroll.value.scrollTop = issueScroll.value.scrollHeight;
+      syncStickyUserTurnPush(issueScroll.value, true);
+    }
     pinningIssue = false;
   });
 }
@@ -52,6 +56,7 @@ function onIssueScroll() {
   const element = issueScroll.value;
   if (!element) return;
   followBottom.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+  syncStickyUserTurnPush(element, true);
 }
 
 watch(

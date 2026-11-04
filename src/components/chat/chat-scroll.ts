@@ -87,3 +87,58 @@ export function syncStickyExchangeMinHeight(list: HTMLElement, enabled: boolean)
 export function pinLastExchangeToTop(list: HTMLElement, _last: HTMLElement) {
   stickListToBottom(list, "auto");
 }
+
+const USER_TURN_SELECTOR = ".user-turn";
+
+/**
+ * 计算粘性提问被下一轮顶上来时的 top 偏移。
+ * nextTop 相对滚动容器顶；当下一轮进入上一轮所占粘性区域时，上一轮 top 变为负值被推走。
+ */
+export function stickyUserTurnPushOffsets(
+  scrollerTop: number,
+  turns: Array<{ height: number; top: number }>,
+): number[] {
+  const offsets = turns.map(() => 0);
+  for (let index = 0; index < turns.length - 1; index += 1) {
+    const prev = turns[index];
+    const next = turns[index + 1];
+    if (!prev || !next) continue;
+    const push = next.top - scrollerTop - prev.height;
+    if (push < 0) offsets[index] = push;
+  }
+  return offsets;
+}
+
+function scrollParentOf(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.documentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * 最新粘性提问把上一轮往上推，避免短提问盖不住长提问时露馅；
+ * 滚到某一轮回答时仍能看到对应提问（各轮保持 sticky）。
+ */
+export function syncStickyUserTurnPush(root: HTMLElement, enabled: boolean) {
+  const stickies = [...root.querySelectorAll<HTMLElement>(USER_TURN_SELECTOR)];
+  if (!enabled || stickies.length === 0) {
+    for (const el of stickies) el.style.top = "";
+    return;
+  }
+  const scroller = scrollParentOf(stickies[0]!) ?? root;
+  const scrollerTop = scroller.getBoundingClientRect().top;
+  for (const el of stickies) el.style.top = "0px";
+  const turns = stickies.map((el) => {
+    const rect = el.getBoundingClientRect();
+    return { height: el.offsetHeight, top: rect.top };
+  });
+  const offsets = stickyUserTurnPushOffsets(scrollerTop, turns);
+  offsets.forEach((offset, index) => {
+    const el = stickies[index];
+    if (el) el.style.top = offset === 0 ? "0px" : `${offset}px`;
+  });
+}

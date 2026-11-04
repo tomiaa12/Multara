@@ -7,6 +7,7 @@ import {
   pinLastExchangeToTop,
   SMOOTH_SCROLL_FOLLOW_SUPPRESS_MS,
   stickListToBottom,
+  stickyUserTurnPushOffsets,
   syncStickyExchangeMinHeight,
 } from "./chat-scroll";
 
@@ -76,6 +77,35 @@ describe("pinLastExchangeToTop", () => {
     list.getBoundingClientRect = () => ({ top: 100, bottom: 500, left: 0, right: 0, width: 0, height: 400 }) as DOMRect;
     pinLastExchangeToTop(list, last);
     expect(list.scrollTop).toBe(900);
+  });
+});
+
+describe("stickyUserTurnPushOffsets", () => {
+  test("next sticky pushes previous fully above when it reaches the top", () => {
+    expect(
+      stickyUserTurnPushOffsets(100, [
+        { height: 60, top: 100 },
+        { height: 20, top: 100 },
+      ]),
+    ).toEqual([-60, 0]);
+  });
+
+  test("partially overlapping next sticky eases previous upward", () => {
+    expect(
+      stickyUserTurnPushOffsets(100, [
+        { height: 60, top: 100 },
+        { height: 20, top: 140 },
+      ]),
+    ).toEqual([-20, 0]);
+  });
+
+  test("leaves previous at top while next is still below its height", () => {
+    expect(
+      stickyUserTurnPushOffsets(100, [
+        { height: 60, top: 100 },
+        { height: 20, top: 180 },
+      ]),
+    ).toEqual([0, 0]);
   });
 });
 

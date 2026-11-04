@@ -35,6 +35,7 @@ import {
   pinLastExchangeToTop as pinExchange,
   stickListToBottom,
   syncStickyExchangeMinHeight,
+  syncStickyUserTurnPush,
 } from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { lastUnansweredUser } from "./chat/unanswered-turn";
@@ -997,10 +998,17 @@ let cancelStickFollowRelease: (() => void) | null = null;
 let pinStickLock = false;
 let messageListResize: ResizeObserver | null = null;
 
+function syncUserTurnPush() {
+  const element = messageList.value;
+  if (!element) return;
+  syncStickyUserTurnPush(element, props.stickyUserTurn);
+}
+
 function handleScroll() {
   const element = messageList.value;
   if (!element) return;
   if (!suppressScrollFollow) followBottom.value = listIsAtBottom(element);
+  syncUserTurnPush();
   if (element.scrollTop < 160 && hiddenGroupCount.value > 0) void showEarlierGroups();
 }
 
@@ -1026,6 +1034,7 @@ function scheduleStickToBottom(behavior: ScrollBehavior = "auto") {
       cancelStickFollowRelease = null;
       // smooth 结束后再 snap 一次，吃掉动画期间异步撑高的内容
       if (followBottom.value && !pinStickLock) stickListToBottom(element, "auto");
+      syncUserTurnPush();
       suppressScrollFollow = false;
     });
   };
@@ -1105,6 +1114,7 @@ function pinLastExchangeToTop() {
       pinStickLock = false;
       suppressScrollFollow = false;
       followBottom.value = true;
+      syncUserTurnPush();
     });
   });
 }
@@ -1115,9 +1125,11 @@ function bindMessageListResize() {
   const element = messageList.value;
   if (!element || typeof ResizeObserver === "undefined") return;
   messageListResize = new ResizeObserver(() => {
-    if (!followBottom.value || pinStickLock) return;
-    if (props.stickyUserTurn) syncStickyExchangeMinHeight(element, true);
-    stickListToBottom(element, "auto");
+    if (followBottom.value && !pinStickLock) {
+      if (props.stickyUserTurn) syncStickyExchangeMinHeight(element, true);
+      stickListToBottom(element, "auto");
+    }
+    syncUserTurnPush();
   });
   // 观察子节点高度：Markdown / 卡片异步撑高时继续贴底（观察列表自身不会因 scrollHeight 变化触发）。
   for (const child of element.children) messageListResize.observe(child);
@@ -1376,6 +1388,13 @@ watch(
     if (!list) return;
     syncStickyExchangeMinHeight(list, enabled);
     if (enabled && followBottom.value) scheduleStickToBottom("auto");
+    else syncStickyUserTurnPush(list, enabled);
+  },
+);
+watch(
+  () => [visibleGroups.value.length, lastGroupId.value] as const,
+  () => {
+    void nextTick(() => syncUserTurnPush());
   },
 );
 onBeforeUnmount(() => {
