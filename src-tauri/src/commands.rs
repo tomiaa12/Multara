@@ -2895,6 +2895,7 @@ pub async fn save_settings(
     let _span = crate::diag::span("save_settings");
     validate_settings(&settings)?;
     let reload_webhook = settings.contains_key("webhookPort");
+    let word_wrap = settings.get("wordWrap").cloned();
     let skill_root = app
         .path()
         .app_data_dir()
@@ -2912,6 +2913,10 @@ pub async fn save_settings(
     .await?;
     if reload_webhook {
         crate::webhook::reload(&app);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(value) = word_wrap {
+        crate::macos_menu::sync_word_wrap(&app, value == "true");
     }
     Ok(saved)
 }
@@ -2934,6 +2939,7 @@ fn save_settings_rows(
             "webhookPort",
             "formatOnSave",
             "stickyScroll",
+            "wordWrap",
             "explorerSettings",
             "branchPrefix",
             "branchPrompt",
@@ -6796,7 +6802,7 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
             return Err(tr!("无效的资源管理器设置"));
         }
     }
-    for key in ["formatOnSave", "stickyScroll"] {
+    for key in ["formatOnSave", "stickyScroll", "wordWrap"] {
         if settings
             .get(key)
             .is_some_and(|value| !["true", "false"].contains(&value.as_str()))

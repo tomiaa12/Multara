@@ -475,6 +475,8 @@ const catalog: MessageCatalog = {
   "settings.formatOnSaveHint": "Format code when a file is saved.",
   "settings.stickyScroll": "Sticky scroll",
   "settings.stickyScrollHint": "Pin the current function or heading while scrolling.",
+  "settings.wordWrap": "ワードラップ",
+  "settings.wordWrapHint": "エディター幅で折り返します。「表示 → ワードラップ」または ⌥Z で切り替え。",
   "settings.explorer.sort": "Sort order",
   "settings.explorer.sortHint": "Folders first, by type, or by modified time.",
   "settings.explorer.sort.default": "Default (folders first)",

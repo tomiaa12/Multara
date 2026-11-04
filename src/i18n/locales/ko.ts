@@ -475,6 +475,8 @@ const catalog: MessageCatalog = {
   "settings.formatOnSaveHint": "Format code when a file is saved.",
   "settings.stickyScroll": "Sticky scroll",
   "settings.stickyScrollHint": "Pin the current function or heading while scrolling.",
+  "settings.wordWrap": "자동 줄 바꿈",
+  "settings.wordWrapHint": "편집기 너비에 맞춰 줄을 바꿉니다. 「보기 → 자동 줄 바꿈」또는 ⌥Z로 전환.",
   "settings.explorer.sort": "Sort order",
   "settings.explorer.sortHint": "Folders first, by type, or by modified time.",
   "settings.explorer.sort.default": "Default (folders first)",

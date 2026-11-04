@@ -123,6 +123,7 @@ const previewData: BootstrapData = {
     webhookPort: "43127",
     formatOnSave: "false",
     stickyScroll: "true",
+    wordWrap: "false",
     branchPrefix: "feat",
     branchPrompt: "",
     commitPrompt: "",
