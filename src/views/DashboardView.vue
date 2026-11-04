@@ -416,7 +416,7 @@ function openWorkbenchFromManage() {
               <th class="req-col-name">{{ t("dashboard.col.name") }}</th>
               <th class="req-col-fluid">{{ t("dashboard.col.tags") }}</th>
               <th class="req-col-fluid">{{ t("dashboard.col.projects") }}</th>
-              <th class="req-col-fluid">{{ t("dashboard.col.agents") }}</th>
+              <th class="req-col-agents">{{ t("dashboard.col.agents") }}</th>
               <th class="req-col-actions">{{ t("dashboard.col.actions") }}</th>
             </tr>
           </thead>
@@ -465,7 +465,7 @@ function openWorkbenchFromManage() {
                 </button>
                 <span v-else class="overflow-summary-empty">—</span>
               </td>
-              <td class="req-col-fluid">
+              <td class="req-col-agents">
                 <AgentLiveStatus
                   :session-ids="row.sessionIds"
                   :fallback="workerItems(row)"

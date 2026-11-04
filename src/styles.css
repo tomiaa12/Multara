@@ -12064,6 +12064,12 @@ label.settings-row:hover {
   max-width: 12rem;
   white-space: nowrap;
 }
+.req-col-agents {
+  width: 1%;
+  min-width: 9rem;
+  max-width: 16rem;
+  white-space: nowrap;
+}
 .req-col-actions {
   width: 1%;
   text-align: left;
@@ -12107,7 +12113,9 @@ label.settings-row:hover {
   white-space: nowrap;
 }
 .req-col-fluid .overflow-summary,
-.req-col-fluid .ds-avatar-stack {
+.req-col-fluid .ds-avatar-stack,
+.req-col-agents .ds-avatar-stack,
+.req-col-agents .agent-live-status {
   max-width: 100%;
 }
 .overflow-summary {
