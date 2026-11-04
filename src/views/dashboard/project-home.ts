@@ -36,6 +36,8 @@ export interface HomeProject {
   workerParts: SentencePart[];
   idleLine: string;
   workers: HomeWorker[];
+  /** 这个需求下所有会话；界面据此读实时 run 状态 */
+  sessionIds: string[];
   gitCount: number;
   folderCount: number;
   searchText: string;
@@ -310,6 +312,7 @@ export function buildHomeProject(
     workerParts,
     idleLine,
     workers,
+    sessionIds: sessions.map((item) => item.id),
     gitCount,
     folderCount,
     searchText,

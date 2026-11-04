@@ -946,6 +946,23 @@
 .assistant-working svg {
   animation: chat-spin 1s linear infinite;
 }
+/* 智能体状态格（需求列表 / 任务卡片）：头像 + 轮播动作文案，超长截断 */
+.agent-live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+  max-width: 100%;
+}
+.agent-live-status .agent-live-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-live-status.is-live .ds-text-shimmer {
+  --ds-shimmer-base: var(--color-text-secondary);
+}
 /* 发送失败的那条：贴在输入区上方 */
 .chat-send-failure {
   position: relative;

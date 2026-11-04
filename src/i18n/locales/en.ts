@@ -1310,6 +1310,7 @@ Who is this for? Any constraints?
   "dashboard.noProjects": "No projects",
   "dashboard.overflowTagsTitle": "Tags",
   "dashboard.overflowProjectsTitle": "Projects",
+  "agentLive.multi": "{n} agents working",
   "dashboard.overflowAgentsTitle": "Working agents",
   "dashboard.overflowAgentsHistoryTitle": "Agents that worked here",
   "overflowSummary.more": "+{n} {unit}",
