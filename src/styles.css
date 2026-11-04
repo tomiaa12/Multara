@@ -10293,10 +10293,6 @@ button.runtime-key-toggle:hover {
   gap: 8px;
   min-width: 0;
 }
-.squad-member-stack .agent-avatar + .agent-avatar {
-  margin-left: -8px;
-  box-shadow: 0 0 0 2px var(--color-surface);
-}
 .squad-workbench {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);

@@ -3551,6 +3551,7 @@ pub fn agent_system_context(
         skill_names: &skill_names,
         skill_root: &skill_root,
         user_skill_context: &tr!("（运行时附上这个智能体已开启的 Skill 正文）"),
+        roster: &tr!("（运行时：小队会话填队员名单，否则只给 CLI 查找指引，不内联全表）"),
         has_project_workspace: true,
         locale,
     });

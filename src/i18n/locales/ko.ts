@@ -1310,6 +1310,7 @@ const catalog: MessageCatalog = {
   "dashboard.overflowTagsTitle": "태그",
   "dashboard.overflowProjectsTitle": "프로젝트",
   "dashboard.overflowAgentsTitle": "작업 중인 에이전트",
+  "dashboard.overflowAgentsHistoryTitle": "참여한 에이전트",
   "overflowSummary.more": "외 {n}개 {unit}",
   "overflowSummary.count": "{unit} {n}개",
   "overflowSummary.viewAll": "전체 보기",

@@ -94,62 +94,101 @@ function initialOf(name: string, fallback: string): string {
 export interface HomeIndex {
   workspaces: Map<string, Workspace[]>;
   sessions: Map<string, ChatSession[]>;
+  sessionById: Map<string, ChatSession>;
   activity: Map<string, "running" | "queued">;
+  /** 会话上正在跑 / 排队的智能体（按 run.agentId） */
+  activeAgents: Map<string, { status: "running" | "queued"; agentIds: string[] }>;
   agents: Map<string, Agent>;
   squads: Map<string, Squad>;
 }
 
-function groupByProject<T extends { projectId?: string | null }>(items: T[]) {
+function groupByProject<T extends { projectId?: string | null; projectIds?: string[] }>(items: T[]) {
   const groups = new Map<string, T[]>();
   for (const item of items) {
-    if (!item.projectId) continue;
-    const list = groups.get(item.projectId);
-    if (list) list.push(item);
-    else groups.set(item.projectId, [item]);
+    const ids = item.projectIds?.length
+      ? item.projectIds
+      : item.projectId
+        ? [item.projectId]
+        : [];
+    for (const projectId of ids) {
+      const list = groups.get(projectId);
+      if (list) {
+        if (!list.includes(item)) list.push(item);
+      } else {
+        groups.set(projectId, [item]);
+      }
+    }
   }
   return groups;
 }
 
 export function buildHomeIndex(data: BootstrapData, runStates: Record<string, RunEvent>): HomeIndex {
   const activity = new Map<string, "running" | "queued">();
+  const activeAgents = new Map<string, { status: "running" | "queued"; agentIds: string[] }>();
   for (const event of Object.values(runStates)) {
-    if (event.status === "running") activity.set(event.sessionId, "running");
-    else if (event.status === "queued" && !activity.has(event.sessionId)) activity.set(event.sessionId, "queued");
+    if (event.status !== "running" && event.status !== "queued") continue;
+    const prev = activity.get(event.sessionId);
+    if (event.status === "running" || !prev) {
+      activity.set(event.sessionId, event.status);
+    }
+    if (!event.agentId) continue;
+    const entry = activeAgents.get(event.sessionId) ?? {
+      status: event.status,
+      agentIds: [],
+    };
+    if (event.status === "running") entry.status = "running";
+    else if (entry.status !== "running") entry.status = "queued";
+    if (!entry.agentIds.includes(event.agentId)) entry.agentIds.push(event.agentId);
+    activeAgents.set(event.sessionId, entry);
   }
   return {
     // 会话专属工作区（例如解决冲突用的临时合并 Worktree）不算需求关联的项目
     workspaces: groupByProject(data.workspaces.filter((item) => !item.sessionId)),
     sessions: groupByProject(data.sessions),
+    sessionById: new Map(data.sessions.map((item) => [item.id, item])),
     activity,
+    activeAgents,
     agents: new Map(data.agents.map((item) => [item.id, item])),
     squads: new Map(data.squads.map((item) => [item.id, item])),
   };
 }
 
-function targetWorker(session: ChatSession, index: HomeIndex, kind?: HomeWorker["kind"]): HomeWorker {
+function agentWorker(agentId: string, index: HomeIndex, fallbackName = ""): HomeWorker {
+  const agent = index.agents.get(agentId);
+  const name = agent?.name || fallbackName || t("projectHome.agentFallback");
+  return {
+    key: `agent:${agentId}`,
+    name,
+    kind: "agent",
+    initial: initialOf(name, "智"),
+    image: agent?.avatar ?? "",
+    title: t("projectHome.agentTitle", { name }),
+  };
+}
+
+function targetWorker(session: ChatSession, index: HomeIndex): HomeWorker {
   if (session.targetType === "squad") {
     const squad = index.squads.get(session.targetId);
+    if (squad?.leaderAgentId) {
+      return agentWorker(squad.leaderAgentId, index, squad.name);
+    }
     const name = squad?.name || session.title || t("projectHome.squadFallback");
     return {
       key: `squad:${session.targetId}`,
       name,
-      kind: kind ?? "squad",
+      kind: "squad",
       initial: initialOf(name, "队"),
       image: "",
       title: name,
     };
   }
-  const agent = index.agents.get(session.targetId);
-  const name = agent?.name || session.title || t("projectHome.agentFallback");
-  const avatar = agent?.avatar ?? "";
-  return {
-    key: `agent:${session.targetId}`,
-    name,
-    kind: kind ?? "agent",
-    initial: initialOf(name, "智"),
-    image: avatar,
-    title: t("projectHome.agentTitle", { name }),
-  };
+  return agentWorker(session.targetId, index, session.title);
+}
+
+function pushUniqueWorker(list: HomeWorker[], seen: Set<string>, worker: HomeWorker) {
+  if (seen.has(worker.key)) return;
+  seen.add(worker.key);
+  list.push(worker);
 }
 
 function workingMetaOf(working: string[]): string {
@@ -170,15 +209,43 @@ export function buildHomeProject(
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   const working: HomeWorker[] = [];
   const queued: HomeWorker[] = [];
-  const seen = new Set<string>();
+  const activeSeen = new Set<string>();
+  const history: HomeWorker[] = [];
+  const historySeen = new Set<string>();
 
   for (const session of sessions) {
-    const activity = index.activity.get(session.id);
-    if (!activity) continue;
-    const worker = targetWorker(session, index);
-    if (seen.has(worker.key)) continue;
-    seen.add(worker.key);
-    (activity === "running" ? working : queued).push(worker);
+    const active = index.activeAgents.get(session.id);
+    if (active) {
+      for (const agentId of active.agentIds) {
+        pushUniqueWorker(
+          active.status === "running" ? working : queued,
+          activeSeen,
+          agentWorker(agentId, index),
+        );
+      }
+    } else {
+      const activity = index.activity.get(session.id);
+      if (activity) {
+        pushUniqueWorker(
+          activity === "running" ? working : queued,
+          activeSeen,
+          targetWorker(session, index),
+        );
+      }
+    }
+    pushUniqueWorker(history, historySeen, targetWorker(session, index));
+  }
+
+  for (const task of data.tasks) {
+    const session = index.sessionById.get(task.sessionId);
+    if (!session) continue;
+    const projectIds = session.projectIds?.length
+      ? session.projectIds
+      : session.projectId
+        ? [session.projectId]
+        : [];
+    if (!projectIds.includes(project.id)) continue;
+    if (task.agentId) pushUniqueWorker(history, historySeen, agentWorker(task.agentId, index));
   }
 
   const filters: HomeProject["filters"] = [];
@@ -206,11 +273,13 @@ export function buildHomeProject(
 
   const gitCount = workspaces.filter((item) => item.kind === "git").length;
   const folderCount = workspaces.length - gitCount;
-  const workers = [...working, ...queued];
+  // 有进行中 / 排队则只展示这些人；否则展示在该需求上工作过的智能体
+  const workers = working.length || queued.length ? [...working, ...queued] : history;
   const searchText = [
     project.name,
     project.note,
     ...workspaces.map((item) => `${item.name} ${item.workPath} ${item.branch ?? ""}`),
+    ...history.map((item) => item.name),
     ...workers.map((item) => item.name),
   ].join(" ").toLowerCase();
 
