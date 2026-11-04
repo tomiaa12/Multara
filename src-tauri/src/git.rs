@@ -346,6 +346,89 @@ pub(crate) fn remotes(git_command: &str, root: &str) -> Result<Vec<String>, Stri
         .collect())
 }
 
+/// 把 `origin/feat/x`、`upstream/feat/x` 等远程跟踪短名拆成 (remote, branch)。
+/// 按远程名最长匹配，避免 `my` / `my-fork` 之类前缀误伤；不写死 origin。
+pub(crate) fn split_remote_tracking(
+    git_command: &str,
+    root: &str,
+    name: &str,
+) -> Option<(String, String)> {
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let mut remotes = remotes(git_command, root).ok()?;
+    remotes.sort_by_key(|item| std::cmp::Reverse(item.len()));
+    for remote in remotes {
+        let Some(branch) = name.strip_prefix(&format!("{remote}/")) else {
+            continue;
+        };
+        if branch.is_empty() {
+            continue;
+        }
+        let remote_ref = format!("refs/remotes/{remote}/{branch}");
+        if output(
+            git_command,
+            root,
+            &["show-ref", "--verify", "--quiet", &remote_ref],
+        )
+        .is_ok()
+        {
+            return Some((remote, branch.to_string()));
+        }
+    }
+    None
+}
+
+/// 已跟踪该上游（如 `origin/feat/x`）的本地分支；对齐 VS Code `findTrackingBranches`。
+pub(crate) fn find_local_tracking_branch(
+    git_command: &str,
+    root: &str,
+    upstream: &str,
+) -> Option<String> {
+    let upstream = upstream.trim();
+    if upstream.is_empty() {
+        return None;
+    }
+    let listing = output(
+        git_command,
+        root,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)%00%(upstream:short)",
+            "refs/heads",
+        ],
+    )
+    .ok()?;
+    for line in listing.lines() {
+        let mut parts = line.split('\0');
+        let local = parts.next()?.trim();
+        let tracked = parts.next()?.trim();
+        if !local.is_empty() && tracked == upstream {
+            return Some(local.to_string());
+        }
+    }
+    None
+}
+
+pub(crate) fn local_branch_exists(git_command: &str, root: &str, branch: &str) -> bool {
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return false;
+    }
+    output(
+        git_command,
+        root,
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .is_ok()
+}
+
 pub(crate) fn default_remote(git_command: &str, root: &str) -> Result<String, String> {
     let remotes = remotes(git_command, root)?;
     if remotes.iter().any(|item| item == "origin") {

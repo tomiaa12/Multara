@@ -34,6 +34,7 @@ const overflow = computed(() => Math.max(0, props.items.length - visible.value.l
 const title = computed(() => props.dialogTitle || t("avatarStack.dialogTitle"));
 
 function openOverflow(event: MouseEvent) {
+  event.preventDefault();
   event.stopPropagation();
   showAll.value = true;
 }

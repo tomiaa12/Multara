@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { ArrowUp } from "@lucide/vue";
+import { ArrowUp, Users } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import MicButton from "../dictation/MicButton.vue";
 import { dictationService } from "../../dictation/dictation-service";
@@ -280,7 +280,7 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       kind: "squad" as const,
       label: item.name,
       description: item.description,
-      avatar: data?.agents.find((agent) => agent.id === item.leaderAgentId)?.avatar,
+      avatar: "队",
       group: "squads",
     })),
     ...(data?.resources ?? [])
@@ -563,6 +563,10 @@ function isAgentTargetOption(option: SelectOption | null | undefined): option is
   return Boolean(option && String(option.value).startsWith("agent:"));
 }
 
+function isSquadTargetOption(option: SelectOption | null | undefined) {
+  return Boolean(option && String(option.value).startsWith("squad:"));
+}
+
 defineExpose({
   focus: () => field.value?.focus(),
   focusEnd: () => field.value?.focusEnd(),
@@ -638,6 +642,17 @@ defineExpose({
             aria-label="选择要询问的智能体或小队"
             :groups="targetGroups"
           >
+            <template #option-leading="{ option }">
+              <span v-if="isSquadTargetOption(option)" class="squad-mark target-squad-mark" aria-hidden="true">
+                <Users :size="12" />
+              </span>
+              <AgentAvatar
+                v-else-if="option?.avatar"
+                class="ds-avatar"
+                :value="option.avatar"
+                :size="null"
+              />
+            </template>
             <template #option-description="{ option, parts }">
               <span
                 v-if="isAgentTargetOption(option)"

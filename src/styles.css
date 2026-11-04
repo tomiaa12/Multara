@@ -1661,6 +1661,18 @@ textarea:not(.inputarea) {
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
+/* 与小队一级列表 / 详情页的 squad-mark 同色同形，缩到下拉头像尺寸 */
+.target-picker .target-squad-mark,
+.ds-select-option .target-squad-mark {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
+.ds-select-option.has-description .target-squad-mark {
+  flex-basis: 28px;
+  width: 28px;
+  height: 28px;
+}
 /* 智能体下拉第二行：浮层 Teleport 到 body，不能挂在 .target-picker 下 */
 .ds-select-option-desc:has(.target-option-runtime) {
   display: flex;
@@ -4688,6 +4700,12 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   font-size: var(--font-size-sm);
   line-height: 18px;
   scrollbar-width: none;
+}
+/* 空输入时 placeholder 换行会撑高输入框；保持单行并用省略号截断 */
+.scm-commit-field .ui-textarea::placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .scm-commit-field .ui-textarea::-webkit-scrollbar {
   width: 0;
@@ -8082,22 +8100,39 @@ body.is-dragging-workspace-file * {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.task-column > header .task-icon-button:first-of-type {
+.task-column-actions {
+  display: inline-flex;
+  align-items: center;
   margin-left: auto;
+}
+.task-column > header .task-column-action.ui-button[data-size="icon"] {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  max-width: var(--control-height-sm);
+  max-height: var(--control-height-sm);
+  color: var(--color-text-tertiary);
+}
+.task-column > header .task-column-action.ui-button[data-size="icon"]:hover:not(:disabled) {
+  color: var(--color-text-strong);
 }
 .task-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
   padding: 0;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
+  background-clip: padding-box;
+  box-shadow: none;
   color: var(--color-text-tertiary);
 }
 .task-icon-button:hover:not(:disabled) {
+  border-color: transparent;
   background: var(--color-surface-hover);
   color: var(--color-text-strong);
 }
@@ -10277,7 +10312,7 @@ button.runtime-key-toggle:hover {
   width: 32px;
   height: 32px;
   border: 1px solid var(--color-accent-border);
-  border-radius: var(--radius-md);
+  border-radius: 50%;
   background: var(--color-accent-subtle);
   color: var(--color-accent);
 }

@@ -70,7 +70,7 @@ pub fn prepare(
         .join(project_id)
         .join(&workspace_id);
     let result = if kind == "git" {
-        let branch = checkout_name
+        let requested = checkout_name
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .map(|name| name.to_string())
@@ -81,14 +81,15 @@ pub fn prepare(
                     short_id(&workspace_id)
                 )
             });
-        create_worktree(
+        let plan = worktree_plan(
             source,
-            &isolation_root,
-            &branch,
+            &requested,
             base_ref.unwrap_or("HEAD"),
             create_branch,
             git_command,
         )?;
+        let branch = plan.local_branch().to_string();
+        create_worktree(source, &isolation_root, &plan, git_command)?;
         PreparedWorkspace {
             workspace: Workspace {
                 id: workspace_id,
@@ -353,12 +354,73 @@ fn git_cmd(git_command: &str) -> Command {
     crate::git::git_cmd(git_command)
 }
 
+/// Worktree 检出计划：本地分支名始终是短名（不含 remote 前缀）。
+enum WorktreePlan {
+    /// 新建本地分支（不跟踪），基于 base。
+    New { name: String, base: String },
+    /// 检出已有本地分支。
+    Existing { name: String },
+    /// 从远程跟踪分支建本地分支并设置 upstream（对齐 VS Code `checkout --track`）。
+    Track { local: String, remote_ref: String },
+}
+
+impl WorktreePlan {
+    fn local_branch(&self) -> &str {
+        match self {
+            Self::New { name, .. } | Self::Existing { name } => name,
+            Self::Track { local, .. } => local,
+        }
+    }
+
+    fn created_branch(&self) -> Option<&str> {
+        match self {
+            Self::New { name, .. } | Self::Track { local: name, .. } => Some(name),
+            Self::Existing { .. } => None,
+        }
+    }
+}
+
+fn worktree_plan(
+    source: &Path,
+    requested: &str,
+    base_ref: &str,
+    create_branch: bool,
+    git_command: &str,
+) -> Result<WorktreePlan, String> {
+    let root = source.to_string_lossy();
+    if create_branch {
+        return Ok(WorktreePlan::New {
+            name: requested.to_string(),
+            base: base_ref.to_string(),
+        });
+    }
+    // 对齐 VS Code CheckoutRemoteHeadItem：
+    // 1) 已有本地分支跟踪该远程 → 直接用；2) 否则 --track 建短名本地分支。
+    if let Some((remote, branch)) = crate::git::split_remote_tracking(git_command, &root, requested)
+    {
+        let remote_ref = format!("{remote}/{branch}");
+        if let Some(existing) =
+            crate::git::find_local_tracking_branch(git_command, &root, &remote_ref)
+        {
+            return Ok(WorktreePlan::Existing { name: existing });
+        }
+        if crate::git::local_branch_exists(git_command, &root, &branch) {
+            return Ok(WorktreePlan::Existing { name: branch });
+        }
+        return Ok(WorktreePlan::Track {
+            local: branch,
+            remote_ref,
+        });
+    }
+    Ok(WorktreePlan::Existing {
+        name: requested.to_string(),
+    })
+}
+
 fn create_worktree(
     source: &Path,
     target: &Path,
-    branch: &str,
-    base_ref: &str,
-    create_branch: bool,
+    plan: &WorktreePlan,
     git_command: &str,
 ) -> Result<(), String> {
     if let Some(parent) = target.parent() {
@@ -366,16 +428,27 @@ fn create_worktree(
     }
     let mut command = git_cmd(git_command);
     command.arg("-C").arg(source).args(["worktree", "add"]);
-    if create_branch {
-        // 基于 origin/xxx 建分支时 git 默认会跟踪它，之后 `git push` 会因上游名不一致被拒。
-        command
-            .arg("--no-track")
-            .arg("-b")
-            .arg(branch)
-            .arg(target)
-            .arg(base_ref);
-    } else {
-        command.arg(target).arg(branch);
+    match plan {
+        WorktreePlan::New { name, base } => {
+            // 基于 origin/xxx 建新需求分支时 git 默认会跟踪它，之后 `git push` 会因上游名不一致被拒。
+            command
+                .arg("--no-track")
+                .arg("-b")
+                .arg(name)
+                .arg(target)
+                .arg(base);
+        }
+        WorktreePlan::Existing { name } => {
+            command.arg(target).arg(name);
+        }
+        WorktreePlan::Track { local, remote_ref } => {
+            command
+                .arg("-b")
+                .arg(local)
+                .arg("--track")
+                .arg(target)
+                .arg(remote_ref);
+        }
     }
     let output = command
         .output()
@@ -390,7 +463,7 @@ fn create_worktree(
         .args(["worktree", "remove", "--force"])
         .arg(target)
         .output();
-    if create_branch {
+    if let Some(branch) = plan.created_branch() {
         let _ = git_cmd(git_command)
             .arg("-C")
             .arg(source)
@@ -442,7 +515,7 @@ fn short_id(id: &str) -> &str {
 mod tests {
     use std::{fs, process::Command};
 
-    use super::{create_worktree, discover, short_id};
+    use super::{create_worktree, discover, short_id, worktree_plan, WorktreePlan};
 
     #[test]
     fn short_ids_are_safe_for_branch_names() {
@@ -464,15 +537,11 @@ mod tests {
         git(&source, &["commit", "-m", "initial"]);
         let original_branch = output(&source, &["branch", "--show-current"]);
 
-        create_worktree(
-            &source,
-            &target,
-            "multara/test/worktree",
-            "HEAD",
-            true,
-            "git",
-        )
-        .unwrap();
+        let plan = WorktreePlan::New {
+            name: "multara/test/worktree".into(),
+            base: "HEAD".into(),
+        };
+        create_worktree(&source, &target, &plan, "git").unwrap();
 
         assert_eq!(
             fs::read_to_string(target.join("README.md")).unwrap(),
@@ -503,13 +572,97 @@ mod tests {
         git(&source, &["commit", "-m", "initial"]);
         git(&source, &["branch", "release"]);
 
-        create_worktree(&source, &target, "release", "HEAD", false, "git").unwrap();
+        let plan = worktree_plan(&source, "release", "HEAD", false, "git").unwrap();
+        create_worktree(&source, &target, &plan, "git").unwrap();
 
         assert_eq!(output(&target, &["branch", "--show-current"]), "release");
         git(
             &source,
             &["worktree", "remove", "--force", target.to_str().unwrap()],
         );
+    }
+
+    #[test]
+    fn remote_tracking_worktree_uses_short_local_branch() {
+        let temp = tempfile::tempdir().unwrap();
+        let bare = temp.path().join("remote.git");
+        let source = temp.path().join("source");
+        let target = temp.path().join("isolated");
+        fs::create_dir(&bare).unwrap();
+        git(&bare, &["init", "--bare"]);
+        fs::create_dir(&source).unwrap();
+        git(&source, &["init"]);
+        git(&source, &["config", "user.email", "test@multara.local"]);
+        git(&source, &["config", "user.name", "Multara Test"]);
+        fs::write(source.join("README.md"), "source").unwrap();
+        git(&source, &["add", "README.md"]);
+        git(&source, &["commit", "-m", "initial"]);
+        git(&source, &["branch", "-M", "main"]);
+        git(
+            &source,
+            &["remote", "add", "upstream", bare.to_str().unwrap()],
+        );
+        git(&source, &["push", "-u", "upstream", "main"]);
+        git(&source, &["push", "upstream", "HEAD:refs/heads/feat/login"]);
+        git(&source, &["fetch", "upstream"]);
+
+        let plan = worktree_plan(&source, "upstream/feat/login", "HEAD", false, "git").unwrap();
+        assert_eq!(plan.local_branch(), "feat/login");
+        create_worktree(&source, &target, &plan, "git").unwrap();
+
+        assert_eq!(
+            output(&target, &["branch", "--show-current"]),
+            "feat/login"
+        );
+        assert_eq!(
+            output(&target, &["rev-parse", "--abbrev-ref", "@{upstream}"]),
+            "upstream/feat/login"
+        );
+        assert!(!crate::git::local_branch_exists(
+            "git",
+            source.to_str().unwrap(),
+            "upstream/feat/login"
+        ));
+        git(
+            &source,
+            &["worktree", "remove", "--force", target.to_str().unwrap()],
+        );
+        git(&source, &["branch", "-D", "feat/login"]);
+    }
+
+    #[test]
+    fn longest_remote_name_wins_when_splitting_tracking_ref() {
+        let temp = tempfile::tempdir().unwrap();
+        let bare = temp.path().join("remote.git");
+        let source = temp.path().join("source");
+        fs::create_dir(&bare).unwrap();
+        git(&bare, &["init", "--bare"]);
+        fs::create_dir(&source).unwrap();
+        git(&source, &["init"]);
+        git(&source, &["config", "user.email", "test@multara.local"]);
+        git(&source, &["config", "user.name", "Multara Test"]);
+        fs::write(source.join("README.md"), "source").unwrap();
+        git(&source, &["add", "README.md"]);
+        git(&source, &["commit", "-m", "initial"]);
+        git(&source, &["branch", "-M", "main"]);
+        git(&source, &["remote", "add", "my", bare.to_str().unwrap()]);
+        git(
+            &source,
+            &["remote", "add", "my-fork", bare.to_str().unwrap()],
+        );
+        git(&source, &["push", "my-fork", "HEAD:refs/heads/feat/x"]);
+        git(&source, &["fetch", "my-fork"]);
+
+        let plan = worktree_plan(&source, "my-fork/feat/x", "HEAD", false, "git").unwrap();
+        assert_eq!(plan.local_branch(), "feat/x");
+        match plan {
+            WorktreePlan::Track { remote_ref, .. } => {
+                assert_eq!(remote_ref, "my-fork/feat/x");
+            }
+            WorktreePlan::New { .. } | WorktreePlan::Existing { .. } => {
+                panic!("expected Track plan")
+            }
+        }
     }
 
     #[test]

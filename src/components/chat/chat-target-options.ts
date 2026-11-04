@@ -49,7 +49,8 @@ export function buildChatTargetOptions(
       value: `squad:${squad.id}`,
       label: squadLabel(squad.name),
       description: squad.description,
-      avatar: agents.find((agent) => agent.id === squad.leaderAgentId)?.avatar ?? "◉",
+      // 与侧栏/收件箱一致：用小队标识，不用队长头像
+      avatar: "队",
       keywords: squad.memberAgentIds,
     })),
   ];
