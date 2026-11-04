@@ -3543,6 +3543,10 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   width: 1px;
   pointer-events: none;
   background: color-mix(in srgb, var(--color-border-strong) 58%, transparent);
+  opacity: 0;
+}
+.scm-repository.is-open:hover::before {
+  opacity: 1;
 }
 .scm-provider {
   display: flex;
@@ -8103,6 +8107,7 @@ body.is-dragging-workspace-file * {
 .task-column-actions {
   display: inline-flex;
   align-items: center;
+  gap: var(--spacing-0-5);
   margin-left: auto;
 }
 .task-column > header .task-column-action.ui-button[data-size="icon"] {
@@ -8112,9 +8117,15 @@ body.is-dragging-workspace-file * {
   min-height: var(--control-height-sm);
   max-width: var(--control-height-sm);
   max-height: var(--control-height-sm);
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
   color: var(--color-text-tertiary);
 }
 .task-column > header .task-column-action.ui-button[data-size="icon"]:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-surface-hover);
   color: var(--color-text-strong);
 }
 .task-icon-button {

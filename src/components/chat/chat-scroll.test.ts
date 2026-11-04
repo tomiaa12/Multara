@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
+  afterProgrammaticStick,
   listContentHeight,
   listIsAtBottom,
   pinLastExchangeToTop,
+  SMOOTH_SCROLL_FOLLOW_SUPPRESS_MS,
   stickListToBottom,
   syncStickyExchangeMinHeight,
 } from "./chat-scroll";
@@ -74,5 +76,43 @@ describe("pinLastExchangeToTop", () => {
     list.getBoundingClientRect = () => ({ top: 100, bottom: 500, left: 0, right: 0, width: 0, height: 400 }) as DOMRect;
     pinLastExchangeToTop(list, last);
     expect(list.scrollTop).toBe(900);
+  });
+});
+
+describe("afterProgrammaticStick", () => {
+  test("auto releases after two animation frames", async () => {
+    const list = document.createElement("div");
+    let done = false;
+    afterProgrammaticStick(list, "auto", () => {
+      done = true;
+    });
+    expect(done).toBe(false);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    expect(done).toBe(true);
+  });
+
+  test("smooth waits for scrollend instead of two frames", async () => {
+    const list = document.createElement("div");
+    let done = false;
+    afterProgrammaticStick(list, "smooth", () => {
+      done = true;
+    });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    expect(done).toBe(false);
+    list.dispatchEvent(new Event("scrollend"));
+    expect(done).toBe(true);
+  });
+
+  test("smooth falls back after timeout when scrollend is missing", async () => {
+    vi.useFakeTimers();
+    const list = document.createElement("div");
+    let done = false;
+    afterProgrammaticStick(list, "smooth", () => {
+      done = true;
+    });
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(SMOOTH_SCROLL_FOLLOW_SUPPRESS_MS);
+    expect(done).toBe(true);
+    vi.useRealTimers();
   });
 });

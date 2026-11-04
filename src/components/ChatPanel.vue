@@ -30,6 +30,7 @@ import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
 import {
+  afterProgrammaticStick,
   listIsAtBottom,
   pinLastExchangeToTop as pinExchange,
   stickListToBottom,
@@ -990,6 +991,8 @@ function removeAttachment(path: string) {
 
 /** 程序化滚底时忽略 scroll 事件，避免误关 followBottom。 */
 let suppressScrollFollow = false;
+/** 取消上一次 smooth 滚底的 scrollend / 超时监听。 */
+let cancelStickFollowRelease: (() => void) | null = null;
 /** 粘性置顶进行中：挡住并发 scrollToBottom / ResizeObserver，避免先顶后底闪动。 */
 let pinStickLock = false;
 let messageListResize: ResizeObserver | null = null;
@@ -1014,19 +1017,22 @@ function scheduleStickToBottom(behavior: ScrollBehavior = "auto") {
   const run = () => {
     const element = messageList.value;
     if (!element || !followBottom.value || pinStickLock) return;
+    cancelStickFollowRelease?.();
     suppressScrollFollow = true;
     // 粘性提问开启时先保证末轮一屏高，再贴底，否则短气泡会被甩到输入框上方
     if (props.stickyUserTurn) syncStickyExchangeMinHeight(element, true);
     stickListToBottom(element, behavior);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        suppressScrollFollow = false;
-      });
+    cancelStickFollowRelease = afterProgrammaticStick(element, behavior, () => {
+      cancelStickFollowRelease = null;
+      // smooth 结束后再 snap 一次，吃掉动画期间异步撑高的内容
+      if (followBottom.value && !pinStickLock) stickListToBottom(element, "auto");
+      suppressScrollFollow = false;
     });
   };
   void nextTick(() => {
     run();
-    requestAnimationFrame(run);
+    // smooth 不要连跑两次：第二次 scrollTo 会打断第一次动画，更容易半路停住
+    if (behavior === "auto") requestAnimationFrame(run);
   });
 }
 
@@ -1373,6 +1379,8 @@ watch(
   },
 );
 onBeforeUnmount(() => {
+  cancelStickFollowRelease?.();
+  cancelStickFollowRelease = null;
   messageListResize?.disconnect();
   messageListResize = null;
   window.clearInterval(liveTimer);
