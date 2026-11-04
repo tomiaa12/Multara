@@ -26,7 +26,7 @@ import {
   validatePicker,
   type PickerItem,
 } from "../components/dashboard/workspace-picker";
-import AvatarStack from "../components/ui/AvatarStack.vue";
+import AgentLiveStatus from "../components/AgentLiveStatus.vue";
 import OverflowSummary, {
   type OverflowSummaryItem,
 } from "../components/ui/OverflowSummary.vue";
@@ -466,9 +466,11 @@ function openWorkbenchFromManage() {
                 <span v-else class="overflow-summary-empty">—</span>
               </td>
               <td class="req-col-fluid">
-                <AvatarStack
-                  :items="workerItems(row)"
+                <AgentLiveStatus
+                  :session-ids="row.sessionIds"
+                  :fallback="workerItems(row)"
                   :max="AVATAR_VISIBLE"
+                  :size="24"
                   :dialog-title="
                     row.filters.includes('running')
                       ? t('dashboard.overflowAgentsTitle')

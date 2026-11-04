@@ -1310,6 +1310,7 @@ const catalog: MessageCatalog = {
   "dashboard.noProjects": "无项目",
   "dashboard.overflowTagsTitle": "标签",
   "dashboard.overflowProjectsTitle": "项目",
+  "agentLive.multi": "{n} 个智能体处理中",
   "dashboard.overflowAgentsTitle": "工作中的智能体",
   "dashboard.overflowAgentsHistoryTitle": "参与过的智能体",
   "overflowSummary.more": "等{n}个{unit}",

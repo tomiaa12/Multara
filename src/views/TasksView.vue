@@ -16,6 +16,7 @@ import {
 } from "@lucide/vue";
 import type { Task, TaskStatus } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import AgentLiveStatus from "../components/AgentLiveStatus.vue";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
@@ -195,6 +196,15 @@ const agentsById = computed(() => new Map(agents.value.map((agent) => [agent.id,
 
 function columnTasks(status: TaskStatus) {
   return tasksByColumn.value.get(status) ?? [];
+}
+
+function taskAgentItem(agentId: string) {
+  const agent = agentFor(agentId);
+  return {
+    key: agentId || "unassigned",
+    name: agent?.name ?? t("common.unassigned"),
+    image: agent?.avatar ?? "M",
+  };
 }
 
 function agentFor(agentId: string) {
@@ -478,8 +488,12 @@ function onColumnMenu(id: string) {
             <span class="task-code">{{ taskCodes.get(task.id) }}</span>
             <h3>{{ task.title }}</h3>
             <footer>
-              <AgentAvatar :value="agentFor(task.agentId)?.avatar ?? 'M'" :name="agentFor(task.agentId)?.name ?? t('common.unassigned')" :size="18" />
-              <span>{{ agentFor(task.agentId)?.name ?? t("common.unassigned") }}</span>
+              <AgentLiveStatus
+                :session-ids="[task.sessionId]"
+                :fallback="[taskAgentItem(task.agentId)]"
+                show-name
+                :size="18"
+              />
               <small>{{ t("tasks.updatedAt", { time: relativeTime(task.updatedAt) }) }}</small>
             </footer>
           </article>
