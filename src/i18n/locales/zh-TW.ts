@@ -1551,6 +1551,7 @@ const catalog: MessageCatalog = {
   "chat.rollbackFailConfirm": "仍然刪除對話",
   "chat.dirtyRollbackContinue": "繼續",
   "chat.pasteScreenshot": "貼上截圖",
+  "chat.imagePreview.reset": "適應視窗",
   "chat.role.lead": "隊长",
   "chat.role.member": "隊員",
   "chat.role.agent": "智能體",

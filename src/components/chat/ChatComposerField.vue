@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
-import { Bot, FolderKanban, Hash, Sparkles } from "@lucide/vue";
+import { Bot, FolderKanban, Hash, Sparkles, X } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import Codicon from "../ui/Codicon.vue";
+import { t } from "../../i18n";
 import type { EditorSelectionContext } from "../../domain/types";
 import { composerClipboardHtml, decodeComposerClipboard } from "./composer-clipboard";
 import {
@@ -53,6 +54,8 @@ function unmountChip(chip: HTMLElement) {
   if (id) chipText.delete(id);
   const icon = chip.querySelector<HTMLElement>(".composer-chip-icon");
   if (icon) render(null, icon);
+  const remove = chip.querySelector<HTMLElement>(".composer-chip-remove");
+  if (remove) render(null, remove);
 }
 
 function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionContext) {
@@ -112,7 +115,26 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
     source: file?.source,
   });
 
-  chip.append(icon, label);
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "composer-chip-remove";
+  remove.tabIndex = -1;
+  remove.contentEditable = "false";
+  remove.setAttribute("aria-label", t("tags.remove", { name: label.textContent ?? "" }));
+  render(createVNode(X, { size: 10 }), remove);
+  remove.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  remove.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (locked.value) return;
+    removeChipNode(chip);
+    emitChange();
+  });
+
+  chip.append(icon, label, remove);
   return chip;
 }
 
