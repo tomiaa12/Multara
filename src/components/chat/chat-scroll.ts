@@ -16,6 +16,43 @@ export function stickListToBottom(element: HTMLElement, behavior: ScrollBehavior
   element.scrollTop = element.scrollHeight;
 }
 
+/** smooth 动画通常远长于两帧；超时兜底，避免一直压住 follow 检测。 */
+export const SMOOTH_SCROLL_FOLLOW_SUPPRESS_MS = 800;
+
+/**
+ * 程序化滚底结束后再放开 scroll 跟随检测。
+ * smooth 必须等 scrollend（或超时），否则中途 scroll 事件会把 followBottom 关掉，
+ * 「回到底部」表现为点一次只滚一截、要连点几次。
+ */
+export function afterProgrammaticStick(
+  element: HTMLElement,
+  behavior: ScrollBehavior,
+  done: () => void,
+): () => void {
+  if (behavior !== "smooth") {
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) done();
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    element.removeEventListener("scrollend", finish);
+    window.clearTimeout(timer);
+    done();
+  };
+  const timer = window.setTimeout(finish, SMOOTH_SCROLL_FOLLOW_SUPPRESS_MS);
+  element.addEventListener("scrollend", finish);
+  return finish;
+}
+
 /** 列表内容区高度（去掉上下 padding），末轮撑满用这个，避免比视口更高导致贴底后顶部溢出。 */
 export function listContentHeight(list: HTMLElement) {
   const style = getComputedStyle(list);
