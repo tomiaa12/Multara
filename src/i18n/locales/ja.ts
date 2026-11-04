@@ -1551,6 +1551,7 @@ const catalog: MessageCatalog = {
   "chat.rollbackFailConfirm": "Delete messages anyway",
   "chat.dirtyRollbackContinue": "Continue",
   "chat.pasteScreenshot": "Pasted screenshot",
+  "chat.imagePreview.reset": "ウィンドウに合わせる",
   "chat.role.lead": "Lead",
   "chat.role.member": "Member",
   "chat.role.agent": "Agent",

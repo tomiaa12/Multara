@@ -1552,6 +1552,7 @@ Who is this for? Any constraints?
   "chat.rollbackFailConfirm": "Delete messages anyway",
   "chat.dirtyRollbackContinue": "Continue",
   "chat.pasteScreenshot": "Pasted screenshot",
+  "chat.imagePreview.reset": "Fit to window",
   "chat.role.lead": "Lead",
   "chat.role.member": "Member",
   "chat.role.agent": "Agent",

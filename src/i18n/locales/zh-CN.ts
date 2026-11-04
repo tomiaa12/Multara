@@ -1552,6 +1552,7 @@ const catalog: MessageCatalog = {
   "chat.rollbackFailConfirm": "仍然删除对话",
   "chat.dirtyRollbackContinue": "继续",
   "chat.pasteScreenshot": "粘贴截图",
+  "chat.imagePreview.reset": "适应窗口",
   "chat.role.lead": "队长",
   "chat.role.member": "队员",
   "chat.role.agent": "智能体",

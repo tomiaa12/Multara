@@ -1551,6 +1551,7 @@ const catalog: MessageCatalog = {
   "chat.rollbackFailConfirm": "Delete messages anyway",
   "chat.dirtyRollbackContinue": "Continue",
   "chat.pasteScreenshot": "Pasted screenshot",
+  "chat.imagePreview.reset": "창에 맞추기",
   "chat.role.lead": "리드",
   "chat.role.member": "멤버",
   "chat.role.agent": "에이전트",
