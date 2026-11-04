@@ -27,6 +27,8 @@ const props = defineProps<{
   tabSize?: number;
   insertSpaces?: boolean;
   stickyScroll?: boolean;
+  /** Monaco `wordWrap`：开则 `on`，关则 `off`。 */
+  wordWrap?: boolean;
   gitEpoch?: number;
   writing?: boolean;
 }>();
@@ -78,6 +80,7 @@ const editorOptions = computed(() => {
     detectIndentation: false,
     dropIntoEditor: { enabled: false },
     stickyScroll: { enabled: props.stickyScroll ?? true },
+    wordWrap: props.wordWrap ? "on" : "off",
     ...monacoZoomOptions,
   };
 });
@@ -148,12 +151,13 @@ watch(
 );
 
 watch(
-  () => [props.tabSize, props.insertSpaces, props.stickyScroll, props.theme] as const,
-  ([tabSize, insertSpaces, stickyScroll, theme]) => {
+  () => [props.tabSize, props.insertSpaces, props.stickyScroll, props.wordWrap, props.theme] as const,
+  ([tabSize, insertSpaces, stickyScroll, wordWrap, theme]) => {
     editorRef.value?.updateOptions({
       tabSize: tabSize ?? 4,
       insertSpaces: insertSpaces ?? true,
       stickyScroll: { enabled: stickyScroll ?? true },
+      wordWrap: wordWrap ? "on" : "off",
     });
     if (theme) monaco.editor.setTheme(theme);
   },

@@ -1,22 +1,74 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::menu::{
-    AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    AboutMetadata, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
+    WINDOW_SUBMENU_ID,
 };
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+
+use crate::commands::setting_value;
+use crate::database::AppState;
 
 /// Help → 切换开发者工具（对齐 VS Code `workbench.action.toggleDevTools` / ⌘⌥I）。
 pub const TOGGLE_DEVTOOLS_ID: &str = "toggle-devtools";
+/// 查看 → 自动换行（对齐 VS Code `editor.action.toggleWordWrap` / ⌥Z）。
+pub const TOGGLE_WORD_WRAP_ID: &str = "toggle-word-wrap";
 
-pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    if id != TOGGLE_DEVTOOLS_ID {
-        return;
-    }
-    let Some(window) = app.get_webview_window("main") else {
+static WORD_WRAP: AtomicBool = AtomicBool::new(false);
+
+fn word_wrap_from_db<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let Some(state) = app.try_state::<AppState>() else {
+        return false;
+    };
+    let Ok(db) = state.lock_db() else {
+        return false;
+    };
+    setting_value(&db, "wordWrap", "false") == "true"
+}
+
+fn set_word_wrap_checked<R: Runtime>(app: &AppHandle<R>, checked: bool) {
+    WORD_WRAP.store(checked, Ordering::Relaxed);
+    let Some(menu) = app.menu() else {
         return;
     };
-    if window.is_devtools_open() {
-        window.close_devtools();
-    } else {
-        window.open_devtools();
+    for item in menu.items().unwrap_or_default() {
+        let Some(sub) = item.as_submenu() else {
+            continue;
+        };
+        let Some(kind) = sub.get(TOGGLE_WORD_WRAP_ID) else {
+            continue;
+        };
+        if let Some(check) = kind.as_check_menuitem() {
+            let _ = check.set_checked(checked);
+        }
+        break;
+    }
+}
+
+/// 设置页等非菜单路径改了 wordWrap 时，同步菜单勾选。
+pub fn sync_word_wrap<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+    set_word_wrap_checked(app, enabled);
+}
+
+pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    match id {
+        TOGGLE_DEVTOOLS_ID => {
+            let Some(window) = app.get_webview_window("main") else {
+                return;
+            };
+            if window.is_devtools_open() {
+                window.close_devtools();
+            } else {
+                window.open_devtools();
+            }
+        }
+        TOGGLE_WORD_WRAP_ID => {
+            // CheckMenuItem 点击时系统已翻转勾选；以我们的状态为准再写回，避免和设置页打架。
+            let next = !WORD_WRAP.load(Ordering::Relaxed);
+            set_word_wrap_checked(app, next);
+            let _ = app.emit("menu-word-wrap", next);
+        }
+        _ => {}
     }
 }
 
@@ -78,11 +130,25 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let word_wrap = word_wrap_from_db(app);
+    WORD_WRAP.store(word_wrap, Ordering::Relaxed);
+    let toggle_word_wrap = CheckMenuItem::with_id(
+        app,
+        TOGGLE_WORD_WRAP_ID,
+        &tr!("自动换行"),
+        true,
+        word_wrap,
+        Some("Alt+Z"),
+    )?;
     let view_menu = Submenu::with_items(
         app,
-        &tr!("显示"),
+        &tr!("查看"),
         true,
-        &[&PredefinedMenuItem::fullscreen(app, Some(&tr!("进入全屏幕")))?],
+        &[
+            &toggle_word_wrap,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::fullscreen(app, Some(&tr!("进入全屏幕")))?,
+        ],
     )?;
 
     let window_menu = Submenu::with_id_and_items(

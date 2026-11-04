@@ -475,6 +475,8 @@ const catalog: MessageCatalog = {
   "settings.formatOnSaveHint": "儲存檔案时整理程式碼格式。",
   "settings.stickyScroll": "黏滯捲動",
   "settings.stickyScrollHint": "捲動时置顶目前函式或標題。",
+  "settings.wordWrap": "自動換行",
+  "settings.wordWrapHint": "編輯區依視窗寬度折行顯示，「檢視 → 自動換行」或 ⌥Z 可切換。",
   "settings.explorer.sort": "排序",
   "settings.explorer.sortHint": "資料夾優先、按類型或按修改時間。",
   "settings.explorer.sort.default": "預設（資料夾在前）",

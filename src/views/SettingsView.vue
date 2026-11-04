@@ -84,6 +84,7 @@ const form = reactive({
   updateProxy: "",
   formatOnSave: false,
   stickyScroll: true,
+  wordWrap: false,
   runTimeoutMinutes: 0,
   permissionMode: "bypass",
   dictationEnabled: true,
@@ -205,6 +206,7 @@ watch(
     setUpdateProxy(form.updateProxy);
     form.formatOnSave = settings.formatOnSave === "true";
     form.stickyScroll = settings.stickyScroll !== "false";
+    form.wordWrap = settings.wordWrap === "true";
     form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 0);
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
     form.dictationEnabled = settings.dictationEnabled !== "false";
@@ -252,6 +254,7 @@ watch(
     form.updateProxy,
     form.formatOnSave,
     form.stickyScroll,
+    form.wordWrap,
     form.runTimeoutMinutes,
     form.permissionMode,
     form.dictationEnabled,
@@ -301,6 +304,7 @@ function settingsPayload() {
     updateProxy: form.updateProxy.trim(),
     formatOnSave: String(form.formatOnSave),
     stickyScroll: String(form.stickyScroll),
+    wordWrap: String(form.wordWrap),
     ...integerSettingEntry("runTimeoutMinutes", form.runTimeoutMinutes, RUN_TIMEOUT_MIN_MINUTES, RUN_TIMEOUT_MAX_MINUTES),
     permissionMode: form.permissionMode,
     dictationEnabled: String(form.dictationEnabled),
@@ -507,6 +511,10 @@ onBeforeUnmount(() => {
           <label class="settings-row">
             <div><strong>{{ t("settings.stickyScroll") }}</strong><p>{{ t("settings.stickyScrollHint") }}</p></div>
             <UiInput v-model="form.stickyScroll" class="ds-switch" type="checkbox" />
+          </label>
+          <label class="settings-row">
+            <div><strong>{{ t("settings.wordWrap") }}</strong><p>{{ t("settings.wordWrapHint") }}</p></div>
+            <UiInput v-model="form.wordWrap" class="ds-switch" type="checkbox" />
           </label>
         </section>
 

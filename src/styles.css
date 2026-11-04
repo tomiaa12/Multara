@@ -6230,16 +6230,22 @@ body.is-dragging-workspace-file * {
   max-width: none;
 }
 .md-editor-switch {
+  position: absolute;
+  top: 8px;
+  right: 18px;
+  z-index: 31;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  align-self: center;
   gap: 1px;
-  margin-right: 8px;
   padding: 2px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+}
+.editor-main:has(> .chat-editor-overlay-widget) > .md-editor-switch {
+  top: 40px;
 }
 .md-editor-switch button {
   height: 22px;
@@ -6320,7 +6326,7 @@ body.is-dragging-workspace-file * {
   box-shadow: inset 0 0 0 2px var(--color-focus-ring);
 }
 /* 没有打开任何文件时隐藏空 Tab 栏，欢迎页占满整个编辑区 */
-.editor-area:not(:has(.editor-tab)) > .editor-tabbar:not(:has(.diff-file-nav, .md-editor-switch)) {
+.editor-area:not(:has(.editor-tab)) > .editor-tabbar:not(:has(.diff-file-nav)) {
   display: none;
 }
 .editor-area:not(:has(.editor-tab)):not(:has(.editor-breadcrumbs)) > .editor-welcome {

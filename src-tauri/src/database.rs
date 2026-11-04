@@ -1108,6 +1108,7 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
         ("webhookPort", "43127"),
         ("formatOnSave", "false"),
         ("stickyScroll", "true"),
+        ("wordWrap", "false"),
     ] {
         db.execute(
             "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?1, ?2)",

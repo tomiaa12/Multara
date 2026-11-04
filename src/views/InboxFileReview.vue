@@ -32,6 +32,7 @@ const busy = ref(false);
 const title = computed(() => fileName(props.filePath) || props.filePath);
 const indent = computed(() => detectIndent(file.value?.content ?? ""));
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
+const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
 const theme = monacoThemeName(currentDocumentTheme());
 
 async function load() {
@@ -130,6 +131,7 @@ defineExpose({ layout });
           :tab-size="indent.tabSize"
           :insert-spaces="indent.insertSpaces"
           :sticky-scroll="stickyScroll"
+          :word-wrap="wordWrap"
           @pending-chunks="pendingChunks = $event"
         />
       </div>

@@ -49,6 +49,7 @@ const skill = computed(() => store.data?.resources.find((item) => item.id === re
 const users = computed(() => store.data?.agents.filter((agent) => agent.skillIds.includes(resourceId.value)) ?? []);
 const dirty = computed(() => openFile.value !== null && draft.value !== savedText.value);
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
+const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
 const editorOptions = computed(() => ({
   scrollBeyondLastLine: false,
   lineNumbers: "on" as const,
@@ -61,6 +62,7 @@ const editorOptions = computed(() => ({
   tabSize: 2,
   insertSpaces: true,
   stickyScroll: { enabled: stickyScroll.value },
+  wordWrap: wordWrap.value ? "on" : "off",
   ...monacoZoomOptions,
 }));
 const sourceName = computed(() => {
