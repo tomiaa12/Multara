@@ -1310,6 +1310,7 @@ const catalog: MessageCatalog = {
   "dashboard.overflowTagsTitle": "標籤",
   "dashboard.overflowProjectsTitle": "專案",
   "dashboard.overflowAgentsTitle": "工作中的智慧體",
+  "dashboard.overflowAgentsHistoryTitle": "參與過的智慧體",
   "overflowSummary.more": "等{n}個{unit}",
   "overflowSummary.count": "{n} 個{unit}",
   "overflowSummary.viewAll": "查看全部",

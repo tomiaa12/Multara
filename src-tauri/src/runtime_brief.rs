@@ -6,8 +6,137 @@ pub struct RuntimeBrief<'a> {
     pub skill_names: &'a [&'a str],
     pub skill_root: &'a str,
     pub user_skill_context: &'a str,
+    /// 工作区智能体/小队花名册（已格式化）；空则用占位。
+    pub roster: &'a str,
     pub has_project_workspace: bool,
     pub locale: &'a str,
+}
+
+/// 花名册描述截断长度（字符），避免小队名单过长。
+const ROSTER_DESC_CHARS: usize = 120;
+
+fn clip_roster_desc(value: &str) -> String {
+    let flat = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars: Vec<char> = flat.chars().collect();
+    if chars.len() <= ROSTER_DESC_CHARS {
+        return flat;
+    }
+    format!("{}…", chars[..ROSTER_DESC_CHARS].iter().collect::<String>())
+}
+
+fn no_desc(locale: &str) -> &'static str {
+    match locale {
+        "en" => "no description",
+        "zh-TW" => "無描述",
+        "ja" => "説明なし",
+        "ko" => "설명 없음",
+        _ => "无描述",
+    }
+}
+
+fn agent_line(agent: &crate::models::Agent, no_desc: &str) -> String {
+    let desc = agent.description.trim();
+    let desc = if desc.is_empty() {
+        no_desc.to_string()
+    } else {
+        clip_roster_desc(desc)
+    };
+    format!("- **{}** (`{}`) — {}", agent.name, agent.id, desc)
+}
+
+/// 小队会话：只注入该队成员（对齐 Multica Squad Roster）。
+fn format_squad_roster(
+    locale: &str,
+    squad: &crate::models::Squad,
+    agents: &[crate::models::Agent],
+) -> String {
+    let by_id: std::collections::HashMap<&str, &crate::models::Agent> =
+        agents.iter().map(|agent| (agent.id.as_str(), agent)).collect();
+    let no_desc = no_desc(locale);
+    let leader = by_id.get(squad.leader_agent_id.as_str());
+    let leader_line = match leader {
+        Some(agent) => agent_line(agent, no_desc),
+        None => format!("- (`{}`)", squad.leader_agent_id),
+    };
+    let mut member_lines = Vec::new();
+    for id in &squad.member_agent_ids {
+        if id == &squad.leader_agent_id {
+            continue;
+        }
+        if let Some(agent) = by_id.get(id.as_str()) {
+            member_lines.push(agent_line(agent, no_desc));
+        } else {
+            member_lines.push(format!("- (`{id}`)"));
+        }
+    }
+    let members = if member_lines.is_empty() {
+        match locale {
+            "en" => "- (none — you are the only member)".to_string(),
+            "zh-TW" => "- （無其他隊員）".to_string(),
+            "ja" => "- （他のメンバーなし）".to_string(),
+            "ko" => "- (다른 멤버 없음)".to_string(),
+            _ => "- （无其他队员）".to_string(),
+        }
+    } else {
+        member_lines.join("\n")
+    };
+    let desc = squad.description.trim();
+    let desc = if desc.is_empty() {
+        no_desc.to_string()
+    } else {
+        clip_roster_desc(desc)
+    };
+    match locale {
+        "en" => format!(
+            "### Squad: **{}** (`{}`)\n{desc}\n\nLeader:\n{leader_line}\n\nMembers:\n{members}",
+            squad.name, squad.id
+        ),
+        "zh-TW" => format!(
+            "### 小隊：**{}** (`{}`)\n{desc}\n\n隊長：\n{leader_line}\n\n隊員：\n{members}",
+            squad.name, squad.id
+        ),
+        "ja" => format!(
+            "### スクワッド：**{}** (`{}`)\n{desc}\n\nリーダー：\n{leader_line}\n\nメンバー：\n{members}",
+            squad.name, squad.id
+        ),
+        "ko" => format!(
+            "### 스쿼드: **{}** (`{}`)\n{desc}\n\n리더:\n{leader_line}\n\n멤버:\n{members}",
+            squad.name, squad.id
+        ),
+        _ => format!(
+            "### 小队：**{}** (`{}`)\n{desc}\n\n队长：\n{leader_line}\n\n队员：\n{members}",
+            squad.name, squad.id
+        ),
+    }
+}
+
+/// 对齐 Multica：默认不内联全表，只给 CLI 查找指引。
+fn format_discovery_hint(locale: &str) -> String {
+    match locale {
+        "en" => "Do not invent assignee ids. Look them up with `multara agent list` / `multara squad list`, then `agent get` / `squad get` for descriptions. Assign with `multara task create --assignee <agentId>`.".to_string(),
+        "zh-TW" => "不要臆造負責人 id。用 `multara agent list` / `multara squad list` 查找，再 `agent get` / `squad get` 看描述；用 `multara task create --assignee <agentId>` 指派。".to_string(),
+        "ja" => "担当者 id を捏造しないでください。`multara agent list` / `multara squad list` で探し、`agent get` / `squad get` で説明を確認し、`multara task create --assignee <agentId>` で割り当てます。".to_string(),
+        "ko" => "담당자 id를 지어내지 마세요. `multara agent list` / `multara squad list`로 찾고, `agent get` / `squad get`으로 설명을 확인한 뒤 `multara task create --assignee <agentId>`로 배정하세요.".to_string(),
+        _ => "不要臆造负责人 id。用 `multara agent list` / `multara squad list` 查找，再 `agent get` / `squad get` 看描述；用 `multara task create --assignee <agentId>` 指派。".to_string(),
+    }
+}
+
+pub struct RosterBuild<'a> {
+    pub locale: &'a str,
+    pub agents: &'a [crate::models::Agent],
+    pub squads: &'a [crate::models::Squad],
+    /// 会话目标为小队时只注入该队（对齐 Multica Squad Roster）。
+    pub focus_squad_id: Option<&'a str>,
+}
+
+/// 对齐 Multica：小队会话 → 只注队员；其余 → 仅 CLI 发现指引（不内联全表）。
+pub fn build_roster(input: RosterBuild<'_>) -> String {
+    if let Some(squad_id) = input.focus_squad_id {
+        if let Some(squad) = input.squads.iter().find(|item| item.id == squad_id) {
+            return format_squad_roster(input.locale, squad, input.agents);
+        }
+    }
+    format_discovery_hint(input.locale)
 }
 
 struct BriefText {
@@ -19,6 +148,8 @@ struct BriefText {
     workflow_project: &'static str,
     workflow_plain: &'static str,
     asking: &'static str,
+    roster_heading: &'static str,
+    roster_empty: &'static str,
 }
 
 fn skill_note(locale: &str, skill_root: &str) -> String {
@@ -47,14 +178,14 @@ This run is bound to a project workspace, and the user is in the workbench.
 - Task mode is still available: when the work needs an owner, status, and result, or should be handed to another agent or split across multiple rounds, create a task and then execute it. Creating a task is not a prerequisite for editing code.
 - If this run has already been assigned a task, execute it directly and record progress on the task.
 - Task status: as soon as you start delivering on the task, run `multara task status <id> in_progress`; when this round's delivery is done and awaits review, use `in_review`; when blocked, use `blocked`; use `done` only when the work is truly finished. Do not change the status when you are only answering questions. If a run finishes successfully while the task is still in progress, it moves to in review; it never becomes done automatically.
-- Delegation: when other agents or squad members should work in parallel, create subtasks with `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` (without `--parent`, subtasks are still attached to the current task automatically). Run `multara agent list` first to get ids. Once all subtasks are wrapped up, the system will wake you again to summarize.
+- Delegation (optional): the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump. When specialty or parallelism helps, find ids with `multara agent list` / `squad list` (and get), then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). If you can finish it yourself, do not assign. Once subtasks wrap up, the system wakes you to summarize.
 - Only modify the workspace directories listed above. Files outside the workspace that are attached to the user's message may be read, but do not modify them.
 - When citing existing code locations in your answer, write the code fence info as startLine:endLine:relative/path (e.g. 118:122:src/foo.ts) so the UI can jump to it; do not paste code without a path.",
             workflow_plain: "\
 ## Workflow
 This run has no linked project. When creating or modifying files, only write to the working directory listed above; do not modify paths outside it. To change an existing repository, pick a project when creating the task, or ask the user to open a project.
 If this run has already been assigned a task, execute it directly. When you start delivering, run `multara task status <id> in_progress`; when delivery is done and awaits review, use `in_review`; use `done` only when the work is truly finished. If a run finishes successfully while the task is still in progress, it moves to in review; it never becomes done automatically.
-- Delegation: when other agents or squad members should work in parallel, create subtasks with `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` (without `--parent`, subtasks are still attached to the current task automatically). Run `multara agent list` first to get ids. Once all subtasks are wrapped up, the system will wake you again to summarize.
+- Delegation (optional): the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump. When specialty or parallelism helps, find ids with `multara agent list` / `squad list` (and get), then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). If you can finish it yourself, do not assign. Once subtasks wrap up, the system wakes you to summarize.
 - When citing existing code locations in your answer, write the code fence info as startLine:endLine:relative/path (e.g. 118:122:src/foo.ts) so the UI can jump to it; do not paste code without a path.",
             asking: "\
 ## Asking the user
@@ -67,6 +198,8 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - The UI automatically adds an \"Other\" free-text input to every question; do not add \"Something else\" or \"Other\" options yourself.
 - Describe the current state and context in the body as usual; the code block holds only the questions. The user's answers will come back as the next message.
 - Do not ask about things you can decide yourself.",
+            roster_heading: "## Workspace roster",
+            roster_empty: "(roster filled at runtime)",
         },
         "zh-TW" => BriefText {
             intro: "你是 Multara 裡的 coding agent。平台物件只能透過 `multara` CLI 操作，不要 curl，不要直接開啟 sqlite。呼叫 CLI 時使用環境變數 `MULTARA_CLI` 的絕對路徑。不要執行 `target/debug/multara`，那是桌面程式，會再開一個視窗。",
@@ -82,14 +215,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 任務模式仍然可用：工作要留下負責人、狀態和結果，或要交給別的智慧體、拆成多輪時，建成任務再執行。建任務不是修改程式碼的前置條件。
 - 本次執行已經被指派了一個任務時，直接執行，把進度寫在任務上。
 - 任務狀態：開始做本任務交付時立刻 `multara task status <id> in_progress`；本輪交付完等人審用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改狀態。執行成功結束若仍是進行中會落到審核中；不會自動變成 done。
-- 派工：需要別的智慧體/隊員並行時，用 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` 建子任務（未傳 `--parent` 時也會自動掛到目前任務）。先 `multara agent list` 拿 id。子任務都收尾後系統會再喚起你彙總。
+- 派工（可選）：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區。需要專長或並行時，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任務都收尾後系統會再喚起你彙總。
 - 只修改上面列出的工作區目錄。使用者訊息裡附帶的工作區外檔案可以閱讀，不要修改那些檔案。
 - 回答裡引用現有程式碼位置時，程式碼圍欄 info 寫成 startLine:endLine:相對路徑（例如 118:122:src/foo.ts），方便介面點擊跳轉；不要只貼程式碼不寫路徑。",
             workflow_plain: "\
 ## Workflow
 這次執行沒有關聯專案。產生或修改檔案時，只寫上面列出的工作目錄，不要修改目錄以外的路徑。要修改已有儲存庫，建立任務時選擇專案，或讓使用者開啟一個需求。
 本次執行已經被指派了一個任務時，直接執行該任務。開始做交付時 `multara task status <id> in_progress`；交付完等人審用 `in_review`；真正完成再用 `done`。執行成功結束若仍是進行中會落到審核中；不會自動變成 done。
-- 派工：需要別的智慧體/隊員並行時，用 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` 建子任務（未傳 `--parent` 時也會自動掛到目前任務）。先 `multara agent list` 拿 id。子任務都收尾後系統會再喚起你彙總。
+- 派工（可選）：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區。需要專長或並行時，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任務都收尾後系統會再喚起你彙總。
 - 回答裡引用現有程式碼位置時，程式碼圍欄 info 寫成 startLine:endLine:相對路徑（例如 118:122:src/foo.ts），方便介面點擊跳轉；不要只貼程式碼不寫路徑。",
             asking: "\
 ## 向使用者提問
@@ -102,6 +235,8 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 介面會自動給每題加「其他」自由輸入，不要自己加「別的事」「其他」選項。
 - 正文照常寫現狀和背景，程式碼區塊只放問題本身；使用者的回答會作為下一則訊息傳回來。
 - 能自己判斷的事不要問。",
+            roster_heading: "## 工作區花名冊",
+            roster_empty: "（執行時填入智慧體與小隊）",
         },
         "ja" => BriefText {
             intro: "あなたは Multara の coding agent です。プラットフォームのオブジェクトは `multara` CLI からのみ操作してください。curl は使わず、sqlite を直接開かないでください。CLI は環境変数 `MULTARA_CLI` の絶対パスで呼び出します。`target/debug/multara` は実行しないでください。デスクトップアプリなので、別のウィンドウが開いてしまいます。",
@@ -117,14 +252,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - タスクモードも引き続き使えます。担当者・ステータス・結果を残す必要がある作業や、別のエージェントに渡す・複数ラウンドに分ける作業は、タスクを作ってから実行してください。タスク作成はコード変更の前提条件ではありません。
 - この実行にすでにタスクが割り当てられている場合は、そのまま実行し、進捗をタスクに記録してください。
 - タスクのステータス：このタスクの成果物に取りかかったらすぐ `multara task status <id> in_progress`。今回の成果物を出してレビュー待ちにするときは `in_review`、行き詰まったら `blocked`、本当に完了したときだけ `done` を使います。質問に答えるだけならステータスは変えないでください。実行が正常終了した時点でまだ進行中なら、レビュー中に移ります。自動で done にはなりません。
-- 作業の振り分け：別のエージェントやスクワッドメンバーに並行して作業させたいときは、`multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` でサブタスクを作成します（`--parent` を省略しても現在のタスクに自動でひも付きます）。先に `multara agent list` で id を取得してください。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
+- 作業の振り分け（任意）：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。専門性や並行が必要なときは `multara agent list` / `squad list`（と get）で id を探し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。自分で終わらせられるなら割り当て不要です。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
 - 変更してよいのは上に挙げたワークスペースのディレクトリだけです。ユーザーのメッセージに添付されたワークスペース外のファイルは読んでもかまいませんが、変更しないでください。
 - 回答で既存コードの位置を引用するときは、コードフェンスの info を startLine:endLine:相対パス（例: 118:122:src/foo.ts）と書き、UI からクリックでジャンプできるようにしてください。パスなしでコードだけを貼らないでください。",
             workflow_plain: "\
 ## Workflow
 この実行には関連プロジェクトがありません。ファイルを生成・変更するときは、上に挙げた作業ディレクトリにだけ書き込み、その外のパスは変更しないでください。既存のリポジトリを変更したい場合は、タスク作成時にプロジェクトを選ぶか、ユーザーにプロジェクトを開いてもらってください。
 この実行にすでにタスクが割り当てられている場合は、そのタスクをそのまま実行してください。成果物に取りかかったら `multara task status <id> in_progress`、成果物を出してレビュー待ちにするときは `in_review`、本当に完了したときだけ `done` を使います。実行が正常終了した時点でまだ進行中なら、レビュー中に移ります。自動で done にはなりません。
-- 作業の振り分け：別のエージェントやスクワッドメンバーに並行して作業させたいときは、`multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` でサブタスクを作成します（`--parent` を省略しても現在のタスクに自動でひも付きます）。先に `multara agent list` で id を取得してください。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
+- 作業の振り分け（任意）：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。専門性や並行が必要なときは `multara agent list` / `squad list`（と get）で id を探し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。自分で終わらせられるなら割り当て不要です。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
 - 回答で既存コードの位置を引用するときは、コードフェンスの info を startLine:endLine:相対パス（例: 118:122:src/foo.ts）と書き、UI からクリックでジャンプできるようにしてください。パスなしでコードだけを貼らないでください。",
             asking: "\
 ## ユーザーへの質問
@@ -137,6 +272,8 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - UI が各質問に「その他」の自由入力を自動で追加するので、「別の件」「その他」といった選択肢は自分で加えないでください。
 - 本文には通常どおり現状と背景を書き、コードブロックには質問だけを入れます。ユーザーの回答は次のメッセージとして返ってきます。
 - 自分で判断できることは質問しないでください。",
+            roster_heading: "## ワークスペース名簿",
+            roster_empty: "（実行時にエージェントとスクワッドを埋めます）",
         },
         "ko" => BriefText {
             intro: "당신은 Multara의 coding agent입니다. 플랫폼 객체는 `multara` CLI로만 다루세요. curl을 쓰지 말고 sqlite를 직접 열지 마세요. CLI는 환경 변수 `MULTARA_CLI`의 절대 경로로 호출하세요. `target/debug/multara`는 실행하지 마세요. 데스크톱 앱이라 창이 하나 더 열립니다.",
@@ -152,14 +289,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 작업 모드도 계속 쓸 수 있습니다. 담당자·상태·결과를 남겨야 하거나, 다른 에이전트에게 넘기거나 여러 라운드로 나눠야 하는 일은 작업을 만든 뒤 실행하세요. 작업 생성은 코드 수정의 전제 조건이 아닙니다.
 - 이번 실행에 이미 작업이 배정되어 있다면 바로 실행하고 진행 상황을 작업에 기록하세요.
 - 작업 상태: 이 작업의 결과물에 착수하면 즉시 `multara task status <id> in_progress`; 이번 라운드 결과물을 마치고 검토를 기다릴 때는 `in_review`; 막히면 `blocked`; 정말 끝났을 때만 `done`을 쓰세요. 질문에 답하기만 할 때는 상태를 바꾸지 마세요. 실행이 정상 종료됐는데 아직 진행 중이면 검토 중으로 넘어가며, 자동으로 done이 되지는 않습니다.
-- 작업 분배: 다른 에이전트/스쿼드 멤버가 병렬로 일해야 하면 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo`로 하위 작업을 만드세요(`--parent`를 생략해도 현재 작업에 자동으로 연결됩니다). 먼저 `multara agent list`로 id를 확인하세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
+- 작업 분배(선택): 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 전문성이나 병렬이 필요하면 `multara agent list` / `squad list`(및 get)로 id를 찾은 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 스스로 끝낼 수 있으면 배정하지 마세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
 - 위에 나열된 작업 영역 디렉터리만 수정하세요. 사용자 메시지에 첨부된 작업 영역 밖의 파일은 읽어도 되지만 수정하지 마세요.
 - 답변에서 기존 코드 위치를 인용할 때는 코드 펜스 info를 startLine:endLine:상대경로(예: 118:122:src/foo.ts) 형식으로 적어 UI에서 클릭해 이동할 수 있게 하세요. 경로 없이 코드만 붙이지 마세요.",
             workflow_plain: "\
 ## Workflow
 이번 실행에는 연결된 프로젝트가 없습니다. 파일을 생성하거나 수정할 때는 위에 나열된 작업 디렉터리에만 쓰고, 그 밖의 경로는 수정하지 마세요. 기존 저장소를 수정하려면 작업을 만들 때 프로젝트를 선택하거나, 사용자에게 요구사항을 열어 달라고 하세요.
 이번 실행에 이미 작업이 배정되어 있다면 그 작업을 바로 실행하세요. 결과물에 착수하면 `multara task status <id> in_progress`; 결과물을 마치고 검토를 기다릴 때는 `in_review`; 정말 끝났을 때만 `done`을 쓰세요. 실행이 정상 종료됐는데 아직 진행 중이면 검토 중으로 넘어가며, 자동으로 done이 되지는 않습니다.
-- 작업 분배: 다른 에이전트/스쿼드 멤버가 병렬로 일해야 하면 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo`로 하위 작업을 만드세요(`--parent`를 생략해도 현재 작업에 자동으로 연결됩니다). 먼저 `multara agent list`로 id를 확인하세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
+- 작업 분배(선택): 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 전문성이나 병렬이 필요하면 `multara agent list` / `squad list`(및 get)로 id를 찾은 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 스스로 끝낼 수 있으면 배정하지 마세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
 - 답변에서 기존 코드 위치를 인용할 때는 코드 펜스 info를 startLine:endLine:상대경로(예: 118:122:src/foo.ts) 형식으로 적어 UI에서 클릭해 이동할 수 있게 하세요. 경로 없이 코드만 붙이지 마세요.",
             asking: "\
 ## 사용자에게 질문하기
@@ -172,6 +309,8 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - UI가 각 질문에 '기타' 자유 입력을 자동으로 추가하므로 '다른 일', '기타' 같은 선택지를 직접 넣지 마세요.
 - 본문에는 평소처럼 현황과 배경을 쓰고, 코드 블록에는 질문만 넣으세요. 사용자의 답변은 다음 메시지로 돌아옵니다.
 - 스스로 판단할 수 있는 일은 묻지 마세요.",
+            roster_heading: "## 워크스페이스 명단",
+            roster_empty: "(실행 시 에이전트와 스쿼드를 채웁니다)",
         },
         _ => BriefText {
             intro: "你是 Multara 里的 coding agent。平台对象只能通过 `multara` CLI 操作，不要 curl，不要直接打开 sqlite。调用 CLI 时使用环境变量 `MULTARA_CLI` 的绝对路径。不要运行 `target/debug/multara`，那是桌面程序，会再打开一个窗口。",
@@ -187,14 +326,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 任务模式仍然可用：工作要留下负责人、状态和结果，或要交给别的智能体、拆成多轮时，建成任务再执行。建任务不是改代码的前置条件。
 - 本次运行已经被指派了一个任务时，直接执行，把进度写在任务上。
 - 任务状态：开始做本任务交付时立刻 `multara task status <id> in_progress`；本轮交付完等人审用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改状态。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
-- 派活：需要别的智能体/队员并行时，用 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` 建子任务（未传 `--parent` 时也会自动挂到当前任务）。先 `multara agent list` 拿 id。子任务都收口后系统会再唤起你汇总。
+- 派活（可选）：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区。需要专长或并行时，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任务都收口后系统会再唤起你汇总。
 - 只改上面列出的工作区目录。用户消息里附带的工作区外文件可以阅读，不要改那些文件。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。",
             workflow_plain: "\
 ## Workflow
 这次运行没有关联项目。生成或修改文件时，只写上面列出的工作目录，不要改目录以外的路径。要改已有仓库，创建任务时选择项目，或让用户打开一个需求。
 本次运行已经被指派了一个任务时，直接执行该任务。开始做交付时 `multara task status <id> in_progress`；交付完等人审用 `in_review`；真正完成再用 `done`。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
-- 派活：需要别的智能体/队员并行时，用 `multara task create ... --assignee <agentId> --parent \"$MULTARA_TASK_ID\" --status todo` 建子任务（未传 `--parent` 时也会自动挂到当前任务）。先 `multara agent list` 拿 id。子任务都收口后系统会再唤起你汇总。
+- 派活（可选）：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区。需要专长或并行时，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任务都收口后系统会再唤起你汇总。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。",
             // 无头 CLI 运行中拿不到用户输入（AskUserQuestion 已禁用），提问统一写成代码块，界面渲染成输入框上方的选项卡片。
             asking: "\
@@ -208,6 +347,8 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 界面会自动给每题加「其他」自由输入，不要自己加「别的事」「其他」选项。
 - 正文照常写现状和背景，代码块只放问题本身；用户的回答会作为下一条消息发回来。
 - 能自己判断的事不要问。",
+            roster_heading: "## 工作区花名册",
+            roster_empty: "（运行时填入智能体与小队）",
         },
     }
 }
@@ -240,6 +381,12 @@ pub fn build(brief: RuntimeBrief<'_>) -> String {
     } else {
         format!("\n\n## User Skills\n{user_skills}")
     };
+    let roster = brief.roster.trim();
+    let roster_body = if roster.is_empty() {
+        text.roster_empty
+    } else {
+        roster
+    };
 
     format!(
         "\
@@ -253,6 +400,9 @@ pub fn build(brief: RuntimeBrief<'_>) -> String {
 
 ## Workspace
 {workspace}
+
+{roster_heading}
+{roster_body}
 
 ## Skills
 {skills}
@@ -268,6 +418,8 @@ multara task assign <id> --to <agentId>
 multara agent list
 multara agent get <id>
 multara agent create --name \"...\" --runtime-id <id>
+multara squad list
+multara squad get <id>
 multara project list
 multara project get <id>
 multara runtime list
@@ -284,6 +436,8 @@ multara terminal read [id] [--start N] [--end N]
         id = brief.agent_id,
         identity = brief.identity_block.trim(),
         workspace = workspace,
+        roster_heading = text.roster_heading,
+        roster_body = roster_body,
         skills = skills,
         skill_note = skill_note(brief.locale, brief.skill_root),
         task_id_note = text.task_id_note,
@@ -307,6 +461,7 @@ mod tests {
             skill_names: &["multara-working-on-tasks"],
             skill_root: "/tmp/multara-builtin-skills",
             user_skill_context: "",
+            roster: "",
             has_project_workspace: false,
             locale: "zh-CN",
         });
@@ -332,6 +487,7 @@ mod tests {
             skill_names: &["multara-working-on-tasks"],
             skill_root: "/tmp/multara-builtin-skills",
             user_skill_context: "",
+            roster: "### 智能体\n- **审稿** (`reviewer`) — 做代码审阅\n\n### 小队\n- （暂无小队）",
             has_project_workspace: true,
             locale: "zh-CN",
         });
@@ -339,6 +495,9 @@ mod tests {
         assert!(brief.contains("直接改"));
         assert!(brief.contains("建任务不是改代码的前置条件"));
         assert!(brief.contains("用户消息里附带的工作区外文件可以阅读"));
+        assert!(brief.contains("工作区花名册"));
+        assert!(brief.contains("审稿"));
+        assert!(brief.contains("派活（可选）"));
         assert!(!brief.contains("不要访问列表外路径"));
         assert!(!brief.contains("不要在纯聊天回合里改仓库"));
     }
@@ -355,12 +514,14 @@ mod tests {
                     skill_names: &[],
                     skill_root: "/tmp/multara-builtin-skills",
                     user_skill_context: "",
+                    roster: "",
                     has_project_workspace,
                     locale,
                 });
                 assert!(brief.contains("```multara-questions"), "{locale}");
                 assert!(brief.contains("$MULTARA_TASK_ID"), "{locale}");
                 assert!(brief.contains("/tmp/multara-builtin-skills/<name>/SKILL.md"), "{locale}");
+                assert!(brief.contains("multara squad list"), "{locale}");
                 if *locale == "zh-CN" {
                     assert!(brief.contains("向用户提问"));
                     continue;
@@ -370,5 +531,65 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn sample_agent(id: &str, name: &str) -> crate::models::Agent {
+        crate::models::Agent {
+            id: id.to_string(),
+            name: name.to_string(),
+            avatar: String::new(),
+            description: format!("{name} does work"),
+            instructions: String::new(),
+            runtime_id: "rt".to_string(),
+            model: String::new(),
+            max_concurrent_tasks: 1,
+            skill_ids: Vec::new(),
+            mcp_ids: Vec::new(),
+            system_key: None,
+            system_instructions: None,
+        }
+    }
+
+    #[test]
+    fn build_roster_uses_cli_discovery_by_default() {
+        let agents = vec![sample_agent("a1", "审稿")];
+        let text = build_roster(RosterBuild {
+            locale: "zh-CN",
+            agents: &agents,
+            squads: &[],
+            focus_squad_id: None,
+        });
+        assert!(text.contains("multara agent list"));
+        assert!(text.contains("不要臆造"));
+        assert!(!text.contains("审稿"));
+        assert!(!text.contains("### 智能体"));
+    }
+
+    #[test]
+    fn build_roster_focuses_squad_members() {
+        let agents = vec![
+            sample_agent("lead", "队长"),
+            sample_agent("m1", "队员甲"),
+            sample_agent("other", "局外人"),
+        ];
+        let squads = vec![crate::models::Squad {
+            id: "sq1".to_string(),
+            name: "前端组".to_string(),
+            description: "做前端".to_string(),
+            instructions: String::new(),
+            leader_agent_id: "lead".to_string(),
+            member_agent_ids: vec!["lead".to_string(), "m1".to_string()],
+        }];
+        let text = build_roster(RosterBuild {
+            locale: "zh-CN",
+            agents: &agents,
+            squads: &squads,
+            focus_squad_id: Some("sq1"),
+        });
+        assert!(text.contains("前端组"));
+        assert!(text.contains("队长"));
+        assert!(text.contains("队员甲"));
+        assert!(!text.contains("局外人"));
+        assert!(!text.contains("### 智能体"));
     }
 }

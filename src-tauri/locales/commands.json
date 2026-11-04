@@ -317,6 +317,12 @@
     "ja": "（実行時にこのエージェントで有効な Skill の本文が添付されます）",
     "ko": "(실행 시 이 에이전트에서 활성화된 Skill 본문이 첨부됩니다)"
   },
+  "（运行时：小队会话填队员名单，否则只给 CLI 查找指引，不内联全表）": {
+    "en": "(At run time: squad members for squad chat; otherwise a CLI discovery hint — never a full workspace dump)",
+    "zh-TW": "（執行時：小隊會話填隊員名單，否則只給 CLI 查找指引，不內聯全表）",
+    "ja": "（実行時：スクワッド会話ならメンバー名簿、それ以外は CLI 案内のみ。全員一覧は載せません）",
+    "ko": "(실행 시: 스쿼드 대화면 멤버 명단, 아니면 CLI 안내만 — 전체 목록은 넣지 않음)"
+  },
   "选择的智能体或小队不存在": {
     "en": "The selected agent or squad doesn't exist",
     "zh-TW": "選擇的智慧體或小隊不存在",
