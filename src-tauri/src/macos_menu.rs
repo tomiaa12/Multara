@@ -1,7 +1,24 @@
 use tauri::menu::{
-    AboutMetadata, Menu, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
 };
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
+
+/// Help → 切换开发者工具（对齐 VS Code `workbench.action.toggleDevTools` / ⌘⌥I）。
+pub const TOGGLE_DEVTOOLS_ID: &str = "toggle-devtools";
+
+pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    if id != TOGGLE_DEVTOOLS_ID {
+        return;
+    }
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if window.is_devtools_open() {
+        window.close_devtools();
+    } else {
+        window.open_devtools();
+    }
+}
 
 pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let package = app.package_info();
@@ -81,12 +98,19 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let toggle_devtools = MenuItem::with_id(
+        app,
+        TOGGLE_DEVTOOLS_ID,
+        &tr!("切换开发者工具"),
+        true,
+        Some("CmdOrCtrl+Alt+I"),
+    )?;
     let help_menu = Submenu::with_id_and_items(
         app,
         HELP_SUBMENU_ID,
         &tr!("帮助"),
         true,
-        &[] as &[&dyn tauri::menu::IsMenuItem<R>],
+        &[&toggle_devtools],
     )?;
 
     Menu::with_items(

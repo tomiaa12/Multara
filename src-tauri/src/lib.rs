@@ -250,7 +250,9 @@ pub fn run() {
         );
 
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(macos_menu::app_menu);
+    let builder = builder.menu(macos_menu::app_menu).on_menu_event(|app, event| {
+        macos_menu::handle_menu_event(app, event.id().as_ref());
+    });
 
     builder
         .setup(|app| {

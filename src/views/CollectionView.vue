@@ -563,15 +563,15 @@ function runtimeSubtitle(runtime: Runtime) {
             />
             <span>{{ store.data?.agents.find((agent) => agent.id === squad.leaderAgentId)?.name ?? t("collection.unspecified") }}</span>
           </span>
-          <span class="squad-member-stack" @click.stop>
-            <AvatarStack
-              :items="squadMemberItems(squad)"
-              :max="SQUAD_AVATAR_VISIBLE"
-              :size="22"
-              :dialog-title="t('collection.members')"
-            />
-          </span>
         </RouterLink>
+        <span class="squad-member-stack" @click.stop @mousedown.stop>
+          <AvatarStack
+            :items="squadMemberItems(squad)"
+            :max="SQUAD_AVATAR_VISIBLE"
+            :size="22"
+            :dialog-title="t('collection.members')"
+          />
+        </span>
         <UiButton class="icon-button" :tip="t('collection.deleteSquad')" @click.stop="removeSquad(squad)"><Trash2 :size="13" /></UiButton>
       </div>
     </div>

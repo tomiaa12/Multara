@@ -9,7 +9,6 @@ import { fileToBase64 } from "../utils/file-base64";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
-import { agentRuntime, modeSupported, modeUnsupportedReason } from "../components/chat/run-mode";
 import {
   formatAgentPrompt,
   type ComposerNode,
@@ -112,12 +111,6 @@ const projectOptions = computed(() => projects.value.map((item) => ({ value: ite
 const canCreate = computed(() =>
   Boolean(assigneeId.value && !busy.value && (!composerEmpty.value || pastes.value.length)),
 );
-const planFirst = ref(false);
-/** 小队按队长的运行时判断能否先出计划 */
-const assigneeRuntime = computed(() => agentRuntime(store.data, assigneeId.value));
-const planSupported = computed(() => modeSupported(assigneeRuntime.value, "plan"));
-const requestedMode = computed(() => (planFirst.value && planSupported.value ? "plan" : "auto"));
-
 watch(agents, (list) => {
   if (form.agentId && targetOptions.value.some((item) => item.value === form.agentId)) return;
   const miku = list.find((item) => isMiku(item)) ?? list[0];
@@ -293,13 +286,13 @@ async function create() {
       projectId: form.projectIds[0] ?? null,
       projectIds: [...form.projectIds],
       status: createStatus,
-      requestedMode: requestedMode.value,
+      requestedMode: "auto",
     });
     if (task) {
       writeTaskMeta(task.id, { priority: "none", labels: [...form.labels] });
       await store.updateTaskMeta({ taskId: task.id, labels: [...form.labels] });
       if (attachments.length) {
-        store.send(description || title, task.sessionId, attachments, { mode: requestedMode.value });
+        store.send(description || title, task.sessionId, attachments, { mode: "auto" });
       }
       if (titleSeed) void store.nameTaskFromFirstPrompt(task.id, titleSeed, title);
     }
@@ -324,7 +317,7 @@ async function create() {
       <header>
         <p>
           <template v-if="project">{{ project.name }} <span>›</span> </template>
-          {{ t('skills.create.method.manual') }}
+          {{ t('tasks.createSubmit') }}
         </p>
         <div>
           <UiTooltip :content="expanded ? t('skills.collapse') : t('skills.expand')"><button type="button" class="task-icon-button" @click="expanded = !expanded">
@@ -397,12 +390,6 @@ async function create() {
           >
             <Plus :size="16" />
           </UiButton>
-          <UiTooltip :content="planSupported ? t('tasks.planFirstHint') : modeUnsupportedReason(assigneeRuntime)">
-            <label class="task-create-keep" :class="{ 'is-disabled': !planSupported }">
-              <input v-model="planFirst" class="ui-checkbox" type="checkbox" :disabled="!planSupported" />
-              {{ t('tasks.planFirst') }}
-            </label>
-          </UiTooltip>
           <label class="task-create-keep">
             <input v-model="keepOpen" class="ui-checkbox" type="checkbox" />
             {{ t('tasks.keepOpen') }}
