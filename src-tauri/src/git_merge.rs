@@ -56,17 +56,12 @@ pub struct ApplyOutcome {
 /// 用户在分支列表里选的可能是本地分支 `sit`，也可能是远程分支 `origin/sit`，统一成 (分支名, 远程)。
 pub fn resolve_target(git: &str, root: &str, target: &str) -> Result<MergeTarget, String> {
     let target = target.trim();
-    let remotes = remotes(git, root).unwrap_or_default();
-    for remote in &remotes {
-        if let Some(branch) = target.strip_prefix(&format!("{remote}/")) {
-            if rev(git, root, &format!("refs/remotes/{target}")).is_some() {
-                validate_branch(git, root, branch)?;
-                return Ok(MergeTarget {
-                    branch: branch.to_string(),
-                    remote: Some(remote.clone()),
-                });
-            }
-        }
+    if let Some((remote, branch)) = crate::git::split_remote_tracking(git, root, target) {
+        validate_branch(git, root, &branch)?;
+        return Ok(MergeTarget {
+            branch,
+            remote: Some(remote),
+        });
     }
     validate_branch(git, root, target)?;
     // 本地分支优先用它配置的上游远程，没有时退回 origin / 第一个远程。
@@ -78,11 +73,12 @@ pub fn resolve_target(git: &str, root: &str, target: &str) -> Result<MergeTarget
     .ok()
     .map(|value| value.trim().to_string())
     .filter(|value| !value.is_empty() && value != ".");
+    let listed = remotes(git, root).unwrap_or_default();
     let remote = configured.or_else(|| {
-        remotes
+        listed
             .iter()
             .find(|item| item.as_str() == "origin")
-            .or_else(|| remotes.first())
+            .or_else(|| listed.first())
             .cloned()
     });
     Ok(MergeTarget {

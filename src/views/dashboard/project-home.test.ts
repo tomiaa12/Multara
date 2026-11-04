@@ -59,7 +59,35 @@ const project: Project = {
 };
 
 describe("buildHomeProject workers", () => {
-  it("空闲时展示工作过的智能体", () => {
+  it("新对话只选了目标时不展示智能体", () => {
+    const data = baseData({
+      sessions: [
+        {
+          id: "s1",
+          projectId: "p1",
+          title: "新对话",
+          targetType: "agent",
+          targetId: "reviewer",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      workspaces: [
+        {
+          id: "w1",
+          projectId: "p1",
+          name: "repo",
+          kind: "folder",
+          workPath: "/tmp/repo",
+          branch: null,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    expect(buildHomeProject(project, data, {}).workers).toEqual([]);
+  });
+
+  it("空闲时展示回复过 / 执行过任务的智能体", () => {
     const data = baseData({
       sessions: [
         {
@@ -81,6 +109,18 @@ describe("buildHomeProject workers", () => {
           updatedAt: "2026-01-01T00:00:00Z",
         },
       ],
+      tasks: [
+        {
+          id: "t1",
+          sessionId: "s1",
+          title: "审稿",
+          description: "",
+          agentId: "reviewer",
+          status: "done",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-02T00:00:00Z",
+        },
+      ],
       workspaces: [
         {
           id: "w1",
@@ -93,12 +133,24 @@ describe("buildHomeProject workers", () => {
         },
       ],
     });
-    const home = buildHomeProject(project, data, {});
+    const finished: Record<string, RunEvent> = {
+      r1: {
+        runId: "r1",
+        sessionId: "s2",
+        agentId: "miku",
+        status: "completed",
+        chunk: null,
+        error: null,
+        timelineItem: null,
+        elapsedMs: 1000,
+      },
+    };
+    const home = buildHomeProject(project, data, finished);
     expect(home.workers.map((item) => item.key)).toEqual([
-      "agent:reviewer",
       "agent:miku",
+      "agent:reviewer",
     ]);
-    expect(home.workers[0]?.image).toBe("👀");
+    expect(home.workers.find((item) => item.key === "agent:reviewer")?.image).toBe("👀");
   });
 
   it("有进行中时只展示进行中的智能体", () => {

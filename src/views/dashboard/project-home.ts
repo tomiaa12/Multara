@@ -213,6 +213,8 @@ export function buildHomeProject(
   const history: HomeWorker[] = [];
   const historySeen = new Set<string>();
 
+  const projectSessionIds = new Set(sessions.map((item) => item.id));
+
   for (const session of sessions) {
     const active = index.activeAgents.get(session.id);
     if (active) {
@@ -233,7 +235,14 @@ export function buildHomeProject(
         );
       }
     }
-    pushUniqueWorker(history, historySeen, targetWorker(session, index));
+  }
+
+  // 历史只收真正跑过 / 回复过的智能体：任务执行者 + 本需求会话里已结束的 run。
+  // 不把「新对话选了谁」的 session.target 算进去。
+  for (const event of Object.values(runStates)) {
+    if (!projectSessionIds.has(event.sessionId) || !event.agentId) continue;
+    if (event.status === "running" || event.status === "queued") continue;
+    pushUniqueWorker(history, historySeen, agentWorker(event.agentId, index));
   }
 
   for (const task of data.tasks) {
