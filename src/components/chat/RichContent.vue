@@ -7,7 +7,7 @@ import { sanitizeRichHtml } from "./rich-content-sanitize";
 import * as backend from "../../services/backend";
 import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
-import { parseCodeFenceInfo, splitWorkspacePaths } from "./workspace-path";
+import { opensInFolder, parseCodeFenceInfo, splitWorkspacePaths } from "./workspace-path";
 
 const props = defineProps<{ content: string }>();
 const root = ref<HTMLElement | null>(null);
@@ -186,7 +186,7 @@ function linkWorkspacePaths(el: HTMLElement) {
     const parent = node.parentElement;
     if (!parent || parent.closest("pre, a, .workspace-path, .code-block")) continue;
     const text = node.textContent ?? "";
-    if (!text.includes("/")) continue;
+    if (!/[/.]/.test(text)) continue;
     const segments = splitWorkspacePaths(text);
     if (!segments.some((segment) => segment.type === "path")) continue;
     const fragment = document.createDocumentFragment();
@@ -208,11 +208,28 @@ function linkWorkspacePaths(el: HTMLElement) {
   }
 }
 
+/** 软件里没法预览的文件：在文件管理器里定位到它所在的位置。 */
+async function revealInFolder(path: string) {
+  for (const workspace of store.data?.workspaces ?? []) {
+    try {
+      await backend.revealWorkspacePath(workspace.id, path);
+      return;
+    } catch {
+      // 这个工作区里没有这个文件，换下一个。
+    }
+  }
+  store.reportComposerNotice(`找不到文件：${path}`, path);
+}
+
 function revealFromDataset(target: HTMLElement) {
   const path = target.dataset.path;
   if (!path) return;
   const start = Number(target.dataset.start || "");
   const end = Number(target.dataset.end || "");
+  if (opensInFolder(path)) {
+    void revealInFolder(path);
+    return;
+  }
   store.revealWorkspaceFile(
     path,
     Number.isFinite(start) && start > 0 ? start : undefined,

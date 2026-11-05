@@ -371,11 +371,23 @@
     "ja": "- [{status}] {title}（`{id}`、@{name}）",
     "ko": "- [{status}] {title} (`{id}`, @{name})"
   },
-  "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n\n子任务状态：\n{summary}": {
-    "en": "All subtasks are closed (the one that just finished is \"{child_title}\" `{child_id}`).\nSummarize each member's results and update the progress of the parent task \"{parent_title}\"; if it is ready for review, run `multara task status {parent_id} in_review`.\n\nSubtask status:\n{summary}",
-    "zh-TW": "子任務已全部收尾（剛結束的是「{child_title}」`{child_id}`）。\n請彙整各成員結果，更新父任務「{parent_title}」進度；若可驗收則 `multara task status {parent_id} in_review`。\n\n子任務狀態：\n{summary}",
-    "ja": "サブタスクはすべて完了しました（直前に終わったのは「{child_title}」`{child_id}`）。\n各メンバーの結果をまとめ、親タスク「{parent_title}」の進捗を更新してください。検収できる状態なら `multara task status {parent_id} in_review` を実行してください。\n\nサブタスクのステータス：\n{summary}",
-    "ko": "하위 작업이 모두 마무리되었습니다(방금 끝난 작업은 \"{child_title}\" `{child_id}`).\n각 멤버의 결과를 정리해 상위 작업 \"{parent_title}\"의 진행 상황을 업데이트하세요. 검수할 수 있으면 `multara task status {parent_id} in_review`를 실행하세요.\n\n하위 작업 상태:\n{summary}"
+  "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活、还是验收）。不要用 `multara task comment` 在父任务上写进度流水。\n\n子任务状态：\n{summary}": {
+    "en": "All subtasks are closed (the one that just finished is \"{child_title}\" `{child_id}`).\nSummarize each member's results and update the progress of the parent task \"{parent_title}\"; if it is ready for review, run `multara task status {parent_id} in_review`.\nMembers' results are already shown in the conversation: do not repeat or quote them; give only the conclusion and next step (delegate more, or accept). Do not log progress on the parent task with `multara task comment`.\n\nSubtask status:\n{summary}",
+    "zh-TW": "子任務已全部收尾（剛結束的是「{child_title}」`{child_id}`）。\n請彙整各成員結果，更新父任務「{parent_title}」進度；若可驗收則 `multara task status {parent_id} in_review`。\n成員成果已顯示在對話裡：不要複述或引用原文，只說結論與下一步（繼續派工或驗收）。不要用 `multara task comment` 在父任務上寫進度流水。\n\n子任務狀態：\n{summary}",
+    "ja": "サブタスクはすべて完了しました（直前に終わったのは「{child_title}」`{child_id}`）。\n各メンバーの結果をまとめ、親タスク「{parent_title}」の進捗を更新してください。検収できる状態なら `multara task status {parent_id} in_review` を実行してください。\nメンバーの成果はすでに会話に表示されています。復唱や引用はせず、結論と次の一手（追加の割り当てか検収）だけを述べてください。`multara task comment` で親タスクに進捗ログを書かないでください。\n\nサブタスクのステータス：\n{summary}",
+    "ko": "하위 작업이 모두 마무리되었습니다(방금 끝난 작업은 \"{child_title}\" `{child_id}`).\n각 멤버의 결과를 정리해 상위 작업 \"{parent_title}\"의 진행 상황을 업데이트하세요. 검수할 수 있으면 `multara task status {parent_id} in_review`를 실행하세요.\n멤버의 결과는 이미 대화에 표시되어 있습니다. 반복하거나 인용하지 말고 결론과 다음 단계(추가 배정 또는 검수)만 말하세요. `multara task comment`로 상위 작업에 진행 로그를 남기지 마세요.\n\n하위 작업 상태:\n{summary}"
+  },
+  "你刚才 @ 的成员已经回复，回复原文如下（用户在界面上已经能看到，不要复述）：\n\n{replies}\n\n{files}\n\n你是负责人，先对照你最初的要求检查成果。不满足就在回答里另起一段继续 @ 他，写清楚还差什么，不要自己动手改；满足了就用一两句话收尾，并用列表列出所有产出文件（每行一个文件名）。除了列表，不要复述成员的回复。": {
+    "en": "The member you @-mentioned has replied. Their reply is below (the user can already see it in the UI, do not repeat it):\n\n{replies}\n\n{files}\n\nYou are responsible: check the result against your original request first. If it falls short, start another paragraph with an @mention of them saying what is missing; do not do the work yourself. If it is good, close with one or two sentences and a list of all deliverable files (one file name per line). Apart from that list, do not repeat the member's reply.",
+    "zh-TW": "你剛才 @ 的成員已經回覆，回覆原文如下（使用者在介面上已經看得到，不要複述）：\n\n{replies}\n\n{files}\n\n你是負責人，先對照你最初的要求檢查成果。不滿足就在回答裡另起一段繼續 @ 他，寫清楚還差什麼，不要自己動手改；滿足了就用一兩句話收尾，並用清單列出所有產出檔案（每行一個檔名）。除了清單，不要複述成員的回覆。",
+    "ja": "先ほど @ したメンバーが返信しました。返信の原文は以下です（ユーザーは画面ですでに見られるので復唱しないでください）：\n\n{replies}\n\n{files}\n\nあなたが責任者です。まず最初の依頼に照らして成果を確認してください。足りなければ、返答の中で段落を改めて再度 @ し、何が足りないかを書いてください（自分では直さない）。満たしていれば一、二文で締め、成果物ファイルを箇条書きで列挙してください（1行1ファイル名）。リスト以外でメンバーの返信を繰り返さないでください。",
+    "ko": "방금 @ 한 멤버가 답장했습니다. 답장 원문은 아래와 같습니다(사용자는 화면에서 이미 볼 수 있으니 반복하지 마세요):\n\n{replies}\n\n{files}\n\n당신이 책임자입니다. 먼저 처음 요청에 비추어 결과를 확인하세요. 부족하면 답변에서 문단을 바꿔 다시 @ 하고 무엇이 부족한지 쓰세요(직접 고치지 마세요). 충족하면 한두 문장으로 마무리하고 산출 파일을 목록으로 나열하세요(한 줄에 파일명 하나). 목록 외에는 멤버의 답장을 반복하지 마세요."
+  },
+  "系统检测到的产出文件：": {
+    "en": "Deliverable files detected by the system:",
+    "zh-TW": "系統偵測到的產出檔案：",
+    "ja": "システムが検出した成果物ファイル：",
+    "ko": "시스템이 감지한 산출 파일:"
   },
   "任务不存在": {
     "en": "Task not found",

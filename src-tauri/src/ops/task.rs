@@ -251,22 +251,120 @@ fn record_parent_assignment(
     Ok(())
 }
 
+/// 最终回复是否只是在复述刚写的任务评论（引用了评论开头一段）。
+fn narrates_comment(reply: &str, comment: &str) -> bool {
+    let head: String = comment.trim().chars().take(30).collect();
+    head.chars().count() >= 8 && reply.contains(&head)
+}
+
+const BRIDGE_REPLY_MAX_CHARS: usize = 16_000;
+
+fn truncate_bridge_content(value: &str, max_chars: usize) -> String {
+    let trimmed = value.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let cut: String = trimmed.chars().take(max_chars).collect();
+    format!("{cut}\n…（内容已截断）")
+}
+
+/// 把子任务最终回复桥进父会话，显示为 B @ A，便于主任务活动里看出双方对话。
+/// 消息 id 固定为 `bridge:{child_task_id}`，重复收口幂等。
+fn record_parent_bridge_reply(
+    db: &Connection,
+    child_session_id: &str,
+    child_id: &str,
+    child_agent_id: &str,
+    parent_session: &str,
+    parent_agent: &str,
+    now: &str,
+) -> Result<(), String> {
+    let bridge_id = format!("bridge:{child_id}");
+    let exists: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1)",
+            [&bridge_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if exists {
+        return Ok(());
+    }
+    let content: Option<String> = db
+        .query_row(
+            "SELECT content FROM messages
+             WHERE session_id=?1
+               AND role='assistant'
+               AND COALESCE(message_kind, 'message') != 'assignment'
+               AND TRIM(content) != ''
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT 1",
+            [child_session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some(content) = content.filter(|value| !value.trim().is_empty()) else {
+        return Ok(());
+    };
+    // 智能体常把成果写进任务评论，再用「已写入评论，内容如下：> …」复述一遍。
+    // 这种收尾话术不该原样桥进父会话（会出现引用套引用），直接用评论本身。
+    let comment: Option<String> = db
+        .query_row(
+            "SELECT content FROM messages
+             WHERE session_id=?1 AND role='system' AND TRIM(content) != ''
+             ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            [child_session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let content = match comment {
+        Some(comment) if narrates_comment(&content, &comment) => comment,
+        _ => content,
+    };
+    let body = truncate_bridge_content(&content, BRIDGE_REPLY_MAX_CHARS);
+    db.execute(
+        "INSERT OR IGNORE INTO messages
+         (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, 'agent', ?5, 'message', ?6)",
+        params![
+            bridge_id,
+            parent_session,
+            body,
+            child_agent_id,
+            parent_agent,
+            now
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// 子任务收口后对父任务的后续动作：至少会尝试桥接 B@A；子任务全收口时再排队汇总。
+pub struct ParentFollowup {
+    pub parent_session_id: String,
+    pub parent_agent_id: String,
+    pub resume_run_id: Option<String>,
+}
+
 /// 子任务全部收口后，给父任务负责人再排一轮，汇总结果。
-/// 返回 `(run_id, parent_session_id, parent_agent_id)`。
+/// 无论是否立刻汇总，都会先尝试写入本子任务的 B@A 桥接消息；有父任务时始终返回 followup，便于前端刷新父会话。
 pub fn maybe_resume_parent(
     db: &Connection,
     child_session_id: &str,
     now: &str,
-) -> Result<Option<(String, String, String)>, String> {
-    let Some((child_id, child_title, parent_id)) = db
+) -> Result<Option<ParentFollowup>, String> {
+    let Some((child_id, child_title, parent_id, child_agent)) = db
         .query_row(
-            "SELECT id, title, parent_task_id FROM tasks WHERE session_id=?1",
+            "SELECT id, title, parent_task_id, agent_id FROM tasks WHERE session_id=?1",
             [child_session_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             },
         )
@@ -283,6 +381,30 @@ pub fn maybe_resume_parent(
         return Ok(None);
     }
 
+    let (parent_session, parent_agent, parent_title): (String, String, String) = db
+        .query_row(
+            "SELECT session_id, agent_id, title FROM tasks WHERE id=?1",
+            [&parent_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| tr!("父任务不存在"))?;
+
+    let _ = record_parent_bridge_reply(
+        db,
+        child_session_id,
+        &child_id,
+        &child_agent,
+        &parent_session,
+        &parent_agent,
+        now,
+    );
+
+    let bridged = ParentFollowup {
+        parent_session_id: parent_session.clone(),
+        parent_agent_id: parent_agent.clone(),
+        resume_run_id: None,
+    };
+
     let open_children: u32 = db
         .query_row(
             "SELECT COUNT(*) FROM tasks
@@ -293,18 +415,11 @@ pub fn maybe_resume_parent(
         )
         .map_err(|error| error.to_string())?;
     if open_children > 0 {
-        return Ok(None);
+        return Ok(Some(bridged));
     }
 
-    let (parent_session, parent_agent, parent_title): (String, String, String) = db
-        .query_row(
-            "SELECT session_id, agent_id, title FROM tasks WHERE id=?1",
-            [&parent_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(|_| tr!("父任务不存在"))?;
     if crate::plan::latest_awaiting_plan(db, &parent_session)?.is_some() {
-        return Ok(None);
+        return Ok(Some(bridged));
     }
 
     let active: u32 = db
@@ -316,7 +431,7 @@ pub fn maybe_resume_parent(
         )
         .map_err(|error| error.to_string())?;
     if active > 0 {
-        return Ok(None);
+        return Ok(Some(bridged));
     }
 
     let mut lines = Vec::new();
@@ -357,7 +472,7 @@ pub fn maybe_resume_parent(
     let summary = lines.join("\n");
     let assignment = tr!(
         "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n\
-         请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n\n\
+         请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活、还是验收）。不要用 `multara task comment` 在父任务上写进度流水。\n\n\
          子任务状态：\n{summary}",
         child_title = child_title,
         child_id = child_id,
@@ -379,7 +494,11 @@ pub fn maybe_resume_parent(
             mode: RunMode::Auto,
         },
     )?;
-    Ok(Some((run_id, parent_session, parent_agent)))
+    Ok(Some(ParentFollowup {
+        parent_session_id: parent_session,
+        parent_agent_id: parent_agent,
+        resume_run_id: Some(run_id),
+    }))
 }
 
 /// 把已经存在的会话挂成任务，不再新建会话、也不再排队。
@@ -1136,5 +1255,96 @@ mod tests {
         assert_eq!(super::get(&db, &task.id).unwrap().status, "blocked");
         super::settle_finished(&db).unwrap();
         assert_eq!(super::get(&db, &task.id).unwrap().status, "blocked");
+    }
+
+    #[test]
+    fn bridges_child_reply_into_parent_then_resumes_once() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES
+               ('lead', 'Miku', '', '', '', 'cursor', 'auto', 2),
+               ('coder', 'Coder', '', '', '', 'cursor', 'auto', 2);",
+        )
+        .unwrap();
+        let parent = create(
+            &mut db,
+            CreateTaskInput {
+                title: "父任务",
+                description: "",
+                agent_id: "lead",
+                project_id: None,
+                project_ids: &[],
+                source_session_id: None,
+                status: Some("backlog"),
+                parent_task_id: None,
+                requested_mode: RunMode::Auto,
+            },
+        )
+        .unwrap()
+        .task;
+        let child = create(
+            &mut db,
+            CreateTaskInput {
+                title: "子任务实现",
+                description: "",
+                agent_id: "coder",
+                project_id: None,
+                project_ids: &[],
+                source_session_id: None,
+                status: Some("backlog"),
+                parent_task_id: Some(&parent.id),
+                requested_mode: RunMode::Auto,
+            },
+        )
+        .unwrap()
+        .task;
+        db.execute(
+            "INSERT INTO messages
+             (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
+             VALUES ('child-reply', ?1, 'assistant', '补丁已应用，测试通过。', 'coder', 'user', NULL, 'message', 't1')",
+            [&child.session_id],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE tasks SET status='in_review' WHERE id=?1",
+            [&child.id],
+        )
+        .unwrap();
+
+        let first = super::maybe_resume_parent(&db, &child.session_id, "t2")
+            .unwrap()
+            .expect("should follow up parent");
+        assert_eq!(first.parent_session_id, parent.session_id);
+        assert_eq!(first.parent_agent_id, "lead");
+        assert!(first.resume_run_id.is_some());
+
+        let bridge_id = format!("bridge:{}", child.id);
+        let (agent_id, audience_type, audience_id, content): (String, String, String, String) = db
+            .query_row(
+                "SELECT agent_id, audience_type, audience_id, content FROM messages WHERE id=?1",
+                [&bridge_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(agent_id, "coder");
+        assert_eq!(audience_type, "agent");
+        assert_eq!(audience_id, "lead");
+        assert!(content.contains("补丁已应用"));
+
+        let second = super::maybe_resume_parent(&db, &child.session_id, "t3")
+            .unwrap()
+            .expect("bridge still reported");
+        assert!(second.resume_run_id.is_none(), "parent already has queued resume");
+        let bridge_count: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE id=?1",
+                [&bridge_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bridge_count, 1);
     }
 }

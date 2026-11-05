@@ -2207,7 +2207,7 @@ fn finish(
     let completed_at = Utc::now();
     let mut elapsed_ms = None;
     let mut member_runs = Vec::new();
-    let mut parent_resume: Option<(String, String, String)> = None;
+    let mut parent_followup: Option<crate::ops::task::ParentFollowup> = None;
     let mut plan_item = None;
     if let Ok(db) = state.lock_db() {
         elapsed_ms = db
@@ -2335,10 +2335,16 @@ fn finish(
             );
         }
         if status == "completed" {
-            if let Ok(created) =
-                dispatch_squad_members(&db, &run.id, output, &completed_at.to_rfc3339())
-            {
+            let now = completed_at.to_rfc3339();
+            if let Ok(created) = dispatch_mentions(&db, &run.id, output, &now) {
                 member_runs = created;
+            }
+        }
+        if status == "completed" || status == "failed" {
+            if let Ok(Some(resume)) =
+                resume_leader_after_members(&db, &run.id, &completed_at.to_rfc3339())
+            {
+                member_runs.push(resume);
             }
         }
         if let Some(automation_run_id) = run.session_id.strip_prefix("automation-run:") {
@@ -2392,12 +2398,12 @@ fn finish(
             &completed_at.to_rfc3339(),
         );
         if status == "completed" || status == "failed" {
-            if let Ok(Some(resume)) = crate::ops::task::maybe_resume_parent(
+            if let Ok(Some(followup)) = crate::ops::task::maybe_resume_parent(
                 &db,
                 &run.session_id,
                 &completed_at.to_rfc3339(),
             ) {
-                parent_resume = Some(resume);
+                parent_followup = Some(followup);
             }
         }
     }
@@ -2424,8 +2430,18 @@ fn finish(
     for (run_id, agent_id) in &member_runs {
         notify_run(app, run_id, &run.session_id, agent_id, "queued");
     }
-    if let Some((run_id, session_id, agent_id)) = &parent_resume {
-        notify_run(app, run_id, session_id, agent_id, "queued");
+    if let Some(followup) = &parent_followup {
+        // 桥接消息已写入父会话；通知前端重载，避免只刷新子任务会话。
+        let _ = app.emit("session-messages-changed", &followup.parent_session_id);
+        if let Some(run_id) = &followup.resume_run_id {
+            notify_run(
+                app,
+                run_id,
+                &followup.parent_session_id,
+                &followup.parent_agent_id,
+                "queued",
+            );
+        }
     }
     crate::channel::outbound::on_run_finished(app, &run.session_id);
     dispatch(app.clone());
@@ -2610,52 +2626,194 @@ fn save_terminal_message(
             created_at
         ],
     );
+    place_reply_before_assignments(db, run, &format!("run:{}", run.id), created_at);
 }
 
-fn dispatch_squad_members(
+/// 派活消息在工具调用时就落库，而本轮正文要等收口才落库，时间线会变成「卡片在前、回答在后」。
+/// 本轮派过活时，把正文挪到第一条派活之前一毫秒，保证先回答、再出现 @成员 的卡片。
+fn place_reply_before_assignments(
+    db: &rusqlite::Connection,
+    run: &QueuedRun,
+    message_id: &str,
+    finished_at: &str,
+) {
+    let first: Option<String> = db
+        .query_row(
+            "SELECT MIN(created_at) FROM messages
+             WHERE session_id=?1 AND message_kind='assignment' AND agent_id=?2
+               AND created_at >= (SELECT created_at FROM agent_runs WHERE id=?3)
+               AND created_at <= ?4",
+            params![run.session_id, run.agent_id, run.id, finished_at],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    let Some(first) = first else { return };
+    let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(&first) else {
+        return;
+    };
+    let earlier = (parsed - chrono::Duration::milliseconds(1)).to_rfc3339();
+    let _ = db.execute(
+        "UPDATE messages SET created_at=?1 WHERE id=?2 AND created_at > ?1",
+        params![earlier, message_id],
+    );
+}
+
+/// 被 @ 的成员全部回复后，再唤起派活的人：把成员回复原文交给他，由他简短收尾或决定下一步。
+/// 小队会话保持原有行为，不在这里接管。
+fn resume_leader_after_members(
+    db: &rusqlite::Connection,
+    member_run_id: &str,
+    now: &str,
+) -> Result<Option<(String, String)>, String> {
+    let parent: Option<(String, String, String, Option<String>)> = db
+        .query_row(
+            "SELECT p.id, p.agent_id, p.session_id, p.parent_run_id
+             FROM agent_runs c JOIN agent_runs p ON p.id = c.parent_run_id
+             WHERE c.id = ?1",
+            [member_run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .ok();
+    let Some((parent_run_id, leader_id, session_id, grandparent)) = parent else {
+        return Ok(None);
+    };
+    // 兄弟里还有没跑完的，或者兄弟自己派出去的人还没回，就先不收尾。
+    let unfinished: u32 = db
+        .query_row(
+            "SELECT COUNT(*) FROM agent_runs c
+             WHERE c.parent_run_id = ?1
+               AND (c.status IN ('queued', 'running')
+                    OR EXISTS (SELECT 1 FROM agent_runs g
+                               WHERE g.parent_run_id = c.id AND g.status IN ('queued', 'running')))",
+            [&parent_run_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if unfinished > 0 {
+        return Ok(None);
+    }
+    let mut statement = db
+        .prepare(
+            "SELECT a.name, m.content
+             FROM agent_runs c
+             JOIN agents a ON a.id = c.agent_id
+             JOIN messages m ON m.id = 'run:' || c.id
+             WHERE c.parent_run_id = ?1
+             ORDER BY c.created_at, c.rowid",
+        )
+        .map_err(|error| error.to_string())?;
+    let replies = statement
+        .query_map([&parent_run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    if replies.is_empty() {
+        return Ok(None);
+    }
+    let joined = replies
+        .iter()
+        .map(|(name, content)| {
+            let text: String = content.trim().chars().take(8_000).collect();
+            format!("[{name}]\n{text}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    // 本轮对话里文件被改动/新建的清单，收尾时让负责人一并列出。
+    let files: Vec<String> = db
+        .query_row(
+            "SELECT t.user_message_id FROM agent_runs r JOIN agent_turns t ON t.id = r.turn_id
+             WHERE r.id = ?1",
+            [&parent_run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|message_id| changed_snapshot_files(db, &message_id))
+        .unwrap_or_default();
+    let files_block = if files.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{}\n{}",
+            tr!("系统检测到的产出文件："),
+            files
+                .iter()
+                .map(|file| format!("- {file}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+    let assignment = tr!(
+        "你刚才 @ 的成员已经回复，回复原文如下（用户在界面上已经能看到，不要复述）：\n\n{replies}\n\n{files}\n\n你是负责人，先对照你最初的要求检查成果。不满足就在回答里另起一段继续 @ 他，写清楚还差什么，不要自己动手改；满足了就用一两句话收尾，并用列表列出所有产出文件（每行一个文件名）。除了列表，不要复述成员的回复。",
+        replies = joined,
+        files = files_block
+    );
+    let id = crate::ops::run::enqueue(
+        db,
+        crate::ops::run::Enqueue {
+            session_id: &session_id,
+            turn_id: None,
+            agent_id: &leader_id,
+            // 收尾的人若自己也是被 @ 的成员，他的收尾仍算在他上级名下。
+            parent_run_id: grandparent.as_deref(),
+            assignment: &assignment,
+            status: "queued",
+            now,
+            mode: crate::models::RunMode::Auto,
+        },
+    )?;
+    Ok(Some((id, leader_id)))
+}
+
+/// 回答里以 `@成员` 开头的段落即派活（对齐 multica 的 @mention）：
+/// 该段去掉 @ 后作为指令，在同一会话里直接唤起被 @ 的智能体，对方回复会 @ 回来。
+/// 这些段落从总管自己的正文里移走，避免同一句话出现两次。
+fn dispatch_mentions(
     db: &rusqlite::Connection,
     leader_run_id: &str,
-    leader_output: &str,
+    output: &str,
     now: &str,
 ) -> Result<Vec<(String, String)>, String> {
-    let (session_id, turn_id, leader_id, parent_run_id, original, mode): (
+    if !output.contains('@') {
+        return Ok(Vec::new());
+    }
+    let (session_id, turn_id, leader_id, parent_run_id, mode): (
         String,
         Option<String>,
         String,
         Option<String>,
-        String,
         String,
     ) = db
         .query_row(
-            "SELECT session_id, turn_id, agent_id, parent_run_id, assignment, mode
+            "SELECT session_id, turn_id, agent_id, parent_run_id, mode
              FROM agent_runs WHERE id = ?1",
             [leader_run_id],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
-                ))
-            },
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(|error| error.to_string())?;
-    if parent_run_id.is_some()
+    // 成员也能继续 @ 别人；沿派活链往上最多三层，且不会 @ 回链上已有的人。
+    let mut ancestors: Vec<String> = vec![leader_id.clone()];
+    let mut cursor = parent_run_id.clone();
+    while let Some(id) = cursor {
+        let row: (String, Option<String>) = db
+            .query_row(
+                "SELECT agent_id, parent_run_id FROM agent_runs WHERE id = ?1",
+                [&id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| error.to_string())?;
+        ancestors.push(row.0);
+        cursor = row.1;
+        if ancestors.len() > 8 {
+            break;
+        }
+    }
+    if ancestors.len() > 3
         || mode == "plan"
         || crate::plan::latest_awaiting_plan(db, &session_id)?.is_some()
     {
-        return Ok(Vec::new());
-    }
-    let (target_type, target_id): (String, String) = db
-        .query_row(
-            "SELECT target_type, target_id FROM chat_sessions WHERE id = ?1",
-            [&session_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|error| error.to_string())?;
-    if target_type != "squad" {
         return Ok(Vec::new());
     }
     let already: u32 = db
@@ -2668,37 +2826,61 @@ fn dispatch_squad_members(
     if already > 0 {
         return Ok(Vec::new());
     }
-    let mut members = db
-        .prepare("SELECT agent_id FROM squad_members WHERE squad_id = ?1 AND agent_id != ?2 ORDER BY agent_id")
-        .map_err(|error| error.to_string())?;
-    let member_ids = members
-        .query_map(params![target_id, leader_id], |row| row.get::<_, String>(0))
+    let mut agents: Vec<(String, String)> = db
+        .prepare("SELECT id, name FROM agents")
         .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<(String, String)>>>()
         .map_err(|error| error.to_string())?;
-    if member_ids.is_empty() {
+    agents.retain(|(id, _)| !ancestors.contains(id));
+    // 名字长的优先，避免「前端」吃掉「前端队长」。
+    agents.sort_by_key(|(_, name)| std::cmp::Reverse(name.chars().count()));
+    let link = Regex::new(r"^\s*\[@?[^\]]+\]\(mention://agent/([^)\s]+)\)").map_err(|e| e.to_string())?;
+
+    let mut kept: Vec<&str> = Vec::new();
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    for paragraph in output.split("\n\n") {
+        let mut hit: Option<(String, usize)> = None;
+        if let Some(caps) = link.captures(paragraph) {
+            let id = caps[1].to_string();
+            if agents.iter().any(|(agent_id, _)| *agent_id == id) {
+                hit = Some((id, caps.get(0).map_or(0, |m| m.end())));
+            }
+        } else if let Some(rest) = paragraph.trim_start().strip_prefix('@') {
+            let offset = paragraph.len() - rest.len();
+            if let Some((id, name)) = agents.iter().find(|(_, name)| rest.starts_with(name.as_str())) {
+                hit = Some((id.clone(), offset + name.len()));
+            }
+        }
+        let instruction = hit.as_ref().map(|(_, end)| {
+            paragraph[*end..]
+                .trim_start_matches(|c: char| c.is_whitespace() || "，,：:、".contains(c))
+                .trim()
+                .to_string()
+        });
+        match (hit, instruction) {
+            (Some((id, _)), Some(text)) if !text.is_empty() => jobs.push((id, text)),
+            _ => kept.push(paragraph),
+        }
+    }
+    if jobs.is_empty() {
         return Ok(Vec::new());
     }
-    let user_request = original
-        .split_once(&format!("{}\n", tr!("用户需求：")))
-        .map(|(_, rest)| rest.trim())
-        .filter(|value| !value.is_empty())
-        .unwrap_or(original.trim());
-    let plan = leader_output.trim();
-    let spoken = if plan.is_empty() {
-        tr!("请按用户这句话处理你负责的部分，完成后向我汇报。")
-    } else {
-        tr!("请按刚才的拆分处理你负责的部分，完成后向我汇报。")
-    };
-    let prompt = format!(
-        "{}\n\n{}\n{}\n\n{}\n{user_request}",
-        tr!("你是小队队员，向队长汇报。请根据队长说明完成你负责的部分。"),
-        tr!("队长说明："),
-        if plan.is_empty() { user_request } else { plan },
-        tr!("用户需求：")
-    );
+    let remaining = kept.join("\n\n").trim().to_string();
+    db.execute(
+        "UPDATE messages SET content=?1 WHERE id=?2",
+        params![remaining, format!("run:{leader_run_id}")],
+    )
+    .map_err(|error| error.to_string())?;
+
+    let base = chrono::DateTime::parse_from_rfc3339(now).ok();
     let mut created = Vec::new();
-    for member_id in &member_ids {
+    for (index, (member_id, instruction)) in jobs.iter().enumerate() {
+        // 派活卡片排在总管正文之后。
+        let stamp = base
+            .map(|t| (t + chrono::Duration::milliseconds(index as i64 + 1)).to_rfc3339())
+            .unwrap_or_else(|| now.to_string());
         db.execute(
             "INSERT INTO messages
              (id, session_id, turn_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
@@ -2707,35 +2889,27 @@ fn dispatch_squad_members(
                 uuid::Uuid::new_v4().to_string(),
                 session_id,
                 turn_id,
-                spoken,
+                instruction,
                 leader_id,
                 member_id,
-                now
+                stamp
             ],
         )
         .map_err(|error| error.to_string())?;
         let runtime_id: String = db
-            .query_row(
-                "SELECT runtime_id FROM agents WHERE id = ?1",
-                [member_id],
-                |row| row.get(0),
-            )
+            .query_row("SELECT runtime_id FROM agents WHERE id = ?1", [member_id], |row| row.get(0))
             .map_err(|error| error.to_string())?;
         let id = uuid::Uuid::new_v4().to_string();
+        let prompt = format!(
+            "{}\n\n{}\n{instruction}",
+            tr!("你是小队队员，向队长汇报。请根据队长说明完成你负责的部分。"),
+            tr!("队长说明：")
+        );
         db.execute(
             "INSERT INTO agent_runs
              (id, session_id, turn_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at, mode)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'queued', ?8, 'agent')",
-            params![
-                id,
-                session_id,
-                turn_id,
-                member_id,
-                runtime_id,
-                leader_run_id,
-                prompt,
-                now
-            ],
+            params![id, session_id, turn_id, member_id, runtime_id, leader_run_id, prompt, stamp],
         )
         .map_err(|error| error.to_string())?;
         created.push((id, member_id.clone()));
@@ -4485,6 +4659,46 @@ mod tests {
             parent_call_id: None,
             status: None,
         }
+    }
+
+    #[test]
+    fn mention_paragraphs_dispatch_members_and_leave_the_rest() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES ('p', 'P', 'n', 'n');
+             INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+               VALUES ('miku', 'Miku', '', '', '', 'cursor', 'auto', 1),
+                      ('doc', '文档助手', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions (id, project_id, title, target_type, target_id, created_at, updated_at)
+               VALUES ('s', 'p', 'S', 'agent', 'miku', 'n', 'n');
+             INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, assignment, status, created_at, mode)
+               VALUES ('r', 's', 'miku', 'cursor', 'go', 'completed', 'n', 'agent');
+             INSERT INTO messages (id, session_id, role, content, created_at)
+               VALUES ('run:r', 's', 'assistant', 'x', '2026-01-01T00:00:00+00:00');",
+        )
+        .unwrap();
+        let output = "好的，我来安排。\n\n[@文档助手](mention://agent/doc) 写一段简介\n\n稍等。";
+        let created =
+            super::dispatch_mentions(&db, "r", output, "2026-01-01T00:00:00+00:00").unwrap();
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].1, "doc");
+        let content: String = db
+            .query_row("SELECT content FROM messages WHERE id='run:r'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(content, "好的，我来安排。\n\n稍等。");
+        let instruction: String = db
+            .query_row(
+                "SELECT content FROM messages WHERE message_kind='assignment'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(instruction, "写一段简介");
+        // 重复收口不会再派一次
+        assert!(super::dispatch_mentions(&db, "r", output, "2026-01-01T00:00:01+00:00")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

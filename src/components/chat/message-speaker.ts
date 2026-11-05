@@ -1,4 +1,4 @@
-import type { Agent, ChatMessage, ChatSession, Squad } from "../../domain/types";
+import type { Agent, ChatMessage, ChatSession, Squad, Task } from "../../domain/types";
 import { t } from "../../i18n";
 
 export type SpeakerRole = "lead" | "member" | "solo";
@@ -96,34 +96,96 @@ export function resolveTurnTarget(
   return null;
 }
 
-/** 没有 messageKind 的旧派活消息只能按当时写死的中文前缀识别。 */
-const LEGACY_SQUAD_ASSIGNMENT_PREFIXES = ["请按刚才的拆分", "请按用户这句话处理"];
-const LEGACY_ASSIGNMENT_PREFIXES = [...LEGACY_SQUAD_ASSIGNMENT_PREFIXES, "请处理子任务"];
-
-export function isLeaderAssignment(
-  message: ChatMessage,
-  squads: Squad[],
-  options?: { messages?: ChatMessage[]; session?: ChatSession | null },
-): boolean {
-  if (message.role !== "assistant" || !message.agentId || !message.audienceId) return false;
-  if (message.audienceType !== "agent") return false;
-  if (message.messageKind === "assignment") return true;
-  const target = resolveTurnTarget(message, options?.messages ?? [], options?.session);
-  if (target?.type !== "squad") return false;
-  if (roleInSquad(message.agentId, squads, target.id) !== "lead") return false;
-  if (roleInSquad(message.audienceId, squads, target.id) !== "member") return false;
-  const text = message.content.trim();
-  return !text || LEGACY_SQUAD_ASSIGNMENT_PREFIXES.some((prefix) => text.startsWith(prefix));
+export function isLeaderAssignment(message: ChatMessage): boolean {
+  return message.role === "assistant"
+    && message.messageKind === "assignment"
+    && message.audienceType === "agent"
+    && Boolean(message.agentId)
+    && Boolean(message.audienceId);
 }
 
-export function assignmentVisibleText(content: string, kind?: ChatMessage["messageKind"]): string {
+/** 派活消息的可见文字：整段指令，去掉残留的 mention 链接标记。 */
+export function assignmentVisibleText(content: string): string {
   const text = content.trim();
   if (!text) return t("chat.assignmentFallback");
-  const first = text.split(/\n/)[0]?.trim() || text;
-  if (kind === "assignment" || LEGACY_ASSIGNMENT_PREFIXES.some((prefix) => first.startsWith(prefix))) {
-    return first;
+  return text.replace(/\[@?([^\]]+)\]\(mention:\/\/[^)]+\)/g, "@$1").trim();
+}
+
+export interface AssignmentSubtaskRef {
+  title: string;
+  id: string;
+  /** 样式预览等调试场景：不读 store，直接喂嵌套卡内容。 */
+  preview?: {
+    status?: Task["status"];
+    agent?: { id: string; name: string; avatar: string };
+    reply?: string;
+    pending?: boolean;
+  };
+}
+
+/** 从派活正文里抽出子任务标题与 id（「标题」（`id`））。 */
+export function parseAssignmentSubtask(content: string): AssignmentSubtaskRef | null {
+  const text = content.trim();
+  if (!text) return null;
+  const quoted = text.match(/[「"](.+?)[」"]\s*[（(]`([0-9a-fA-F-]{8,})`[）)]/);
+  if (quoted?.[1] && quoted[2]) return { title: quoted[1], id: quoted[2] };
+  return null;
+}
+
+/** 同一 exchange 里连续两条对用户的同智能体回复时，后一条可藏头像行。 */
+export function shouldHideAssistantSpeaker(previous: ChatMessage | undefined, current: ChatMessage) {
+  if (!previous || previous.role !== "assistant" || current.role !== "assistant") return false;
+  if (current.messageKind === "assignment" || previous.messageKind === "assignment") return false;
+  if (previous.audienceType === "agent" || current.audienceType === "agent") return false;
+  if (!previous.agentId || previous.agentId !== current.agentId) return false;
+  return true;
+}
+
+/**
+ * 派活后第一条对用户的助手回复：在其下方嵌子任务回复卡片。
+ * 后续汇总回复不再重复嵌套。
+ * 若时间线里已有被指派方 @ 回来的桥接消息，则不再嵌套（避免双份）。
+ */
+export function subtaskEmbedForMessage(
+  messages: ChatMessage[],
+  index: number,
+): AssignmentSubtaskRef | null {
+  const current = messages[index];
+  if (!current || current.role !== "assistant") return null;
+  if (current.messageKind === "assignment" || current.audienceType === "agent") return null;
+
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const previous = messages[cursor];
+    if (!previous) continue;
+    if (previous.role === "user") break;
+    if (!isLeaderAssignment(previous)) continue;
+    const afterAssignment: ChatMessage[] = [];
+    for (let scan = cursor + 1; scan < messages.length; scan += 1) {
+      const item = messages[scan];
+      if (!item || item.role === "user") break;
+      afterAssignment.push(item);
+    }
+    const assigneeId = previous.audienceId;
+    // 父会话已有 B@A 桥接时不再嵌套，避免与真实对话双份
+    if (assigneeId && afterAssignment.some((item) =>
+      item.role === "assistant"
+      && item.audienceType === "agent"
+      && item.agentId === assigneeId
+      && item.messageKind !== "assignment"
+    )) {
+      return null;
+    }
+    const gap = messages.slice(cursor + 1, index);
+    if (gap.some((item) =>
+      item.role === "assistant"
+      && item.messageKind !== "assignment"
+      && item.audienceType !== "agent"
+    )) {
+      return null;
+    }
+    return parseAssignmentSubtask(previous.content);
   }
-  return t("chat.assignmentFallback");
+  return null;
 }
 
 export function speakerForMessage(

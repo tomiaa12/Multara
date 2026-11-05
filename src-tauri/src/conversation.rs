@@ -321,38 +321,44 @@ pub fn prepare(
 pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String> {
     let mut statement = db
         .prepare(
-            "SELECT role, content FROM messages
-             WHERE session_id=?1
-               AND role IN ('user', 'assistant')
-               AND COALESCE(message_kind, 'message') = 'message'
-               AND COALESCE(audience_type, 'user') = 'user'
-               AND id != COALESCE((
+            "SELECT m.role, m.content, CASE WHEN COALESCE(m.audience_type, 'user') = 'agent' THEN a.name END
+             FROM messages m LEFT JOIN agents a ON a.id = m.agent_id
+             WHERE m.session_id=?1
+               AND m.role IN ('user', 'assistant')
+               AND COALESCE(m.message_kind, 'message') = 'message'
+               AND m.id != COALESCE((
                  SELECT id FROM messages
                  WHERE session_id=?1 AND role='user'
                  ORDER BY created_at DESC, rowid DESC
                  LIMIT 1
                ), '')
-             ORDER BY created_at DESC, rowid DESC",
+             ORDER BY m.created_at DESC, m.rowid DESC",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([session_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
         })
         .map_err(|error| error.to_string())?;
     // 从最新一条往回取，超出预算就停，不把整个会话都读出来。
     let mut selected = Vec::new();
     let mut used = 0usize;
     for row in rows {
-        let (role, content) = row.map_err(|error| error.to_string())?;
+        let (role, content, member) = row.map_err(|error| error.to_string())?;
         let text = clip(&content, ENTRY_CHAR_LIMIT);
         if text.is_empty() {
             continue;
         }
-        let label = if role == "assistant" {
-            tr!("助手：")
+        let label = if let Some(name) = member {
+            format!("{name}：")
+        } else if role == "assistant" {
+            tr!("助手：").to_string()
         } else {
-            tr!("用户：")
+            tr!("用户：").to_string()
         };
         let entry = format!("{label}\n{text}");
         let size = entry.chars().count();

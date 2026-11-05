@@ -13,12 +13,20 @@ import {
 } from "../components/chat/structure-replay";
 import { PREVIEW_WORKSPACE_ID } from "../components/workbench/preview-workspace";
 import type { EditorSelectionContext } from "../domain/types";
+import TaskDetailPreview from "./TaskDetailPreview.vue";
+import {
+  taskDetailPreviewScenario,
+  taskDetailPreviewScenarioOptions,
+} from "./preview-task-detail";
 
-type PreviewMode = "structure" | "protocol" | "gallery" | "composer";
+type PreviewMode = "structure" | "protocol" | "gallery" | "composer" | "task";
 
 const mode = ref<PreviewMode>("structure");
 const step = ref(0);
+const taskScenarioId = ref(taskDetailPreviewScenarioOptions[0]?.value ?? "missing");
 const isReplay = computed(() => mode.value === "structure" || mode.value === "protocol");
+const isTask = computed(() => mode.value === "task");
+const taskScenario = computed(() => taskDetailPreviewScenario(taskScenarioId.value));
 const snapshot = computed(() =>
   mode.value === "structure"
     ? structureReplaySnapshot(step.value)
@@ -132,7 +140,7 @@ watch(mode, () => {
 </script>
 
 <template>
-  <div class="chat-preview-page">
+  <div class="chat-preview-page" :class="{ 'is-task-preview': isTask }">
     <header class="chat-preview-header">
       <div>
         <h1>对话样式预览</h1>
@@ -147,7 +155,14 @@ watch(mode, () => {
             { value: 'protocol', label: '两轮原始数据回放' },
             { value: 'gallery', label: '完整消息样式图库' },
             { value: 'composer', label: '输入框类型测试' },
+            { value: 'task', label: '任务详情数据态' },
           ]"
+        />
+        <UiSelect
+          v-if="isTask"
+          v-model="taskScenarioId"
+          aria-label="选择任务详情场景"
+          :options="taskDetailPreviewScenarioOptions"
         />
         <template v-if="isReplay">
           <UiButton v-if="step === 0" class="primary" @click="start">开始</UiButton>
@@ -179,6 +194,12 @@ watch(mode, () => {
           <span>集中查看 Markdown、附件、失败态和运行中工具调用。</span>
         </div>
       </template>
+      <template v-else-if="isTask">
+        <div>
+          <strong>{{ taskScenario.label }}</strong>
+          <span>{{ taskScenario.detail }}</span>
+        </div>
+      </template>
       <template v-else>
         <div>
           <strong>输入框类型测试</strong>
@@ -200,7 +221,9 @@ watch(mode, () => {
       </template>
     </div>
     <pre v-if="isReplay && snapshot.sent" class="preview-debug-payload">{{ snapshot.sent }}</pre>
+    <TaskDetailPreview v-if="isTask" :scenario="taskScenario" />
     <WorkspaceWorkbench
+      v-else
       preview
       :preview-interactive="mode === 'composer'"
       :preview-title="mode === 'structure' ? 'Multara' : '样式预览'"

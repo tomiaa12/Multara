@@ -178,14 +178,14 @@ This run is bound to a project workspace, and the user is in the workbench.
 - Task mode is still available: when the work needs an owner, status, and result, or should be handed to another agent or split across multiple rounds, create a task and then execute it. Creating a task is not a prerequisite for editing code.
 - If this run has already been assigned a task, execute it directly and record progress on the task.
 - Task status: as soon as you start delivering on the task, run `multara task status <id> in_progress`; when this round's delivery is done and awaits review, use `in_review`; when blocked, use `blocked`; use `done` only when the work is truly finished. Do not change the status when you are only answering questions. If a run finishes successfully while the task is still in progress, it moves to in review; it never becomes done automatically.
-- Delegation (optional): the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump. When specialty or parallelism helps, find ids with `multara agent list` / `squad list` (and get), then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). If you can finish it yourself, do not assign. Once subtasks wrap up, the system wakes you to summarize.
+- Delegation (optional): the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump. When specialty or parallelism helps, find ids with `multara agent list` / `squad list` (and get), then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). If you can finish it yourself, do not assign. Prefer @mention to delegate: start a separate paragraph of your reply with `[@Name](mention://agent/<agentId>)` followed by one or two sentences; that agent handles it right in this conversation and replies to you. Do not paste the current conversation or existing content. Create a subtask only for work that needs separate tracking, parallelism, or long-running effort. Once subtasks wrap up, the system wakes you to summarize.
 - Only modify the workspace directories listed above. Files outside the workspace that are attached to the user's message may be read, but do not modify them.
 - When citing existing code locations in your answer, write the code fence info as startLine:endLine:relative/path (e.g. 118:122:src/foo.ts) so the UI can jump to it; do not paste code without a path.",
             workflow_plain: "\
 ## Workflow
 This run has no linked project. When creating or modifying files, only write to the working directory listed above; do not modify paths outside it. To change an existing repository, pick a project when creating the task, or ask the user to open a project.
 If this run has already been assigned a task, execute it directly. When you start delivering, run `multara task status <id> in_progress`; when delivery is done and awaits review, use `in_review`; use `done` only when the work is truly finished. If a run finishes successfully while the task is still in progress, it moves to in review; it never becomes done automatically.
-- Delegation (optional): the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump. When specialty or parallelism helps, find ids with `multara agent list` / `squad list` (and get), then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). If you can finish it yourself, do not assign. Once subtasks wrap up, the system wakes you to summarize.
+- Delegation (optional): the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump. When specialty or parallelism helps, find ids with `multara agent list` / `squad list` (and get), then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). If you can finish it yourself, do not assign. Prefer @mention to delegate: start a separate paragraph of your reply with `[@Name](mention://agent/<agentId>)` followed by one or two sentences; that agent handles it right in this conversation and replies to you. Do not paste the current conversation or existing content. Create a subtask only for work that needs separate tracking, parallelism, or long-running effort. Once subtasks wrap up, the system wakes you to summarize.
 - When citing existing code locations in your answer, write the code fence info as startLine:endLine:relative/path (e.g. 118:122:src/foo.ts) so the UI can jump to it; do not paste code without a path.",
             asking: "\
 ## Asking the user
@@ -215,14 +215,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 任務模式仍然可用：工作要留下負責人、狀態和結果，或要交給別的智慧體、拆成多輪時，建成任務再執行。建任務不是修改程式碼的前置條件。
 - 本次執行已經被指派了一個任務時，直接執行，把進度寫在任務上。
 - 任務狀態：開始做本任務交付時立刻 `multara task status <id> in_progress`；本輪交付完等人審用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改狀態。執行成功結束若仍是進行中會落到審核中；不會自動變成 done。
-- 派工（可選）：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區。需要專長或並行時，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任務都收尾後系統會再喚起你彙總。
+- 派工（可選）：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區。需要專長或並行時，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。派工首選 @：回答裡另起一段，以 `[@名稱](mention://agent/<agentId>)` 開頭，後面接一兩句要求，對方會在這段對話裡直接處理並回覆你；不要把目前對話或既有內容貼給對方。需要獨立追蹤、並行或長期推進的工作，才建子任務。子任務都收尾後系統會再喚起你彙總。
 - 只修改上面列出的工作區目錄。使用者訊息裡附帶的工作區外檔案可以閱讀，不要修改那些檔案。
 - 回答裡引用現有程式碼位置時，程式碼圍欄 info 寫成 startLine:endLine:相對路徑（例如 118:122:src/foo.ts），方便介面點擊跳轉；不要只貼程式碼不寫路徑。",
             workflow_plain: "\
 ## Workflow
 這次執行沒有關聯專案。產生或修改檔案時，只寫上面列出的工作目錄，不要修改目錄以外的路徑。要修改已有儲存庫，建立任務時選擇專案，或讓使用者開啟一個需求。
 本次執行已經被指派了一個任務時，直接執行該任務。開始做交付時 `multara task status <id> in_progress`；交付完等人審用 `in_review`；真正完成再用 `done`。執行成功結束若仍是進行中會落到審核中；不會自動變成 done。
-- 派工（可選）：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區。需要專長或並行時，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任務都收尾後系統會再喚起你彙總。
+- 派工（可選）：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區。需要專長或並行時，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。派工首選 @：回答裡另起一段，以 `[@名稱](mention://agent/<agentId>)` 開頭，後面接一兩句要求，對方會在這段對話裡直接處理並回覆你；不要把目前對話或既有內容貼給對方。需要獨立追蹤、並行或長期推進的工作，才建子任務。子任務都收尾後系統會再喚起你彙總。
 - 回答裡引用現有程式碼位置時，程式碼圍欄 info 寫成 startLine:endLine:相對路徑（例如 118:122:src/foo.ts），方便介面點擊跳轉；不要只貼程式碼不寫路徑。",
             asking: "\
 ## 向使用者提問
@@ -252,14 +252,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - タスクモードも引き続き使えます。担当者・ステータス・結果を残す必要がある作業や、別のエージェントに渡す・複数ラウンドに分ける作業は、タスクを作ってから実行してください。タスク作成はコード変更の前提条件ではありません。
 - この実行にすでにタスクが割り当てられている場合は、そのまま実行し、進捗をタスクに記録してください。
 - タスクのステータス：このタスクの成果物に取りかかったらすぐ `multara task status <id> in_progress`。今回の成果物を出してレビュー待ちにするときは `in_review`、行き詰まったら `blocked`、本当に完了したときだけ `done` を使います。質問に答えるだけならステータスは変えないでください。実行が正常終了した時点でまだ進行中なら、レビュー中に移ります。自動で done にはなりません。
-- 作業の振り分け（任意）：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。専門性や並行が必要なときは `multara agent list` / `squad list`（と get）で id を探し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。自分で終わらせられるなら割り当て不要です。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
+- 作業の振り分け（任意）：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。専門性や並行が必要なときは `multara agent list` / `squad list`（と get）で id を探し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。自分で終わらせられるなら割り当て不要です。割り当ては @ を優先：返答の中で段落を改め、`[@名前](mention://agent/<agentId>)` で始めて一、二文の依頼を書くと、相手がこの会話内で処理して返信します。現在の会話や既存の内容は貼らないでください。個別に追跡・並行・長期で進めたい作業だけサブタスクにします。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
 - 変更してよいのは上に挙げたワークスペースのディレクトリだけです。ユーザーのメッセージに添付されたワークスペース外のファイルは読んでもかまいませんが、変更しないでください。
 - 回答で既存コードの位置を引用するときは、コードフェンスの info を startLine:endLine:相対パス（例: 118:122:src/foo.ts）と書き、UI からクリックでジャンプできるようにしてください。パスなしでコードだけを貼らないでください。",
             workflow_plain: "\
 ## Workflow
 この実行には関連プロジェクトがありません。ファイルを生成・変更するときは、上に挙げた作業ディレクトリにだけ書き込み、その外のパスは変更しないでください。既存のリポジトリを変更したい場合は、タスク作成時にプロジェクトを選ぶか、ユーザーにプロジェクトを開いてもらってください。
 この実行にすでにタスクが割り当てられている場合は、そのタスクをそのまま実行してください。成果物に取りかかったら `multara task status <id> in_progress`、成果物を出してレビュー待ちにするときは `in_review`、本当に完了したときだけ `done` を使います。実行が正常終了した時点でまだ進行中なら、レビュー中に移ります。自動で done にはなりません。
-- 作業の振り分け（任意）：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。専門性や並行が必要なときは `multara agent list` / `squad list`（と get）で id を探し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。自分で終わらせられるなら割り当て不要です。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
+- 作業の振り分け（任意）：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。専門性や並行が必要なときは `multara agent list` / `squad list`（と get）で id を探し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。自分で終わらせられるなら割り当て不要です。割り当ては @ を優先：返答の中で段落を改め、`[@名前](mention://agent/<agentId>)` で始めて一、二文の依頼を書くと、相手がこの会話内で処理して返信します。現在の会話や既存の内容は貼らないでください。個別に追跡・並行・長期で進めたい作業だけサブタスクにします。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
 - 回答で既存コードの位置を引用するときは、コードフェンスの info を startLine:endLine:相対パス（例: 118:122:src/foo.ts）と書き、UI からクリックでジャンプできるようにしてください。パスなしでコードだけを貼らないでください。",
             asking: "\
 ## ユーザーへの質問
@@ -289,14 +289,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 작업 모드도 계속 쓸 수 있습니다. 담당자·상태·결과를 남겨야 하거나, 다른 에이전트에게 넘기거나 여러 라운드로 나눠야 하는 일은 작업을 만든 뒤 실행하세요. 작업 생성은 코드 수정의 전제 조건이 아닙니다.
 - 이번 실행에 이미 작업이 배정되어 있다면 바로 실행하고 진행 상황을 작업에 기록하세요.
 - 작업 상태: 이 작업의 결과물에 착수하면 즉시 `multara task status <id> in_progress`; 이번 라운드 결과물을 마치고 검토를 기다릴 때는 `in_review`; 막히면 `blocked`; 정말 끝났을 때만 `done`을 쓰세요. 질문에 답하기만 할 때는 상태를 바꾸지 마세요. 실행이 정상 종료됐는데 아직 진행 중이면 검토 중으로 넘어가며, 자동으로 done이 되지는 않습니다.
-- 작업 분배(선택): 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 전문성이나 병렬이 필요하면 `multara agent list` / `squad list`(및 get)로 id를 찾은 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 스스로 끝낼 수 있으면 배정하지 마세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
+- 작업 분배(선택): 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 전문성이나 병렬이 필요하면 `multara agent list` / `squad list`(및 get)로 id를 찾은 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 스스로 끝낼 수 있으면 배정하지 마세요. 배정은 @를 우선하세요: 답변에서 문단을 바꿔 `[@이름](mention://agent/<agentId>)`로 시작하고 한두 문장을 쓰면, 상대가 이 대화 안에서 처리하고 답장합니다. 현재 대화나 기존 내용을 붙여넣지 마세요. 따로 추적·병렬·장기 작업만 하위 작업으로 만드세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
 - 위에 나열된 작업 영역 디렉터리만 수정하세요. 사용자 메시지에 첨부된 작업 영역 밖의 파일은 읽어도 되지만 수정하지 마세요.
 - 답변에서 기존 코드 위치를 인용할 때는 코드 펜스 info를 startLine:endLine:상대경로(예: 118:122:src/foo.ts) 형식으로 적어 UI에서 클릭해 이동할 수 있게 하세요. 경로 없이 코드만 붙이지 마세요.",
             workflow_plain: "\
 ## Workflow
 이번 실행에는 연결된 프로젝트가 없습니다. 파일을 생성하거나 수정할 때는 위에 나열된 작업 디렉터리에만 쓰고, 그 밖의 경로는 수정하지 마세요. 기존 저장소를 수정하려면 작업을 만들 때 프로젝트를 선택하거나, 사용자에게 요구사항을 열어 달라고 하세요.
 이번 실행에 이미 작업이 배정되어 있다면 그 작업을 바로 실행하세요. 결과물에 착수하면 `multara task status <id> in_progress`; 결과물을 마치고 검토를 기다릴 때는 `in_review`; 정말 끝났을 때만 `done`을 쓰세요. 실행이 정상 종료됐는데 아직 진행 중이면 검토 중으로 넘어가며, 자동으로 done이 되지는 않습니다.
-- 작업 분배(선택): 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 전문성이나 병렬이 필요하면 `multara agent list` / `squad list`(및 get)로 id를 찾은 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 스스로 끝낼 수 있으면 배정하지 마세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
+- 작업 분배(선택): 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 전문성이나 병렬이 필요하면 `multara agent list` / `squad list`(및 get)로 id를 찾은 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 스스로 끝낼 수 있으면 배정하지 마세요. 배정은 @를 우선하세요: 답변에서 문단을 바꿔 `[@이름](mention://agent/<agentId>)`로 시작하고 한두 문장을 쓰면, 상대가 이 대화 안에서 처리하고 답장합니다. 현재 대화나 기존 내용을 붙여넣지 마세요. 따로 추적·병렬·장기 작업만 하위 작업으로 만드세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
 - 답변에서 기존 코드 위치를 인용할 때는 코드 펜스 info를 startLine:endLine:상대경로(예: 118:122:src/foo.ts) 형식으로 적어 UI에서 클릭해 이동할 수 있게 하세요. 경로 없이 코드만 붙이지 마세요.",
             asking: "\
 ## 사용자에게 질문하기
@@ -326,14 +326,14 @@ Put a `multara-questions` code block at the very end of your reply, then end the
 - 任务模式仍然可用：工作要留下负责人、状态和结果，或要交给别的智能体、拆成多轮时，建成任务再执行。建任务不是改代码的前置条件。
 - 本次运行已经被指派了一个任务时，直接执行，把进度写在任务上。
 - 任务状态：开始做本任务交付时立刻 `multara task status <id> in_progress`；本轮交付完等人审用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改状态。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
-- 派活（可选）：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区。需要专长或并行时，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任务都收口后系统会再唤起你汇总。
+- 派活（可选）：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区。需要专长或并行时，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。派活首选 @：回答里另起一段，以 `[@名称](mention://agent/<agentId>)` 开头，后面接一两句要求，对方会在这段对话里直接处理并回复你；不要把当前对话或已有内容贴给对方。需要独立跟踪、并行或长期推进的工作，才建子任务。子任务都收口后系统会再唤起你汇总。
 - 只改上面列出的工作区目录。用户消息里附带的工作区外文件可以阅读，不要改那些文件。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。",
             workflow_plain: "\
 ## Workflow
 这次运行没有关联项目。生成或修改文件时，只写上面列出的工作目录，不要改目录以外的路径。要改已有仓库，创建任务时选择项目，或让用户打开一个需求。
 本次运行已经被指派了一个任务时，直接执行该任务。开始做交付时 `multara task status <id> in_progress`；交付完等人审用 `in_review`；真正完成再用 `done`。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
-- 派活（可选）：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区。需要专长或并行时，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。子任务都收口后系统会再唤起你汇总。
+- 派活（可选）：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区。需要专长或并行时，用 `multara agent list` / `squad list`（及 get）找 id，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。自己能做完就不必指派。派活首选 @：回答里另起一段，以 `[@名称](mention://agent/<agentId>)` 开头，后面接一两句要求，对方会在这段对话里直接处理并回复你；不要把当前对话或已有内容贴给对方。需要独立跟踪、并行或长期推进的工作，才建子任务。子任务都收口后系统会再唤起你汇总。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。",
             // 无头 CLI 运行中拿不到用户输入（AskUserQuestion 已禁用），提问统一写成代码块，界面渲染成输入框上方的选项卡片。
             asking: "\
@@ -350,6 +350,17 @@ Put a `multara-questions` code block at the very end of your reply, then end the
             roster_heading: "## 工作区花名册",
             roster_empty: "（运行时填入智能体与小队）",
         },
+    }
+}
+
+/// 回答的写法：对用户只说人话，不暴露 Multara 的任务/命令/状态等底层细节。
+fn reply_style(locale: &str) -> &'static str {
+    match locale {
+        "en" => "## Reply style\n- Talk like a teammate. Never mention Multara internals in replies: no `multara` commands, task ids, statuses (in_progress / in_review / done), comments, or tool names. Do the bookkeeping silently.\n- When you finish a delegated task, reply with the result itself in a few lines. Do not report status, do not restate the assignment, and do not wrap the result in \"written to comment, content below\".\n- When you coordinate (you delegated and results came back): the members' replies are already visible above. Name the deciding conclusion or next step in one or two sentences, and only list deliverables (files, links, key content) that are not already shown above. Do not repeat what is already visible.",
+        "zh-TW" => "## 回答風格\n- 像同事一樣說話。回答裡不要出現 Multara 底層細節：不提 `multara` 指令、任務 id、狀態（in_progress / in_review / done）、評論、工具名。記帳類操作默默做完。\n- 完成被指派的任務時，直接用幾句話給出成果本身。不要彙報狀態、不要複述任務、不要寫「已寫入評論，內容如下」。\n- 你是分工者（已派活、成員結果回來）時：成員的回覆已顯示在上方。用一兩句話給結論或下一步，只列上方沒有體現的產出（檔案、連結、關鍵內容）。不要重複已可見的內容。",
+        "ja" => "## 返答スタイル\n- 同僚として話してください。返答に Multara の内部情報（`multara` コマンド、タスク id、ステータス in_progress / in_review / done、コメント、ツール名）を出さないでください。事務処理は黙って行います。\n- 割り当てられたタスクを終えたら、成果そのものを数行で返してください。状況報告、依頼の復唱、「コメントに書きました。内容は以下」は不要です。\n- 振り分け役として結果が戻ってきたとき：メンバーの返答はすでに上に表示されています。結論か次の一手を一、二文で述べ、上に出ていない成果物（ファイル、リンク、要点）だけを挙げてください。表示済みの内容は繰り返さないでください。",
+        "ko" => "## 답변 스타일\n- 동료처럼 말하세요. 답변에 Multara 내부 정보(`multara` 명령, 작업 id, 상태 in_progress / in_review / done, 댓글, 도구 이름)를 드러내지 마세요. 기록 작업은 조용히 처리합니다.\n- 배정받은 작업을 끝내면 결과 자체를 몇 줄로 답하세요. 상태 보고, 요청 되풀이, \"댓글에 작성했습니다, 내용은 아래\" 형식은 쓰지 마세요.\n- 분배자로서 결과가 돌아왔을 때: 멤버의 답변은 이미 위에 표시되어 있습니다. 결론이나 다음 단계를 한두 문장으로 말하고, 위에 없는 산출물(파일, 링크, 핵심 내용)만 나열하세요. 이미 보이는 내용은 반복하지 마세요.",
+        _ => "## 回答风格\n- 像同事一样说话。回答里不要出现 Multara 底层细节：不提 `multara` 命令、任务 id、状态（in_progress / in_review / done）、评论、工具名。记账类操作默默做完。\n- 完成被指派的任务时，直接用几句话给出成果本身。不要汇报状态、不要复述任务、不要写「已写入评论，内容如下」。\n- 你是分工者（已派活、成员结果回来）时：成员的回复已显示在上方。用一两句话给结论或下一步，只列上方没有体现的产出（文件、链接、关键内容）。不要重复已可见的内容。",
     }
 }
 
@@ -429,6 +440,8 @@ multara terminal read [id] [--start N] [--end N]
 
 {workflow}
 
+{reply_style}
+
 {asking}",
         intro = text.intro,
         name = brief.agent_name,
@@ -443,6 +456,7 @@ multara terminal read [id] [--start N] [--end N]
         task_id_note = text.task_id_note,
         cli_notes = text.cli_notes,
         workflow = workflow,
+        reply_style = reply_style(brief.locale),
         user_skills = user_skills_section,
     )
 }

@@ -101,18 +101,6 @@
     "ja": "タスクは実行中です。停止してから削除してください",
     "ko": "작업이 실행 중입니다. 먼저 중지한 후 삭제하세요"
   },
-  "请按用户这句话处理你负责的部分，完成后向我汇报。": {
-    "en": "Please handle your part based on the user's request, and report back to me when done.",
-    "zh-TW": "請按使用者這句話處理你負責的部分，完成後向我回報。",
-    "ja": "ユーザーのこの依頼に沿って担当部分を進め、終わったら報告してください。",
-    "ko": "사용자의 이 요청에 따라 맡은 부분을 처리하고 끝나면 보고해 주세요."
-  },
-  "请按刚才的拆分处理你负责的部分，完成后向我汇报。": {
-    "en": "Please handle your part as just split up, and report back to me when done.",
-    "zh-TW": "請按剛才的拆分處理你負責的部分，完成後向我回報。",
-    "ja": "先ほどの分担に沿って担当部分を進め、終わったら報告してください。",
-    "ko": "방금 나눈 대로 맡은 부분을 처리하고 끝나면 보고해 주세요."
-  },
   "请处理子任务「{child_title}」（`{child_id}`），完成后向我汇报。": {
     "en": "Please handle the subtask \"{child_title}\" (`{child_id}`), and report back to me when done.",
     "zh-TW": "請處理子任務「{child_title}」（`{child_id}`），完成後向我回報。",

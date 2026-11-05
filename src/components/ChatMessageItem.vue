@@ -2,7 +2,11 @@
 import { computed } from "vue";
 import type { ChatMessage, MessageAttachmentInput } from "../domain/types";
 import AssistantMessage from "./chat/AssistantMessage.vue";
-import { sentTargetForMessage, speakerForMessage } from "./chat/message-speaker";
+import {
+  sentTargetForMessage,
+  speakerForMessage,
+  type AssignmentSubtaskRef,
+} from "./chat/message-speaker";
 import UserPrompt from "./chat/UserPrompt.vue";
 import { useAppStore } from "../stores/app";
 import { t } from "../i18n";
@@ -29,10 +33,16 @@ const props = withDefaults(defineProps<{
   defaultCollapseSubagents?: boolean;
   /** 窄布局（右下角气泡）：计划卡片只显示摘要 */
   compact?: boolean;
+  /** 连续同说话人时隐藏头像行 */
+  hideSpeaker?: boolean;
+  /** 派活后第一条回复下方嵌子任务回复 */
+  embedSubtask?: AssignmentSubtaskRef | null;
 }>(), {
   questionState: null,
   defaultCollapseSubagents: false,
   compact: false,
+  hideSpeaker: false,
+  embedSubtask: null,
   duplicateCount: 1,
   targetLabel: "智能体",
   targetAvatar: "M",
@@ -130,6 +140,8 @@ function startReask(
     :question-state="questionState"
     :default-collapse-subagents="defaultCollapseSubagents"
     :compact="compact"
+    :hide-speaker="hideSpeaker"
+    :embed-subtask="embedSubtask"
     @pick-action="emit('pick-action', $event)"
   />
 </template>

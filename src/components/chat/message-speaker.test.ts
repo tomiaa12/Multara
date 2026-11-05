@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyLanguageSetting, t } from "../../i18n";
 import type { Agent, ChatMessage, ChatSession, Squad } from "../../domain/types";
-import { resolveTurnTarget, speakerForMessage } from "./message-speaker";
+import {
+  parseAssignmentSubtask,
+  resolveTurnTarget,
+  shouldHideAssistantSpeaker,
+  speakerForMessage,
+  subtaskEmbedForMessage,
+} from "./message-speaker";
 
 const agents: Agent[] = [
   {
@@ -153,5 +159,77 @@ describe("resolveTurnTarget / speaker role", () => {
     };
     const live = message({ id: "live", role: "assistant", agentId: "member" });
     expect(resolveTurnTarget(live, [], session)).toEqual({ type: "squad", id: "sq1" });
+  });
+});
+
+describe("assignment / speaker collapse", () => {
+  it("parses subtask title and id from assignment text", () => {
+    expect(parseAssignmentSubtask(
+      "请处理子任务「实现：交收审驳回后认证审自动驳回」（`39187a5c-aaaa-bbbb-cccc-ddddeeeeffff`），完成后向我汇报。",
+    )).toEqual({
+      title: "实现：交收审驳回后认证审自动驳回",
+      id: "39187a5c-aaaa-bbbb-cccc-ddddeeeeffff",
+    });
+  });
+
+  it("hides repeated speaker only for consecutive user-facing replies", () => {
+    const first = message({ id: "a1", role: "assistant", agentId: "lead" });
+    const second = message({ id: "a2", role: "assistant", agentId: "lead" });
+    const assignment = message({
+      id: "asg",
+      role: "assistant",
+      agentId: "lead",
+      messageKind: "assignment",
+      audienceType: "agent",
+      audienceId: "member",
+    });
+    expect(shouldHideAssistantSpeaker(first, second)).toBe(true);
+    expect(shouldHideAssistantSpeaker(assignment, second)).toBe(false);
+    expect(shouldHideAssistantSpeaker(undefined, second)).toBe(false);
+  });
+
+  it("embeds subtask under the first parent reply after assignment", () => {
+    const assignment = message({
+      id: "asg",
+      role: "assistant",
+      agentId: "lead",
+      messageKind: "assignment",
+      audienceType: "agent",
+      audienceId: "member",
+      content: "请处理子任务「实现：交收审驳回后认证审自动驳回」（`39187a5c-aaaa-bbbb-cccc-ddddeeeeffff`），完成后向我汇报。",
+    });
+    const first = message({ id: "a1", role: "assistant", agentId: "lead", content: "子任务已建好" });
+    const second = message({ id: "a2", role: "assistant", agentId: "lead", content: "汇总结果" });
+    const messages = [assignment, first, second];
+    expect(subtaskEmbedForMessage(messages, 1)).toEqual({
+      title: "实现：交收审驳回后认证审自动驳回",
+      id: "39187a5c-aaaa-bbbb-cccc-ddddeeeeffff",
+    });
+    expect(subtaskEmbedForMessage(messages, 2)).toBeNull();
+  });
+
+  it("skips embed when assignee already bridged a reply into the parent timeline", () => {
+    const assignment = message({
+      id: "asg",
+      role: "assistant",
+      agentId: "lead",
+      messageKind: "assignment",
+      audienceType: "agent",
+      audienceId: "member",
+      content: "请处理子任务「实现：交收审驳回后认证审自动驳回」（`39187a5c-aaaa-bbbb-cccc-ddddeeeeffff`），完成后向我汇报。",
+    });
+    const note = message({ id: "a1", role: "assistant", agentId: "lead", content: "子任务已建好" });
+    const bridge = message({
+      id: "bridge:child",
+      role: "assistant",
+      agentId: "member",
+      audienceType: "agent",
+      audienceId: "lead",
+      content: "补丁已应用，测试通过。",
+    });
+    const summary = message({ id: "a2", role: "assistant", agentId: "lead", content: "汇总结果" });
+    expect(subtaskEmbedForMessage([assignment, note], 1)).not.toBeNull();
+    expect(subtaskEmbedForMessage([assignment, note, bridge, summary], 1)).toBeNull();
+    expect(subtaskEmbedForMessage([assignment, bridge, summary], 2)).toBeNull();
   });
 });

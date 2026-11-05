@@ -14,7 +14,11 @@ import { formatAgentPrompt, type ComposerNode } from "../components/chat/compose
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
-import { speakerForMessage } from "../components/chat/message-speaker";
+import {
+  shouldHideAssistantSpeaker,
+  speakerForMessage,
+  subtaskEmbedForMessage,
+} from "../components/chat/message-speaker";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import {
   type OsDroppedEntry,
@@ -209,10 +213,20 @@ function speaker(message: ChatMessage) {
     store.data?.squads ?? [],
     props.agentId,
     {
-      messages: store.messages[message.sessionId] ?? [],
-      session: store.data?.sessions.find((item) => item.id === message.sessionId) ?? null,
+      messages: messages.value,
+      session: session.value,
     },
   );
+}
+
+function subtaskEmbed(message: ChatMessage) {
+  const index = messages.value.findIndex((item) => item.id === message.id);
+  if (index < 0) return null;
+  return subtaskEmbedForMessage(messages.value, index);
+}
+
+function hideSpeaker(message: ChatMessage, index: number) {
+  return shouldHideAssistantSpeaker(messages.value[index - 1], message);
 }
 
 function messageRunning(message: ChatMessage) {
@@ -364,7 +378,7 @@ watch(
       :class="{ 'vs-scroll': thread }"
       @scroll.passive="onThreadScroll"
     >
-      <template v-for="message in messages" :key="message.id">
+      <template v-for="(message, messageIndex) in messages" :key="message.id">
         <div
           v-if="message.id === unreadMessageId"
           class="chat-new-divider"
@@ -394,6 +408,8 @@ watch(
           :running="messageRunning(message)"
           :allow-continue="false"
           :default-collapse-subagents="thread || historyViewOnly"
+          :hide-speaker="hideSpeaker(message, messageIndex)"
+          :embed-subtask="subtaskEmbed(message)"
         />
       </template>
       <div

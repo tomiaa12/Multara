@@ -207,6 +207,10 @@ export const useAppStore = defineStore("app", () => {
   async function registerRunEvents() {
     if (eventsReady || !("__TAURI_INTERNALS__" in window)) return;
     eventsReady = true;
+    await listen<string>("session-messages-changed", async ({ payload }) => {
+      if (!payload) return;
+      await reloadPersistedMessages(payload);
+    });
     await listen<RunEvent>("run-event", async ({ payload }) => {
       if (payload.eventKind === "file_snapshot" && payload.messageId && payload.filePath != null) {
         if (!payload.workspaceId) {

@@ -2396,14 +2396,28 @@ const activeMedia = computed(() => {
   return "";
 });
 
+function isHtmlFile(file: { path: string }) {
+  return /\.html?$/i.test(file.path);
+}
+
+const htmlActive = computed(() =>
+  Boolean(activeFile.value && !activeGitDiff.value && isHtmlFile(activeFile.value)),
+);
+
 const markdownToggleVisible = computed(() =>
-  Boolean(activeFile.value && !activeGitDiff.value && isMarkdownFile(activeFile.value)),
+  Boolean(
+    activeFile.value
+    && !activeGitDiff.value
+    && (isMarkdownFile(activeFile.value) || isHtmlFile(activeFile.value)),
+  ),
 );
 
 const markdownMode = computed(() => {
   const file = activeFile.value;
   if (!file || !markdownToggleVisible.value) return "source";
-  return markdownModes.value[editorLanguageKey(file.workspaceId, file.path)] ?? "source";
+  // HTML 默认直接看渲染效果，Markdown 默认看源码。
+  return markdownModes.value[editorLanguageKey(file.workspaceId, file.path)]
+    ?? (isHtmlFile(file) ? "preview" : "source");
 });
 
 function setMarkdownMode(mode: "preview" | "source") {
@@ -6037,7 +6051,7 @@ defineExpose({
               :aria-selected="markdownMode === 'source'"
               @click="setMarkdownMode('source')"
             >
-              Markdown
+              {{ htmlActive ? "HTML" : "Markdown" }}
             </button>
           </UiTooltip>
         </div>
@@ -6145,8 +6159,15 @@ defineExpose({
           :binary="activeGitDiff.binary"
         />
         <template v-else>
+          <iframe
+            v-if="markdownMode === 'preview' && htmlActive"
+            class="html-file-preview"
+            sandbox=""
+            :srcdoc="activeFile.content"
+            :title="activeFile.path"
+          />
           <MarkdownPreview
-            v-if="markdownMode === 'preview'"
+            v-else-if="markdownMode === 'preview'"
             :content="activeFile.content"
             :path="activeFile.path"
             @open="openMarkdownLink"
