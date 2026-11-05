@@ -102,6 +102,7 @@ import { scmGroups, type ScmOpenChangesPayload, type ScmOpenTarget } from "./wor
 import { bindEditorZoom } from "./workbench/monaco-zoom";
 import { createRefreshScheduler } from "./workbench/refresh-scheduler";
 import EditorWithDiff from "./workbench/EditorWithDiff.vue";
+import type { BlameWorkbenchAction } from "./workbench/git-blame-editor";
 import MediaPreview from "./workbench/MediaPreview.vue";
 import MarkdownPreview from "./workbench/MarkdownPreview.vue";
 import EditorBreadcrumbs from "./workbench/EditorBreadcrumbs.vue";
@@ -4115,6 +4116,59 @@ async function openSourceControlChange(target: ScmOpenTarget, opts?: { activate?
   }
 }
 
+async function onBlameAction(action: BlameWorkbenchAction) {
+  if (action.type === "open-changes" || action.type === "blame-prior") {
+    const blame = action.blame;
+    const file = activeFile.value;
+    if (!file) return;
+    const hash = action.type === "blame-prior" ? (blame.previous || "") : blame.hash;
+    if (!hash) return;
+    const parent = action.type === "blame-prior" ? null : (blame.previous || null);
+    const short = hash.slice(0, 7);
+    await openSourceControlChanges({
+      workspaceId: file.workspaceId,
+      title: `${short} - ${blame.subject || short}`,
+      commit: hash,
+      parent,
+      targets: [{
+        workspaceId: file.workspaceId,
+        path: file.path,
+        group: "commit",
+        commit: hash,
+        parent,
+        status: "M",
+      }],
+    });
+    return;
+  }
+  if (action.type === "reveal") {
+    try {
+      await backend.revealWorkspacePath(action.workspaceId, action.filePath);
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause);
+    }
+    return;
+  }
+  if (action.type === "remote") {
+    try {
+      await backend.openExternalUrl(action.url);
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause);
+    }
+    return;
+  }
+  if (action.type === "graph") {
+    leftTab.value = "git";
+    await nextTick();
+    await sourceControlPanel.value?.revealCommit?.(action.workspaceId, action.hash);
+    return;
+  }
+  if (action.type === "explain") {
+    chatPanel.value?.insertText(action.text);
+    chatPanel.value?.focus();
+  }
+}
+
 /**
  * 打开更改：单个 MultiDiff tab，标题 `hash - subject`。
  * 斜体预览 tab（pinned=false）：单击打开；再开其它文件会顶替；双击 / 钉住 / 编辑后固定。
@@ -6193,6 +6247,7 @@ defineExpose({
           @diff-groups="onEditorDiffGroups"
           @open-changes="openSourceControlChanges"
           @git-mutate="refreshGitViews"
+          @blame-action="onBlameAction"
         />
         </template>
       </div>
