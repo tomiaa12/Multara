@@ -14,8 +14,11 @@ const props = withDefaults(defineProps<{
   messageId?: string | null;
   /** 仅右下角气泡 / 工作台聊天展示从此消息 fork */
   allowFork?: boolean;
+  /** 派活卡等场景不展示复制 */
+  showCopy?: boolean;
 }>(), {
   allowFork: false,
+  showCopy: true,
 });
 const store = useAppStore();
 const copied = ref(false);
@@ -53,6 +56,7 @@ async function forkFromHere() {
   <footer class="assistant-message-footer">
     <span v-if="elapsedMs != null" class="message-elapsed">{{ t('chat.elapsedSeconds', { seconds: (elapsedMs / 1000).toFixed(1) }) }}</span>
     <UiButton
+      v-if="showCopy"
       class="message-copy"
       variant="ghost"
       size="icon"

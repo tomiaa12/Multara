@@ -1,15 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { RouterLink } from "vue-router";
 import type { ChatMessage } from "../../domain/types";
 import AgentAvatar from "../AgentAvatar.vue";
+import AgentLiveStatus from "../AgentLiveStatus.vue";
 import { liveAssistantText } from "../../domain/assistant-text";
-import { assignmentVisibleText, isLeaderAssignment } from "./message-speaker";
+import {
+  assignmentVisibleText,
+  isLeaderAssignment,
+  parseAssignmentSubtask,
+  type AssignmentSubtaskRef,
+} from "./message-speaker";
 import type { SpeakerInfo } from "./message-speaker";
 import FailureBubble from "./FailureBubble.vue";
 import MessageFooter from "./MessageFooter.vue";
 import ProcessFold from "./ProcessFold.vue";
 import RichContent from "./RichContent.vue";
 import PlanArtifactCard from "./PlanArtifactCard.vue";
+import SubtaskReplyEmbed from "./SubtaskReplyEmbed.vue";
 import { plansInMessage } from "./plan-state";
 import { useAppStore } from "../../stores/app";
 import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
@@ -28,9 +36,15 @@ const props = withDefaults(defineProps<{
   defaultCollapseSubagents?: boolean;
   /** 窄布局：计划卡片只显示标题、摘要和步骤数 */
   compact?: boolean;
+  /** 同一 exchange 连续同说话人时隐藏头像行，减少重复 */
+  hideSpeaker?: boolean;
+  /** 派活后第一条回复下方嵌子任务回复 */
+  embedSubtask?: AssignmentSubtaskRef | null;
 }>(), {
   allowFork: false,
   compact: false,
+  hideSpeaker: false,
+  embedSubtask: null,
 });
 const emit = defineEmits<{
   "pick-action": [prompt: string];
@@ -40,23 +54,25 @@ const liveText = computed(() => liveAssistantText(props.message.timeline));
 const rawContent = computed(() =>
   props.running ? liveText.value || props.message.content : props.message.content || liveText.value,
 );
-const hidesAssignment = computed(() =>
-  isLeaderAssignment(props.message, store.data?.squads ?? [], {
-    messages: store.messages[props.message.sessionId] ?? [],
-    session: store.data?.sessions.find((item) => item.id === props.message.sessionId) ?? store.activeSession,
-  }),
-);
+const hidesAssignment = computed(() => isLeaderAssignment(props.message));
 const bodyRaw = computed(() =>
   props.message.failureReason ? liveText.value : rawContent.value,
 );
 const extracted = computed(() => extractQuestions(bodyRaw.value));
 const bodyText = computed(() => {
   if (!hidesAssignment.value) return extracted.value.body;
-  return assignmentVisibleText(extracted.value.body, props.message.messageKind);
+  // 有子任务链接时不再复述「请处理子任务…」全文
+  if (parseAssignmentSubtask(extracted.value.body || bodyRaw.value)) return "";
+  return assignmentVisibleText(extracted.value.body);
 });
 /** 失败消息没有正文时，复制内容取失败摘要 + 技术详情 */
 const footerText = computed(() => {
-  if (bodyText.value.trim() || !props.message.failureReason) return bodyText.value;
+  if (bodyText.value.trim() || !props.message.failureReason) {
+    if (hidesAssignment.value && assignmentSubtask.value) {
+      return assignmentSubtask.value.title;
+    }
+    return bodyText.value;
+  }
   const summary = props.message.content || t("chat.runFailedSummary");
   return `${summary}\n\n${props.message.failureReason}`;
 });
@@ -67,32 +83,114 @@ const questionStateLabel = computed(() => {
   if (props.questionState === "pending") return t("chat.questionState.pending");
   return "";
 });
-const showAssignmentOriginal = computed(() =>
-  hidesAssignment.value && bodyRaw.value.trim() !== bodyText.value.trim(),
-);
 const plans = computed(() => plansInMessage(store.planStates(props.message.sessionId), props.message.id));
+const assignmentSubtask = computed(() =>
+  hidesAssignment.value ? parseAssignmentSubtask(bodyRaw.value) : null,
+);
+const assignedTask = computed(() => {
+  const id = assignmentSubtask.value?.id;
+  if (!id) return null;
+  return store.data?.tasks.find((item) => item.id === id) ?? null;
+});
+const assignedAgent = computed(() => {
+  const id = assignedTask.value?.agentId || props.message.audienceId || props.speaker?.agentId;
+  if (!id) return null;
+  return store.data?.agents.find((item) => item.id === id) ?? null;
+});
+const assignedFallback = computed(() => {
+  const agent = assignedAgent.value;
+  if (!agent) {
+    if (!props.speaker?.audienceName) return [];
+    return [{
+      key: props.message.audienceId || "assignee",
+      name: props.speaker.audienceName,
+      image: "",
+    }];
+  }
+  return [{ key: agent.id, name: agent.name, image: agent.avatar }];
+});
+const assignedSessionIds = computed(() =>
+  assignedTask.value?.sessionId ? [assignedTask.value.sessionId] : [],
+);
+const audienceLabel = computed(() =>
+  props.speaker?.audienceName
+    ?? assignedAgent.value?.name
+    ?? null,
+);
+const isInternalReply = computed(() =>
+  !hidesAssignment.value
+  && props.message.audienceType === "agent"
+  && Boolean(props.message.audienceId)
+  && Boolean(props.message.agentId)
+  && !props.message.failureReason,
+);
+const assignedName = computed(() => assignedFallback.value[0]?.name ?? audienceLabel.value ?? "");
+/** 派给对方的话：优先用子任务描述，没有再退回标题。 */
+const assignmentText = computed(() => {
+  const description = assignedTask.value?.description?.trim();
+  if (description) return description;
+  if (assignmentSubtask.value) return assignmentSubtask.value.title;
+  // @ 派活没有子任务：指令正文并排在 @名字 后面
+  return bodyText.value.trim();
+});
+const showSpeaker = computed(() => Boolean(props.speaker) && !props.hideSpeaker);
+const isInternal = computed(() =>
+  Boolean(props.speaker?.internal) || hidesAssignment.value,
+);
 </script>
 
 <template>
-  <article class="chat-turn assistant-turn" :class="{ internal: speaker?.internal }">
-    <div v-if="speaker" class="speaker-row">
+  <!-- 派活：A 头像 + @B + 子任务链接，与小队内部互 @ 同一套对话样式 -->
+  <article
+    v-if="hidesAssignment"
+    class="chat-turn assistant-turn internal assignment-turn"
+  >
+    <div v-if="showSpeaker" class="speaker-row">
       <AgentAvatar
         class="assistant-avatar"
-        :class="speaker.roleKind"
-        :value="speaker.avatar"
-        :name="speaker.name"
+        :class="speaker?.roleKind"
+        :value="speaker?.avatar"
+        :name="speaker?.name"
         :size="22"
       />
       <div class="speaker-meta">
-        <b>{{ speaker.name }}</b>
-        <span class="speaker-pill" :class="speaker.roleKind">{{ speaker.roleLabel }}</span>
+        <b>{{ speaker?.name }}</b>
+        <span class="speaker-pill" :class="speaker?.roleKind">{{ speaker?.roleLabel }}</span>
+      </div>
+    </div>
+    <div class="mention-line">
+      <span class="at-name">@{{ assignedName }}</span>
+      <span v-if="assignmentText" class="assignment-instruction">{{ assignmentText }}</span>
+    </div>
+    <RouterLink
+      v-if="assignmentSubtask"
+      class="assignment-subtask"
+      :to="`/tasks/${assignmentSubtask.id}`"
+    >
+      <span class="assignment-subtask-kicker">{{ t("chat.assignmentSubtask") }}</span>
+      <span class="assignment-subtask-title">{{ assignmentSubtask.title }}</span>
+    </RouterLink>
+      </article>
+
+  <article v-else class="chat-turn assistant-turn" :class="{ internal: isInternal }">
+    <div v-if="showSpeaker" class="speaker-row">
+      <AgentAvatar
+        class="assistant-avatar"
+        :class="speaker?.roleKind"
+        :value="speaker?.avatar"
+        :name="speaker?.name"
+        :size="22"
+      />
+      <div class="speaker-meta">
+        <b>{{ speaker?.name }}</b>
+        <span class="speaker-pill" :class="speaker?.roleKind">{{ speaker?.roleLabel }}</span>
         <span v-if="message.failureReason" class="speaker-pill fail">{{ t("chat.failPill") }}</span>
       </div>
     </div>
-    <p v-if="speaker?.internal && speaker.audienceName" class="to-member">
-      <em>@{{ speaker.audienceName }}</em>
-      <template v-if="speaker.audienceRole">（{{ speaker.audienceRole }}）</template>
-    </p>
+    <div v-if="isInternalReply" class="mention-line reply-text">
+      <span v-if="audienceLabel" class="at-name">@{{ audienceLabel }}</span>
+      <RichContent v-if="bodyText.trim()" :content="bodyText" />
+    </div>
     <div class="assistant-main">
       <ProcessFold
         :items="message.timeline"
@@ -101,7 +199,8 @@ const plans = computed(() => plansInMessage(store.planStates(props.message.sessi
         :run-id="message.runId"
         :default-collapse-subagents="defaultCollapseSubagents"
       />
-      <RichContent v-if="bodyText.trim()" :content="bodyText" />
+      <RichContent v-if="bodyText.trim() && !isInternalReply" :content="bodyText" />
+      <SubtaskReplyEmbed v-if="embedSubtask" :subtask="embedSubtask" />
       <PlanArtifactCard
         v-for="entry in plans"
         :key="entry.key"
@@ -129,10 +228,6 @@ const plans = computed(() => plansInMessage(store.planStates(props.message.sessi
       <div v-else-if="message.messageKind === 'no_response'" class="empty-answer">
         {{ message.content || t("chat.runNoText") }}
       </div>
-      <details v-if="showAssignmentOriginal" class="assignment-original">
-        <summary>{{ t("chat.viewAssignmentOriginal") }}</summary>
-        <pre>{{ bodyRaw }}</pre>
-      </details>
       <MessageFooter
         v-if="!running && (bodyText.trim() || message.failureReason)"
         :content="footerText"

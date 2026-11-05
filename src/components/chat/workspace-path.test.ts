@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseCodeFenceInfo, splitWorkspacePaths } from "./workspace-path";
+import { opensInFolder, parseCodeFenceInfo, splitWorkspacePaths } from "./workspace-path";
 
 describe("splitWorkspacePaths", () => {
   test("marks a workspace-relative file path and an optional line range", () => {
@@ -49,5 +49,19 @@ describe("parseCodeFenceInfo", () => {
 
   test("keeps ordinary language tags", () => {
     expect(parseCodeFenceInfo("typescript")).toEqual({ language: "typescript" });
+  });
+});
+
+describe("bare deliverable file names", () => {
+  test("links names without a directory when the extension looks like a deliverable", () => {
+    const segments = splitWorkspacePaths("写好了 agents-guide.md 和 智能体使用说明.pdf，用 Node.js 跑");
+    const paths = segments.filter((item) => item.type === "path").map((item) => item.path);
+    expect(paths).toEqual(["agents-guide.md", "智能体使用说明.pdf"]);
+  });
+
+  test("sends office documents and archives to the folder instead of the editor", () => {
+    expect(opensInFolder("docs/a.pdf")).toBe(true);
+    expect(opensInFolder("a.md")).toBe(false);
+    expect(opensInFolder("a.png")).toBe(false);
   });
 });
