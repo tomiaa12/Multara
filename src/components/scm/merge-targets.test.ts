@@ -35,6 +35,45 @@ describe("merge targets", () => {
     expect(groups[1]?.rows.map((row) => row.name)).toEqual(["hotfix/pay"]);
   });
 
+  test("searching ranks exact and prefix matches first, local and remote mixed", () => {
+    const groups = mergeBranchGroups({
+      locals: ["feature/uat-fix", "uat2", "main"],
+      remotes: ["origin/uat", "origin2/uat", "origin/release-uat"],
+      recent: [],
+      filter: MERGE_FILTER_ALL,
+      query: "uat",
+      selected: [],
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.rows.map((row) => row.name)).toEqual([
+      "origin/uat", "origin2/uat", "uat2", "feature/uat-fix", "origin/release-uat",
+    ]);
+  });
+
+  test("each remote gets its own group when there are several", () => {
+    const groups = mergeBranchGroups({
+      locals: ["main"],
+      remotes: ["origin/main", "origin2/main", "origin2/uat"],
+      recent: [],
+      filter: MERGE_FILTER_ALL,
+      query: "",
+      selected: [],
+    });
+    expect(groups.map((group) => group.label)).toEqual(["本地分支", "远程分支 · origin", "远程分支 · origin2"]);
+  });
+
+  test("recent picks from other projects are skipped only when missing here", () => {
+    const groups = mergeBranchGroups({
+      locals: ["main", "uat"],
+      remotes: [],
+      recent: ["gone", "uat", "elsewhere", "main"],
+      filter: MERGE_FILTER_ALL,
+      query: "",
+      selected: [],
+    });
+    expect(groups[0]?.rows.map((row) => row.name)).toEqual(["uat", "main"]);
+  });
+
   test("selected and recent filters only show that set", () => {
     const selected = mergeBranchGroups({
       locals: ["main", "develop"],

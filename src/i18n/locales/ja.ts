@@ -1977,6 +1977,7 @@ const catalog: MessageCatalog = {
   "scm.merge.queue.upToDate": "Already includes all commits from the current branch",
   "scm.merge.queue.missing": "Branch not found — fetch remotes first",
   "scm.merge.group.recent": "Recent · picked before",
+  "scm.merge.group.results": "Results",
   "scm.merge.result.failed": "Merge failed",
   "scm.merge.result.pending": "Not started yet — resolve earlier conflicts first",
   "scm.merge.result.upToDate": "Already includes all commits from the current branch",

@@ -323,9 +323,13 @@ pub fn apply(
             .as_deref()
             .ok_or_else(|| tr!("目标分支没有关联远程仓库"))?;
         let refspec = format!("{commit}:refs/heads/{}", target.branch);
+        // 推送的是提交号，和当前目录检出什么无关。pre-push 钩子却按 `git rev-parse --show-toplevel`
+        // 找 node_modules：在依赖不一致、没链上 node_modules 的 Worktree 里会直接 MODULE_NOT_FOUND，
+        // 所以从装好依赖的主工作区推。
+        let push_dir = main_worktree(git, root).unwrap_or_else(|| root.to_string());
         run_with_timeout(
             git,
-            root,
+            &push_dir,
             &["push", remote, &refspec],
             Duration::from_secs(180),
             true,
@@ -371,6 +375,17 @@ pub fn apply(
         None => {}
     }
     Ok(outcome)
+}
+
+/// `git worktree list` 的第一项就是主工作区；不存在（裸仓库等）时返回 None。
+fn main_worktree(git: &str, root: &str) -> Option<String> {
+    let listing = output(git, root, &["worktree", "list", "--porcelain"]).ok()?;
+    let path = listing
+        .lines()
+        .find_map(|line| line.strip_prefix("worktree "))?
+        .trim()
+        .to_string();
+    (std::path::Path::new(&path).join(".git").exists()).then_some(path)
 }
 
 /// 远程 tip 比合并基准更新，普通 push 会被拒绝（可再 fetch 后重试合并）。

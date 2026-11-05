@@ -17,6 +17,7 @@ import {
   MERGE_FILTER_RECENT,
   MERGE_FILTER_SELECTED,
   MERGE_PLAN_UP_TO_DATE,
+  MERGE_RECENT_KEY,
   canMergePlan,
   mergeBranchGroups,
   mergePlanBadge,
@@ -30,8 +31,6 @@ const props = defineProps<{ workspace: Workspace; repository: GitRepositoryStatu
 const emit = defineEmits<{ close: []; merged: [] }>();
 
 const store = useAppStore();
-const LAST_TARGET_KEY = `multara.merge.target.${props.workspace.id}`;
-const RECENT_KEY = `multara.merge.recent.${props.workspace.id}`;
 
 interface PickedTarget {
   name: string;
@@ -109,30 +108,14 @@ const resultTitle = computed(() => {
 });
 const blocked = computed(() => running.value || Boolean(conflictOutcome.value));
 
+/** 常用列表全局共用：别的项目选过的分支名也留着，这个项目里存在才会显示。 */
 function readRecent() {
   try {
-    const saved = localStorage.getItem(RECENT_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed.filter((item) => typeof item === "string");
-    }
-    const last = localStorage.getItem(LAST_TARGET_KEY);
-    return last ? [last] : [];
+    const parsed = JSON.parse(localStorage.getItem(MERGE_RECENT_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return [];
   }
-}
-
-function knownTarget(name: string) {
-  return locals.value.includes(name) || remotes.value.includes(name);
-}
-
-function defaultTarget(baseRef: string | undefined) {
-  const remembered = recent.value.find((name) => knownTarget(name));
-  if (remembered) return remembered;
-  if (!baseRef) return null;
-  if (knownTarget(`origin/${baseRef}`)) return `origin/${baseRef}`;
-  return knownTarget(baseRef) ? baseRef : null;
 }
 
 function applySource(preview: MergePreview) {
@@ -203,8 +186,7 @@ function saveRecent() {
   const next = rememberMergeTargets(recent.value, picked.value.map((item) => item.name));
   recent.value = next;
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-    if (next[0]) localStorage.setItem(LAST_TARGET_KEY, next[0]);
+    localStorage.setItem(MERGE_RECENT_KEY, JSON.stringify(next));
   } catch {
     // 存不下时只在这次弹窗里有效
   }
@@ -288,8 +270,6 @@ function outcomeLines(item: MergeOutcome) {
 onMounted(async () => {
   recent.value = readRecent();
   await loadSource();
-  const next = defaultTarget(origin.value?.baseRef);
-  if (next) toggle(next, true);
 });
 </script>
 
