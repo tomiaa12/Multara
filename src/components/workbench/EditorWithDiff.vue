@@ -7,7 +7,7 @@ import { monacoReadOnlyMessage } from "../../editor/monaco-nls";
 import { currentDocumentTheme, monacoThemeName } from "../../editor/monaco-workspace";
 import { DiffOverlayManager, groupAnchorLine, groupConsecutiveChunks } from "./DiffOverlayManager";
 import { MergeConflictEditor } from "./merge-conflict-editor";
-import { GitBlame } from "./git-blame-editor";
+import { GitBlame, type BlameWorkbenchAction } from "./git-blame-editor";
 import { GitGutter } from "./git-gutter";
 import type { ScmOpenChangesPayload } from "./scm-groups";
 import { gitBaselineText } from "./git-gutter-marks";
@@ -41,6 +41,7 @@ const emit = defineEmits<{
   "diff-groups": [count: number];
   "open-changes": [payload: ScmOpenChangesPayload];
   "git-mutate": [];
+  "blame-action": [action: BlameWorkbenchAction];
 }>();
 
 const diffStore = useDiffStore();
@@ -114,23 +115,7 @@ function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
     locate,
     (label, title) => editorStatus.setBlame(label, title),
     () => String(props.gitEpoch ?? 0),
-    (blame) => {
-      const short = blame.hash.slice(0, 7);
-      emit("open-changes", {
-        workspaceId: props.workspaceId,
-        title: `${short} - ${blame.subject || short}`,
-        commit: blame.hash,
-        parent: blame.previous || null,
-        targets: [{
-          workspaceId: props.workspaceId,
-          path: props.filePath,
-          group: "commit",
-          commit: blame.hash,
-          parent: blame.previous || null,
-          status: "M",
-        }],
-      });
-    },
+    (action: BlameWorkbenchAction) => emit("blame-action", action),
   );
   conflictRef.value = new MergeConflictEditor(editor, () => Boolean(props.readOnly || props.writing));
   gutterRef.value.schedule(true);

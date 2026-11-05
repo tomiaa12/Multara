@@ -456,7 +456,14 @@ watch(
   { immediate: true },
 );
 
-defineExpose({ refresh });
+const graphView = ref<InstanceType<typeof ScmGraphView> | null>(null);
+
+async function revealCommit(workspaceId: string, hash: string) {
+  if (workspaceId) selectedWorkspaceId.value = workspaceId;
+  await graphView.value?.revealCommit(hash);
+}
+
+defineExpose({ refresh, revealCommit });
 </script>
 
 <template>
@@ -537,6 +544,7 @@ defineExpose({ refresh });
 
     <ScmGraphView
       v-if="!readonly && workspaces.some((item) => item.kind === 'git')"
+      ref="graphView"
       :workspaces="workspaces"
       :workspace-id="selectedWorkspaceId"
       :epoch="historyEpoch"
