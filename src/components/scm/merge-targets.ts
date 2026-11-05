@@ -11,7 +11,9 @@ export const MERGE_PLAN_CONFLICT = "conflict";
 export const MERGE_PLAN_UP_TO_DATE = "up_to_date";
 export const MERGE_PLAN_MISSING = "missing";
 
-export const MERGE_RECENT_LIMIT = 8;
+/** 常用列表全局共用（跨项目），多留一些，别让别的项目的分支名把当前项目的挤掉。 */
+export const MERGE_RECENT_LIMIT = 20;
+export const MERGE_RECENT_KEY = "multara.merge.recent";
 
 export interface MergeBranchRow {
   name: string;
@@ -71,6 +73,29 @@ export function rememberMergeTargets(previous: string[], picked: string[]) {
   return next.slice(0, MERGE_RECENT_LIMIT);
 }
 
+/** `origin2/feature/x` → remote `origin2`；本地分支没有远程。 */
+export function mergeRemoteOf(name: string, remote: boolean) {
+  if (!remote) return "";
+  const slash = name.indexOf("/");
+  return slash > 0 ? name.slice(0, slash) : "";
+}
+
+/** 搜索时拿来比的名字：去掉远程前缀，`origin/uat` 和 `uat` 视为同一个名字。 */
+function shortName(name: string, remote: boolean) {
+  const owner = mergeRemoteOf(name, remote);
+  return owner ? name.slice(owner.length + 1) : name;
+}
+
+/** 越小越靠前：整名相同 < 前缀 < 按 / - _ 分段命中 < 子串。 */
+function matchScore(name: string, remote: boolean, needle: string) {
+  const short = shortName(name, remote).toLowerCase();
+  if (short === needle) return 0;
+  if (short.startsWith(needle)) return 1;
+  if (short.split(/[/_.-]/).some((part) => part.startsWith(needle))) return 2;
+  if (short.includes(needle)) return 3;
+  return name.toLowerCase().includes(needle) ? 4 : -1;
+}
+
 export function mergeBranchGroups(input: {
   locals: string[];
   remotes: string[];
@@ -94,14 +119,39 @@ export function mergeBranchGroups(input: {
     const rows = input.recent.filter(visible).map(row);
     return rows.length ? [{ label: t("scm.merge.group.recent"), rows }] : [];
   }
+  if (needle) {
+    // 搜索：本地和远程混排，按命中程度排；同分时常用的、本地的、名字短的靠前。
+    const recentRank = new Map(input.recent.map((name, index) => [name, index]));
+    const scored = [...input.locals, ...input.remotes]
+      .map((name) => ({ name, remote: remoteSet.has(name), score: matchScore(name, remoteSet.has(name), needle) }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) =>
+        a.score - b.score
+        || (recentRank.get(a.name) ?? 1e9) - (recentRank.get(b.name) ?? 1e9)
+        || Number(a.remote) - Number(b.remote)
+        || a.name.length - b.name.length
+        || a.name.localeCompare(b.name));
+    return scored.length
+      ? [{ label: t("scm.merge.group.results"), rows: scored.map((item) => row(item.name)) }]
+      : [];
+  }
   const recentNames = input.recent.filter(visible);
   const recentSet = new Set(recentNames);
   const groups: MergeBranchGroup[] = [];
   if (recentNames.length) groups.push({ label: t("scm.merge.group.recent"), rows: recentNames.map(row) });
-  const locals = input.locals.filter((name) => !recentSet.has(name) && match(name));
-  const remotes = input.remotes.filter((name) => !recentSet.has(name) && match(name));
+  const locals = input.locals.filter((name) => !recentSet.has(name));
   if (locals.length) groups.push({ label: t("scm.localBranches"), rows: locals.map(row) });
-  if (remotes.length) groups.push({ label: t("scm.remoteBranches"), rows: remotes.map(row) });
+  // 多个远程（origin / origin2…）各自一组，只有一个远程时沿用「远程分支」。
+  const byRemote = new Map<string, string[]>();
+  for (const name of input.remotes) {
+    if (recentSet.has(name)) continue;
+    const owner = mergeRemoteOf(name, true);
+    byRemote.set(owner, [...(byRemote.get(owner) ?? []), name]);
+  }
+  for (const [owner, names] of byRemote) {
+    const label = byRemote.size > 1 ? `${t("scm.remoteBranches")} · ${owner}` : t("scm.remoteBranches");
+    groups.push({ label, rows: names.map(row) });
+  }
   return groups;
 }
 
