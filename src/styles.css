@@ -6754,10 +6754,20 @@ body.is-dragging-workspace-file * {
   border-left: 4px solid var(--color-error);
   pointer-events: none;
 }
+/* GitLens trailing annotation：CSS ::after contentText，不进 TextModel；悬停靠 EOL 锚点。 */
+.monaco-editor .git-blame-after {
+  display: inline-block;
+  /* 让 ::after 参与行宽测量，鼠标落在文案上时 hitTest 仍锚到 EOL */
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .monaco-editor .git-blame-after::after {
+  margin-left: 3em;
   color: var(--color-text-secondary);
-  margin-left: 50px;
   font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
@@ -14305,13 +14315,180 @@ vite-error-overlay {
   z-index: 2147483647;
   background: #181818;
 }
-.monaco-editor .git-blame-inline {
+.git-blame-card {
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-surface-raised, var(--color-surface));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 36%);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.45;
+  pointer-events: auto;
+}
+.git-blame-card-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.git-blame-card-avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--color-surface-hover);
+  color: var(--color-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.git-blame-card-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.git-blame-card-meta {
+  flex: 1;
+  min-width: 0;
+}
+.git-blame-card-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.git-blame-card-author {
+  color: var(--color-primary, #3794ff);
+  font-weight: 600;
+}
+.git-blame-card-time {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
   color: var(--color-text-secondary);
-  margin-left: 50px;
-  font-style: normal;
-  pointer-events: none;
+  font-size: 12px;
+  font-weight: 400;
+}
+.git-blame-card-time > .codicon {
+  font-size: 12px;
+}
+.git-blame-card-message {
+  margin: 8px 0 6px;
+  color: var(--color-text-strong, var(--color-text));
+  font-size: 13px;
+  font-weight: 600;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.git-blame-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  align-items: center;
+  margin: 0 0 6px;
+  padding: 4px 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+.git-blame-card-sep {
+  margin: 0 4px;
+  color: var(--color-text-secondary);
+  opacity: 0.55;
+  font-size: 12px;
+  line-height: 22px;
   user-select: none;
-  -webkit-user-select: none;
+}
+.git-blame-card-hash {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 22px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-primary, #3794ff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.git-blame-card-hash > .codicon {
+  font-size: 14px;
+}
+.git-blame-card-action,
+.git-blame-card-explain {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-primary, #3794ff);
+  cursor: pointer;
+}
+.git-blame-card-action > .codicon {
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 16px;
+}
+.git-blame-card-explain {
+  gap: 4px;
+  color: var(--color-primary, #3794ff);
+  font-size: 12px;
+}
+.git-blame-card-action:hover,
+.git-blame-card-explain:hover,
+.git-blame-card-hash:hover {
+  background: rgb(90 93 94 / 31%);
+}
+.git-blame-card-diff {
+  margin: 0;
+  padding: 2px 0 0;
+  overflow: auto;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre;
+  max-height: 120px;
+}
+.git-blame-card-diff-empty {
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+}
+.git-blame-card-diff-line.is-deleted {
+  background: transparent;
+  color: var(--vscode-gitDecoration-deletedResourceForeground, var(--color-error));
+}
+.git-blame-card-diff-line.is-added {
+  background: transparent;
+  color: var(--vscode-gitDecoration-addedResourceForeground, var(--color-success));
+}
+.git-blame-card-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.git-blame-card-range {
+  color: var(--color-primary, #3794ff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .chat-show-earlier {
   display: block;

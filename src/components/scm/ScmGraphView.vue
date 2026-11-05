@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type { GitCommitFile, GitHistoryItem, Workspace } from "../../domain/types";
 import Codicon from "../ui/Codicon.vue";
 import ContextMenu from "../ui/ContextMenu.vue";
@@ -239,6 +239,42 @@ function dotClass(hole: boolean, color: number) {
 function letter(status: string) {
   return status === "?" ? "U" : status || "M";
 }
+
+function commitMatches(hash: string, needle: string) {
+  return hash === needle || hash.startsWith(needle) || needle.startsWith(hash);
+}
+
+async function revealCommit(hash: string) {
+  const needle = hash.trim();
+  if (!needle) return;
+  collapsed.value = false;
+  if (props.live === false) {
+    const preview = previewHistory.find((item) => commitMatches(item.hash, needle));
+    openHash.value = preview?.hash ?? "";
+    await nextTick();
+    scrollToCommit(openHash.value || needle);
+    return;
+  }
+  if (!items.value.length) await load(true);
+  let found = items.value.find((item) => commitMatches(item.hash, needle));
+  while (!found && hasMore.value) {
+    await load(false);
+    found = items.value.find((item) => commitMatches(item.hash, needle));
+  }
+  openHash.value = found?.hash ?? "";
+  if (found) await ensureCommitFiles(found.hash);
+  await nextTick();
+  scrollToCommit(found?.hash ?? needle);
+}
+
+function scrollToCommit(hash: string) {
+  if (!hash) return;
+  document
+    .querySelector<HTMLElement>(`.scm-history[data-commit-hash="${CSS.escape(hash)}"]`)
+    ?.scrollIntoView({ block: "nearest" });
+}
+
+defineExpose({ revealCommit });
 </script>
 
 <template>
@@ -275,6 +311,7 @@ function letter(status: string) {
         v-for="row in rows"
         :key="row.commit.hash"
         class="scm-history"
+        :data-commit-hash="row.commit.hash"
         :class="{ 'is-head': isHistoryHead(row.commit), 'is-open': openHash === row.commit.hash }"
       >
         <div
