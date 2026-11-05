@@ -13,7 +13,20 @@ export interface CodeFenceInfo {
   endLine?: number;
 }
 
-const PATH_PATTERN = /((?:[A-Za-z0-9_.@+-]+\/)+[A-Za-z0-9_.@+-]+\.[A-Za-z0-9]+)(?::(\d+)(?:-(\d+))?)?/g;
+const NAME_CHARS = "A-Za-z0-9_.@+\\u4e00-\\u9fff-";
+/** 不带目录的单独文件名只认这些「像交付物」的扩展名，避免把 Node.js 之类误当文件。 */
+const BARE_EXT =
+  "md|markdown|txt|html?|svg|png|jpe?g|gif|webp|bmp|mp3|wav|m4a|ogg|flac|mp4|mov|webm|mkv|pdf|docx?|xlsx?|pptx?|csv|json|zip";
+const PATH_PATTERN = new RegExp(
+  `((?:[${NAME_CHARS}]+\\/)+[${NAME_CHARS}]+\\.[A-Za-z0-9]+|[A-Za-z0-9_@+\\u4e00-\\u9fff-][${NAME_CHARS}]*\\.(?:${BARE_EXT})(?![A-Za-z0-9]))(?::(\\d+)(?:-(\\d+))?)?`,
+  "gi",
+);
+
+/** 点开后在界面里预览的类型之外，这些二进制文档只能交给系统：打开所在文件夹。 */
+const OPEN_IN_FOLDER_EXT = /\.(?:pdf|docx?|xlsx?|pptx?|zip|rar|7z|tar|gz|dmg|pkg|key|pages|numbers|psd|ai|sketch|fig)$/i;
+export function opensInFolder(path: string): boolean {
+  return OPEN_IN_FOLDER_EXT.test(path.trim());
+}
 const SOURCE_EXT =
   /\.(?:[jt]sx?|mjs|cjs|vue|svelte|rs|go|py|md|css|scss|less|json|toml|ya?ml|html?|svg|sh|bash|zsh|sql|graphql|proto|swift|kt|java|rb|php|cs|cpp|cxx|h|hpp)$/i;
 

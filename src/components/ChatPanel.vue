@@ -39,6 +39,7 @@ import {
 } from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { lastUnansweredUser } from "./chat/unanswered-turn";
+import { shouldHideAssistantSpeaker, subtaskEmbedForMessage } from "./chat/message-speaker";
 const emit = defineEmits<{
   "review-file": [file: { workspaceId: string; filePath: string }];
 }>();
@@ -230,6 +231,12 @@ const displayMessages = computed(() => {
   return result;
 });
 provide(chatMessagesKey, displayMessages);
+
+function subtaskEmbedForIndex(message: ChatMessage) {
+  const index = displayMessages.value.findIndex((item) => item.id === message.id);
+  if (index < 0) return null;
+  return subtaskEmbedForMessage(displayMessages.value, index);
+}
 
 const messageGroups = computed(() => {
   const groups: Array<{ id: string; messages: typeof displayMessages.value }> = [];
@@ -1599,7 +1606,7 @@ defineExpose({
           :key="group.id"
           class="message-exchange"
         >
-          <template v-for="message in group.messages" :key="message.id">
+          <template v-for="(message, messageIndex) in group.messages" :key="message.id">
             <div
               v-if="message.id === unreadMessageId"
               class="chat-new-divider"
@@ -1622,6 +1629,8 @@ defineExpose({
               :view-only="historyViewOnly"
               :default-collapse-subagents="embedded || historyViewOnly"
               :compact="compact"
+              :hide-speaker="shouldHideAssistantSpeaker(group.messages[messageIndex - 1], message)"
+              :embed-subtask="subtaskEmbedForIndex(message)"
               :allow-continue="!historyViewOnly && allowContinueFor(message)"
               :allow-fork="sessionCommands && !preview"
               :restore-nonce="restoreNonce"
