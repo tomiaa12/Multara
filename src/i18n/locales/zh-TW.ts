@@ -1976,6 +1976,7 @@ const catalog: MessageCatalog = {
   "scm.merge.queue.upToDate": "已經包含目前分支的所有提交",
   "scm.merge.queue.missing": "找不到這個分支，請先取得遠端更新",
   "scm.merge.group.recent": "常用 · 上次選過",
+  "scm.merge.group.results": "搜尋結果",
   "scm.merge.result.failed": "合併失敗",
   "scm.merge.result.pending": "還沒開始，先處理前面的衝突",
   "scm.merge.result.upToDate": "已經包含目前分支的所有提交",
