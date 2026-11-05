@@ -79,6 +79,8 @@ export interface GitLineBlame {
   authorEmail: string;
   authorTime: number;
   subject: string;
+  /** 这个提交之前最后一次改动该文件的提交；没有则为空串。 */
+  previous: string;
 }
 
 export interface GitHistoryItem {

@@ -1635,6 +1635,15 @@ export async function gitStageFiles(
   await invoke("git_stage_files", { workspaceId, paths, staged });
 }
 
+export async function gitStageContents(
+  workspaceId: string,
+  path: string,
+  contents: string,
+): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("git_stage_contents", { workspaceId, path, contents });
+}
+
 export async function gitDiscardFiles(workspaceId: string, paths: string[]): Promise<void> {
   if (!inTauri()) return;
   await invoke("git_discard_files", { workspaceId, paths });

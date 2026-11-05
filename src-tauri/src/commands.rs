@@ -686,6 +686,21 @@ pub async fn git_stage_files(
 }
 
 #[tauri::command]
+pub async fn git_stage_contents(
+    workspace_id: String,
+    path: String,
+    contents: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    let _span = crate::diag::span("git_stage_contents");
+    off_main(app, move |state| {
+        let (workspace, git_command) = git_workspace_and_command(state, &workspace_id)?;
+        git_manager::stage_contents(&workspace.work_path, &git_command, &path, &contents)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_discard_files(
     workspace_id: String,
     paths: Vec<String>,

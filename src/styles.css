@@ -6766,10 +6766,10 @@ body.is-dragging-workspace-file * {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: 100%;
   overflow: hidden;
-  background: var(--color-surface-raised);
+  background: var(--color-surface);
   border-top: 2px solid var(--peek-frame, var(--color-primary-border));
+  border-bottom: 2px solid var(--peek-frame, var(--color-primary-border));
   color: var(--color-text);
 }
 .dirty-diff-peek-title {
@@ -6788,18 +6788,16 @@ body.is-dragging-workspace-file * {
 }
 .dirty-diff-peek-label {
   flex: none;
+  font-weight: 600;
 }
-.dirty-diff-peek-detail,
-.dirty-diff-peek-record {
+.dirty-diff-peek-detail {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.dirty-diff-peek-record {
-  flex: 1;
-  min-width: 0;
 }
 .dirty-diff-peek-actions {
   display: flex;
@@ -6808,6 +6806,9 @@ body.is-dragging-workspace-file * {
   margin-left: auto;
 }
 .dirty-diff-peek-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -6815,8 +6816,14 @@ body.is-dragging-workspace-file * {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text);
-  font-size: var(--font-size-lg);
-  line-height: 22px;
+  cursor: pointer;
+}
+.dirty-diff-peek-action > .codicon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 16px;
 }
 .dirty-diff-peek-action:hover {
   background: rgb(90 93 94 / 31%);
@@ -6825,21 +6832,7 @@ body.is-dragging-workspace-file * {
   position: relative;
   flex: none;
   min-height: 0;
-  overflow: auto;
-}
-.dirty-diff-peek-line {
-  box-sizing: border-box;
-  padding: 0 12px;
   overflow: hidden;
-  font-family: ui-monospace, Consolas, "Courier New", monospace;
-  white-space: pre;
-  text-overflow: ellipsis;
-}
-.dirty-diff-peek-line.deleted {
-  background: color-mix(in srgb, var(--color-error) 20%, transparent);
-}
-.dirty-diff-peek-line.added {
-  background: color-mix(in srgb, var(--color-success) 20%, transparent);
 }
 .stop-ai-dialog {
   max-width: 420px;
