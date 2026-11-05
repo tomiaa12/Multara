@@ -6191,6 +6191,8 @@ defineExpose({
           @mount="onEditorMount"
           @pending-chunks="onEditorPendingChunks"
           @diff-groups="onEditorDiffGroups"
+          @open-changes="openSourceControlChanges"
+          @git-mutate="refreshGitViews"
         />
         </template>
       </div>

@@ -136,6 +136,8 @@ pub struct GitLineBlame {
     pub author_email: String,
     pub author_time: i64,
     pub subject: String,
+    /// 这个提交之前最后一次改动该文件的提交（porcelain 的 `previous` 行）；没有则为空。
+    pub previous: String,
 }
 
 #[derive(Clone, Serialize)]

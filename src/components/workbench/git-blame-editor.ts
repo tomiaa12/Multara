@@ -2,6 +2,8 @@ import type * as Monaco from "monaco-editor";
 import { monaco } from "../../monaco";
 import * as backend from "../../services/backend";
 import {
+  BLAME_CMD_COPY_HASH,
+  BLAME_CMD_OPEN_CHANGES,
   BLAME_UNCOMMITTED,
   blameEditorText,
   blameHoverText,
@@ -9,7 +11,26 @@ import {
   type GitBlameInfo,
 } from "./git-blame";
 
+/** 悬停里的 command: 链接是全局命令，按编辑器实例 id 找回对应的 GitBlame。 */
+const instances = new Map<number, GitBlame>();
+let nextInstanceId = 1;
+let commandsRegistered = false;
+
+function registerBlameCommands() {
+  if (commandsRegistered) return;
+  commandsRegistered = true;
+  monaco.editor.registerCommand(BLAME_CMD_OPEN_CHANGES, (_accessor, id: number) => {
+    instances.get(id)?.openChanges();
+  });
+  monaco.editor.registerCommand(BLAME_CMD_COPY_HASH, (_accessor, id: number) => {
+    instances.get(id)?.copyHash();
+  });
+}
+
 export class GitBlame {
+  private readonly id = nextInstanceId++;
+  private current: GitBlameInfo | null = null;
+
   private collection: Monaco.editor.IEditorDecorationsCollection | null = null;
   private timer = 0;
   private generation = 0;
@@ -24,7 +45,10 @@ export class GitBlame {
     private readonly locate: () => { workspaceId: string; filePath: string },
     private readonly publish: (label: string, title: string) => void,
     private readonly cacheKey: () => string = () => "",
+    private readonly onOpenChanges: (blame: GitBlameInfo) => void = () => {},
   ) {
+    registerBlameCommands();
+    instances.set(this.id, this);
     this.listeners.push(
       editor.onDidChangeCursorPosition(() => this.schedule()),
       editor.onDidChangeModelContent(() => this.schedule()),
@@ -34,6 +58,7 @@ export class GitBlame {
   }
 
   dispose() {
+    instances.delete(this.id);
     window.clearTimeout(this.timer);
     this.generation += 1;
     this.listeners.splice(0).forEach((item) => item.dispose());
@@ -109,16 +134,25 @@ export class GitBlame {
     this.paint(line, blame);
   }
 
+  openChanges() {
+    if (this.current?.committed) this.onOpenChanges(this.current);
+  }
+
+  copyHash() {
+    if (this.current?.committed) void navigator.clipboard?.writeText(this.current.hash);
+  }
+
   private paint(line: number, blame: GitBlameInfo) {
+    this.current = blame;
     if (!blame.committed) {
       this.decorate(line, BLAME_UNCOMMITTED, "这一行还没有提交");
       this.publish(BLAME_UNCOMMITTED, "这一行还没有提交");
       return;
     }
     const now = Date.now();
-    const hover = blameHoverText(blame, now);
+    const hover = blameHoverText(blame, now, this.id);
     this.decorate(line, blameEditorText(blame, now), hover);
-    this.publish(blameStatusText(blame, now), hover);
+    this.publish(blameStatusText(blame, now), blameHoverText(blame, now));
   }
 
   private decorate(line: number, content: string, hover: string) {
@@ -133,7 +167,7 @@ export class GitBlame {
           inlineClassName: "git-blame-inline",
           cursorStops: monaco.editor.InjectedTextCursorStops.None,
         },
-        hoverMessage: { value: hover },
+        hoverMessage: { value: hover, isTrusted: true },
       },
     }];
     if (!this.collection) this.collection = this.editor.createDecorationsCollection(decorations);

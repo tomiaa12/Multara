@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read},
+    io::{self, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
     sync::mpsc,
@@ -140,6 +140,92 @@ fn ref_names(git_command: &str, root: &str) -> (Vec<String>, Vec<String>) {
         }
     }
     (branches, remote_branches)
+}
+
+/// 把给定内容写入 index（同 VS Code `hash-object` + `update-index --cacheinfo`），工作区文件不动。
+pub fn stage_contents(
+    root: &str,
+    git_command: &str,
+    rel_path: &str,
+    contents: &str,
+) -> Result<(), String> {
+    validate_relative(rel_path)?;
+    let relative = rel_path.replace('\\', "/");
+    let hash = hash_object(git_command, root, &relative, contents.as_bytes())?;
+    let (mode, add) = index_mode(git_command, root, &relative)?;
+    let mut args = vec![LITERAL_PATHSPECS.to_string(), "update-index".to_string()];
+    if add {
+        args.push("--add".to_string());
+    }
+    args.extend([
+        "--cacheinfo".to_string(),
+        mode,
+        hash,
+        relative,
+    ]);
+    run(git_command, root, &args)
+}
+
+fn hash_object(
+    git_command: &str,
+    root: &str,
+    relative: &str,
+    contents: &[u8],
+) -> Result<String, String> {
+    let mut command = git_cmd(git_command);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut child = command
+        .arg("-C")
+        .arg(root)
+        .args(["hash-object", "--stdin", "-w", "--path", relative])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| tr!("无法启动 Git：{error}", error = error))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(contents)
+            .map_err(|error| error.to_string())?;
+    }
+    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if hash.is_empty() {
+        return Err(tr!("无法写入对象"));
+    }
+    Ok(hash)
+}
+
+fn index_mode(git_command: &str, root: &str, relative: &str) -> Result<(String, bool), String> {
+    if let Ok(text) = output(
+        git_command,
+        root,
+        &[LITERAL_PATHSPECS, "ls-files", "--stage", "--", relative],
+    ) {
+        if let Some(mode) = text.split_whitespace().next() {
+            if !mode.is_empty() {
+                return Ok((mode.to_string(), false));
+            }
+        }
+    }
+    if output(git_command, root, &["rev-parse", "--verify", "HEAD"]).is_ok() {
+        if let Ok(text) = output(
+            git_command,
+            root,
+            &[LITERAL_PATHSPECS, "ls-tree", "HEAD", "--", relative],
+        ) {
+            if let Some(mode) = text.split_whitespace().next() {
+                if !mode.is_empty() {
+                    return Ok((mode.to_string(), false));
+                }
+            }
+        }
+    }
+    Ok(("100644".to_string(), true))
 }
 
 pub fn stage(root: &str, git_command: &str, paths: &[String], staged: bool) -> Result<(), String> {
@@ -1128,6 +1214,8 @@ pub fn parse_blame_porcelain_file(text: &str) -> Vec<GitLineBlame> {
                 info.author_time = rest.trim().parse().unwrap_or(0);
             } else if let Some(rest) = raw.strip_prefix("summary ") {
                 info.subject = rest.to_string();
+            } else if let Some(rest) = raw.strip_prefix("previous ") {
+                info.previous = rest.split_whitespace().next().unwrap_or("").to_string();
             }
             continue;
         }
@@ -1147,6 +1235,7 @@ pub fn parse_blame_porcelain_file(text: &str) -> Vec<GitLineBlame> {
             author_email: String::new(),
             author_time: 0,
             subject: String::new(),
+            previous: String::new(),
         });
         current = Some((hash.to_string(), info));
     }
@@ -1161,6 +1250,7 @@ fn uncommitted_blame() -> GitLineBlame {
         author_email: String::new(),
         author_time: 0,
         subject: String::new(),
+        previous: String::new(),
     }
 }
 
@@ -1179,9 +1269,12 @@ pub fn parse_blame_porcelain(text: &str) -> Option<GitLineBlame> {
     let mut author_email = String::new();
     let mut author_time = 0_i64;
     let mut subject = String::new();
+    let mut previous = String::new();
     for line in lines {
         if line.starts_with('\t') {
             break;
+        } else if let Some(rest) = line.strip_prefix("previous ") {
+            previous = rest.split_whitespace().next().unwrap_or("").to_string();
         } else if let Some(rest) = line.strip_prefix("author ") {
             author_name = rest.to_string();
         } else if let Some(rest) = line.strip_prefix("author-mail ") {
@@ -1204,6 +1297,7 @@ pub fn parse_blame_porcelain(text: &str) -> Option<GitLineBlame> {
         author_email,
         author_time,
         subject,
+        previous,
     })
 }
 
@@ -1503,7 +1597,7 @@ mod tests {
     use super::{
         blame_line, commit, commit_files, current_upstream, discard, graph_commit_action, history,
         index_file, parse_blame_porcelain, parse_branch_header, parse_status_records, pull, push,
-        revision_file, stage, status, switch_branch,
+        revision_file, stage, stage_contents, status, switch_branch,
     };
 
     #[test]
@@ -1531,6 +1625,31 @@ mod tests {
             status("workspace", "repo", root, "git").unwrap().branch,
             "feature/test"
         );
+    }
+
+    #[test]
+    fn stages_partial_contents_without_touching_worktree() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        command(root, &["init"]);
+        command(root, &["config", "user.email", "test@multara.local"]);
+        command(root, &["config", "user.name", "Multara Test"]);
+        fs::write(temp.path().join("file.txt"), "A\nB\nC\n").unwrap();
+        stage(root, "git", &["file.txt".to_string()], true).unwrap();
+        commit(root, "git", "feat: base", false).unwrap();
+
+        fs::write(temp.path().join("file.txt"), "A\nB2\nC\nD\n").unwrap();
+        stage_contents(root, "git", "file.txt", "A\nB2\nC\n").unwrap();
+
+        let worktree = fs::read_to_string(temp.path().join("file.txt")).unwrap();
+        assert_eq!(worktree, "A\nB2\nC\nD\n");
+        let index = index_file(root, "git", "file.txt").unwrap();
+        assert_eq!(index.content, "A\nB2\nC\n");
+        let change = &status("workspace", "repo", root, "git").unwrap().changes[0];
+        assert_eq!(change.path, "file.txt");
+        assert_eq!(change.index_status, "M");
+        assert_eq!(change.worktree_status, "M");
+        assert!(change.staged);
     }
 
     #[test]

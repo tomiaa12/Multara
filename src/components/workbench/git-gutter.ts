@@ -24,8 +24,9 @@ export class GitGutter {
     private readonly loadBaseline: () => Promise<string | null>,
     private readonly baselineKeyOf: () => string,
     locate: () => { workspaceId: string; filePath: string },
+    onMutate: () => void,
   ) {
-    this.peek = new GitPeek(editor, locate);
+    this.peek = new GitPeek(editor, locate, onMutate);
     this.listener = editor.onMouseUp((event) => this.onMouseUp(event));
   }
 
