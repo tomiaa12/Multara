@@ -11,6 +11,7 @@ export interface GitChange {
   startLine: number;
   endLine: number;
   oldStart: number;
+  newStart: number;
   oldLines: string[];
   newLines: string[];
 }
@@ -64,6 +65,7 @@ export function gitGutterModel(
       startLine: visible[0].line,
       endLine: visible[visible.length - 1].line,
       oldStart: hunk.oldStart,
+      newStart: hunk.newStart,
       oldLines: hunk.oldLines,
       newLines: hunk.newLines,
     });
@@ -81,8 +83,10 @@ export function gitChangeAtLine(changes: readonly GitChange[], line: number): nu
 
 /** 对比区行数等于这块删掉和改后的行，最多 10 行。 */
 export function gitPeekBodyLines(change: Pick<GitChange, "oldLines" | "newLines">): number {
-  const lines = change.oldLines.length + change.newLines.length;
-  return Math.min(10, Math.max(1, lines));
+  const oldCount = change.oldLines.length;
+  const newCount = change.newLines.length;
+  const lines = oldCount === 0 ? newCount : newCount === 0 ? oldCount : oldCount + newCount;
+  return Math.max(1, lines);
 }
 
 function deletedMark(line: number, lineCount: number): GitGutterMark {

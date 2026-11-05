@@ -59,6 +59,7 @@ describe("gitGutterMarks", () => {
     expect(gitPeekBodyLines({ oldLines: ["a"], newLines: ["b"] })).toBe(2);
     expect(gitPeekBodyLines({ oldLines: ["gone"], newLines: [] })).toBe(1);
     expect(gitPeekBodyLines({ oldLines: [], newLines: ["b"] })).toBe(1);
-    expect(gitPeekBodyLines({ oldLines: Array.from({ length: 20 }, () => "x"), newLines: [] })).toBe(10);
+    expect(gitPeekBodyLines({ oldLines: Array.from({ length: 20 }, () => "x"), newLines: [] })).toBe(20);
+    expect(gitPeekBodyLines({ oldLines: ["a", "b"], newLines: ["c", "d", "e"] })).toBe(5);
   });
 });
