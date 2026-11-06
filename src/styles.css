@@ -6204,7 +6204,8 @@ body.is-dragging-workspace-file * {
 .file-tree .tree-entry.is-sticky {
   position: sticky;
   top: calc(var(--tree-sticky-head) + var(--tree-depth, 0) * var(--tree-sticky-row));
-  z-index: calc(18 - var(--tree-depth, 0));
+  /* 低于悬浮滚动条（--z-overlay-scroll），粘住时不盖住滑块 */
+  z-index: calc(var(--z-overlay-scroll) - 1 - (var(--tree-depth, 0) + 1) * 0.001);
   background: var(--color-bg);
 }
 .file-tree .tree-entry.is-sticky:hover {
@@ -6221,7 +6222,8 @@ body.is-dragging-workspace-file * {
 .file-tree .tree-workspace-head {
   position: sticky;
   top: 0;
-  z-index: 20;
+  /* 高于粘住的目录行，低于悬浮滚动条 */
+  z-index: calc(var(--z-overlay-scroll) - 1);
   display: flex;
   align-items: center;
   gap: 6px;
