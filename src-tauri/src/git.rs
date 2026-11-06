@@ -8,7 +8,8 @@ use std::{
 };
 
 use crate::models::{
-    GitCommitFile, GitFileStatus, GitHistoryItem, GitHistoryPage, GitLineBlame, GitRepositoryStatus,
+    GitCommitFile, GitCompareRefs, GitFileStatus, GitHistoryItem, GitHistoryPage, GitLineBlame,
+    GitRepositoryStatus,
 };
 
 /// 本地 git 命令（status、merge、switch 及其钩子）的上限；网络与提交另有自己的超时。
@@ -927,16 +928,67 @@ pub fn abort_merge(root: &str, git_command: &str) -> Result<(), String> {
     run_strings(git_command, root, &["merge", "--abort"])
 }
 
+fn valid_revision_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().all(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '/' | '_' | '-' | '.' | '@' | '^' | '~' | ':')
+        })
+}
+
+/// 比较 `head` 相对 `base`：领先 / 落后提交数，以及三方差异文件数。
+pub fn compare_refs(
+    root: &str,
+    git_command: &str,
+    base: &str,
+    head: &str,
+) -> Result<GitCompareRefs, String> {
+    let base = base.trim();
+    let head = head.trim();
+    if !valid_revision_token(base) || !valid_revision_token(head) {
+        return Err("invalid revision".into());
+    }
+    let ahead_range = format!("{base}..{head}");
+    let behind_range = format!("{head}..{base}");
+    let files_range = format!("{base}...{head}");
+    let ahead = output(git_command, root, &["rev-list", "--count", &ahead_range])?
+        .trim()
+        .parse()
+        .unwrap_or(0);
+    let behind = output(git_command, root, &["rev-list", "--count", &behind_range])?
+        .trim()
+        .parse()
+        .unwrap_or(0);
+    let files = output(git_command, root, &["diff", "--name-only", &files_range])
+        .map(|value| value.lines().filter(|line| !line.trim().is_empty()).count() as u32)
+        .unwrap_or(0);
+    Ok(GitCompareRefs {
+        ahead,
+        behind,
+        files,
+    })
+}
+
 pub fn history(
     root: &str,
     git_command: &str,
     skip: u32,
     limit: u32,
     path: Option<&str>,
+    // `base..head` 形式的区间，用于比较引用。
+    range: Option<&str>,
+    // 提交说明搜索（`--grep`，固定不区分大小写）。
+    grep: Option<&str>,
 ) -> Result<GitHistoryPage, String> {
     let limit = limit.clamp(1, 100);
     let take = (limit + 1).to_string();
     let skip = skip.to_string();
+    let range = range.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(value) = range {
+        if !value.contains("..") || !valid_revision_token(value) {
+            return Err("invalid revision range".into());
+        }
+    }
+    let grep = grep.map(str::trim).filter(|value| !value.is_empty());
     let mut args = vec![
         "log",
         "--date-order",
@@ -946,6 +998,14 @@ pub fn history(
         skip.as_str(),
         "--pretty=format:%H%x1f%P%x1f%aN%x1f%aI%x1f%D%x1f%s%x1e",
     ];
+    if let Some(pattern) = grep {
+        args.push("--regexp-ignore-case");
+        args.push("--grep");
+        args.push(pattern);
+    }
+    if let Some(value) = range {
+        args.push(value);
+    }
     if let Some(path) = path.map(str::trim).filter(|path| !path.is_empty()) {
         args.insert(0, LITERAL_PATHSPECS);
         args.push("--");
@@ -1989,7 +2049,7 @@ mod tests {
         command(root, &["add", "file.txt"]);
         command(root, &["commit", "-m", "second"]);
 
-        let page = history(root, "git", 0, 10, None).unwrap();
+        let page = history(root, "git", 0, 10, None, None, None).unwrap();
         assert_eq!(page.items.len(), 2);
         assert_eq!(page.items[0].subject, "second");
         assert_eq!(page.items[0].parents.len(), 1);

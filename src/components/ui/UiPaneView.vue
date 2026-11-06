@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, provide, ref } from "vue";
-import { PANE_HEADER, layoutPaneHeights, paneMin, sashCursor, type PaneBox } from "./pane-layout";
+import {
+  PANE_HEADER,
+  fitHeightsToTotal,
+  layoutPaneHeights,
+  paneMax,
+  paneMin,
+  resizeAroundSash,
+  sashCursor,
+  sashDisabled,
+  type PaneBox,
+} from "./pane-layout";
 
 const SASH_HOVER_DELAY = 300;
 const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
@@ -96,24 +106,36 @@ function specsFor(list: HTMLElement[], total: number, holdHeights: boolean, targ
   });
 }
 
-function paint(list: HTMLElement[], heights: number[], specs: PaneBox[], total: number) {
+function paint(list: HTMLElement[], heights: number[], specs: PaneBox[], total: number, scrollable: boolean) {
+  const sum = heights.reduce((acc, height) => acc + height, 0);
   list.forEach((pane, index) => {
     pane.style.flex = "0 0 auto";
     pane.style.maxHeight = "none";
     pane.style.height = `${heights[index]}px`;
     const sash = pane.querySelector(":scope > .ui-pane-sash") as HTMLElement | null;
     if (!sash || index === 0) return;
-    const disabled = !specs[index - 1].expanded || !specs[index].expanded;
+    const disabled = sashDisabled(specs, index);
     sash.classList.toggle("is-disabled", disabled);
-    const resizingBelow = !specs[index].fill;
-    const targetIndex = resizingBelow ? index : index - 1;
-    const othersMin = specs.reduce((sum, spec, item) => sum + (item === targetIndex ? 0 : paneMin(spec)), 0);
-    const atMin = heights[targetIndex] <= paneMin(specs[targetIndex]) + 0.5;
-    const atMax = heights[targetIndex] >= total - othersMin - 0.5;
-    const cursor = disabled ? "default" : shownCursor(sashCursor(resizingBelow, atMin, atMax));
+    // 与 VS Code 一致：上侧还能被压 / 下侧还能被压，决定光标单向还是双向。
+    // 收起项 max===min，不参与可压缩判断。
+    let canShrinkUp = false;
+    let canShrinkDown = false;
+    for (let item = 0; item < index; item += 1) {
+      if (!specs[item].expanded) continue;
+      if (heights[item] > paneMin(specs[item]) + 0.5) canShrinkUp = true;
+    }
+    for (let item = index; item < specs.length; item += 1) {
+      if (!specs[item].expanded) continue;
+      if (heights[item] > paneMin(specs[item]) + 0.5) canShrinkDown = true;
+    }
+    const atMin = !canShrinkDown;
+    const atMax = !canShrinkUp;
+    const cursor = disabled ? "default" : shownCursor(sashCursor(true, atMin, atMax));
     sash.dataset.cursor = cursor;
+    sash.dataset.scrollable = scrollable ? "1" : "0";
     sash.style.removeProperty("cursor");
   });
+  return sum;
 }
 
 function layout(holdHeights = false) {
@@ -123,7 +145,11 @@ function layout(holdHeights = false) {
   const total = el.clientHeight;
   if (!list.length || total <= 0) return;
   const specs = specsFor(list, total, holdHeights);
-  paint(list, layoutPaneHeights(total, specs), specs, total);
+  const heights = layoutPaneHeights(total, specs);
+  const sum = heights.reduce((acc, height) => acc + height, 0);
+  const scrollable = sum > total + 1;
+  el.classList.toggle("is-scrollable", scrollable);
+  paint(list, heights, specs, total, scrollable);
 }
 
 function relayout(animate = false) {
@@ -149,8 +175,7 @@ function onPointerDown(event: PointerEvent) {
   const host = root.value;
   if (!host || index <= 0) return;
   const specs = specsFor(list, host.clientHeight, true);
-  const resizingBelow = !specs[index].fill;
-  const target = list[resizingBelow ? index : index - 1];
+  if (sashDisabled(specs, index)) return;
   event.preventDefault();
   event.stopPropagation();
   try {
@@ -162,25 +187,33 @@ function onPointerDown(event: PointerEvent) {
   dragging = true;
   animated.value = false;
   const startY = event.clientY;
-  const startHeight = target.getBoundingClientRect().height;
-  const sign = resizingBelow ? -1 : 1;
+  const total = host.clientHeight;
+  const mins = specs.map((spec) => paneMin(spec));
+  const maxes = specs.map((spec) => paneMax(spec));
+  // 对齐 VS Code：拖动时上下互借，先压回视口，避免继续撑出滚动条。
+  const startHeights = fitHeightsToTotal(
+    list.map((item) => item.getBoundingClientRect().height),
+    mins,
+    total,
+    maxes,
+  );
   document.body.classList.add("is-resizing-panes");
+  host.classList.toggle("is-scrollable", false);
+  paint(list, startHeights, specs, total, false);
 
   const move = (moveEvent: PointerEvent) => {
     const currentHost = root.value;
     if (!currentHost) return;
     const current = childPanes();
-    const total = currentHost.clientHeight;
-    const currentSpecs = specsFor(current, total, true);
-    const targetIndex = current.indexOf(target);
-    if (targetIndex < 0) return;
-    const min = paneMin(currentSpecs[targetIndex]);
-    const othersMin = currentSpecs.reduce((sum, spec, item) => sum + (item === targetIndex ? 0 : paneMin(spec)), 0);
-    const max = Math.max(min, total - othersMin);
-    const next = Math.round(Math.min(max, Math.max(min, startHeight + sign * (moveEvent.clientY - startY))));
-    currentSpecs[targetIndex] = { ...currentSpecs[targetIndex], fill: false, expanded: true, preferred: next };
-    const heights = layoutPaneHeights(total, currentSpecs);
-    paint(current, heights, currentSpecs, total);
+    if (current.length !== startHeights.length) return;
+    const currentTotal = currentHost.clientHeight;
+    const currentSpecs = specsFor(current, currentTotal, true);
+    const currentMins = currentSpecs.map((spec) => paneMin(spec));
+    const currentMaxes = currentSpecs.map((spec) => paneMax(spec));
+    const delta = Math.round(moveEvent.clientY - startY);
+    const heights = resizeAroundSash(startHeights, currentMins, index, delta, currentMaxes);
+    currentHost.classList.toggle("is-scrollable", false);
+    paint(current, heights, currentSpecs, currentTotal, false);
     const cursor = sash.dataset.cursor || "ns-resize";
     document.body.dataset.paneCursor = cursor;
   };
@@ -197,9 +230,16 @@ function onPointerDown(event: PointerEvent) {
     }
     document.body.classList.remove("is-resizing-panes");
     delete document.body.dataset.paneCursor;
-    const key = target.dataset.sizeKey;
-    if (key) localStorage.setItem(key, String(Math.round(target.getBoundingClientRect().height)));
+    // 非 fill 抽屉记下拖后高度；fill 仍吃剩余。
+    const current = childPanes();
+    for (const item of current) {
+      if (item.dataset.fill === "true" || item.dataset.expanded !== "true") continue;
+      const key = item.dataset.sizeKey;
+      if (!key) continue;
+      localStorage.setItem(key, String(Math.round(item.getBoundingClientRect().height)));
+    }
     dragging = false;
+    layout(true);
   };
 
   sash.addEventListener("pointermove", move);

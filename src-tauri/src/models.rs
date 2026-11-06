@@ -158,6 +158,15 @@ pub struct GitHistoryPage {
     pub has_more: bool,
 }
 
+/// 比较两个引用：ahead / behind 提交数与变更文件数（对齐 GitLens Compare）。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCompareRefs {
+    pub ahead: u32,
+    pub behind: u32,
+    pub files: u32,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitFile {
