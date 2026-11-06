@@ -7,6 +7,10 @@ import UiPane from "./ui/UiPane.vue";
 import UiPaneView from "./ui/UiPaneView.vue";
 import ScmChangesView from "./scm/ScmChangesView.vue";
 import ScmGraphView from "./scm/ScmGraphView.vue";
+import ScmHistoryListView from "./scm/ScmHistoryListView.vue";
+import ScmSearchCompareView from "./scm/ScmSearchCompareView.vue";
+import ScmVisualHistoryView from "./scm/ScmVisualHistoryView.vue";
+import ScmTreemapView from "./scm/ScmTreemapView.vue";
 import MergeIntoDialog from "./scm/MergeIntoDialog.vue";
 import { useAppStore } from "../stores/app";
 import { parseGitHookFailure, type GitHookFailure } from "./workbench/git-hook-error";
@@ -36,9 +40,16 @@ const props = withDefaults(defineProps<{
   readonly?: boolean;
   /** 列表 / 树状视图的本地存储键。只读时不读也不写。 */
   viewModeStorageKey?: string;
+  /** 当前编辑器文件，供检查器历史 / 可视化抽屉使用。 */
+  activePath?: string;
+  activeLine?: number;
+  activeWorkspaceId?: string;
 }>(), {
   readonly: false,
   viewModeStorageKey: "multara.scm.viewMode",
+  activePath: "",
+  activeLine: 0,
+  activeWorkspaceId: "",
 });
 const emit = defineEmits<{
   openChange: [target: ScmOpenTarget];
@@ -82,6 +93,13 @@ const messages = reactive<Record<string, string>>({});
 const collapsedRepos = ref(new Set<string>());
 const selectedWorkspaceId = ref("");
 const historyEpoch = ref(0);
+const lineHistoryView = ref<{ setExpanded: (value: boolean) => void } | null>(null);
+const fileHistoryView = ref<{ setExpanded: (value: boolean) => void } | null>(null);
+
+function switchHistoryKind(kind: "file" | "line") {
+  if (kind === "line") lineHistoryView.value?.setExpanded(true);
+  else fileHistoryView.value?.setExpanded(true);
+}
 function storedViewMode(): "list" | "tree" {
   if (props.readonly) return "list";
   if (localStorage.getItem(props.viewModeStorageKey) === "tree") return "tree";
@@ -95,6 +113,49 @@ const items = computed(() =>
     workspace,
     repository: repositories.value.find((item) => item.workspaceId === workspace.id) ?? null,
   })),
+);
+
+/** 检查器工作区：默认同编辑器；固定或下拉切换后停在所选工作区（只换查看对象，不改 checkout）。 */
+const inspectPinned = ref(false);
+const pinnedInspectWorkspaceId = ref("");
+const followInspectWorkspaceId = computed(() => props.activeWorkspaceId || selectedWorkspaceId.value);
+const inspectWorkspaceId = computed(() => {
+  if (inspectPinned.value && pinnedInspectWorkspaceId.value) return pinnedInspectWorkspaceId.value;
+  return followInspectWorkspaceId.value;
+});
+const inspectRepository = computed(() =>
+  repositories.value.find((item) => item.workspaceId === inspectWorkspaceId.value) ?? null,
+);
+const inspectWorkspace = computed(() =>
+  props.workspaces.find((item) => item.id === inspectWorkspaceId.value) ?? null,
+);
+
+function toggleInspectPin() {
+  if (inspectPinned.value) {
+    inspectPinned.value = false;
+    return;
+  }
+  const id = inspectWorkspaceId.value;
+  if (!id) return;
+  pinnedInspectWorkspaceId.value = id;
+  inspectPinned.value = true;
+}
+
+function selectInspectWorkspace(id: string) {
+  if (!id) return;
+  pinnedInspectWorkspaceId.value = id;
+  inspectPinned.value = true;
+}
+
+watch(
+  () => props.workspaces.map((item) => item.id).join("\0"),
+  () => {
+    if (!inspectPinned.value) return;
+    if (!props.workspaces.some((item) => item.id === pinnedInspectWorkspaceId.value)) {
+      inspectPinned.value = false;
+      pinnedInspectWorkspaceId.value = "";
+    }
+  },
 );
 
 watch(
@@ -556,6 +617,104 @@ defineExpose({ refresh, revealCommit });
       @error="error = $event"
       @updated="refresh()"
     />
+
+    <!-- GitLens Inspect：搜索与比较 + 行/文件历史 + 可视化历史 + 矩形图 -->
+    <template v-if="!readonly && inspectWorkspaceId">
+      <ScmSearchCompareView
+        :title="t('scm.searchCompare.title')"
+        storage-key="multara.scm.searchCompareCollapsed"
+        size-key="multara.scm.searchCompareSize"
+        :workspace-id="inspectWorkspaceId"
+        :repository="inspectRepository"
+        :epoch="historyEpoch"
+        @open="emit('openChange', $event)"
+        @open-changes="emit('openChanges', $event)"
+      />
+      <ScmHistoryListView
+        ref="lineHistoryView"
+        kind="line"
+        :title="t('scm.inspect.lineHistory')"
+        storage-key="multara.scm.lineHistoryCollapsed"
+        size-key="multara.scm.lineHistorySize"
+        :workspace-id="inspectWorkspaceId"
+        :path="activePath"
+        :line="activeLine"
+        :epoch="historyEpoch"
+        :live="projectId !== PREVIEW_PROJECT_ID"
+        @open="emit('openChange', $event)"
+        @open-file="(path) => emit('openFile', { workspaceId: inspectWorkspaceId, path })"
+        @switch-kind="switchHistoryKind"
+      />
+      <ScmHistoryListView
+        ref="fileHistoryView"
+        kind="file"
+        :title="t('scm.inspect.fileHistory')"
+        storage-key="multara.scm.fileHistoryCollapsed"
+        size-key="multara.scm.fileHistorySize"
+        :workspace-id="inspectWorkspaceId"
+        :path="activePath"
+        :line="activeLine"
+        :epoch="historyEpoch"
+        :live="projectId !== PREVIEW_PROJECT_ID"
+        @open="emit('openChange', $event)"
+        @open-file="(path) => emit('openFile', { workspaceId: inspectWorkspaceId, path })"
+        @switch-kind="switchHistoryKind"
+      />
+      <ScmVisualHistoryView
+        :title="t('scm.inspect.visualHistory')"
+        storage-key="multara.scm.visualHistoryCollapsed"
+        size-key="multara.scm.visualHistorySize"
+        :workspace-id="inspectWorkspaceId"
+        :path="activePath"
+        :epoch="historyEpoch"
+        :branch="inspectRepository?.branch || ''"
+        :isolation-mode="inspectWorkspace ? workspaceMode(inspectWorkspace) : ''"
+        :workspaces="workspaces"
+        :repositories="repositories"
+        :pinned="inspectPinned"
+        default-scope="repo"
+        @open="emit('openChange', $event)"
+        @open-file="(path) => emit('openFile', { workspaceId: inspectWorkspaceId, path })"
+        @select-workspace="selectInspectWorkspace"
+        @toggle-pin="toggleInspectPin"
+      />
+      <ScmTreemapView
+        mode="files"
+        :title="t('scm.inspect.fileTreemap')"
+        storage-key="multara.scm.fileTreemapCollapsed"
+        size-key="multara.scm.fileTreemapSize"
+        :workspace-id="inspectWorkspaceId"
+        :path="activePath"
+        :epoch="historyEpoch"
+        :branch="inspectRepository?.branch || ''"
+        :isolation-mode="inspectWorkspace ? workspaceMode(inspectWorkspace) : ''"
+        :workspaces="workspaces"
+        :repositories="repositories"
+        :pinned="inspectPinned"
+        default-scope="repo"
+        @open-file="(path) => emit('openFile', { workspaceId: inspectWorkspaceId, path })"
+        @select-workspace="selectInspectWorkspace"
+        @toggle-pin="toggleInspectPin"
+      />
+      <ScmTreemapView
+        mode="commits"
+        :title="t('scm.inspect.commitTreemap')"
+        storage-key="multara.scm.commitTreemapCollapsed"
+        size-key="multara.scm.commitTreemapSize"
+        :workspace-id="inspectWorkspaceId"
+        :path="activePath"
+        :epoch="historyEpoch"
+        :branch="inspectRepository?.branch || ''"
+        :isolation-mode="inspectWorkspace ? workspaceMode(inspectWorkspace) : ''"
+        :workspaces="workspaces"
+        :repositories="repositories"
+        :pinned="inspectPinned"
+        default-scope="repo"
+        @open-file="(path) => emit('openFile', { workspaceId: inspectWorkspaceId, path })"
+        @select-workspace="selectInspectWorkspace"
+        @toggle-pin="toggleInspectPin"
+      />
+    </template>
 
     <MergeIntoDialog
       v-if="mergeDialogItem?.repository"

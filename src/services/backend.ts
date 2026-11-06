@@ -39,6 +39,7 @@ import type {
   GitIndexFile,
   GitLineBlame,
   GitCommitFile,
+  GitCompareRefs,
   GitHistoryPage,
   GitRepositoryStatus,
   MergeFinishResult,
@@ -1616,9 +1617,26 @@ export async function gitLog(
   skip: number,
   limit: number,
   path?: string,
+  options?: { range?: string; grep?: string },
 ): Promise<GitHistoryPage> {
   if (!inTauri()) return { items: [], hasMore: false };
-  return invoke<GitHistoryPage>("git_log_workspace", { workspaceId, skip, limit, path: path ?? null });
+  return invoke<GitHistoryPage>("git_log_workspace", {
+    workspaceId,
+    skip,
+    limit,
+    path: path ?? null,
+    range: options?.range ?? null,
+    grep: options?.grep ?? null,
+  });
+}
+
+export async function gitCompareRefs(
+  workspaceId: string,
+  base: string,
+  head: string,
+): Promise<GitCompareRefs> {
+  if (!inTauri()) return { ahead: 0, behind: 0, files: 0 };
+  return invoke<GitCompareRefs>("git_compare_refs_workspace", { workspaceId, base, head });
 }
 
 export async function gitCommitFiles(workspaceId: string, hash: string): Promise<GitCommitFile[]> {

@@ -97,6 +97,12 @@ export interface GitHistoryPage {
   hasMore: boolean;
 }
 
+export interface GitCompareRefs {
+  ahead: number;
+  behind: number;
+  files: number;
+}
+
 export interface GitCommitFile {
   path: string;
   status: string;
