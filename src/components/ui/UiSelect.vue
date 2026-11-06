@@ -659,16 +659,18 @@ onBeforeUnmount(() => {
       </span>
       <span v-else class="ds-select-value">
         <template v-if="!multiple && showsValue">
-          <slot name="option-leading" :option="singleOption">
-            <AgentAvatar
-              v-if="singleOption?.avatar"
-              class="ds-avatar"
-              :value="singleOption.avatar"
-              :size="null"
-              style="width: 20px; height: 20px; font-size: 11px"
-            />
+          <slot name="value" :option="singleOption">
+            <slot name="option-leading" :option="singleOption">
+              <AgentAvatar
+                v-if="singleOption?.avatar"
+                class="ds-avatar"
+                :value="singleOption.avatar"
+                :size="null"
+                style="width: 20px; height: 20px; font-size: 11px"
+              />
+            </slot>
+            <span class="ds-select-text">{{ singleOption?.label ?? String(modelValue) }}</span>
           </slot>
-          <span class="ds-select-text">{{ singleOption?.label ?? String(modelValue) }}</span>
         </template>
         <span v-else class="ds-select-placeholder">{{ resolvedPlaceholder }}</span>
       </span>

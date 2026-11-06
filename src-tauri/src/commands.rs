@@ -19,7 +19,8 @@ use crate::{
         Agent, AgentActivityRecord, AgentInput, Automation, AutomationInput, AutomationRun,
         BootstrapData, ChatMessage, ChatSession, ChatSessionInput, CustomRuntimeForm,
         CustomRuntimeInput, DashboardStats, FileContent, FileEntry, GitCommitFile, GitCommitInput,
-        GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus, GlobalResource,
+        GitCompareRefs, GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus,
+        GlobalResource,
         InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
         MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunMode,
         RunStatistics, Runtime, Squad, SquadInput, StatisticGroup, Task, TaskChecklistItem,
@@ -603,6 +604,8 @@ pub async fn git_log_workspace(
     skip: u32,
     limit: u32,
     path: Option<String>,
+    range: Option<String>,
+    grep: Option<String>,
     app: AppHandle,
 ) -> Result<GitHistoryPage, String> {
     let _span = crate::diag::span("git_log_workspace");
@@ -614,7 +617,24 @@ pub async fn git_log_workspace(
             skip,
             limit,
             path.as_deref(),
+            range.as_deref(),
+            grep.as_deref(),
         )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_compare_refs_workspace(
+    workspace_id: String,
+    base: String,
+    head: String,
+    app: AppHandle,
+) -> Result<GitCompareRefs, String> {
+    let _span = crate::diag::span("git_compare_refs_workspace");
+    off_main(app, move |state| {
+        let (workspace, git_command) = git_workspace_and_command(state, &workspace_id)?;
+        git_manager::compare_refs(&workspace.work_path, &git_command, &base, &head)
     })
     .await
 }
