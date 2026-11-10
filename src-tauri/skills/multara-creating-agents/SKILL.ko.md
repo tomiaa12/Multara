@@ -9,7 +9,7 @@ description: 에이전트를 생성하고 수정합니다. 사용자가 speciali
 
 ## 생성
 
-`multara agent create --name "…" --runtime-id RUNTIME_ID [--description "…"] [--instructions "…"] [--avatar "🤖"]`
+`multara agent create --name "…" --runtime-id RUNTIME_ID [--description "…"] [--instructions "…"] [--avatar "🤖"] [--skills 이름-또는-id,…] [--mcps 이름-또는-id,…]`
 
 - `--runtime-id`는 필수입니다. 보통 `multara runtime list`에서 온라인인 첫 번째 런타임을 사용합니다.
 - 새로 만들어지는 것은 사용자 specialist이며 `system_key`가 없습니다.
@@ -17,15 +17,19 @@ description: 에이전트를 생성하고 수정합니다. 사용자가 speciali
 
 ## 수정
 
-`multara agent update AGENT_ID [--name "…"] [--description "…"] [--instructions "…"] [--runtime-id RUNTIME_ID] [--avatar "…"] [--max-concurrent-tasks N]`
+`multara agent update AGENT_ID [--name "…"] [--description "…"] [--instructions "…"] [--runtime-id RUNTIME_ID] [--avatar "…"] [--max-concurrent-tasks N] [--skills 이름-또는-id,…] [--mcps 이름-또는-id,…] [--remove-skills …] [--remove-mcps …]`
 
 Miku는 표시 이름, 작업 영역 메모(`instructions`), 런타임, 동시 실행 수를 바꿀 수 있습니다. `system_key`는 바꿀 수 없고 삭제할 수도 없습니다.
+
+`--skills`와 `--mcps`는 해당 에이전트에 체크하고 기존 목록에 추가합니다. 체크를 해제할 때는 `--remove-skills`와 `--remove-mcps`를 씁니다. 이름이 하나뿐이면 이름을 쓰고, 같은 이름이 여러 개면 `multara skill list` 또는 `multara mcp list`의 전체 id를 씁니다. 사용자가 Skill이나 MCP를 연결하라고 하면 명령을 실행하고, 설정에서 직접 체크하라고 안내하지 않습니다.
 
 ## 목록 / 조회
 
 - `multara agent list`
 - `multara agent get AGENT_ID`
 - `multara agent skills` — 내장 skill 이름
+- `multara skill list` — 이 컴퓨터에서 찾은 Skill
+- `multara mcp list` — 이 컴퓨터에서 찾은 MCP
 
 ## 규칙
 
