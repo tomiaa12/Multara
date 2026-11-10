@@ -41,6 +41,9 @@ let unmounted = false;
 let finished = false;
 let beforeAccountId: string | null = null;
 let beforeLabel: string | null = null;
+// 终端数据是字节；登录成功/失败的提示要按文本匹配。流式解码 + 留一小段尾巴，提示被拆在两块里也能认出来
+const loginDecoder = new TextDecoder();
+let loginTail = "";
 const unlisteners: UnlistenFn[] = [];
 
 function refit() {
@@ -88,11 +91,13 @@ function waitForLogin(attempt: number) {
 function onTerminalData(raw: string) {
   const chunk = decodeTerminalChunk(raw);
   term?.write(chunk);
-  if (LOGIN_FAIL_RE.test(chunk)) {
+  const text = loginTail + loginDecoder.decode(chunk, { stream: true });
+  loginTail = text.slice(-64);
+  if (LOGIN_FAIL_RE.test(text)) {
     error.value = t("runtimeAccount.loginFailed");
     return;
   }
-  if (LOGIN_OK_RE.test(chunk)) {
+  if (LOGIN_OK_RE.test(text)) {
     error.value = "";
     void finishAfterSuccessBanner(0);
   }

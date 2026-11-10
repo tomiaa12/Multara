@@ -49,6 +49,68 @@ pub struct McpCapability {
     pub title: String,
     pub description: String,
     pub uri: String,
+    /// MCP Apps：工具声明的界面资源（`_meta.ui`）。旧缓存没有这个字段，按 None 读
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<McpToolUi>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolUi {
+    /// `ui://...` HTML 资源
+    pub resource_uri: String,
+    /// `model` / `app`。缺省为两者都有（VS Code `_normalizeTool`）：缺省时页面也能调这个工具
+    pub visibility: Vec<String>,
+}
+
+impl McpToolUi {
+    pub fn app_visible(&self) -> bool {
+        self.visibility.iter().any(|item| item == "app")
+    }
+}
+
+/// 从工具描述里取 `_meta.ui`（以及旧写法 `_meta["ui/resourceUri"]`）。
+/// 只声明了 `visibility`、没有界面资源的工具也要返回（`resource_uri` 为空）：
+/// 页面调工具时要按它判断（例如 `["model"]` 不让页面调）。
+pub fn tool_ui(item: &Value) -> Option<McpToolUi> {
+    let meta = item.get("_meta")?;
+    let ui = meta.get("ui");
+    let resource_uri = ui
+        .and_then(|ui| ui.get("resourceUri"))
+        .or_else(|| meta.get("ui/resourceUri"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    let declared = ui
+        .and_then(|ui| ui.get("visibility"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|item| item.to_ascii_lowercase())
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty());
+    if resource_uri.is_empty() && declared.is_none() {
+        return None;
+    }
+    let visibility = declared.unwrap_or_else(|| vec!["model".to_string(), "app".to_string()]);
+    Some(McpToolUi {
+        resource_uri,
+        visibility,
+    })
+}
+
+/// 客户端能力：声明支持 MCP Apps，否则部分服务器不暴露带界面的工具
+fn client_capabilities() -> Value {
+    json!({
+        "roots": { "listChanged": false },
+        "extensions": {
+            "io.modelcontextprotocol/ui": { "mimeTypes": ["text/html;profile=mcp-app"] }
+        }
+    })
 }
 
 pub fn probe(server: &str, entry: &Value) -> McpProbe {
@@ -100,7 +162,7 @@ impl From<String> for ProbeError {
 
 type ProbeResult<T> = Result<T, ProbeError>;
 
-trait Connection {
+trait Connection: Send {
     fn send(&mut self, message: &Value) -> ProbeResult<Option<Value>>;
     fn receive(&mut self, deadline: Instant) -> ProbeResult<Value>;
 }
@@ -114,7 +176,7 @@ fn run(connection: &mut dyn Connection, result: &mut McpProbe) -> ProbeResult<()
         "initialize",
         json!({
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": { "roots": { "listChanged": false } },
+            "capabilities": client_capabilities(),
             "clientInfo": { "name": "Multara", "version": env!("CARGO_PKG_VERSION") }
         }),
         STARTUP_TIMEOUT,
@@ -228,6 +290,7 @@ impl Client<'_> {
                         .unwrap_or_else(|| field("title")),
                     description: field("description"),
                     uri: field("uri"),
+                    ui: tool_ui(item),
                 });
             }
             cursor = page
@@ -239,6 +302,83 @@ impl Client<'_> {
             }
         }
         Ok(items)
+    }
+}
+
+/// 常驻连接（MCP Apps 用）：页面的 `tools/call`、`resources/read` 走这里，
+/// 和运行时 CLI 进程里的那个连接互不相识（方案 §7.2、§7.4 第 2 条）。
+pub struct McpSession {
+    connection: Box<dyn Connection>,
+    next_id: u64,
+    pub tools: Vec<McpCapability>,
+    log: Arc<Mutex<String>>,
+}
+
+impl McpSession {
+    pub fn open(server: &str, entry: &Value) -> Result<Self, String> {
+        let prepared = crate::mcp_vars::prepare(server, entry);
+        if !prepared.missing.is_empty() {
+            return Err(tr!("缺少输入：{inputs}", inputs = prepared.missing.join(", ")));
+        }
+        let log = Arc::new(Mutex::new(String::new()));
+        let connection = connect(&prepared.entry, log.clone()).map_err(probe_message)?;
+        let mut session = Self {
+            connection,
+            next_id: 1,
+            tools: Vec::new(),
+            log,
+        };
+        let init = session.request(
+            "initialize",
+            json!({
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": client_capabilities(),
+                "clientInfo": { "name": "Multara", "version": env!("CARGO_PKG_VERSION") }
+            }),
+            STARTUP_TIMEOUT,
+        )?;
+        session.notify("notifications/initialized", Value::Null)?;
+        if init.pointer("/capabilities/tools").is_some() {
+            let mut client = Client {
+                connection: session.connection.as_mut(),
+                next_id: session.next_id,
+            };
+            let tools = client.list("tools/list", "tools").map_err(probe_message)?;
+            session.next_id = client.next_id;
+            session.tools = tools;
+        }
+        Ok(session)
+    }
+
+    pub fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+        let mut client = Client {
+            connection: self.connection.as_mut(),
+            next_id: self.next_id,
+        };
+        let result = client.request(method, params, timeout).map_err(probe_message);
+        self.next_id = client.next_id;
+        result
+    }
+
+    pub fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
+        let mut message = json!({ "jsonrpc": "2.0", "method": method });
+        if !params.is_null() {
+            message["params"] = params;
+        }
+        self.connection
+            .send(&message)
+            .map(|_| ())
+            .map_err(probe_message)
+    }
+
+    pub fn log(&self) -> String {
+        self.log.lock().map(|text| text.clone()).unwrap_or_default()
+    }
+}
+
+fn probe_message(error: ProbeError) -> String {
+    match error {
+        ProbeError::Auth(message) | ProbeError::Other(message) => message,
     }
 }
 
@@ -719,5 +859,35 @@ mod tests {
         let messages = super::sse_messages(body);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["id"], 1);
+    }
+
+    #[test]
+    fn reads_tool_ui_metadata() {
+        use serde_json::json;
+        let ui = super::tool_ui(&json!({ "name": "chart", "_meta": { "ui": { "resourceUri": "ui://chart" } } })).unwrap();
+        assert_eq!(ui.resource_uri, "ui://chart");
+        // 缺省可见性 = model + app：页面也能调（R18）
+        assert_eq!(ui.visibility, vec!["model", "app"]);
+        assert!(ui.app_visible());
+        let model_only = super::tool_ui(&json!({
+            "_meta": { "ui": { "resourceUri": "ui://x", "visibility": ["model"] } }
+        }))
+        .unwrap();
+        assert!(!model_only.app_visible());
+        // 只声明可见性、没有界面资源：也要能读出来（页面调它时据此拒绝）
+        let no_ui = super::tool_ui(&json!({ "_meta": { "ui": { "visibility": ["model"] } } })).unwrap();
+        assert!(no_ui.resource_uri.is_empty());
+        assert!(!no_ui.app_visible());
+        let legacy = super::tool_ui(&json!({ "_meta": { "ui/resourceUri": "ui://old" } })).unwrap();
+        assert_eq!(legacy.resource_uri, "ui://old");
+        assert!(super::tool_ui(&json!({ "name": "plain" })).is_none());
+        // 旧缓存没有 ui 字段也能读
+        let old: super::McpCapability =
+            serde_json::from_value(json!({ "name": "a", "title": "", "description": "", "uri": "" })).unwrap();
+        assert!(old.ui.is_none());
+        assert_eq!(
+            super::client_capabilities()["extensions"]["io.modelcontextprotocol/ui"]["mimeTypes"][0],
+            "text/html;profile=mcp-app"
+        );
     }
 }

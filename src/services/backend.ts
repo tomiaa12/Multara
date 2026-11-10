@@ -15,6 +15,10 @@ import type {
   ChannelInstallationInput,
   ChannelUser,
   MessageAttachmentInput,
+  MessageSourceInput,
+  CanvasDefinition,
+  CanvasInstance,
+  CanvasListing,
   CustomRuntimeForm,
   CustomRuntimeInput,
   FileContent,
@@ -959,6 +963,82 @@ export async function openExternalUrl(url: string): Promise<void> {
   await invoke("open_external_url", { url });
 }
 
+// ---------- Canvas（生成式界面 L2） ----------
+
+export async function listCanvasInstances(sessionId: string): Promise<CanvasListing> {
+  if (!inTauri()) return { enabled: false, instances: [], available: [] };
+  return invoke<CanvasListing>("list_canvas_instances", { sessionId });
+}
+
+/** 懒托管：首次显示时才起服务，返回 `http://127.0.0.1:<port>/<token>/` */
+export async function ensureCanvasHosted(sessionId: string, instanceId: string): Promise<string> {
+  if (!inTauri()) throw new Error("Canvas requires the desktop app");
+  return invoke<string>("ensure_canvas_hosted", { sessionId, instanceId });
+}
+
+/** 服务当前的地址；没在跑返回 null（不会起服务，用来探测断开） */
+export async function canvasHostedUrl(sessionId: string, instanceId: string): Promise<string | null> {
+  if (!inTauri()) return null;
+  return invoke<string | null>("canvas_hosted_url", { sessionId, instanceId });
+}
+
+export async function setCanvasVisible(sessionId: string, instanceId: string, visible: boolean): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("set_canvas_visible", { sessionId, instanceId, visible });
+}
+
+export async function openRegisteredCanvas(sessionId: string, canvasId: string): Promise<CanvasInstance> {
+  return invoke<CanvasInstance>("open_registered_canvas", { sessionId, canvasId });
+}
+
+/** 固定到所有会话（五期） */
+export async function setCanvasPinned(sessionId: string, instanceId: string, pinned: boolean): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("set_canvas_pinned", { sessionId, instanceId, pinned });
+}
+
+/** 需求工作区里 .multara/canvases/ 下可直接打开的定义（新建聊天菜单用） */
+export async function listProjectCanvases(projectId: string): Promise<CanvasDefinition[]> {
+  if (!inTauri()) return [];
+  return invoke<CanvasDefinition[]>("list_project_canvases", { projectId });
+}
+
+export async function closeCanvas(sessionId: string, instanceId: string): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("close_canvas", { sessionId, instanceId });
+}
+
+/** 前端处理完 `ui-outbound` 事件（页面要填输入框）后的应答 */
+export async function resolveUiOutbound(requestId: string, result: { ok: boolean; reason?: string }): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("resolve_ui_outbound", { requestId, result });
+}
+
+// ---------- MCP Apps（生成式界面 L3） ----------
+
+export interface McpAppInfo {
+  serverKey: string;
+  server: string;
+  tool: string;
+  resourceUri: string;
+  url: string;
+  origin: string;
+  csp: unknown;
+  permissions: { clipboardWrite: boolean };
+  prefersBorder: boolean;
+}
+
+/** 这个工具有没有界面；有就托管，返回页面地址（没开 MCP Apps 或工具没界面时 null） */
+export async function mcpAppResolve(tool: string): Promise<McpAppInfo | null> {
+  if (!inTauri()) return null;
+  return invoke<McpAppInfo | null>("mcp_app_resolve", { tool });
+}
+
+/** 页面的 tools/call、resources/read、日志 */
+export async function mcpAppCall(serverKey: string, method: string, params: unknown): Promise<unknown> {
+  return invoke("mcp_app_call", { serverKey, method, params: params ?? {} });
+}
+
 export async function upsertInboxItem(input: InboxInput): Promise<InboxItem> {
   if (!inTauri()) {
     const now = new Date().toISOString();
@@ -1876,6 +1956,7 @@ export async function sendMessage(
   content: string,
   attachments: MessageAttachmentInput[] = [],
   requestedMode?: RunMode,
+  source?: MessageSourceInput,
 ): Promise<ChatMessage[]> {
   if (!inTauri()) {
     const createdAt = new Date().toISOString();
@@ -1889,7 +1970,10 @@ export async function sendMessage(
       attachments: [],
     };
     return [
-      { id: crypto.randomUUID(), sessionId, role: "user", content, createdAt, requestedMode, ...details },
+      {
+        id: crypto.randomUUID(), sessionId, role: "user", content, createdAt, requestedMode, ...details,
+        ...(source ? { sourceType: source.sourceType, sourceMeta: source.meta } : {}),
+      },
       {
         id: crypto.randomUUID(),
         sessionId,
@@ -1900,7 +1984,7 @@ export async function sendMessage(
       },
     ];
   }
-  return invoke<ChatMessage[]>("send_message", { sessionId, content, attachments, requestedMode });
+  return invoke<ChatMessage[]>("send_message", { sessionId, content, attachments, requestedMode, source: source ?? null });
 }
 
 export async function stopRun(runId: string): Promise<void> {

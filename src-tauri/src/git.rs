@@ -1414,6 +1414,8 @@ fn missing_from_head(message: &str) -> bool {
         || message.contains("未知的版本")
         || message.contains("路径不存在")
         || message.contains("不在索引")
+        // 冲突中的文件（只有 stage 1/2/3）：「路径 'x' 在索引中，但不在暂存区 0 中」
+        || message.contains("不在暂存区")
 }
 
 fn ensure_clean(root: &str, git_command: &str) -> Result<(), String> {

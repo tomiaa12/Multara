@@ -1,0 +1,404 @@
+{
+  "标题": {
+    "en": "Title",
+    "zh-TW": "標題",
+    "ja": "タイトル",
+    "ko": "제목"
+  },
+  "负责人": {
+    "en": "Assignee",
+    "zh-TW": "負責人",
+    "ja": "担当",
+    "ko": "담당자"
+  },
+  "优先级": {
+    "en": "Priority",
+    "zh-TW": "優先級",
+    "ja": "優先度",
+    "ko": "우선순위"
+  },
+  "更新时间": {
+    "en": "Updated",
+    "zh-TW": "更新時間",
+    "ja": "更新日時",
+    "ko": "업데이트"
+  },
+  "开始时间": {
+    "en": "Started",
+    "zh-TW": "開始時間",
+    "ja": "開始日時",
+    "ko": "시작 시간"
+  },
+  "名称": {
+    "en": "Name",
+    "zh-TW": "名稱",
+    "ja": "名前",
+    "ko": "이름"
+  },
+  "模型": {
+    "en": "Model",
+    "zh-TW": "模型",
+    "ja": "モデル",
+    "ko": "모델"
+  },
+  "状态": {
+    "en": "Status",
+    "zh-TW": "狀態",
+    "ja": "状態",
+    "ko": "상태"
+  },
+  "智能体": {
+    "en": "Agent",
+    "zh-TW": "智慧體",
+    "ja": "エージェント",
+    "ko": "에이전트"
+  },
+  "运行时": {
+    "en": "Runtime",
+    "zh-TW": "執行環境",
+    "ja": "ランタイム",
+    "ko": "런타임"
+  },
+  "--input-json 不是合法 JSON：{error}": {
+    "en": "--input-json is not valid JSON: {error}",
+    "zh-TW": "--input-json 不是合法 JSON：{error}",
+    "ja": "--input-json が正しい JSON ではありません：{error}",
+    "ko": "--input-json이 올바른 JSON이 아닙니다: {error}"
+  },
+  "--timeout 要是秒数": {
+    "en": "--timeout must be a number of seconds",
+    "zh-TW": "--timeout 要是秒數",
+    "ja": "--timeout は秒数で指定してください",
+    "ko": "--timeout은 초 단위 숫자여야 합니다"
+  },
+  "{at} 必须是对象": {
+    "en": "{at} must be an object",
+    "zh-TW": "{at} 必須是物件",
+    "ja": "{at} はオブジェクトである必要があります",
+    "ko": "{at}는 객체여야 합니다"
+  },
+  "{at} 不在允许的取值里": {
+    "en": "{at} is not one of the allowed values",
+    "zh-TW": "{at} 不在允許的取值裡",
+    "ja": "{at} は許可された値ではありません",
+    "ko": "{at}가 허용된 값이 아닙니다"
+  },
+  "{at} 大于最大值": {
+    "en": "{at} is above the maximum",
+    "zh-TW": "{at} 大於最大值",
+    "ja": "{at} が最大値を超えています",
+    "ko": "{at}가 최댓값보다 큽니다"
+  },
+  "{at} 里的 {key} 不支持，已忽略": {
+    "en": "{key} in {at} is not supported and was ignored",
+    "zh-TW": "{at} 裡的 {key} 不支援，已忽略",
+    "ja": "{at} の {key} はサポートされていないため無視しました",
+    "ko": "{at}의 {key}는 지원되지 않아 무시했습니다"
+  },
+  "{at} 缺少 {name}": {
+    "en": "{at} is missing {name}",
+    "zh-TW": "{at} 缺少 {name}",
+    "ja": "{at} に {name} がありません",
+    "ko": "{at}에 {name}이 없습니다"
+  },
+  "{at} 小于最小值": {
+    "en": "{at} is below the minimum",
+    "zh-TW": "{at} 小於最小值",
+    "ja": "{at} が最小値を下回っています",
+    "ko": "{at}가 최솟값보다 작습니다"
+  },
+  "{at} 应为 {kind}": {
+    "en": "{at} should be {kind}",
+    "zh-TW": "{at} 應為 {kind}",
+    "ja": "{at} は {kind} である必要があります",
+    "ko": "{at}는 {kind}여야 합니다"
+  },
+  "Canvas 未启用（设置 → 实验功能）": {
+    "en": "Canvas is not enabled (Settings → Experimental)",
+    "zh-TW": "Canvas 未啟用（設定 → 實驗功能）",
+    "ja": "Canvas が有効になっていません（設定 → 試験的機能）",
+    "ko": "Canvas가 켜져 있지 않습니다(설정 → 실험 기능)"
+  },
+  "Canvas 未显示，请让用户打开后重试": {
+    "en": "The canvas isn't open. Ask the user to open it, then retry",
+    "zh-TW": "Canvas 未顯示，請讓使用者打開後重試",
+    "ja": "Canvas が表示されていません。ユーザーに開いてもらってから再試行してください",
+    "ko": "Canvas가 열려 있지 않습니다. 사용자에게 열어 달라고 한 뒤 다시 시도하세요"
+  },
+  "canvas.json 必须是对象": {
+    "en": "canvas.json must be an object",
+    "zh-TW": "canvas.json 必須是物件",
+    "ja": "canvas.json はオブジェクトである必要があります",
+    "ko": "canvas.json은 객체여야 합니다"
+  },
+  "canvas.json 太大": {
+    "en": "canvas.json is too large",
+    "zh-TW": "canvas.json 太大",
+    "ja": "canvas.json が大きすぎます",
+    "ko": "canvas.json이 너무 큽니다"
+  },
+  "id 只能是 3–64 位小写字母、数字和连字符": {
+    "en": "id must be 3–64 lowercase letters, digits or hyphens",
+    "zh-TW": "id 只能是 3–64 位小寫字母、數字和連字號",
+    "ja": "id は 3〜64 文字の英小文字・数字・ハイフンのみです",
+    "ko": "id는 3~64자의 영문 소문자, 숫자, 하이픈만 쓸 수 있습니다"
+  },
+  "不认识的子命令：canvas {verb}": {
+    "en": "Unknown subcommand: canvas {verb}",
+    "zh-TW": "不認識的子命令：canvas {verb}",
+    "ja": "不明なサブコマンドです：canvas {verb}",
+    "ko": "알 수 없는 하위 명령: canvas {verb}"
+  },
+  "不是目录：{dir}": {
+    "en": "Not a directory: {dir}",
+    "zh-TW": "不是目錄：{dir}",
+    "ja": "ディレクトリではありません：{dir}",
+    "ko": "디렉터리가 아닙니다: {dir}"
+  },
+  "不支持的方法：{method}": {
+    "en": "Unsupported method: {method}",
+    "zh-TW": "不支援的方法：{method}",
+    "ja": "サポートされていないメソッドです：{method}",
+    "ko": "지원하지 않는 메서드: {method}"
+  },
+  "不知道当前是哪个会话": {
+    "en": "Can't tell which chat this is",
+    "zh-TW": "不知道目前是哪個會話",
+    "ja": "どのチャットか判別できません",
+    "ko": "어느 대화인지 알 수 없습니다"
+  },
+  "不知道当前是哪个会话（没有 MULTARA_SESSION_ID）": {
+    "en": "Can't tell which chat this is (MULTARA_SESSION_ID is not set)",
+    "zh-TW": "不知道目前是哪個會話（沒有 MULTARA_SESSION_ID）",
+    "ja": "どのチャットか判別できません（MULTARA_SESSION_ID がありません）",
+    "ko": "어느 대화인지 알 수 없습니다(MULTARA_SESSION_ID가 없습니다)"
+  },
+  "存储的数据损坏或格式不认识，未覆盖": {
+    "en": "Stored data is corrupt or in an unknown format; it was not overwritten",
+    "zh-TW": "儲存的資料損壞或格式不認識，未覆蓋",
+    "ja": "保存データが壊れているか形式が不明なため、上書きしませんでした",
+    "ko": "저장된 데이터가 손상되었거나 형식을 알 수 없어 덮어쓰지 않았습니다"
+  },
+  "第 {index} 个动作名无效": {
+    "en": "Action {index} has an invalid name",
+    "zh-TW": "第 {index} 個動作名無效",
+    "ja": "{index} 番目のアクション名が無効です",
+    "ko": "{index}번째 동작 이름이 올바르지 않습니다"
+  },
+  "动作 {name} 不接受输入": {
+    "en": "Action {name} takes no input",
+    "zh-TW": "動作 {name} 不接受輸入",
+    "ja": "アクション {name} は入力を受け付けません",
+    "ko": "동작 {name}은 입력을 받지 않습니다"
+  },
+  "动作名不能以 canvas. 开头：{name}": {
+    "en": "Action names can't start with canvas.: {name}",
+    "zh-TW": "動作名不能以 canvas. 開頭：{name}",
+    "ja": "アクション名は canvas. で始められません：{name}",
+    "ko": "동작 이름은 canvas.로 시작할 수 없습니다: {name}"
+  },
+  "动作名重复：{name}": {
+    "en": "Duplicate action name: {name}",
+    "zh-TW": "動作名重複：{name}",
+    "ja": "アクション名が重複しています：{name}",
+    "ko": "동작 이름이 중복됩니다: {name}"
+  },
+  "控制通道 token 无效或运行已结束": {
+    "en": "The control token is invalid or the run has ended",
+    "zh-TW": "控制通道 token 無效或執行已結束",
+    "ja": "コントロールトークンが無効か、実行が終了しています",
+    "ko": "제어 토큰이 올바르지 않거나 실행이 끝났습니다"
+  },
+  "连不上 Multara：{message}": {
+    "en": "Can't reach Multara: {message}",
+    "zh-TW": "連不上 Multara：{message}",
+    "ja": "Multara に接続できません：{message}",
+    "ko": "Multara에 연결할 수 없습니다: {message}"
+  },
+  "聊天不存在": {
+    "en": "Chat not found",
+    "zh-TW": "聊天不存在",
+    "ja": "チャットが見つかりません",
+    "ko": "대화를 찾을 수 없습니다"
+  },
+  "没有这个 Canvas：{id}": {
+    "en": "No such canvas: {id}",
+    "zh-TW": "沒有這個 Canvas：{id}",
+    "ja": "その Canvas はありません：{id}",
+    "ko": "해당 Canvas가 없습니다: {id}"
+  },
+  "没有这个动作：{name}": {
+    "en": "No such action: {name}",
+    "zh-TW": "沒有這個動作：{name}",
+    "ja": "そのアクションはありません：{name}",
+    "ko": "해당 동작이 없습니다: {name}"
+  },
+  "没有注册过这个 Canvas：{id}": {
+    "en": "This canvas hasn't been registered: {id}",
+    "zh-TW": "沒有註冊過這個 Canvas：{id}",
+    "ja": "この Canvas は登録されていません：{id}",
+    "ko": "등록되지 않은 Canvas입니다: {id}"
+  },
+  "目录不存在：{dir}": {
+    "en": "Directory not found: {dir}",
+    "zh-TW": "目錄不存在：{dir}",
+    "ja": "ディレクトリがありません：{dir}",
+    "ko": "디렉터리가 없습니다: {dir}"
+  },
+  "目录下没有 canvas.json": {
+    "en": "No canvas.json in this directory",
+    "zh-TW": "目錄下沒有 canvas.json",
+    "ja": "ディレクトリに canvas.json がありません",
+    "ko": "디렉터리에 canvas.json이 없습니다"
+  },
+  "缺少 {key}": {
+    "en": "Missing {key}",
+    "zh-TW": "缺少 {key}",
+    "ja": "{key} がありません",
+    "ko": "{key}가 없습니다"
+  },
+  "缺少 title": {
+    "en": "Missing title",
+    "zh-TW": "缺少 title",
+    "ja": "title がありません",
+    "ko": "title이 없습니다"
+  },
+  "缺少动作名": {
+    "en": "Missing action name",
+    "zh-TW": "缺少動作名",
+    "ja": "アクション名がありません",
+    "ko": "동작 이름이 없습니다"
+  },
+  "缺少实例 id": {
+    "en": "Missing instance id",
+    "zh-TW": "缺少實例 id",
+    "ja": "インスタンス id がありません",
+    "ko": "인스턴스 id가 없습니다"
+  },
+  "入口文件不存在：{entry}": {
+    "en": "Entry file not found: {entry}",
+    "zh-TW": "入口檔案不存在：{entry}",
+    "ja": "エントリファイルがありません：{entry}",
+    "ko": "진입 파일이 없습니다: {entry}"
+  },
+  "上下文太大": {
+    "en": "Context is too large",
+    "zh-TW": "上下文太大",
+    "ja": "コンテキストが大きすぎます",
+    "ko": "컨텍스트가 너무 큽니다"
+  },
+  "实例 id 无效": {
+    "en": "Invalid instance id",
+    "zh-TW": "實例 id 無效",
+    "ja": "インスタンス id が無効です",
+    "ko": "인스턴스 id가 올바르지 않습니다"
+  },
+  "输入太大": {
+    "en": "Input is too large",
+    "zh-TW": "輸入太大",
+    "ja": "入力が大きすぎます",
+    "ko": "입력이 너무 큽니다"
+  },
+  "同时显示的 Canvas 太多（上限 {max}），先关掉一些": {
+    "en": "Too many canvases are open at once (limit {max}). Close some first",
+    "zh-TW": "同時顯示的 Canvas 太多（上限 {max}），先關掉一些",
+    "ja": "同時に表示している Canvas が多すぎます（上限 {max}）。いくつか閉じてください",
+    "ko": "동시에 열린 Canvas가 너무 많습니다(최대 {max}). 먼저 몇 개를 닫으세요"
+  },
+  "无法读取应用数据目录": {
+    "en": "Couldn't read the app data directory",
+    "zh-TW": "無法讀取應用資料目錄",
+    "ja": "アプリのデータディレクトリを読み取れません",
+    "ko": "앱 데이터 디렉터리를 읽을 수 없습니다"
+  },
+  "无法确定应用数据目录": {
+    "en": "Couldn't determine the app data directory",
+    "zh-TW": "無法確定應用資料目錄",
+    "ja": "アプリのデータディレクトリを特定できません",
+    "ko": "앱 데이터 디렉터리를 확인할 수 없습니다"
+  },
+  "需要 --dir 或 --id": {
+    "en": "Needs --dir or --id",
+    "zh-TW": "需要 --dir 或 --id",
+    "ja": "--dir か --id が必要です",
+    "ko": "--dir 또는 --id가 필요합니다"
+  },
+  "页面 {secs} 秒内没有回应": {
+    "en": "The page didn't respond within {secs} seconds",
+    "zh-TW": "頁面 {secs} 秒內沒有回應",
+    "ja": "ページが {secs} 秒以内に応答しませんでした",
+    "ko": "페이지가 {secs}초 안에 응답하지 않았습니다"
+  },
+  "页面已关闭": {
+    "en": "The page was closed",
+    "zh-TW": "頁面已關閉",
+    "ja": "ページが閉じられました",
+    "ko": "페이지가 닫혔습니다"
+  },
+  "一个会话最多开 {max} 个 Canvas，先关掉不用的": {
+    "en": "A chat can have at most {max} canvases. Close the ones you don't need first",
+    "zh-TW": "一個會話最多開 {max} 個 Canvas，先關掉不用的",
+    "ja": "1 つのチャットで開ける Canvas は最大 {max} 個です。使わないものを閉じてください",
+    "ko": "대화 하나에 Canvas는 최대 {max}개입니다. 쓰지 않는 것을 먼저 닫으세요"
+  },
+  "应用未运行，无法驱动页面": {
+    "en": "The app isn't running, so the page can't be driven",
+    "zh-TW": "應用未執行，無法驅動頁面",
+    "ja": "アプリが起動していないため、ページを操作できません",
+    "ko": "앱이 실행 중이 아니라 페이지를 조작할 수 없습니다"
+  },
+  "应用未运行，下次显示时生效": {
+    "en": "The app isn't running; this takes effect next time the canvas is shown",
+    "zh-TW": "應用未執行，下次顯示時生效",
+    "ja": "アプリが起動していません。次に表示したときに反映されます",
+    "ko": "앱이 실행 중이 아닙니다. 다음에 표시할 때 적용됩니다"
+  },
+  "只能托管 $MULTARA_CANVAS_DIR 或当前工作区里的目录": {
+    "en": "Only directories under $MULTARA_CANVAS_DIR or the current workspace can be hosted",
+    "zh-TW": "只能託管 $MULTARA_CANVAS_DIR 或目前工作區裡的目錄",
+    "ja": "ホストできるのは $MULTARA_CANVAS_DIR か現在のワークスペース内のディレクトリだけです",
+    "ko": "$MULTARA_CANVAS_DIR 또는 현재 작업 영역 안의 디렉터리만 호스팅할 수 있습니다"
+  },
+  "找不到工具：{tool}": {
+    "en": "Tool not found: {tool}",
+    "zh-TW": "找不到工具：{tool}",
+    "ja": "ツールが見つかりません：{tool}",
+    "ko": "도구를 찾을 수 없습니다: {tool}"
+  },
+  "MCP Apps 未启用": {
+    "en": "MCP Apps is not enabled",
+    "zh-TW": "MCP Apps 未啟用",
+    "ja": "MCP Apps が有効になっていません",
+    "ko": "MCP Apps가 켜져 있지 않습니다"
+  },
+  "无效的 server": {
+    "en": "Invalid server",
+    "zh-TW": "無效的 server",
+    "ja": "無効なサーバーです",
+    "ko": "올바르지 않은 서버입니다"
+  },
+  "界面调用太频繁，请稍后再试": {
+    "en": "The UI is calling tools too often. Try again shortly",
+    "zh-TW": "介面呼叫太頻繁，請稍後再試",
+    "ja": "UI からの呼び出しが多すぎます。少し待ってから再試行してください",
+    "ko": "UI 호출이 너무 잦습니다. 잠시 후 다시 시도하세요"
+  },
+  "界面资源是空的": {
+    "en": "The UI resource is empty",
+    "zh-TW": "介面資源是空的",
+    "ja": "UI リソースが空です",
+    "ko": "UI 리소스가 비어 있습니다"
+  },
+  "界面资源不是 HTML：{mime}": {
+    "en": "The UI resource is not HTML: {mime}",
+    "zh-TW": "介面資源不是 HTML：{mime}",
+    "ja": "UI リソースが HTML ではありません：{mime}",
+    "ko": "UI 리소스가 HTML이 아닙니다: {mime}"
+  },
+  "界面资源超过 5 MB": {
+    "en": "The UI resource is larger than 5 MB",
+    "zh-TW": "介面資源超過 5 MB",
+    "ja": "UI リソースが 5 MB を超えています",
+    "ko": "UI 리소스가 5 MB를 넘습니다"
+  }
+}

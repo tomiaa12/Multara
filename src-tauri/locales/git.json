@@ -514,5 +514,41 @@
     "zh-TW": "無效的 chunk key",
     "ja": "chunk key が無効です",
     "ko": "chunk key가 올바르지 않습니다"
+  },
+  "无法写入对象": {
+    "en": "Couldn't write the object",
+    "zh-TW": "無法寫入物件",
+    "ja": "オブジェクトを書き込めません",
+    "ko": "객체를 쓸 수 없습니다"
+  },
+  "不能删除受保护分支 {branch}": {
+    "en": "Can't delete protected branch {branch}",
+    "zh-TW": "不能刪除受保護分支 {branch}",
+    "ja": "保護されたブランチ {branch} は削除できません",
+    "ko": "보호된 브랜치 {branch}는 삭제할 수 없습니다"
+  },
+  "不能删除当前检出的分支 {branch}": {
+    "en": "Can't delete the checked-out branch {branch}",
+    "zh-TW": "不能刪除目前簽出的分支 {branch}",
+    "ja": "チェックアウト中のブランチ {branch} は削除できません",
+    "ko": "체크아웃된 브랜치 {branch}는 삭제할 수 없습니다"
+  },
+  "没有可删除的远程分支": {
+    "en": "There's no remote branch to delete",
+    "zh-TW": "沒有可刪除的遠端分支",
+    "ja": "削除できるリモートブランチがありません",
+    "ko": "삭제할 원격 브랜치가 없습니다"
+  },
+  "无法解析远程分支 {upstream}": {
+    "en": "Couldn't resolve remote branch {upstream}",
+    "zh-TW": "無法解析遠端分支 {upstream}",
+    "ja": "リモートブランチ {upstream} を解決できません",
+    "ko": "원격 브랜치 {upstream}를 확인할 수 없습니다"
+  },
+  "不能删除受保护远程分支 {upstream}": {
+    "en": "Can't delete protected remote branch {upstream}",
+    "zh-TW": "不能刪除受保護遠端分支 {upstream}",
+    "ja": "保護されたリモートブランチ {upstream} は削除できません",
+    "ko": "보호된 원격 브랜치 {upstream}는 삭제할 수 없습니다"
   }
 }

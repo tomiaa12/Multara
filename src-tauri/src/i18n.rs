@@ -16,6 +16,7 @@ const CATALOGS: &[(&str, &str)] = &[
     ("files", include_str!("../locales/files.json")),
     ("channel", include_str!("../locales/channel.json")),
     ("runtime_accounts", include_str!("../locales/runtime_accounts.json")),
+    ("canvas", include_str!("../locales/canvas.json")),
 ];
 
 type Catalog = HashMap<String, HashMap<String, String>>;

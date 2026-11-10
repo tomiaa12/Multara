@@ -379,6 +379,8 @@ export interface TimelineItem {
   replacesFinalText?: boolean;
   parentCallId?: string | null;
   status?: string | null;
+  /** MCP 工具的原始 CallToolResult（content / structuredContent / isError），MCP Apps 推给页面 */
+  outputJson?: unknown;
 }
 
 export interface PlanActionInput {
@@ -414,6 +416,48 @@ export interface MessageAttachmentInput {
   path: string;
   mimeType: string;
   size: number;
+}
+
+/** 前端可声明的消息来源；后端只放行 genui（界面块提交） */
+export interface MessageSourceInput {
+  sourceType: "genui";
+  meta: Record<string, unknown>;
+}
+
+/** 会话里的一个 Canvas 实例（方案 §5.3）。URL 不入库，由 ensureCanvasHosted 懒托管时给出 */
+export interface CanvasInstance {
+  instanceId: string;
+  sessionId: string;
+  canvasId: string;
+  title: string;
+  /** 智能体用 `multara canvas status` 写的状态文案 */
+  status: string;
+  input: unknown;
+  hasContext: boolean;
+  createdByAgent: string | null;
+  /** 关标签只改这个；实例和服务都保留 */
+  visible: boolean;
+  /** 固定到所有会话：别的会话的列表里也出现，sessionId 仍是原会话 */
+  pinned?: boolean;
+  /** session：会话里临时写的；workspace：仓库里 .multara/canvases/ 的 */
+  scope?: "session" | "workspace";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 已注册、无必填输入、本会话还没开的定义（「添加上下文 → Canvas...」的「可打开」组） */
+export interface CanvasDefinition {
+  canvasId: string;
+  title: string;
+  description: string;
+  scope?: "session" | "workspace";
+  workspaceId?: string;
+}
+
+export interface CanvasListing {
+  enabled: boolean;
+  instances: CanvasInstance[];
+  available: CanvasDefinition[];
 }
 
 export interface AgentRun {

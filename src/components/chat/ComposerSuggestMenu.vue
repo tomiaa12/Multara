@@ -8,6 +8,7 @@ import {
   FolderOpen,
   GitPullRequest,
   Hash,
+  LayoutDashboard,
   MessageSquare,
   Paperclip,
   Search,
@@ -33,7 +34,7 @@ export type ComposerSuggestItem = {
   description?: string;
   /** 有头像时按智能体下拉选项渲染（AgentAvatar + ds-select-option） */
   avatar?: string | null;
-  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker";
+  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker" | "canvas";
   isDirectory?: boolean;
 };
 
@@ -301,6 +302,7 @@ onBeforeUnmount(() => {
           <Sparkles v-else-if="category.id === 'skill'" :size="14" />
           <Hash v-else-if="category.id === 'task'" :size="14" />
           <FolderKanban v-else-if="category.id === 'requirement'" :size="14" />
+          <LayoutDashboard v-else-if="category.id === 'canvas'" :size="14" />
           <Paperclip v-else :size="14" />
           <span>{{ category.label }}</span>
           <ChevronRight v-if="!category.action" :size="13" />
@@ -354,6 +356,7 @@ onBeforeUnmount(() => {
                   <FolderKanban v-else-if="item.leading === 'requirement'" :size="14" />
                   <MessageSquare v-else-if="item.leading === 'session'" :size="14" />
                   <FolderOpen v-else-if="item.leading === 'picker'" :size="14" />
+                  <LayoutDashboard v-else-if="item.leading === 'canvas'" :size="14" />
                   <Bot v-else :size="14" />
                 </span>
                 <span class="ds-select-option-body">

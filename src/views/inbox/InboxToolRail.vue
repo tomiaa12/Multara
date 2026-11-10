@@ -36,6 +36,7 @@ import {
 import { inboxBrowserLinks } from "./inbox-browser-links";
 import { placeEditorTab } from "./editor-tabs";
 import InboxBrowser from "./InboxBrowser.vue";
+import InboxCanvas from "./InboxCanvas.vue";
 import TaskIssueSide from "../TaskIssueSide.vue";
 import {
   INBOX_FILES_OPEN_KEY,
@@ -237,9 +238,13 @@ const surfaceLabel: Record<InboxSurfaceId, string> = {
   browser: "inbox.tool.browser",
   search: "workbench.search",
   details: "tasks.propertiesPanel",
+  canvas: "canvas.surface",
 };
 
 function surfaceAllowed(id: InboxSurfaceId) {
+  if (id === "canvas") {
+    return store.data?.settings.genuiEnabled === "true" && store.data?.settings.canvasesEnabled === "true";
+  }
   if (id === "details") return props.kind === "task";
   if (id === "changes") return props.kind === "project";
   return true;
@@ -798,6 +803,7 @@ onBeforeUnmount(() => {
             <Codicon v-else-if="tab.kind === 'browser'" name="globe" :size="16" />
             <Codicon v-else-if="tab.kind === 'search'" name="search" :size="16" />
             <Codicon v-else-if="tab.kind === 'changes'" name="source-control" :size="16" />
+            <Codicon v-else-if="tab.kind === 'canvas'" name="dashboard" :size="16" />
           </EditorTabButton>
         </div>
         <div class="inbox-tool-add">
@@ -843,6 +849,10 @@ onBeforeUnmount(() => {
           <TaskIssueSide
             v-else-if="tab.kind === 'details' && taskId"
             :task-id="taskId"
+          />
+          <InboxCanvas
+            v-else-if="tab.kind === 'canvas'"
+            :session-id="sessionId"
           />
           <SourceControlPanel
             v-else-if="tab.kind === 'changes'"
@@ -1004,6 +1014,16 @@ onBeforeUnmount(() => {
         @click="openSurface('browser', 'fresh')"
       >
         <Codicon name="globe" :size="16" />
+      </UiButton>
+      <UiButton
+        v-if="surfaceAllowed('canvas')"
+        variant="ghost"
+        size="icon"
+        :tip="t('canvas.surface')"
+        :aria-pressed="activeSurface?.kind === 'canvas'"
+        @click="openSurface('canvas', 'singleton')"
+      >
+        <Codicon name="dashboard" :size="16" />
       </UiButton>
       <span class="inbox-float-separator" role="separator" />
       <UiButton

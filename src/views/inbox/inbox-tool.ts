@@ -15,7 +15,7 @@ export const INBOX_TOOL_DEFAULT_WIDTH = 420;
 export const INBOX_FILES_WIDTH = 280;
 export const INBOX_RAIL_WIDTH = 44;
 
-export const INBOX_SURFACES = ["changes", "browser", "search", "details"] as const;
+export const INBOX_SURFACES = ["changes", "browser", "search", "details", "canvas"] as const;
 export type InboxSurfaceId = (typeof INBOX_SURFACES)[number];
 
 export type InboxSurfaceTab = {
@@ -31,12 +31,12 @@ export function createInboxSurfaceTab(kind: InboxSurfaceId): InboxSurfaceTab {
 }
 
 export function isInboxSurfaceId(value: string | null): value is InboxSurfaceId {
-  return value === "changes" || value === "browser" || value === "search" || value === "details";
+  return value === "changes" || value === "browser" || value === "search" || value === "details" || value === "canvas";
 }
 
-/** 更改/属性只保留一个；浏览器和搜索可重复。 */
+/** 更改/属性/Canvas 只保留一个；浏览器和搜索可重复。 */
 function surfaceIsSingleton(kind: InboxSurfaceId) {
-  return kind === "changes" || kind === "details";
+  return kind === "changes" || kind === "details" || kind === "canvas";
 }
 
 export function isInboxToolId(value: string | null): value is InboxToolId {

@@ -2989,6 +2989,9 @@ fn save_settings_rows(
             "permissionMode",
             "dictationEnabled",
             "dictationLanguage",
+            "genuiEnabled",
+            "canvasesEnabled",
+            "mcpAppsEnabled",
         ]
         .contains(&key.as_str())
         {
@@ -3583,7 +3586,11 @@ pub fn agent_system_context(
         .join("builtin-skills")
         .to_string_lossy()
         .to_string();
-    let skill_names = crate::builtin_skills::names();
+    let (genui_enabled, canvas_enabled) = {
+        let db = state.lock_db()?;
+        (genui_enabled(&db), crate::ops::canvas::canvases_enabled(&db))
+    };
+    let skill_names = crate::builtin_skills::names(genui_enabled);
     let brief = crate::runtime_brief::build(crate::runtime_brief::RuntimeBrief {
         agent_id: &agent_id,
         agent_name: &name,
@@ -3594,10 +3601,11 @@ pub fn agent_system_context(
         user_skill_context: &tr!("（运行时附上这个智能体已开启的 Skill 正文）"),
         roster: &tr!("（运行时：小队会话填队员名单，否则只给 CLI 查找指引，不内联全表）"),
         has_project_workspace: true,
+        genui_enabled,
+        canvas_enabled,
         locale,
     });
-    let builtin: Vec<serde_json::Value> = crate::builtin_skills::ALL
-        .iter()
+    let builtin: Vec<serde_json::Value> = crate::builtin_skills::enabled(genui_enabled)
         .map(|skill| {
             serde_json::json!({
                 "name": skill.name,
@@ -3768,7 +3776,14 @@ pub fn delete_task(
     transaction
         .execute("DELETE FROM chat_sessions WHERE id=?1", [&session_id])
         .map_err(|error| error.to_string())?;
+    // Canvas：删实例、会话级定义和 <app-data>/canvases/<session-id>/；canvas-data 按 canvas id 共享，不删
+    crate::ops::canvas::delete_session(
+        &transaction,
+        app.path().app_data_dir().ok().as_deref(),
+        &session_id,
+    )?;
     transaction.commit().map_err(|error| error.to_string())?;
+    app.state::<crate::canvas::CanvasHost>().stop_session(&session_id);
     list_tasks(&db)
 }
 
@@ -4448,33 +4463,79 @@ pub async fn send_message(
     content: String,
     attachments: Option<Vec<MessageAttachmentInput>>,
     requested_mode: Option<RunMode>,
+    source: Option<MessageSourceInput>,
     app: AppHandle,
 ) -> Result<Vec<ChatMessage>, String> {
     let _span = crate::diag::span("send_message");
+    let source = ui_message_source(source)?;
     tauri::async_runtime::spawn_blocking(move || {
-        send_message_inner(session_id, content, attachments, requested_mode, app)
+        let (messages, _, _) = send_message_inner_ext(
+            session_id,
+            content,
+            attachments,
+            requested_mode,
+            app,
+            source,
+            None,
+        )?;
+        Ok(messages)
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
-fn send_message_inner(
-    session_id: String,
-    content: String,
-    attachments: Option<Vec<MessageAttachmentInput>>,
-    requested_mode: Option<RunMode>,
-    app: AppHandle,
-) -> Result<Vec<ChatMessage>, String> {
-    let (messages, _, _) = send_message_inner_ext(
-        session_id,
-        content,
-        attachments,
-        requested_mode,
-        app,
-        None,
-        None,
-    )?;
-    Ok(messages)
+/// 前端可声明的消息来源。只放行界面组件（genui）；渠道、计划操作等来源由后端自己写。
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSourceInput {
+    pub source_type: String,
+    #[serde(default)]
+    pub meta: serde_json::Value,
+}
+
+/// 界面块提交回给产出该块的智能体（sourceMeta.agentId）。
+fn genui_reply_agent(source: &MessageSource) -> Option<String> {
+    (source.source_type == "genui")
+        .then(|| source.meta.get("agentId")?.as_str().map(str::to_string))
+        .flatten()
+        .filter(|id| !id.is_empty())
+}
+
+/// 产出界面块的智能体能否直接作为这条消息的执行者：
+/// - 会话目标就是它，或它是小队队长：走会话默认目标即可（队长要带小队指引），返回 None；
+/// - 它是会话小队里的普通队员：等同于 @ 它，返回 Some；
+/// - 其它情况（已离队、已删除、不相干）：回落到会话默认目标。
+fn genui_reply_target(db: &Connection, session_id: &str, agent_id: &str) -> Option<(String, String)> {
+    let (target_type, target_id): (String, String) = db
+        .query_row(
+            "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok()?;
+    if target_type != "squad" {
+        return None;
+    }
+    let squad = ops::squad::get(db, &target_id).ok()?;
+    (squad.leader_agent_id != agent_id && squad.member_agent_ids.iter().any(|id| id == agent_id))
+        .then(|| ("agent".to_string(), agent_id.to_string()))
+}
+
+fn ui_message_source(source: Option<MessageSourceInput>) -> Result<Option<MessageSource>, String> {
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    if source.source_type != "genui" {
+        return Err(tr!("不支持的消息来源"));
+    }
+    // meta 里带表单值（最多 40 个字段），给足空间但不让前端塞大块数据进库
+    if !source.meta.is_object() || source.meta.to_string().len() > 64 * 1024 {
+        return Err(tr!("不支持的消息来源"));
+    }
+    Ok(Some(MessageSource {
+        source_type: source.source_type,
+        meta: source.meta,
+    }))
 }
 
 #[derive(Clone, Debug)]
@@ -4577,7 +4638,15 @@ fn send_message_inner_ext(
         .iter()
         .map(|lock| crate::diag::lock_mutex(lock, "project"))
         .collect::<Result<Vec<_>, _>>()?;
-    let explicit_targets = explicit_chat_targets(content);
+    let mut explicit_targets = explicit_chat_targets(content);
+    if explicit_targets.is_empty() {
+        if let Some(agent_id) = source.as_ref().and_then(genui_reply_agent) {
+            let db = state.lock_db()?;
+            if let Some(target) = genui_reply_target(&db, &session_id, &agent_id) {
+                explicit_targets.push(target);
+            }
+        }
+    }
     ensure_session_targets_mode_supported(&state, &session_id, &explicit_targets, requested_mode)?;
     let can_steer = explicit_targets.is_empty()
         && executor::can_steer(&app, &session_id)
@@ -4613,7 +4682,7 @@ fn send_message_inner_ext(
             "planId": plan_id,
             "revision": revision,
             "action": action,
-            "by": { "type": if source.is_some() { "channel" } else { "user" } },
+            "by": { "type": if source.as_ref().is_some_and(|value| value.source_type != "genui") { "channel" } else { "user" } },
             "feedback": (action == "refine").then_some(content),
         });
         transaction
@@ -4660,6 +4729,7 @@ fn send_message_inner_ext(
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             },
         ));
         if action == "refine" {
@@ -5012,6 +5082,7 @@ pub(crate) fn plan_action_inner(
                     replaces_final_text: false,
                     parent_call_id: None,
                     status: None,
+                    output_json: None,
                 }),
                 agent_id,
                 false,
@@ -5408,7 +5479,7 @@ fn load_session_timelines(
     let mut statement = db
         .prepare(
             "SELECT run_id, seq, event_type, call_id, tool, content, input_json, output, created_at,
-                    parent_call_id, status
+                    parent_call_id, status, output_json
              FROM run_events
              WHERE session_id=?1
                AND NOT (event_type='tool_use' AND COALESCE(tool,'')=''
@@ -5450,6 +5521,9 @@ fn load_session_timelines(
                     replaces_final_text: false,
                     parent_call_id: row.get(9)?,
                     status: row.get(10)?,
+                    output_json: row
+                        .get::<_, Option<String>>(11)?
+                        .and_then(|raw| serde_json::from_str(&raw).ok()),
                 },
             ))
         })
@@ -6829,6 +6903,13 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
     {
         return Err(tr!("无效的文件图标主题"));
     }
+    if ["genuiEnabled", "canvasesEnabled", "mcpAppsEnabled"].iter().any(|key| {
+        settings
+            .get(*key)
+            .is_some_and(|value| !["true", "false"].contains(&value.as_str()))
+    }) {
+        return Err(tr!("无效的生成式界面设置"));
+    }
     if let Some(value) = settings.get("explorerSettings") {
         let valid = value.len() <= 64 * 1024
             && serde_json::from_str::<serde_json::Value>(value)
@@ -7016,6 +7097,11 @@ pub(crate) fn expand_user_path(value: &str) -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
+/// 实验功能「生成式界面」：决定简报里的 multara-ui 速查段和 multara-ui skill 是否出现。
+pub(crate) fn genui_enabled(db: &Connection) -> bool {
+    setting_value(db, "genuiEnabled", "false") == "true"
+}
+
 pub(crate) fn setting_value(db: &Connection, key: &str, default: &str) -> String {
     db.query_row(
         "SELECT value FROM app_settings WHERE key = ?1",
@@ -7063,6 +7149,7 @@ mod tests {
             replaces_final_text: false,
             parent_call_id: parent_call_id.map(str::to_string),
             status: None,
+            output_json: None,
         }
     }
 
@@ -7258,6 +7345,48 @@ mod tests {
                 ("squad".to_string(), "team-1".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn genui_submission_targets_the_squad_member_who_wrote_the_block() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+               VALUES ('lead', '队长', '', '', '', 'cursor', 'auto', 1),
+                      ('m1', '队员', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO squads (id, name, description, instructions, leader_agent_id)
+               VALUES ('sq', '小队', '', '', 'lead');
+             INSERT INTO squad_members (squad_id, agent_id) VALUES ('sq', 'lead'), ('sq', 'm1');
+             INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at) VALUES
+               ('squad-chat', '小队', 'squad', 'sq', 'now', 'now'),
+               ('agent-chat', '单人', 'agent', 'm1', 'now', 'now');",
+        )
+        .unwrap();
+        assert_eq!(
+            super::genui_reply_target(&db, "squad-chat", "m1"),
+            Some(("agent".to_string(), "m1".to_string()))
+        );
+        // 队长、已离队的人、单人会话：都走会话默认目标
+        assert_eq!(super::genui_reply_target(&db, "squad-chat", "lead"), None);
+        assert_eq!(super::genui_reply_target(&db, "squad-chat", "gone"), None);
+        assert_eq!(super::genui_reply_target(&db, "agent-chat", "m1"), None);
+        let source = super::MessageSource {
+            source_type: "genui".into(),
+            meta: serde_json::json!({ "agentId": "m1" }),
+        };
+        assert_eq!(super::genui_reply_agent(&source).as_deref(), Some("m1"));
+        let channel = super::MessageSource {
+            source_type: "feishu".into(),
+            meta: serde_json::json!({ "agentId": "m1" }),
+        };
+        assert_eq!(super::genui_reply_agent(&channel), None);
+        assert!(super::ui_message_source(Some(super::MessageSourceInput {
+            source_type: "feishu".into(),
+            meta: serde_json::json!({}),
+        }))
+        .is_err());
     }
 
     #[test]
