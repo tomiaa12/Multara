@@ -68,7 +68,7 @@ const pendingPlan = computed(() =>
     </Transition>
 
     <UiButton
-      v-show="fabVisible"
+      v-if="fabVisible"
       class="chat-fab"
       :tip="pendingPlan ? t('chat.plan.pendingBadge') : t('chat.floatOpen')"
       @click="store.chatOpen = true"
