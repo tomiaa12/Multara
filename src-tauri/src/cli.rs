@@ -24,6 +24,7 @@ multara — Multara 内置 CLI
 资源：
   task         list|get|create|update|status|assign|comment|runs
   agent        list|get|create|update|skills
+  mcp          list
   squad        list|get|create|update|member
   project      list|get|create|update
   workspace    list|add
@@ -72,6 +73,7 @@ pub fn should_run_as_cli(args: &[String]) -> bool {
             | "automation"
             | "channel"
             | "skill"
+            | "mcp"
             | "runtime"
             | "session"
             | "terminal"
@@ -308,6 +310,8 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                     .flag(&["max-concurrent-tasks"])
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(1),
+                resolve_resources("skill", &parsed.list_flag("skills"))?,
+                resolve_resources("mcp", &parsed.list_flag("mcps"))?,
             )?)
         }
         ("agent", "update") => {
@@ -337,8 +341,22 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                     .flag(&["max-concurrent-tasks"])
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(current.max_concurrent_tasks),
-                skill_ids: current.skill_ids,
-                mcp_ids: current.mcp_ids,
+                skill_ids: changed_resources(
+                    &current.skill_ids,
+                    "skill",
+                    parsed.flags.contains_key("skills"),
+                    &parsed.list_flag("skills"),
+                    parsed.flags.contains_key("remove-skills"),
+                    &parsed.list_flag("remove-skills"),
+                )?,
+                mcp_ids: changed_resources(
+                    &current.mcp_ids,
+                    "mcp",
+                    parsed.flags.contains_key("mcps"),
+                    &parsed.list_flag("mcps"),
+                    parsed.flags.contains_key("remove-mcps"),
+                    &parsed.list_flag("remove-mcps"),
+                )?,
             };
             ops::json(&ops::agent::save(db, input, false)?)
         }
@@ -463,6 +481,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&serde_json::json!({ "id": id, "enabled": enabled }))
         }
         ("skill", "list") => ops::json(&ops::skill::list_scanned()),
+        ("mcp", "list") => ops::json(&ops::skill::list_mcp()),
         ("skill", "get") => {
             let id = id.ok_or_else(|| tr!("缺少 skill id"))?;
             ops::json(&ops::skill::get(&id)?)
@@ -978,6 +997,95 @@ fn is_flag(arg: &str) -> bool {
         .is_some_and(|first| first.is_ascii_alphabetic())
 }
 
+fn changed_resources(
+    current: &[String],
+    kind: &str,
+    add: bool,
+    add_tokens: &[String],
+    remove: bool,
+    remove_tokens: &[String],
+) -> Result<Vec<String>, String> {
+    let mut ids = current.to_vec();
+    if add {
+        for id in resolve_resources(kind, add_tokens)? {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    if remove {
+        let gone = resolve_resources(kind, remove_tokens)?;
+        ids.retain(|id| !gone.contains(id));
+    }
+    Ok(ids)
+}
+
+fn resolve_resources(kind: &str, tokens: &[String]) -> Result<Vec<String>, String> {
+    if tokens.is_empty() {
+        return Ok(Vec::new());
+    }
+    let scanned = crate::resources::scan();
+    let mut ids = Vec::new();
+    for token in tokens {
+        let id = resolve_resource(&scanned, kind, token)?;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
+fn resolve_resource(
+    resources: &[crate::models::GlobalResource],
+    kind: &str,
+    token: &str,
+) -> Result<String, String> {
+    let token = token.trim();
+    let pool: Vec<_> = resources.iter().filter(|item| item.kind == kind).collect();
+    if let Some(found) = pool.iter().find(|item| item.id == token) {
+        return Ok(found.id.clone());
+    }
+    if let Some((owner, name)) = token.rsplit_once(':') {
+        let matched: Vec<_> = pool
+            .iter()
+            .copied()
+            .filter(|item| item.owner == owner && item.name == name)
+            .collect();
+        if matched.len() == 1 {
+            return Ok(matched[0].id.clone());
+        }
+        if matched.len() > 1 {
+            return Err(ambiguous_resource(kind, token, &matched));
+        }
+    }
+    let matched: Vec<_> = pool.iter().copied().filter(|item| item.name == token).collect();
+    if matched.len() == 1 {
+        return Ok(matched[0].id.clone());
+    }
+    if matched.is_empty() {
+        return Err(tr!("找不到 {kind}：{name}", kind = kind, name = token));
+    }
+    Err(ambiguous_resource(kind, token, &matched))
+}
+
+fn ambiguous_resource(
+    kind: &str,
+    token: &str,
+    matched: &[&crate::models::GlobalResource],
+) -> String {
+    let ids = matched
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<Vec<_>>()
+        .join("、");
+    tr!(
+        "找到多个 {kind}「{name}」，请改用完整 id：{ids}",
+        kind = kind,
+        name = token,
+        ids = ids
+    )
+}
+
 fn channel_json(installation: &crate::channel::Installation) -> serde_json::Value {
     serde_json::json!({
         "id": installation.id,
@@ -1000,14 +1108,58 @@ fn channel_json(installation: &crate::channel::Installation) -> serde_json::Valu
 mod tests {
     use rusqlite::Connection;
 
-    use super::execute;
+    use super::{execute, resolve_resource};
     use crate::database;
+    use crate::models::GlobalResource;
+
+    fn resource(kind: &'static str, owner: &str, name: &str) -> GlobalResource {
+        GlobalResource {
+            id: format!("{kind}:{owner}:{name}"),
+            kind,
+            owner: owner.into(),
+            scope: "global",
+            source_label: owner.into(),
+            name: name.into(),
+            description: String::new(),
+            source_path: String::new(),
+            enabled: true,
+            updated_at: String::new(),
+            transport: String::new(),
+            summary: String::new(),
+            needs_auth: false,
+            config_status: String::new(),
+        }
+    }
 
     fn db() -> Connection {
         let db = Connection::open_in_memory().unwrap();
         database::migrate(&db).unwrap();
         database::seed(&db).unwrap();
         db
+    }
+
+    #[test]
+    fn resolve_resource_by_name_owner_or_id() {
+        let resources = vec![
+            resource("skill", "cursor", "fsw-repo-catalog"),
+            resource("skill", "multara", "shared"),
+            resource("skill", "cursor", "shared"),
+            resource("mcp", "cursor", "feishu-project"),
+        ];
+        assert_eq!(
+            resolve_resource(&resources, "skill", "fsw-repo-catalog").unwrap(),
+            "skill:cursor:fsw-repo-catalog"
+        );
+        assert_eq!(
+            resolve_resource(&resources, "mcp", "cursor:feishu-project").unwrap(),
+            "mcp:cursor:feishu-project"
+        );
+        assert_eq!(
+            resolve_resource(&resources, "skill", "skill:cursor:shared").unwrap(),
+            "skill:cursor:shared"
+        );
+        assert!(resolve_resource(&resources, "skill", "shared").is_err());
+        assert!(resolve_resource(&resources, "mcp", "missing").is_err());
     }
 
     #[test]

@@ -9,7 +9,7 @@ description: 建立、更新智慧體。使用者提到 specialist、新建智�
 
 ## 建立
 
-`multara agent create --name "…" --runtime-id RUNTIME_ID [--description "…"] [--instructions "…"] [--avatar "🤖"]`
+`multara agent create --name "…" --runtime-id RUNTIME_ID [--description "…"] [--instructions "…"] [--avatar "🤖"] [--skills 名稱或id,…] [--mcps 名稱或id,…]`
 
 - `--runtime-id` 必填；一般使用 `multara runtime list` 中第一個在線的執行環境。
 - 新建的是使用者 specialist，沒有 `system_key`。
@@ -17,15 +17,19 @@ description: 建立、更新智慧體。使用者提到 specialist、新建智�
 
 ## 更新
 
-`multara agent update AGENT_ID [--name "…"] [--description "…"] [--instructions "…"] [--runtime-id RUNTIME_ID] [--avatar "…"] [--max-concurrent-tasks N]`
+`multara agent update AGENT_ID [--name "…"] [--description "…"] [--instructions "…"] [--runtime-id RUNTIME_ID] [--avatar "…"] [--max-concurrent-tasks N] [--skills 名稱或id,…] [--mcps 名稱或id,…] [--remove-skills …] [--remove-mcps …]`
 
 Miku 可以修改顯示名稱、工作區備註（`instructions`）、執行環境與並行數；不能修改 `system_key`，也不能刪除。
+
+`--skills` / `--mcps` 是勾選，追加到現有清單，不會清掉原來的。取消勾選用 `--remove-skills` / `--remove-mcps`。名稱能唯一對上就用名稱；多個來源同名時，用 `multara skill list` 或 `multara mcp list` 的完整 id。使用者要求綁上 Skill 或 MCP 時直接執行，不要讓使用者自己到設定裡勾。
 
 ## 列出 / 讀取
 
 - `multara agent list`
 - `multara agent get AGENT_ID`
 - `multara agent skills` — 內建 skill 名稱
+- `multara skill list` — 本機掃描到的 Skill
+- `multara mcp list` — 本機掃描到的 MCP
 
 ## 規則
 
