@@ -765,7 +765,10 @@ function submit() {
     return;
   }
   const serialized = composerInput.value?.serialize() ?? { text: "", nodes: [] as ComposerNode[], empty: true };
-  const typed = formatAgentPrompt(serialized.nodes, { directMentions: true });
+  const typed = formatAgentPrompt(serialized.nodes, {
+    directMentions: true,
+    workspaces: projectWorkspaces(),
+  });
   // 页面挂上来的上下文随这条消息带上，带来源头（是数据，不是用户指令）
   const contextBlock = formatUiContexts(canvas.takeContexts(session.value.id));
   const content = contextBlock ? `${typed}\n\n${contextBlock}` : typed;
@@ -895,7 +898,11 @@ async function resolveExternalDroppedKind(entry: OsDroppedEntry) {
 }
 
 async function attachExternalEntry(entry: OsDroppedEntry) {
-  const path = entry.path || entry.name || t("chat.externalFile");
+  const path = entry.path;
+  if (!path) {
+    composerError.value = t("chat.noRefFiles");
+    return;
+  }
   if (props.preview) {
     insertLocalWorkspaceChip({ workspaceId: "", path, isDirectory: entry.isDirectory });
     rememberComposerFile({ path, isDirectory: entry.isDirectory });

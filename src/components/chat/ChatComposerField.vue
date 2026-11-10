@@ -79,6 +79,8 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
     chip.dataset.endLine = String(file.endLine);
     if (file.isDirectory) chip.dataset.directory = "1";
     if (file.source === "terminal") chip.dataset.source = "terminal";
+    const workspaceId = "workspaceId" in file ? file.workspaceId : "";
+    if (workspaceId) chip.dataset.workspaceId = workspaceId;
     const kind = file.source === "terminal" ? "terminal" : file.isDirectory ? "folder" : isWholeFileChip(file) ? "file" : "line";
     chip.dataset.chipKind = kind;
     chip.title = kind === "line" ? `${file.path} ${lineRange(file)}` : file.path;
@@ -160,6 +162,7 @@ function contextFromChip(chip: HTMLElement): ComposerNode & { type: "chip" } {
     text: stored ? stored.text : (chipText.get(id) ?? ""),
     isDirectory: stored?.isDirectory ?? chip.dataset.directory === "1",
     source: stored?.source ?? (chip.dataset.source === "terminal" ? "terminal" : undefined),
+    workspaceId: stored?.workspaceId || chip.dataset.workspaceId || undefined,
   };
 }
 

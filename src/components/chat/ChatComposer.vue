@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowUp, Users } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import MicButton from "../dictation/MicButton.vue";
@@ -55,6 +55,7 @@ import {
   type OsDroppedEntry,
   type WorkspaceFileDragPayload,
 } from "./workspace-file-drag";
+import { OS_DROP_EVENT, onOsDropHover, startOsFileDrop, type OsDropDetail } from "./os-file-drop";
 
 const ROOT_ENTRY_CAP = 200;
 
@@ -133,11 +134,53 @@ const suggestMenu = ref<{ handleKeydown: (event: KeyboardEvent) => boolean } | n
 const suggestAnchor = ref<{ left: number; top: number; bottom: number; width?: number } | null>(null);
 const workspaceRootItems = ref<ComposerSuggestItem[]>([]);
 const injectedOpenEditors = inject(composerOpenEditorsKey, null);
+let treeDropOver = false;
+let osDropOver = false;
+
+function composerRoot() {
+  const host = rootEl.value;
+  if (host instanceof HTMLElement) return host;
+  return (host as { $el?: HTMLElement } | null)?.$el ?? null;
+}
+
+function syncDropOver() {
+  dropOver.value = treeDropOver || osDropOver;
+}
+
 const stopDragWatch = onWorkspaceFileDragChange((state) => {
-  dropOver.value = state.over === "composer";
+  treeDropOver = state.over === "composer";
+  syncDropOver();
+});
+const stopOsHover = onOsDropHover((zone) => {
+  const root = composerRoot();
+  osDropOver = Boolean(zone && root && (zone === root || root.contains(zone)));
+  syncDropOver();
+});
+
+function onNativeOsDrop(event: Event) {
+  const paths = (event as CustomEvent<OsDropDetail>).detail?.paths ?? [];
+  event.stopPropagation();
+  osDropOver = false;
+  syncDropOver();
+  if (!paths.length || props.disabled || props.readonly) return;
+  const entries = paths.map((path) => ({
+    path,
+    name: path.split(/[\\/]/).pop() || path,
+  }));
+  field.value?.beginExternalDrop();
+  requestAnimationFrame(() => {
+    emit("drop-os-files", entries);
+  });
+}
+
+onMounted(() => {
+  startOsFileDrop();
+  composerRoot()?.addEventListener(OS_DROP_EVENT, onNativeOsDrop);
 });
 onBeforeUnmount(() => {
   stopDragWatch();
+  stopOsHover();
+  composerRoot()?.removeEventListener(OS_DROP_EVENT, onNativeOsDrop);
 });
 
 function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
