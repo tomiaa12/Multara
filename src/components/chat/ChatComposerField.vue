@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
-import { Bot, FolderKanban, Hash, Sparkles, X } from "@lucide/vue";
+import { Bot, FolderKanban, Hash, Network, Sparkles, X } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import Codicon from "../ui/Codicon.vue";
 import { t } from "../../i18n";
@@ -91,6 +91,7 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
   if (reference) {
     let component = Bot;
     if (reference.referenceKind === "skill") component = Sparkles;
+    if (reference.referenceKind === "mcp") component = Network;
     if (reference.referenceKind === "task") component = Hash;
     if (reference.referenceKind === "requirement") component = FolderKanban;
     render(createVNode(component, { size: 12 }), icon);
@@ -143,12 +144,12 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
 function contextFromChip(chip: HTMLElement): ComposerNode & { type: "chip" } {
   const id = chip.dataset.contextId ?? "";
   const referenceKind = chip.dataset.referenceKind;
-  if (referenceKind && ["agent", "squad", "skill", "task", "requirement"].includes(referenceKind)) {
+  if (referenceKind && ["agent", "squad", "skill", "mcp", "task", "requirement"].includes(referenceKind)) {
     return {
       type: "chip",
       id,
       referenceId: chip.dataset.referenceId ?? "",
-      referenceKind: referenceKind as "agent" | "squad" | "skill" | "task" | "requirement",
+      referenceKind: referenceKind as "agent" | "squad" | "skill" | "mcp" | "task" | "requirement",
       label: chip.dataset.referenceLabel ?? "",
     };
   }

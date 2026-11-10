@@ -1541,6 +1541,8 @@ const catalog: MessageCatalog = {
   "chat.context.pullRequestsEmpty": "尚未接入 Pull Request",
   "chat.context.agents": "智能體",
   "chat.context.skills": "Skills",
+  "chat.context.mcp": "MCP",
+  "chat.context.mcpEmpty": "沒有可引用的 MCP",
   "chat.context.commands": "會話命令",
   "chat.context.tasks": "任務",
   "chat.context.requirements": "需求",
