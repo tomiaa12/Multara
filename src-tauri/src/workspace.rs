@@ -4,7 +4,6 @@ use std::{
     process::Command,
 };
 
-use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::models::{Workspace, WorkspaceCandidate};
@@ -15,7 +14,7 @@ pub struct PreparedWorkspace {
 }
 
 pub fn prepare(
-    app: &AppHandle,
+    app_data_dir: &Path,
     project_id: &str,
     source_path: &str,
     mode: &str,
@@ -64,8 +63,7 @@ pub fn prepare(
     }
 
     let isolation_root = isolation_base
-        .map(Ok)
-        .unwrap_or_else(|| app.path().app_data_dir().map_err(|error| error.to_string()))?
+        .unwrap_or_else(|| app_data_dir.to_path_buf())
         .join("workspaces")
         .join(project_id)
         .join(&workspace_id);

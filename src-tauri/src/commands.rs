@@ -1509,12 +1509,15 @@ pub async fn add_workspace(
 
     let create_branch = create_branch.unwrap_or(true);
     let origin_ref = base_ref.clone();
-    let app_for_prepare = app.clone();
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let project_id_for_prepare = project_id.clone();
     let git_command_for_prepare = git_command.clone();
     let prepared = tauri::async_runtime::spawn_blocking(move || {
         workspace::prepare(
-            &app_for_prepare,
+            &app_data,
             &project_id_for_prepare,
             &source_path,
             &mode,
@@ -1527,8 +1530,20 @@ pub async fn add_workspace(
     })
     .await
     .map_err(|error| tr!("添加项目中断：{error}", error = error))??;
-    let item = &prepared.workspace;
     let db = state.lock_db()?;
+    let item = commit_workspace(&db, prepared, &git_command, create_branch, origin_ref.as_deref())?;
+    sync_resource_workspaces(&db);
+    Ok(item)
+}
+
+pub(crate) fn commit_workspace(
+    db: &Connection,
+    prepared: workspace::PreparedWorkspace,
+    git_command: &str,
+    create_branch: bool,
+    origin_ref: Option<&str>,
+) -> Result<Workspace, String> {
+    let item = &prepared.workspace;
     if let Err(error) = db.execute(
         "INSERT INTO workspaces
          (id, project_id, name, kind, source_path, work_path, branch, isolation_mode, created_at)
@@ -1545,7 +1560,7 @@ pub async fn add_workspace(
             item.created_at
         ],
     ) {
-        workspace::cleanup(&prepared, &git_command);
+        workspace::cleanup(&prepared, git_command);
         let message = error.to_string();
         if message.contains("UNIQUE constraint failed") {
             return Err(tr!("这个检出目录已经在当前需求里"));
@@ -1553,9 +1568,8 @@ pub async fn add_workspace(
         return Err(tr!("保存工作区失败：{message}", message = message));
     }
     if create_branch {
-        crate::merge_flow::record_origin(&db, item, origin_ref.as_deref(), &git_command);
+        crate::merge_flow::record_origin(db, item, origin_ref, git_command);
     }
-    sync_resource_workspaces(&db);
     Ok(item.clone())
 }
 
@@ -5887,7 +5901,7 @@ pub(crate) fn get_git_workspace(db: &Connection, workspace_id: &str) -> Result<W
     Ok(workspace)
 }
 
-fn list_projects(db: &Connection) -> Result<Vec<Project>, String> {
+pub(crate) fn list_projects(db: &Connection) -> Result<Vec<Project>, String> {
     let mut statement = db
         .prepare(
             "SELECT p.id, p.name, p.note, COUNT(w.id), p.created_at, p.opened_at, p.archived_at
@@ -5915,7 +5929,7 @@ fn list_projects(db: &Connection) -> Result<Vec<Project>, String> {
     Ok(projects)
 }
 
-fn list_workspaces(db: &Connection) -> Result<Vec<Workspace>, String> {
+pub(crate) fn list_workspaces(db: &Connection) -> Result<Vec<Workspace>, String> {
     let mut statement = db
         .prepare(
             "SELECT id, project_id, session_id, source_workspace_id, name, kind,
@@ -5932,7 +5946,7 @@ fn list_workspaces(db: &Connection) -> Result<Vec<Workspace>, String> {
     Ok(workspaces)
 }
 
-fn list_project_workspaces(db: &Connection, project_id: &str) -> Result<Vec<Workspace>, String> {
+pub(crate) fn list_project_workspaces(db: &Connection, project_id: &str) -> Result<Vec<Workspace>, String> {
     let mut statement = db
         .prepare(
             "SELECT id, project_id, session_id, source_workspace_id, name, kind,
@@ -5980,6 +5994,14 @@ fn list_squads(db: &Connection) -> Result<Vec<Squad>, String> {
 }
 
 /// 智能体/小队页刷新：只读库，不跑 runtime detect / resource scan（bootstrap 太重会卡首屏）。
+#[tauri::command]
+pub fn list_projects_and_workspaces(
+    state: State<'_, AppState>,
+) -> Result<(Vec<Project>, Vec<Workspace>), String> {
+    let db = state.lock_db()?;
+    Ok((list_projects(&db)?, list_workspaces(&db)?))
+}
+
 #[tauri::command]
 pub fn list_agents_and_squads(
     state: State<'_, AppState>,
