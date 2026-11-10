@@ -97,6 +97,7 @@ pub fn drive<R: Read + Send + 'static, W: Write, E: Write>(
     cwd: &str,
     events: &mut E,
     gate: Option<PermissionGate>,
+    mcp_servers: &[Value],
 ) {
     let (line_tx, lines) = mpsc::sync_channel::<String>(LINE_QUEUE_CAPACITY);
     thread::spawn(move || {
@@ -107,7 +108,7 @@ pub fn drive<R: Read + Send + 'static, W: Write, E: Write>(
         }
     });
     if kind == "dsh" {
-        drive_dsh(&lines, stdin, prompt, cwd, events);
+        drive_dsh(&lines, stdin, prompt, cwd, events, mcp_servers);
     } else {
         drive_acp(
             &lines,
@@ -118,6 +119,7 @@ pub fn drive<R: Read + Send + 'static, W: Write, E: Write>(
             cwd,
             events,
             gate.as_ref(),
+            mcp_servers,
         );
     }
 }
@@ -131,6 +133,7 @@ fn drive_acp<W: Write, E: Write>(
     cwd: &str,
     events: &mut E,
     gate: Option<&PermissionGate>,
+    mcp_servers: &[Value],
 ) {
     if call(
         lines,
@@ -154,7 +157,7 @@ fn drive_acp<W: Write, E: Write>(
         stdin,
         SESSION_NEW_REQUEST_ID,
         "session/new",
-        json!({ "cwd": cwd, "mcpServers": [] }),
+        json!({ "cwd": cwd, "mcpServers": mcp_servers }),
         events,
         gate,
     ) else {
@@ -312,6 +315,7 @@ fn drive_dsh<W: Write, E: Write>(
     prompt: &str,
     cwd: &str,
     events: &mut E,
+    mcp_servers: &[Value],
 ) {
     let command = json!({
         "v": 1,
@@ -319,7 +323,7 @@ fn drive_dsh<W: Write, E: Write>(
         "request_id": "multara",
         "cwd": cwd,
         "prompt": prompt,
-        "mcp_servers": []
+        "mcp_servers": mcp_servers
     });
     if writeln!(stdin, "{command}").is_err() {
         return;
@@ -695,6 +699,7 @@ mod tests {
             "/tmp",
             &mut events,
             None,
+            &[],
         );
         String::from_utf8(events).unwrap()
     }
@@ -744,6 +749,7 @@ mod tests {
             "/tmp",
             &mut events,
             None,
+            &[],
         );
         let requests = String::from_utf8(stdin).unwrap();
         let set_at = requests.find("session/set_mode").unwrap();
