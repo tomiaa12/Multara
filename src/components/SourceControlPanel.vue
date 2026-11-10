@@ -24,6 +24,7 @@ import {
 } from "./workbench/preview-workspace";
 import { workspaceMode } from "./workbench/workspace-mode";
 import {
+  applyPreparedCommitMessage,
   canPublishBranch,
   discardConfirmMessage,
   publishSkipsStagedChanges,
@@ -90,6 +91,8 @@ const hookLines = computed(() =>
 const hookTitle = computed(() => hookLines.value[0] ?? "");
 const hookDetails = computed(() => hookLines.value.slice(1));
 const messages = reactive<Record<string, string>>({});
+/** 每个工作区上一次由 git 填入的提交说明，用来判断用户有没有改过。 */
+const preparedCommitMessages = new Map<string, string>();
 const collapsedRepos = ref(new Set<string>());
 const selectedWorkspaceId = ref("");
 const historyEpoch = ref(0);
@@ -187,6 +190,7 @@ async function performRefresh() {
   try {
     if (props.projectId === PREVIEW_PROJECT_ID) {
       repositories.value = [previewGitRepository, previewGitRepositoryB];
+      syncPreparedCommitMessages(repositories.value);
       emit("updated", repositories.value);
       return;
     }
@@ -196,6 +200,7 @@ async function performRefresh() {
     repositories.value = workspaceIds.size
       ? repositoriesForProject.filter((repository) => workspaceIds.has(repository.workspaceId))
       : repositoriesForProject;
+    syncPreparedCommitMessages(repositories.value);
     emit("updated", repositories.value);
     historyEpoch.value += 1;
   } catch (cause) {
@@ -204,6 +209,20 @@ async function performRefresh() {
     }
   } finally {
     if (showLoading) loading.value = false;
+  }
+}
+
+function syncPreparedCommitMessages(list: GitRepositoryStatus[]) {
+  const seen = new Set<string>();
+  for (const repo of list) {
+    seen.add(repo.workspaceId);
+    const previous = preparedCommitMessages.get(repo.workspaceId) ?? "";
+    const next = repo.commitMessage || "";
+    messages[repo.workspaceId] = applyPreparedCommitMessage(messages[repo.workspaceId] ?? "", previous, next);
+    preparedCommitMessages.set(repo.workspaceId, next);
+  }
+  for (const id of preparedCommitMessages.keys()) {
+    if (!seen.has(id)) preparedCommitMessages.delete(id);
   }
 }
 
