@@ -118,6 +118,8 @@ export interface GitRepositoryStatus {
   behind: number;
   hasRemote: boolean;
   merging: boolean;
+  /** 合并或压合进行中时，git 准备好的提交说明；没有则为空字符串。 */
+  commitMessage: string;
   changes: GitFileStatus[];
   branches: string[];
   remoteBranches: string[];

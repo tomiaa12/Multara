@@ -54,18 +54,14 @@ pub fn status(
     let changes = parse_status_records(entries);
     let has_remote = remotes(git_command, root).is_ok_and(|items| !items.is_empty());
     let (branches, remote_branches) = ref_names(git_command, root);
-    let git_path = output(
-        git_command,
-        root,
-        &["rev-parse", "--git-path", "MERGE_HEAD"],
-    )
-    .unwrap_or_default();
-    let merge_head = PathBuf::from(git_path.trim());
-    let merging = if merge_head.is_absolute() {
-        merge_head.is_file()
-    } else {
-        Path::new(root).join(merge_head).is_file()
-    };
+    let git_dir = git_dir(root, git_command);
+    let merging = git_dir
+        .as_ref()
+        .is_some_and(|dir| dir.join("MERGE_HEAD").is_file());
+    let commit_message = git_dir
+        .as_ref()
+        .map(|dir| prepared_commit_message(dir))
+        .unwrap_or_default();
     Ok(GitRepositoryStatus {
         workspace_id: workspace_id.to_string(),
         name: name.to_string(),
@@ -76,10 +72,48 @@ pub fn status(
         behind: tracking.behind,
         has_remote,
         merging,
+        commit_message,
         changes,
         branches,
         remote_branches,
     })
+}
+
+/// `rev-parse --git-dir`：普通仓库是 `.git`，worktree 是独立的 git 目录。
+fn git_dir(root: &str, git_command: &str) -> Option<PathBuf> {
+    let raw = output(git_command, root, &["rev-parse", "--git-dir"]).ok()?;
+    let path = PathBuf::from(raw.trim());
+    if path.as_os_str().is_empty() {
+        return None;
+    }
+    Some(if path.is_absolute() {
+        path
+    } else {
+        Path::new(root).join(path)
+    })
+}
+
+/// 对齐 VS Code：优先 MERGE_MSG，其次 SQUASH_MSG，去掉以 # 开头的注释行。
+fn prepared_commit_message(git_dir: &Path) -> String {
+    for name in ["MERGE_MSG", "SQUASH_MSG"] {
+        let Ok(raw) = std::fs::read_to_string(git_dir.join(name)) else {
+            continue;
+        };
+        let message = strip_commit_message_comments(&raw);
+        if !message.is_empty() {
+            return message;
+        }
+    }
+    String::new()
+}
+
+fn strip_commit_message_comments(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 struct BranchTracking {
@@ -1659,8 +1693,40 @@ mod tests {
     use super::{
         blame_line, commit, commit_files, current_upstream, discard, graph_commit_action, history,
         index_file, parse_blame_porcelain, parse_branch_header, parse_status_records, pull, push,
-        revision_file, stage, stage_contents, status, switch_branch,
+        revision_file, stage, stage_contents, status, strip_commit_message_comments, switch_branch,
     };
+
+    #[test]
+    fn strips_merge_message_comments() {
+        let raw = "Merge branch 'main' of http://gl.example/web/npm/fsw-npm-ui\n\n# Please enter a commit message\n#\n";
+        assert_eq!(
+            strip_commit_message_comments(raw),
+            "Merge branch 'main' of http://gl.example/web/npm/fsw-npm-ui"
+        );
+    }
+
+    #[test]
+    fn status_reads_merge_message_while_merging() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        command(root, &["init"]);
+        command(root, &["config", "user.email", "test@multara.local"]);
+        command(root, &["config", "user.name", "Multara Test"]);
+        fs::write(temp.path().join("file.txt"), "base\n").unwrap();
+        stage(root, "git", &["file.txt".to_string()], true).unwrap();
+        commit(root, "git", "feat: base", false).unwrap();
+        command(root, &["checkout", "-b", "other"]);
+        fs::write(temp.path().join("other.txt"), "other\n").unwrap();
+        stage(root, "git", &["other.txt".to_string()], true).unwrap();
+        commit(root, "git", "feat: other", false).unwrap();
+        command(root, &["checkout", "-"]);
+        command(root, &["merge", "--no-ff", "--no-commit", "other"]);
+
+        let repository = status("workspace", "repo", root, "git").unwrap();
+        assert!(repository.merging);
+        assert!(repository.commit_message.starts_with("Merge branch 'other'"));
+        assert!(!repository.commit_message.contains('#'));
+    }
 
     #[test]
     fn stages_commits_and_switches_a_repository() {

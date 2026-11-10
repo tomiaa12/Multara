@@ -9,6 +9,7 @@ import {
   publishWithoutCommitConfirm,
   scmPrimaryAction,
   stepCommitMessage,
+  applyPreparedCommitMessage,
   rememberCommitMessage,
   resetCommitMessageCursor,
 } from "./scm-commit-action";
@@ -71,6 +72,26 @@ describe("canSyncChanges", () => {
 
   test("staged changes keep 提交 even when the branch is ahead", () => {
     expect(scmPrimaryAction({ ...base, ahead: 1 }, true)).toBe("commit");
+  });
+});
+
+describe("applyPreparedCommitMessage", () => {
+  const mergeMessage = "Merge branch 'main' of http://gl.example/web/npm/fsw-npm-ui";
+
+  test("fills an empty input with the merge message", () => {
+    expect(applyPreparedCommitMessage("", "", mergeMessage)).toBe(mergeMessage);
+  });
+
+  test("keeps a message the user already typed", () => {
+    expect(applyPreparedCommitMessage("feat: add canvas", "", mergeMessage)).toBe("feat: add canvas");
+  });
+
+  test("replaces the previous prepared message when git updates it", () => {
+    expect(applyPreparedCommitMessage(mergeMessage, mergeMessage, "Merge branch 'dev'")).toBe("Merge branch 'dev'");
+  });
+
+  test("clears the prepared message after the merge ends", () => {
+    expect(applyPreparedCommitMessage(mergeMessage, mergeMessage, "")).toBe("");
   });
 });
 

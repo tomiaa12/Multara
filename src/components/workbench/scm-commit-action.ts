@@ -77,6 +77,12 @@ export function resetCommitMessageCursor(workspaceId: string) {
   commitMessageCursor.set(workspaceId, -1);
 }
 
+/** 对齐 VS Code：输入为空，或仍是上一次 git 准备的说明时，才换成新的 MERGE_MSG / SQUASH_MSG。 */
+export function applyPreparedCommitMessage(current: string, previous: string, next: string) {
+  if (current && current !== previous) return current;
+  return next;
+}
+
 export function canSyncChanges(repository: {
   hasRemote: boolean;
   upstream: string | null;

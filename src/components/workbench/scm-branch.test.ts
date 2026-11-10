@@ -18,6 +18,7 @@ function repo(partial: Partial<GitRepositoryStatus>): GitRepositoryStatus {
     behind: 0,
     hasRemote: true,
     merging: false,
+    commitMessage: "",
     changes: [],
     branches: ["main", "dev"],
     remoteBranches: ["origin/main"],
