@@ -37,7 +37,10 @@ const props = withDefaults(defineProps<{
   hideSpeaker?: boolean;
   /** 派活后第一条回复下方嵌子任务回复 */
   embedSubtask?: AssignmentSubtaskRef | null;
+  /** 消息里的界面块能否提交（预览、只读回看时为 false） */
+  uiInteractive?: boolean;
 }>(), {
+  uiInteractive: true,
   questionState: null,
   defaultCollapseSubagents: false,
   compact: false,
@@ -89,6 +92,7 @@ const sentTarget = computed(() =>
 
 const channelSource = computed(() => {
   if (!props.message.sourceType) return "";
+  if (props.message.sourceType === "genui") return t("genui.fromUi");
   const meta = (props.message.sourceMeta ?? {}) as Record<string, unknown>;
   const channel = props.message.sourceType === "lark"
     ? "Lark"
@@ -142,6 +146,7 @@ function startReask(
     :compact="compact"
     :hide-speaker="hideSpeaker"
     :embed-subtask="embedSubtask"
+    :ui-interactive="uiInteractive"
     @pick-action="emit('pick-action', $event)"
   />
 </template>

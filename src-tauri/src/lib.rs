@@ -4,6 +4,9 @@ pub mod app_locale;
 pub mod automation;
 pub mod builtin_agents;
 pub mod builtin_skills;
+pub mod canvas;
+pub mod canvas_bridge;
+pub mod canvas_cli;
 pub mod catalog;
 pub mod channel;
 pub mod cli;
@@ -11,6 +14,7 @@ pub mod cli_catalog;
 pub mod code_index;
 pub mod commands;
 pub mod conversation;
+pub mod ctl;
 pub mod cursor_mcp_state;
 pub mod database;
 pub mod diag;
@@ -24,6 +28,7 @@ pub mod git_merge;
 pub mod hook_runtime;
 pub mod http_client;
 pub mod lsp;
+pub mod mcp_app;
 pub mod mcp_oauth;
 pub mod mcp_probe;
 pub mod mcp_tools_cache;
@@ -46,6 +51,7 @@ pub mod snapshot;
 pub mod snapshot_db;
 pub mod terminal;
 pub mod text_search;
+pub mod ui_host;
 pub mod usage;
 pub mod webhook;
 pub mod workspace;
@@ -282,6 +288,11 @@ pub fn run() {
                 });
             }
             app.manage(state);
+            app.manage(canvas::CanvasHost::default());
+            app.manage(mcp_app::McpAppHost::default());
+            mcp_app::start_reaper(app.handle().clone());
+            ctl::start(app.handle().clone());
+            canvas::start_reaper(app.handle().clone());
             automation::start(app.handle().clone());
             webhook::start(app.handle().clone());
             executor::start_poller(app.handle().clone());
@@ -318,6 +329,18 @@ pub fn run() {
             list_quick_open_files,
             collect_source_files,
             collect_workspace_typings,
+            canvas::list_canvas_instances,
+            canvas::ensure_canvas_hosted,
+            canvas::canvas_hosted_url,
+            canvas::set_canvas_pinned,
+            canvas::list_project_canvases,
+            canvas::set_canvas_visible,
+            canvas::open_registered_canvas,
+            canvas::close_canvas,
+            canvas::get_canvas_context,
+            canvas::resolve_ui_outbound,
+            mcp_app::mcp_app_resolve,
+            mcp_app::mcp_app_call,
             lsp::lsp_start,
             lsp::lsp_send,
             lsp::lsp_stop,

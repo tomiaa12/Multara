@@ -33,6 +33,7 @@ import {
 import { titlebarDetail } from "./stores/titlebar";
 import { backTarget, crumbs, markMenuNavigation } from "./stores/breadcrumbs";
 import FloatingChat from "./components/FloatingChat.vue";
+import CanvasFrameHost from "./components/CanvasFrameHost.vue";
 import UpdateNotification from "./components/UpdateNotification.vue";
 import { RunLogHost } from "./components/run-log";
 import UnsavedChangesDialog from "./components/workbench/UnsavedChangesDialog.vue";
@@ -544,6 +545,8 @@ onBeforeUnmount(() => {
 
     <!-- 需求工作台/预览自带聊天：只隐藏不销毁，避免切菜单后再开气泡回到最早提问 -->
     <FloatingChat :hidden="isWorkbenchPath(route.path) || route.path === '/inbox'" />
+    <!-- Canvas 页面的 iframe 都在这一层（keep-alive 外面），切走页面也保持连接 -->
+    <CanvasFrameHost />
     <UpdateNotification />
     <UnsavedChangesDialog
       v-if="unsavedPrompt"

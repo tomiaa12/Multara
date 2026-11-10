@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, getCurrentScope, ref, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
-import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, McpInput, MergeSession, MessageAttachmentInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
+import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
 import * as backend from "../services/backend";
@@ -20,6 +20,7 @@ import { mergeById } from "./merge-by-id";
 import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
 import { extractQuestions } from "../components/chat/question-block";
+import { isGenUiEnabled } from "../components/chat/genui/block";
 import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unanswered-turn";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
 import { confirmDialog } from "../components/ui/confirm-dialog";
@@ -67,7 +68,7 @@ export const useAppStore = defineStore("app", () => {
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
   const activeInboxSessionId = ref<string | null>(null);
   /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它 */
-  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean };
+  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean; source?: MessageSourceInput };
   const queuedMessages = ref<QueuedMessage[]>([]);
   const dismissedQuestions = ref(new Set<string>(readDismissedQuestions()));
   const sendingSessions = ref(new Set<string>());
@@ -87,6 +88,8 @@ export const useAppStore = defineStore("app", () => {
     content: string;
     attachments: MessageAttachmentInput[];
     requestedMode?: RunMode;
+    /** 界面块提交失败：不把机读文本塞回输入框，块会自动恢复可点 */
+    source?: MessageSourceInput;
     message: string;
   } | null>(null);
   const fileReveal = ref<{
@@ -781,7 +784,7 @@ export const useAppStore = defineStore("app", () => {
     const task = data.value.tasks.find((item) => item.sessionId === session.id) ?? null;
     const transcript = messages.value[payload.sessionId] ?? [];
     const lastAssistant = [...transcript].reverse().find((message) => message.role === "assistant");
-    const waitingQuestion = Boolean(lastAssistant && extractQuestions(lastAssistant.content).questions.length);
+    const waitingQuestion = Boolean(lastAssistant && extractQuestions(lastAssistant.content, { genui: isGenUiEnabled(data.value.settings) }).questions.length);
     const waitingPermission = transcript.some((message) =>
       message.timeline.some((item) => item.eventType === "permission" && item.status !== "resolved"),
     );
@@ -1183,7 +1186,7 @@ export const useAppStore = defineStore("app", () => {
     content: string,
     sessionId = activeSessionId.value,
     attachments: MessageAttachmentInput[] = [],
-    options: { priority?: boolean; mode?: RunMode } = {},
+    options: { priority?: boolean; mode?: RunMode; source?: MessageSourceInput } = {},
   ) {
     const text = content.trim();
     if (!text && !attachments.length) return;
@@ -1194,6 +1197,7 @@ export const useAppStore = defineStore("app", () => {
       attachments,
       requestedMode: options.mode ?? sessionMode(sessionId),
       priority: options.priority,
+      ...(options.source ? { source: options.source } : {}),
     };
     if (options.priority) queuedMessages.value.unshift(item);
     else queuedMessages.value.push(item);
@@ -1211,7 +1215,7 @@ export const useAppStore = defineStore("app", () => {
       if (message.role === "user") return false;
       if (message.role !== "assistant" || message.failureReason) continue;
       if (dismissedQuestions.value.has(message.id)) continue;
-      if (extractQuestions(message.content).questions.length) return true;
+      if (extractQuestions(message.content, { genui: isGenUiEnabled(data.value?.settings) }).questions.length) return true;
     }
     return false;
   }
@@ -1520,6 +1524,7 @@ export const useAppStore = defineStore("app", () => {
           })),
           createdAt: new Date().toISOString(),
           requestedMode: next.requestedMode,
+          ...(next.source ? { sourceType: next.source.sourceType, sourceMeta: next.source.meta } : {}),
         },
       ];
       await new Promise<void>((resolve) => {
@@ -1527,7 +1532,10 @@ export const useAppStore = defineStore("app", () => {
       });
       try {
         pendingRunSessions.value.add(next.sessionId);
-        const result = await backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode);
+        // 普通消息不带来源参数，调用形状和以前一致；只有界面块提交才传 source
+        const result = next.source
+          ? await backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode, next.source)
+          : await backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode);
         if (withdrawnOptimistic.has(optimisticId)) {
           withdrawnOptimistic.delete(optimisticId);
           const returnedUser = result.find((message) => message.role === "user");
@@ -1567,6 +1575,7 @@ export const useAppStore = defineStore("app", () => {
           content: next.content,
           attachments: next.attachments,
           requestedMode: next.requestedMode,
+          ...(next.source ? { source: next.source } : {}),
           message: t("app.sendFailed", { message }),
         };
       }

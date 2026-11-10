@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod automation;
+pub mod canvas;
 pub mod chat;
 pub mod inbox;
 pub mod project;

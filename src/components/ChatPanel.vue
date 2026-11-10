@@ -8,6 +8,11 @@ import { chatMessagesKey } from "./chat/context-usage";
 import ChatEditingBar from "./chat/ChatEditingBar.vue";
 import ChatQuestionCarousel from "./chat/ChatQuestionCarousel.vue";
 import { extractQuestions } from "./chat/question-block";
+import { isGenUiEnabled } from "./chat/genui/block";
+import CanvasBar from "./chat/CanvasBar.vue";
+import UiFrame from "./UiFrame.vue";
+import { formatUiContexts, registerComposerFiller } from "./chat/ui-outbound";
+import { useCanvasStore } from "../stores/canvas";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
@@ -24,7 +29,7 @@ import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
-import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput, RunMode } from "../domain/types";
+import type { CanvasDefinition, ChatMessage, EditorSelectionContext, MessageAttachmentInput, RunMode } from "../domain/types";
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
@@ -116,6 +121,20 @@ const MAX_ATTACHMENTS = 10;
 
 const store = useAppStore();
 const diffStore = useDiffStore();
+const canvas = useCanvasStore();
+/** Canvas 是生成式界面下面的子开关 */
+const canvasOn = computed(() =>
+  isGenUiEnabled(store.data?.settings) && store.data?.settings.canvasesEnabled === "true",
+);
+const uiContexts = computed(() => (props.preview ? [] : canvas.contextsFor(session.value?.id)));
+/** 没有工作台可以显示 Canvas 时（浮动聊天），在聊天面板上弹窗显示 */
+const canvasModal = ref<{ sessionId: string; instanceId: string } | null>(null);
+const canvasModalViewId = `chat-modal-${crypto.randomUUID()}`;
+const canvasModalTitle = computed(() => {
+  const target = canvasModal.value;
+  if (!target) return "";
+  return canvas.listFor(target.sessionId).find((item) => item.instanceId === target.instanceId)?.title ?? target.instanceId;
+});
 const drafts = ref<Record<string, ComposerNode[]>>({});
 const pendingAttachments = ref<Record<string, MessageAttachmentInput[]>>({});
 const pendingPastes = ref<Record<string, Array<MessageAttachmentInput & { previewUrl: string }>>>({});
@@ -437,6 +456,7 @@ function userTurnRunning(message: ChatMessage) {
 const dismissedQuestions = computed(() => store.dismissedQuestions);
 const dismissQuestion = (messageId: string) => store.dismissQuestion(messageId);
 
+const genUiOn = computed(() => isGenUiEnabled(store.data?.settings));
 const questionStates = computed(() => {
   const states = new Map<string, "pending" | "answered" | "skipped">();
   const messages = displayMessages.value;
@@ -449,7 +469,7 @@ const questionStates = computed(() => {
       continue;
     }
     if (message.role !== "assistant" || message.failureReason) continue;
-    if (!extractQuestions(message.content).questions.length) continue;
+    if (!extractQuestions(message.content, { genui: genUiOn.value }).questions.length) continue;
     if (userAfter) states.set(message.id, "answered");
     else if (dismissedQuestions.value.has(message.id)) states.set(message.id, "skipped");
     else if (!pendingTaken) {
@@ -466,7 +486,7 @@ const pendingQuestion = computed(() => {
     if (state !== "pending") continue;
     const message = displayMessages.value.find((item) => item.id === id);
     if (!message || messageRunning(message)) continue;
-    const questions = extractQuestions(message.content).questions;
+    const questions = extractQuestions(message.content, { genui: genUiOn.value }).questions;
     const agent = store.data?.agents.find((item) => item.id === message.agentId);
     return { messageId: id, questions, agentName: agent?.name ?? targetLabel.value };
   }
@@ -745,7 +765,10 @@ function submit() {
     return;
   }
   const serialized = composerInput.value?.serialize() ?? { text: "", nodes: [] as ComposerNode[], empty: true };
-  const content = formatAgentPrompt(serialized.nodes, { directMentions: true });
+  const typed = formatAgentPrompt(serialized.nodes, { directMentions: true });
+  // 页面挂上来的上下文随这条消息带上，带来源头（是数据，不是用户指令）
+  const contextBlock = formatUiContexts(canvas.takeContexts(session.value.id));
+  const content = contextBlock ? `${typed}\n\n${contextBlock}` : typed;
   const selectedAttachments = [
     ...attachments.value,
     ...pastedImages.value.map(({ previewUrl: _previewUrl, ...attachment }) => attachment),
@@ -1357,6 +1380,11 @@ watch(
     const failure = pendingFailure.value;
     if (!failure) return;
     composerError.value = failure.message;
+    // 界面块提交失败：块自己恢复可点，正文是给模型读的格式，不还原到输入框
+    if (failure.source) {
+      store.dismissSendFailure();
+      return;
+    }
     if (composerHasContent()) return;
     void applyFailedDraft(failure).then(() => store.dismissSendFailure());
   },
@@ -1375,12 +1403,92 @@ watch(
 
 onMounted(() => {
   void ensureSession();
+  canvas.startListening();
   void nextTick(() => {
     sessionTabs.value?.addEventListener("wheel", onTabsWheel, { passive: false });
     bindMessageListResize();
     if (session.value?.id) revealTranscript(session.value.id);
   });
 });
+
+// Canvas 页面要填输入框（__multara/message）：输入框为空时填进去并聚焦，用户自己按发送
+let unregisterFiller: (() => void) | null = null;
+watch(
+  () => (props.preview || props.historyViewOnly ? null : session.value?.id ?? null),
+  (sessionId) => {
+    unregisterFiller?.();
+    unregisterFiller = null;
+    if (!sessionId) return;
+    unregisterFiller = registerComposerFiller(sessionId, (text) => {
+      if (composerHasContent() || composerLocked.value) return { ok: false, reason: "composer_not_empty" };
+      composerInput.value?.insertText(text);
+      composerInput.value?.focus();
+      return { ok: true };
+    });
+  },
+  { immediate: true },
+);
+
+// pill / 菜单要显示某个实例：有工作台时由工作台开标签，否则在这里弹窗
+watch(
+  () => canvas.showRequest?.nonce,
+  () => {
+    const request = canvas.showRequest;
+    if (!request || props.preview || canvas.hosts > 0) return;
+    if (!canvas.shownIn(session.value?.id, request.sessionId, request.instanceId)) return;
+    canvasModal.value = { sessionId: request.sessionId, instanceId: request.instanceId };
+  },
+);
+
+function hideCanvasModal() {
+  // 只关窗口：实例、可见性都不动，Canvas 栏里还在，再点就能打开
+  canvasModal.value = null;
+}
+
+// ---------- 新建聊天菜单的 Canvas 子菜单（五期） ----------
+const projectCanvases = ref<CanvasDefinition[]>([]);
+const newCanvasMenu = ref<{ x: number; y: number } | null>(null);
+const newCanvasMenuItems = computed<ContextMenuItem[]>(() =>
+  projectCanvases.value.map((item) => ({
+    id: item.canvasId,
+    label: t("canvas.newChatWithItem", { title: item.title }),
+    icon: "layout",
+  })),
+);
+
+watch(
+  () => [canvasOn.value, props.projectId, props.preview] as const,
+  async ([on, projectId, preview]) => {
+    projectCanvases.value = on && projectId && !preview
+      ? await backend.listProjectCanvases(projectId).catch(() => [])
+      : [];
+  },
+  { immediate: true },
+);
+
+function openNewCanvasMenu(event: MouseEvent) {
+  const button = event.currentTarget;
+  if (!(button instanceof HTMLElement)) return;
+  const rect = button.getBoundingClientRect();
+  newCanvasMenu.value = { x: rect.left, y: rect.bottom };
+}
+
+/** 新开一个聊天，在里面打开选中的工作区 Canvas */
+async function createSessionWithCanvas(canvasId: string) {
+  newCanvasMenu.value = null;
+  await createSession();
+  const sessionId = store.activeSessionId;
+  if (!sessionId) return;
+  await canvas.openRegistered(sessionId, canvasId).catch((cause) => {
+    composerError.value = cause instanceof Error ? cause.message : String(cause);
+  });
+}
+
+function closeCanvasModalInstance() {
+  const target = canvasModal.value;
+  canvasModal.value = null;
+  if (target) void canvas.close(target.sessionId, target.instanceId);
+}
 watch(messageList, () => bindMessageListResize());
 watch(
   () => [visibleGroups.value.length, sessionMessages.value.length, showWorking.value] as const,
@@ -1405,6 +1513,8 @@ watch(
   },
 );
 onBeforeUnmount(() => {
+  unregisterFiller?.();
+  unregisterFiller = null;
   cancelStickFollowRelease?.();
   cancelStickFollowRelease = null;
   messageListResize?.disconnect();
@@ -1583,6 +1693,19 @@ defineExpose({
             <Plus :size="15" />
             <span>{{ t("chat.newChatLabel") }}</span>
           </UiButton>
+          <!-- 新建聊天菜单的 Canvas 子菜单（五期）：仓库里 .multara/canvases/ 下的定义，新开一个聊天并打开它 -->
+          <UiButton
+            v-if="canCreateSession && canvasOn && !preview && projectCanvases.length"
+            class="chat-session-new-canvas"
+            variant="ghost"
+            size="icon"
+            :tip="t('canvas.newChatWith')"
+            :aria-label="t('canvas.newChatWith')"
+            :disabled="!targetOptions.length"
+            @click="openNewCanvasMenu"
+          >
+            <ChevronDown :size="13" />
+          </UiButton>
           <div v-if="$slots['header-actions']" class="chat-header-actions">
             <slot name="header-actions" />
           </div>
@@ -1627,6 +1750,7 @@ defineExpose({
               :allow-target-change="allowTargetChange"
               :enable-replay="!preview && !historyViewOnly"
               :view-only="historyViewOnly"
+              :ui-interactive="!preview && !historyViewOnly"
               :default-collapse-subagents="embedded || historyViewOnly"
               :compact="compact"
               :hide-speaker="shouldHideAssistantSpeaker(group.messages[messageIndex - 1], message)"
@@ -1732,6 +1856,7 @@ defineExpose({
           </li>
         </ol>
       </section>
+      <CanvasBar v-if="canvasOn && session && !preview" :session-id="session.id" />
       <ChatEditingBar
         v-if="!preview && showEditingBar"
         :workspace-ids="reviewWorkspaceIds"
@@ -1777,6 +1902,16 @@ defineExpose({
             <span>{{ attachment.name }}</span>
             <UiButton type="button" variant="ghost" size="icon" :tip="t('chat.removeAttachment')" @click="removeAttachment(attachment.path)">
               <X :size="12" />
+            </UiButton>
+          </div>
+        </div>
+        <!-- 页面经 __multara/context 挂上来的数据：下一条消息带上，来源单独标出 -->
+        <div v-if="uiContexts.length" class="composer-attachments vs-scroll">
+          <div v-for="item in uiContexts" :key="item.id" class="composer-attachment ui-context-chip">
+            <Codicon name="dashboard" :size="12" />
+            <span>{{ t(item.source === "mcp-app" ? "mcpApp.contextChip" : "canvas.contextChip", { title: item.label }) }}</span>
+            <UiButton type="button" variant="ghost" size="icon" :tip="t('chat.removeAttachment')" @click="canvas.removeContext(item.sessionId, item.id)">
+              <X :size="10" />
             </UiButton>
           </div>
         </div>
@@ -1834,6 +1969,19 @@ defineExpose({
         @confirm="confirmReshuffle"
         @cancel="cancelReask()"
       />
+      <UiModal v-if="canvasModal" @close="hideCanvasModal" @click.self="hideCanvasModal">
+        <div class="modal canvas-modal" role="dialog" aria-modal="true" :aria-label="canvasModalTitle">
+          <UiFrame
+            :session-id="canvasModal.sessionId"
+            :instance-id="canvasModal.instanceId"
+            :title="canvasModalTitle"
+            :view-id="canvasModalViewId"
+            dismissible
+            @dismiss="hideCanvasModal"
+            @close="closeCanvasModalInstance"
+          />
+        </div>
+      </UiModal>
       <UiModal v-if="rollbackFailureOpen" @click.self="finishRollbackFailure(false)">
         <div class="modal" role="dialog" aria-modal="true">
           <h2>{{ t("chat.rollbackFailTitle") }}</h2>
@@ -1862,6 +2010,15 @@ defineExpose({
         :items="tabMenuItems"
         @select="onTabMenuSelect"
         @close="tabMenu = null"
+      />
+      <ContextMenu
+        v-if="newCanvasMenu"
+        fit
+        :x="newCanvasMenu.x"
+        :y="newCanvasMenu.y"
+        :items="newCanvasMenuItems"
+        @select="createSessionWithCanvas"
+        @close="newCanvasMenu = null"
       />
     </Teleport>
   </div>

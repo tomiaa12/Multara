@@ -240,6 +240,37 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_run_events_run_seq ON run_events(run_id, seq);
         CREATE INDEX IF NOT EXISTS idx_run_events_session ON run_events(session_id, run_id, seq);
         CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+        CREATE TABLE IF NOT EXISTS canvases (
+          id TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          owner_id TEXT NOT NULL,
+          dir TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          manifest TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (scope, owner_id, id)
+        );
+        CREATE TABLE IF NOT EXISTS canvas_instances (
+          instance_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          canvas_id TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          owner_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT '',
+          input TEXT NOT NULL DEFAULT 'null',
+          context TEXT,
+          context_at TEXT,
+          created_by_run TEXT,
+          created_by_agent TEXT,
+          visible INTEGER NOT NULL DEFAULT 1,
+          pinned INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (session_id, instance_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_canvas_instances_session ON canvas_instances(session_id);
         CREATE TABLE IF NOT EXISTS automations (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -636,6 +667,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     ensure_column(&columns, "inbox_items", "archived_at", "TEXT")?;
     ensure_column(&columns, "run_events", "parent_call_id", "TEXT")?;
     ensure_column(&columns, "run_events", "status", "TEXT")?;
+    // MCP Apps：工具的原始 CallToolResult（方案 §7.2）
+    ensure_column(&columns, "run_events", "output_json", "TEXT")?;
     ensure_column(&columns, "messages", "feedback", "TEXT")?;
     ensure_column(&columns, "messages", "requested_mode", "TEXT")?;
     ensure_column(&columns, "agent_runs", "model_override", "TEXT")?;

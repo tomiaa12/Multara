@@ -106,5 +106,29 @@
     "zh-TW": "未偵測到 {command}",
     "ja": "{command} が見つかりません",
     "ko": "{command}을(를) 찾을 수 없습니다"
+  },
+  "读不到 Copilot 当前用户（~/.copilot/config.json）": {
+    "en": "Couldn't read the current Copilot user (~/.copilot/config.json)",
+    "zh-TW": "讀不到 Copilot 目前使用者（~/.copilot/config.json）",
+    "ja": "Copilot の現在のユーザーを読み取れません（~/.copilot/config.json）",
+    "ko": "Copilot 현재 사용자를 읽을 수 없습니다(~/.copilot/config.json)"
+  },
+  "读不到 Copilot 当前用户（config.json 里没有 lastLoggedInUser）": {
+    "en": "Couldn't read the current Copilot user (config.json has no lastLoggedInUser)",
+    "zh-TW": "讀不到 Copilot 目前使用者（config.json 裡沒有 lastLoggedInUser）",
+    "ja": "Copilot の現在のユーザーを読み取れません（config.json に lastLoggedInUser がありません）",
+    "ko": "Copilot 현재 사용자를 읽을 수 없습니다(config.json에 lastLoggedInUser가 없습니다)"
+  },
+  "读不到 GitHub CLI 当前用户（~/.config/gh/hosts.yml）": {
+    "en": "Couldn't read the current GitHub CLI user (~/.config/gh/hosts.yml)",
+    "zh-TW": "讀不到 GitHub CLI 目前使用者（~/.config/gh/hosts.yml）",
+    "ja": "GitHub CLI の現在のユーザーを読み取れません（~/.config/gh/hosts.yml）",
+    "ko": "GitHub CLI 현재 사용자를 읽을 수 없습니다(~/.config/gh/hosts.yml)"
+  },
+  "读不到 GitHub CLI 当前用户（hosts.yml 里没有 user）": {
+    "en": "Couldn't read the current GitHub CLI user (hosts.yml has no user)",
+    "zh-TW": "讀不到 GitHub CLI 目前使用者（hosts.yml 裡沒有 user）",
+    "ja": "GitHub CLI の現在のユーザーを読み取れません（hosts.yml に user がありません）",
+    "ko": "GitHub CLI 현재 사용자를 읽을 수 없습니다(hosts.yml에 user가 없습니다)"
   }
 }

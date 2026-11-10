@@ -73,6 +73,7 @@ pub fn should_run_as_cli(args: &[String]) -> bool {
             | "runtime"
             | "session"
             | "terminal"
+            | "canvas"
     )
 }
 
@@ -82,7 +83,8 @@ pub fn run_args(
     mut stderr: impl io::Write,
 ) -> Result<(), i32> {
     // `-h` 只在开头才算求助，否则恰好等于 `-h` 的描述或评论会被吞掉。
-    if args.is_empty() || args[0] == "-h" || args.iter().any(|arg| arg == "--help") {
+    let canvas = args.first().map(String::as_str) == Some("canvas");
+    if args.is_empty() || args[0] == "-h" || (!canvas && args.iter().any(|arg| arg == "--help")) {
         let _ = writeln!(stderr, "{}", help());
         return Ok(());
     }
@@ -93,8 +95,18 @@ pub fn run_args(
             return Err(1);
         }
     };
+    // canvas 子命令有自己的退出码约定（1 参数 / 2 环境 / 3 Canvas 错误），stdout 失败时也是 JSON
+    if args.first().map(String::as_str) == Some("canvas") {
+        let output = crate::canvas_cli::run(args, &mut db);
+        for line in output.stderr {
+            let _ = writeln!(stderr, "{line}");
+        }
+        let _ = writeln!(stdout, "{}", output.stdout);
+        return if output.code == 0 { Ok(()) } else { Err(output.code) };
+    }
     match execute(args, &mut db) {
         Ok(json) => {
+            let json = with_ui(args, json);
             let _ = writeln!(stdout, "{json}");
             Ok(())
         }
@@ -103,6 +115,70 @@ pub fn run_args(
             Err(1)
         }
     }
+}
+
+/// 列表类命令带 `--ui` 时，输出改成 `{ items, _ui }`：`_ui` 是一个 `multara-ui` table 块，
+/// 聊天里直接显示成表格，模型不用再转述（方案 §4.4）。不带 `--ui` 时输出不变，免得记账类调用刷屏（R8）。
+fn with_ui(args: &[String], json: String) -> String {
+    if !args.iter().any(|arg| arg == "--ui") {
+        return json;
+    }
+    let parsed = parse_args(args);
+    let resource = parsed.positional.first().map(String::as_str).unwrap_or("");
+    let verb = parsed.positional.get(1).map(String::as_str).unwrap_or("");
+    let columns: &[(&str, &str)] = match (resource, verb) {
+        ("task", "list") => &[
+            ("title", "标题"),
+            ("status", "状态"),
+            ("agentId", "负责人"),
+            ("priority", "优先级"),
+            ("updatedAt", "更新时间"),
+        ],
+        ("task", "runs") => &[
+            ("agentId", "智能体"),
+            ("runtimeId", "运行时"),
+            ("status", "状态"),
+            ("createdAt", "开始时间"),
+        ],
+        ("agent", "list") => &[("name", "名称"), ("id", "ID"), ("runtimeId", "运行时"), ("model", "模型")],
+        _ => return json,
+    };
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(&json) else {
+        return json;
+    };
+    let rows: Vec<serde_json::Value> = items
+        .iter()
+        .take(200)
+        .map(|item| {
+            serde_json::Value::Object(
+                columns
+                    .iter()
+                    .map(|(key, _)| {
+                        let value = match item.get(*key) {
+                            Some(serde_json::Value::String(text)) => serde_json::Value::String(text.clone()),
+                            Some(serde_json::Value::Null) | None => serde_json::Value::Null,
+                            Some(other) => serde_json::Value::String(other.to_string()),
+                        };
+                        (key.to_string(), value)
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let format = |key: &str| if key.ends_with("At") { "date" } else { "text" };
+    let ui = serde_json::json!({
+        "type": "table",
+        "title": format!("multara {resource} {verb}"),
+        "props": {
+            "columns": columns.iter().map(|(key, label)| serde_json::json!({
+                "key": key,
+                "label": crate::i18n::tr(label),
+                "format": format(key),
+            })).collect::<Vec<_>>(),
+            "rows": rows,
+        },
+    });
+    serde_json::to_string_pretty(&serde_json::json!({ "items": items, "_ui": ui })).unwrap_or(json)
 }
 
 pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
@@ -266,7 +342,8 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("agent", "skills") => {
             let locale = crate::app_locale::from_db(db);
-            ops::json(&ops::skill::builtin(locale))
+            let genui = crate::commands::genui_enabled(db);
+            ops::json(&ops::skill::builtin(locale, genui))
         }
         ("squad", "list") => ops::json(&ops::squad::list(db)?),
         ("squad", "get") => {
@@ -379,7 +456,8 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("skill", "builtin") => {
             let locale = crate::app_locale::from_db(db);
-            ops::json(&ops::skill::builtin(locale))
+            let genui = crate::commands::genui_enabled(db);
+            ops::json(&ops::skill::builtin(locale, genui))
         }
         ("skill", "import") => {
             Err(tr!("第一期不支持 URL 导入。用 `multara skill list` 查看本机扫描结果。"))
@@ -1046,6 +1124,22 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("conversation id"));
+    }
+
+    #[test]
+    fn ui_flag_wraps_lists_in_a_table_block() {
+        let args = |list: &[&str]| list.iter().map(|item| item.to_string()).collect::<Vec<_>>();
+        let raw = r#"[{"title":"修登录","status":"todo","agentId":"miku","priority":"high","updatedAt":"2026-11-01T00:00:00Z"}]"#.to_string();
+        // 不带 --ui：原样
+        assert_eq!(super::with_ui(&args(&["task", "list"]), raw.clone()), raw);
+        let wrapped: serde_json::Value =
+            serde_json::from_str(&super::with_ui(&args(&["task", "list", "--ui"]), raw.clone())).unwrap();
+        assert_eq!(wrapped["items"][0]["title"], "修登录");
+        assert_eq!(wrapped["_ui"]["type"], "table");
+        assert_eq!(wrapped["_ui"]["props"]["rows"][0]["status"], "todo");
+        assert_eq!(wrapped["_ui"]["props"]["columns"][4]["format"], "date");
+        // 不支持的命令带 --ui 也原样
+        assert_eq!(super::with_ui(&args(&["squad", "list", "--ui"]), raw.clone()), raw);
     }
 
     #[test]
