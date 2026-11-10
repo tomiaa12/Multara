@@ -32,6 +32,8 @@ const props = defineProps<{
   wordWrap?: boolean;
   gitEpoch?: number;
   writing?: boolean;
+  /** 关掉后不挂 diff、行号装饰和 blame。Skill 这类不在工作区里的文件用。 */
+  git?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -95,30 +97,36 @@ function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
   gutterRef.value?.dispose();
   blameRef.value?.dispose();
   conflictRef.value?.dispose();
+  overlayRef.value = null;
+  gutterRef.value = null;
+  blameRef.value = null;
+  conflictRef.value = null;
   editorRef.value = editor;
-  overlayRef.value = new DiffOverlayManager(
-    editor,
-    (chunkId) => diffStore.acceptChunk(chunkId, editor.getValue()),
-    (chunkId) => diffStore.undoChunk(chunkId, props.workspaceId, props.filePath, editor.getValue()),
-    () => isRunning.value,
-  );
   const locate = () => ({ workspaceId: props.workspaceId, filePath: props.filePath });
-  gutterRef.value = new GitGutter(
-    editor,
-    async () => gitBaselineText(await backend.gitHeadFile(props.workspaceId, props.filePath)),
-    () => `${props.workspaceId}\0${props.filePath}\0${props.gitEpoch ?? 0}`,
-    locate,
-    () => emit("git-mutate"),
-  );
-  blameRef.value = new GitBlame(
-    editor,
-    locate,
-    (label, title) => editorStatus.setBlame(label, title),
-    () => String(props.gitEpoch ?? 0),
-    (action: BlameWorkbenchAction) => emit("blame-action", action),
-  );
+  if (props.git !== false) {
+    overlayRef.value = new DiffOverlayManager(
+      editor,
+      (chunkId) => diffStore.acceptChunk(chunkId, editor.getValue()),
+      (chunkId) => diffStore.undoChunk(chunkId, props.workspaceId, props.filePath, editor.getValue()),
+      () => isRunning.value,
+    );
+    gutterRef.value = new GitGutter(
+      editor,
+      async () => gitBaselineText(await backend.gitHeadFile(props.workspaceId, props.filePath)),
+      () => `${props.workspaceId}\0${props.filePath}\0${props.gitEpoch ?? 0}`,
+      locate,
+      () => emit("git-mutate"),
+    );
+    blameRef.value = new GitBlame(
+      editor,
+      locate,
+      (label, title) => editorStatus.setBlame(label, title),
+      () => String(props.gitEpoch ?? 0),
+      (action: BlameWorkbenchAction) => emit("blame-action", action),
+    );
+    gutterRef.value.schedule(true);
+  }
   conflictRef.value = new MergeConflictEditor(editor, () => Boolean(props.readOnly || props.writing));
-  gutterRef.value.schedule(true);
 
   editorDisposables.push(
     editor.onDidChangeModelContent((event) => {

@@ -16,11 +16,14 @@ const TREE_CHEVRON = 16;
 const EXPANDED_PREFIX = "multara.fileTree.expanded.";
 
 const props = defineProps<{
-  workspace: Workspace;
+  workspace?: Workspace;
   /** 展开状态按这个键和工作区分开记，收件箱和工作台不要用同一个。 */
   stateKey: string;
   /** 嵌进多仓库列表时不再自己滚动。 */
   embedded?: boolean;
+  selectedPath?: string;
+  /** 不走工作区目录时用这个读子项，例如 Skill 目录。 */
+  listDirectory?: (path: string) => Promise<FileEntry[]>;
 }>();
 
 const emit = defineEmits<{
@@ -33,11 +36,11 @@ const expanded = ref(new Set<string>());
 const loading = ref(false);
 const failed = ref(false);
 
-const storageKey = computed(() => `${EXPANDED_PREFIX}${props.stateKey}.${props.workspace.id}`);
+const storageKey = computed(() => `${EXPANDED_PREFIX}${props.stateKey}.${props.workspace?.id ?? "local"}`);
 
 const nodes = computed<ExplorerRowNode[]>(() => buildExplorerRows({
-  workspaceId: props.workspace.id,
-  workspaceName: props.workspace.name,
+  workspaceId: props.workspace?.id ?? props.stateKey,
+  workspaceName: props.workspace?.name ?? "",
   roots: levels.value[""],
   childrenOf: (path) => levels.value[path],
   isExpanded: (path) => expanded.value.has(path),
@@ -74,7 +77,9 @@ function writeExpanded() {
 }
 
 async function loadDir(path: string) {
-  const entries = await backend.listWorkspaceDirectory(props.workspace.id, path || undefined);
+  const entries = props.listDirectory
+    ? await props.listDirectory(path)
+    : await backend.listWorkspaceDirectory(props.workspace?.id ?? "", path || undefined);
   levels.value = { ...levels.value, [path]: entries ?? [] };
 }
 
@@ -129,7 +134,7 @@ function onPin(entry: { path: string; isDirectory: boolean }) {
   emit("pin", entry.path);
 }
 
-watch(() => props.workspace.id, () => {
+watch(() => props.workspace?.id ?? props.stateKey, () => {
   void reload();
 }, { immediate: true });
 </script>
@@ -140,11 +145,12 @@ watch(() => props.workspace.id, () => {
     <p v-else-if="failed" class="tree-empty">{{ t("inbox.tool.emptyTree") }}</p>
     <p v-else-if="!nodes.length" class="tree-empty">{{ t("inbox.tool.emptyTree") }}</p>
     <ExplorerTreeList v-else :nodes="nodes">
-      <template #row="{ entry }">
+      <template #row="{ entry, sticky }">
         <div
           class="tree-entry"
           role="button"
           tabindex="0"
+          :class="{ 'is-sticky': sticky, selected: props.selectedPath === entry.path }"
           :style="{ paddingLeft: `${rowPad(entry.depth)}px`, '--tree-depth': entry.depth }"
           @click="onRow(entry)"
           @dblclick.stop="onPin(entry)"

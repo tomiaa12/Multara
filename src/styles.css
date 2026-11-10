@@ -11104,10 +11104,14 @@ button.runtime-key-toggle:hover {
   overflow: hidden;
 }
 .skill-file-tree {
+  --tree-sticky-head: 0px;
   min-height: 0;
-  overflow: auto;
   border-right: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-bg);
+}
+.skill-editor .editor-main {
+  flex: 1;
+  height: auto;
 }
 .skill-editor {
   display: flex;
