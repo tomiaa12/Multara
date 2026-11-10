@@ -29,6 +29,7 @@ pub mod hook_runtime;
 pub mod http_client;
 pub mod lsp;
 pub mod mcp_app;
+pub mod mcp_launch;
 pub mod mcp_oauth;
 pub mod mcp_probe;
 pub mod mcp_tools_cache;

@@ -1273,7 +1273,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             .as_ref()
             .map(|gateway| gateway.cli_model.as_str())
             .unwrap_or(run.model.as_str());
-        let final_args = conversation::apply_resume(
+        let mut final_args = conversation::apply_resume(
             apply_options(
                 replace_assignment(launch_args, &run.assignment, &prompt),
                 &launch_provider,
@@ -1284,6 +1284,22 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             &launch_provider,
             resume_id.as_deref(),
         );
+        let mcp_launch = match crate::mcp_launch::prepare(
+            &launch_provider,
+            std::path::Path::new(&cwd),
+            mcp_config.as_ref().map(|file| file.path()),
+        ) {
+            Ok(launch) => launch,
+            Err(error) => {
+                finish(&app, &run, "failed", "", Some(error));
+                return;
+            }
+        };
+        let deliver_pi_mcp = mcp_launch.args.iter().any(|arg| arg == "--extension");
+        final_args.extend(mcp_launch.args.iter().cloned());
+        if deliver_pi_mcp {
+            final_args.retain(|arg| arg != "--no-mcp");
+        }
         let protocol = runtime::protocol_driver(&launch_provider);
         let prompt_via_stdin = runtime::prompt_via_stdin(&launch_provider) || protocol.is_some();
         let stdin_payload = if protocol.is_some() {
@@ -1348,6 +1364,9 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     command.env(key, value);
                 }
             }
+            for (key, value) in &mcp_launch.env {
+                command.env(key, value);
+            }
             #[cfg(unix)]
             {
                 use std::os::unix::process::CommandExt;
@@ -1384,6 +1403,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
             let workdir = cwd.clone();
             let protocol_runtime_id = run.runtime_id.clone();
             let protocol_mode = run.mode;
+            let protocol_mcp = mcp_launch.protocol_servers.clone();
             let (tx, rx) = mpsc::channel::<Vec<u8>>();
             let gate = crate::protocol::PermissionGate {
                 prompt: permission_prompt(&app),
@@ -1418,6 +1438,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     &workdir,
                     &mut writer,
                     Some(gate),
+                    &protocol_mcp,
                 );
             });
             Some(crate::protocol::ByteReceiver(rx, Vec::new()))
