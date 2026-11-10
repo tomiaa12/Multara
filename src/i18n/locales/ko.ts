@@ -1541,6 +1541,8 @@ const catalog: MessageCatalog = {
   "chat.context.pullRequestsEmpty": "Pull Request가 아직 연결되지 않았습니다",
   "chat.context.agents": "에이전트",
   "chat.context.skills": "Skills",
+  "chat.context.mcp": "MCP",
+  "chat.context.mcpEmpty": "인용할 MCP가 없습니다",
   "chat.context.commands": "세션 명령",
   "chat.context.tasks": "작업",
   "chat.context.requirements": "요구사항",

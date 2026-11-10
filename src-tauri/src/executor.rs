@@ -3231,6 +3231,22 @@ fn apply_options(
     args
 }
 
+/// 消息里 `@` 选中的资源（`[实体引用] mcp <id> …`），id 已做百分号编码。
+fn referenced_resource_ids(message: &str, kind: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    message
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.trim().strip_prefix("[实体引用] ")?.split_whitespace();
+            if fields.next()? != kind {
+                return None;
+            }
+            let id = resources::percent_decode(fields.next()?);
+            (!id.is_empty() && seen.insert(id.clone())).then_some(id)
+        })
+        .collect()
+}
+
 /// 消息里以 `/name` 开头（或单独成词）点名的 Skill 名称。
 fn invoked_skill_names(message: &str) -> Vec<String> {
     message
@@ -3280,6 +3296,17 @@ fn resource_context(
         }
     }
     // 用户在消息里用 /name 点名的已启用 Skill 也一起注入（同名时优先 Multara 自己的）。
+    for id in referenced_resource_ids(message, "mcp") {
+        if mcp_ids.contains(&id) {
+            continue;
+        }
+        let enabled = scanned.iter().any(|resource| {
+            resource.id == id && resource.kind == "mcp" && resource.enabled
+        });
+        if enabled {
+            mcp_ids.push(id);
+        }
+    }
     for name in invoked_skill_names(message) {
         let mut matches: Vec<_> = scanned
             .iter()

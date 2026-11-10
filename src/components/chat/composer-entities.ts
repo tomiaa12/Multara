@@ -16,6 +16,8 @@ export type ComposerEntityItem = {
   label: string;
   description?: string;
   avatar?: string | null;
+  /** Skills / MCP 的来源目录，用来画和菜单里一样的图标。 */
+  owner?: string;
   group: string;
 };
 

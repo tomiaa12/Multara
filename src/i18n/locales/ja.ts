@@ -1541,6 +1541,8 @@ const catalog: MessageCatalog = {
   "chat.context.pullRequestsEmpty": "Pull Request はまだ接続されていません",
   "chat.context.agents": "エージェント",
   "chat.context.skills": "Skills",
+  "chat.context.mcp": "MCP",
+  "chat.context.mcpEmpty": "参照できる MCP がありません",
   "chat.context.commands": "セッションコマンド",
   "chat.context.tasks": "タスク",
   "chat.context.requirements": "要件",

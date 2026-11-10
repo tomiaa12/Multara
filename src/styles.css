@@ -10722,6 +10722,9 @@ body.is-dragging-inbox-float * {
   height: 22px;
   color: var(--color-text-secondary);
 }
+.composer-suggest-leading .cli-source-icon {
+  color: var(--color-text);
+}
 .composer-suggest-menu .ds-select-option.has-description .composer-suggest-leading {
   width: 28px;
   height: 28px;

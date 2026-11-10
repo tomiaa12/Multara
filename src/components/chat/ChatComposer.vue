@@ -186,6 +186,7 @@ onBeforeUnmount(() => {
 function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
   let leading: ComposerSuggestItem["leading"] = "bot";
   if (item.kind === "skill") leading = "sparkles";
+  if (item.kind === "mcp") leading = "mcp";
   if (item.kind === "task") leading = "hash";
   if (item.kind === "requirement") leading = "requirement";
   if (item.kind === "session") leading = "session";
@@ -195,6 +196,7 @@ function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
     label: item.label,
     description: item.description,
     avatar: item.avatar,
+    owner: item.owner,
     leading,
   };
 }
@@ -302,7 +304,7 @@ watch(
 watch(
   () => suggestTrigger.value?.category,
   (category) => {
-    if (category === "skill") void store.refreshResources();
+    if (category === "skill" || category === "mcp") void store.refreshResources();
   },
 );
 
@@ -342,7 +344,18 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
         kind: "skill" as const,
         label: item.name,
         description: item.description,
+        owner: item.owner || "multara",
         group: "skills",
+      })),
+    ...(data?.resources ?? [])
+      .filter((item) => item.kind === "mcp" && item.enabled)
+      .map((item) => ({
+        id: item.id,
+        kind: "mcp" as const,
+        label: item.name,
+        description: item.description || item.summary,
+        owner: item.owner || "multara",
+        group: "mcp",
       })),
     ...(data?.tasks ?? []).map((item) => ({
       id: item.id,
@@ -405,6 +418,7 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     },
     { id: "agent", label: t("chat.context.agents"), groups: [group("agents", t("nav.agents")), group("squads", t("nav.squads"))] },
     { id: "skill", label: t("chat.context.skills"), groups: [group("skills", "Skills"), group("commands", t("chat.context.commands"))] },
+    { id: "mcp", label: t("chat.context.mcp"), groups: [group("mcp", t("nav.mcp"))], emptyText: t("chat.context.mcpEmpty") },
     { id: "task", label: t("chat.context.tasks"), groups: [group("tasks", t("chat.context.tasks"))] },
     { id: "requirement", label: t("chat.context.requirements"), groups: [group("requirements", t("chat.context.requirements"))] },
   );
@@ -523,7 +537,7 @@ function onComposerChange(nodes: ComposerNode[]) {
 }
 
 const ENTITY_KINDS = new Set<ComposerEntityKind>([
-  "agent", "squad", "skill", "task", "requirement", "session",
+  "agent", "squad", "skill", "mcp", "task", "requirement", "session",
 ]);
 
 function stripSuggestTrigger() {
