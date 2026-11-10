@@ -122,7 +122,7 @@ function applyTree(
     const next: typeof zoomPath.value = [];
     let cursor: typeof tree | null = tree;
     for (const step of zoomPath.value) {
-      const hit = cursor?.children?.find((child) => child.path === step.path) ?? null;
+      const hit: TreemapInput | null = cursor?.children?.find((child) => child.path === step.path) ?? null;
       if (!hit) break;
       next.push(hit);
       cursor = hit;

@@ -34,6 +34,7 @@ import {
 } from "../monaco-language";
 import type * as Monaco from "monaco-editor";
 import type {
+  CanvasInstance,
   ChatMessage,
   EditorSelectionContext,
   FileContent,
@@ -156,6 +157,8 @@ import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
 import { activeTerminalSessionId, terminalSessions } from "../stores/terminal-sessions";
 import { useAppStore } from "../stores/app";
+import { useCanvasStore } from "../stores/canvas";
+import UiFrame from "./UiFrame.vue";
 import { useEditorStatusStore } from "../stores/editor-status";
 
 const props = withDefaults(
@@ -183,6 +186,7 @@ const props = withDefaults(
 
 const route = useRoute();
 const store = useAppStore();
+const canvas = useCanvasStore();
 const diffStore = useDiffStore();
 const editorStatus = useEditorStatusStore();
 
@@ -251,12 +255,18 @@ type EditorTab = {
     /** MultiDiff：一次打开整个提交 */
     commitFiles?: CommitDiffFile[];
   };
+  /** Canvas 标签（生成式界面 L2）：归属会话，切会话时整组换出换进；关标签只改可见性 */
+  canvas?: { sessionId: string; instanceId: string; title: string };
 };
 const editorTabs = ref<EditorTab[]>([]);
+/** 不是磁盘文件的标签（diff、Canvas）：不读写编辑器内容、不保存、不重载 */
+function isVirtualTab(tab: EditorTab) {
+  return Boolean(tab.gitDiff || tab.canvas);
+}
 provide(
   composerOpenEditorsKey,
   computed(() =>
-    editorTabs.value.map((tab) => ({
+    editorTabs.value.filter((tab) => !tab.canvas).map((tab) => ({
       workspaceId: tab.workspaceId,
       path: tab.path,
       isDirectory: false,
@@ -1061,7 +1071,7 @@ function toggleNest(workspaceId: string, path: string) {
 const openEditorTreeKeys = computed(() => {
   const keys = new Set<string>();
   for (const tab of editorTabs.value) {
-    if (tab.gitDiff) continue;
+    if (isVirtualTab(tab)) continue;
     let path = tab.path;
     while (path) {
       keys.add(treeKey(tab.workspaceId, path));
@@ -1412,6 +1422,8 @@ function editorPathAffected(tabPath: string, changedPath: string) {
 
 function openedFileTarget() {
   const tab = activeEditorTab();
+  // Canvas 标签不是文件：不在文件树里定位（canvas:// 路径会让后端报「工作区不存在」）
+  if (tab?.canvas) return null;
   const workspaceId = tab?.workspaceId ?? activeFile.value?.workspaceId;
   const path = tab?.path ?? activeFile.value?.path;
   if (!workspaceId || !path) return null;
@@ -1690,10 +1702,12 @@ function treeGitBadgeTitle(workspaceId: string, entry: FileEntry) {
 }
 
 function editorTabName(tab: EditorTab) {
+  if (tab.canvas) return tab.canvas.title;
   return tab.gitDiff?.tabName || fileNameOf(tab.path);
 }
 
 function editorTabTitle(tab: EditorTab) {
+  if (tab.canvas) return t("canvas.tabTitle", { title: tab.canvas.title });
   if (tab.gitDiff?.tabName) return tab.gitDiff.tabName;
   const diff = tab.gitDiff ? ` · ${tab.gitDiff.label}` : "";
   const base = tab.pinned ? tab.path : `${tab.path} · ${t("workbench.tabPreview")}`;
@@ -2468,7 +2482,7 @@ function readLiveEditorValue() {
 
 function flushActiveEditorTab() {
   const tab = editorTabs.value.find((item) => tabKey(item) === activeEditorKey.value);
-  if (!tab || tab.gitDiff || !activeFile.value) return;
+  if (!tab || isVirtualTab(tab) || !activeFile.value) return;
   const editorValue = readLiveEditorValue();
   if (editorValue != null) activeFile.value.content = editorValue;
   tab.file = activeFile.value;
@@ -2656,7 +2670,7 @@ async function acceptAllPendingFiles() {
   try {
     const contents = new Map(pendingFileContents.value);
     for (const tab of editorTabs.value) {
-      if (tab.gitDiff) continue;
+      if (isVirtualTab(tab)) continue;
       contents.set(diffFileKey(tab.workspaceId, tab.path), tab.file.content);
     }
     if (activeFile.value) {
@@ -2717,9 +2731,10 @@ function activateEditorTab(tab: EditorTab) {
   ignoreDirtyPin.value = true;
   const key = tabKey(tab);
   activeEditorKey.value = key;
-  activeFile.value = tab.file;
+  // Canvas 标签没有文件：activeFile 置空，大纲、LSP、git 等跟着当前文件走的逻辑都不会拿假路径去请求
+  activeFile.value = tab.canvas ? null : tab.file;
   originalContent.value = tab.original;
-  if (tab.gitDiff) {
+  if (isVirtualTab(tab)) {
     externalChangePending.value = false;
   } else {
     const note = diskChangeNotes.get(editorTabKey(tab.workspaceId, tab.path));
@@ -2742,7 +2757,7 @@ function pinEditorTab(tab: EditorTab) {
 }
 
 function isEditorTabDirty(tab: EditorTab) {
-  if (tab.gitDiff) return false;
+  if (isVirtualTab(tab)) return false;
   if (tabKey(tab) === activeEditorKey.value) {
     return Boolean(
       activeFile.value && activeFile.value.content !== originalContent.value,
@@ -2828,7 +2843,7 @@ function adoptEditorModel(workspaceId: string, path: string, content: string) {
 }
 
 function discardEditorChanges(tab: EditorTab) {
-  if (tab.gitDiff) return;
+  if (isVirtualTab(tab)) return;
   const saved = tab.original;
   tab.userEdited = false;
   tab.file = { ...tab.file, content: saved };
@@ -2876,7 +2891,12 @@ async function confirmDirtyEditorTabs() {
   return true;
 }
 
-function removeEditorTab(tab: EditorTab) {
+function removeEditorTab(tab: EditorTab, options: { hideCanvas?: boolean } = {}) {
+  // 只有用户亲手关 Canvas 标签（×、右键「关闭」）才记成隐藏；
+  // 切会话换出、移除工作区、批量清理等只从界面上拿掉，不改数据库，重启后还会回来
+  if (tab.canvas && options.hideCanvas) {
+    void canvas.setVisible(tab.canvas.sessionId, tab.canvas.instanceId, false).catch(() => undefined);
+  }
   const index = editorTabs.value.findIndex((item) => item === tab);
   editorTabs.value = editorTabs.value.filter((item) => item !== tab);
   if (activeEditorKey.value !== tabKey(tab)) return;
@@ -2892,12 +2912,117 @@ function removeEditorTab(tab: EditorTab) {
   }
 }
 
+// ---------- Canvas 标签（方案 §5.7）----------
+// Canvas 归属会话：切换会话时，该会话 visible 的实例整组换进来，上一个会话的整组换出（不改 visible），
+// 照 VS Code 的 ICanvasWorkingSets。
+const canvasOn = computed(() =>
+  store.data?.settings.genuiEnabled === "true" && store.data?.settings.canvasesEnabled === "true",
+);
+const canvasViewId = `workbench-${crypto.randomUUID()}`;
+const activeCanvas = computed(
+  () => editorTabs.value.find((tab) => tabKey(tab) === activeEditorKey.value)?.canvas ?? null,
+);
+
+function canvasTabPath(sessionId: string, instanceId: string) {
+  return `canvas://${sessionId}/${instanceId}`;
+}
+
+function makeCanvasTab(instance: CanvasInstance): EditorTab {
+  const path = canvasTabPath(instance.sessionId, instance.instanceId);
+  const workspaceId = activeFile.value?.workspaceId ?? editorTabs.value[0]?.workspaceId ?? "";
+  return {
+    workspaceId,
+    path,
+    pinned: true,
+    file: { workspaceId, path, content: "", language: "plaintext", size: 0, readOnly: true },
+    original: "",
+    detectedLanguage: "plaintext",
+    canvas: { sessionId: instance.sessionId, instanceId: instance.instanceId, title: instance.title },
+  };
+}
+
+function syncCanvasTabs(focus?: { sessionId: string; instanceId: string }) {
+  const sessionId = canvasOn.value && !props.preview ? store.activeSessionId : null;
+  // 懒加载：这个会话的列表还没拉回来时什么都不动（重启后会话、设置都可能晚到），拉回来再同步
+  if (sessionId && !canvas.isLoaded(sessionId)) return;
+  const wanted = sessionId ? canvas.listFor(sessionId).filter((item) => item.visible) : [];
+  const wantedPaths = new Set(wanted.map((item) => canvasTabPath(item.sessionId, item.instanceId)));
+  for (const tab of editorTabs.value.filter((item) => item.canvas && !wantedPaths.has(item.path))) {
+    removeEditorTab(tab);
+  }
+  for (const instance of wanted) {
+    const path = canvasTabPath(instance.sessionId, instance.instanceId);
+    const existing = editorTabs.value.find((tab) => tab.canvas && tab.path === path);
+    if (existing?.canvas) {
+      existing.canvas.title = instance.title;
+      continue;
+    }
+    const tab = makeCanvasTab(instance);
+    editorTabs.value = [...editorTabs.value, tab];
+    if (!activeEditorKey.value) activateEditorTab(tab);
+  }
+  if (focus) {
+    const tab = editorTabs.value.find(
+      (item) => item.canvas && item.path === canvasTabPath(focus.sessionId, focus.instanceId),
+    );
+    if (tab) activateEditorTab(tab);
+  }
+}
+
+watch(
+  () => [canvasOn.value, store.activeSessionId] as const,
+  async ([on, sessionId]) => {
+    if (on && sessionId && !props.preview) await canvas.refresh(sessionId);
+    syncCanvasTabs();
+  },
+  { immediate: true },
+);
+// 列表晚到（重启后）或有变化（智能体 open / close）：有了就展示
+watch(
+  () => [canvas.isLoaded(store.activeSessionId), canvas.listFor(store.activeSessionId)] as const,
+  () => syncCanvasTabs(),
+  { deep: true },
+);
+watch(
+  () => canvas.showRequest?.nonce,
+  () => {
+    const request = canvas.showRequest;
+    if (!request || props.preview) return;
+    if (!canvas.shownIn(store.activeSessionId, request.sessionId, request.instanceId)) return;
+    syncCanvasTabs(request);
+  },
+);
+if (!props.preview) {
+  // keep-alive 缓存的工作台不卸载：只在前台时算作能显示 Canvas 的宿主，
+  // 否则后台的工作台会抢走 Canvas 的显示权，前台只剩「正在其它位置显示」
+  let unregisterHost: (() => void) | null = null;
+  const claimHost = () => {
+    if (!unregisterHost) unregisterHost = canvas.registerHost();
+  };
+  const releaseHost = () => {
+    unregisterHost?.();
+    unregisterHost = null;
+  };
+  canvas.startListening();
+  onActivated(claimHost);
+  onDeactivated(releaseHost);
+  onBeforeUnmount(releaseHost);
+}
+
+function closeActiveCanvasInstance() {
+  const target = activeCanvas.value;
+  if (!target) return;
+  const tab = editorTabs.value.find((item) => item.canvas?.instanceId === target.instanceId && item.canvas.sessionId === target.sessionId);
+  if (tab) removeEditorTab(tab);
+  void canvas.close(target.sessionId, target.instanceId);
+}
+
 async function closeEditorTab(tab: EditorTab, event?: Event) {
   event?.preventDefault();
   event?.stopPropagation();
   tabMenu.value = null;
   if (!(await confirmCloseTab(tab))) return false;
-  removeEditorTab(tab);
+  removeEditorTab(tab, { hideCanvas: true });
   return true;
 }
 
@@ -3076,7 +3201,7 @@ function revealEditorInTree(tab: EditorTab) {
 }
 
 async function compareTabWithSaved(tab: EditorTab) {
-  if (tab.gitDiff) return;
+  if (isVirtualTab(tab)) return;
   flushActiveEditorTab();
   const current = isEditorTabDirty(tab)
     ? (tabKey(tab) === activeEditorKey.value && activeFile.value ? activeFile.value.content : tab.file.content)
@@ -3870,7 +3995,7 @@ async function openFile(workspaceId: string, entry: FileEntry, pin = false) {
 }
 
 async function saveTab(tab: EditorTab) {
-  if (tab.gitDiff) return true;
+  if (isVirtualTab(tab)) return true;
   flushActiveEditorTab();
   const isActive = tabKey(tab) === activeEditorKey.value;
   const file = isActive && activeFile.value ? activeFile.value : tab.file;
@@ -3954,7 +4079,7 @@ async function applyDiskToOpenTab(tab: EditorTab) {
     }
     return;
   }
-  if (tab.gitDiff) return;
+  if (isVirtualTab(tab)) return;
   if (!userHoldsUnsavedEdits(tab, content)) {
     const next = {
       ...tab.file,
@@ -3977,6 +4102,7 @@ async function applyDiskToOpenTab(tab: EditorTab) {
 async function reconcileOpenEditors(workspaceId: string, paths: string[]) {
   const tabs = editorTabs.value.filter((tab) => {
     if (tab.workspaceId !== workspaceId) return false;
+    if (tab.canvas) return false;
     if (!paths.length) return !tab.gitDiff;
     return paths.some((path) => editorPathAffected(tab.path, path));
   });
@@ -5222,7 +5348,7 @@ watch(
   () => {
     const file = activeFile.value;
     const tab = activeEditorTab();
-    if (!file || !tab || tab.gitDiff) return;
+    if (!file || !tab || isVirtualTab(tab)) return;
     if (tab.workspaceId !== file.workspaceId || tab.path !== file.path) return;
     tab.file = file;
   },
@@ -6054,7 +6180,8 @@ defineExpose({
             @close="closeEditorTab(tab, $event)"
             @contextmenu="openTabMenu(tab, $event)"
           >
-            <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+            <Codicon v-if="tab.canvas" name="dashboard" :size="16" />
+            <Codicon v-else-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
             <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
           </EditorTabButton>
         </div>
@@ -6076,13 +6203,23 @@ defineExpose({
           >{{ t('workbench.loadDiskVersion') }}</UiButton
         >
       </div>
+      <UiFrame
+        v-if="activeCanvas"
+        :key="`${activeCanvas.sessionId}/${activeCanvas.instanceId}`"
+        class="editor-canvas"
+        :session-id="activeCanvas.sessionId"
+        :instance-id="activeCanvas.instanceId"
+        :title="activeCanvas.title"
+        :view-id="canvasViewId"
+        @close="closeActiveCanvasInstance"
+      />
       <EditorBreadcrumbs
-        v-if="activeFile"
+        v-if="activeFile && !activeCanvas"
         :parts="activeBreadcrumbs"
         :symbol="activeSymbol"
         @reveal="(line) => editorWithDiff?.reveal(line)"
       />
-      <div v-if="activeFile" class="editor-main">
+      <div v-if="activeFile && !activeCanvas" class="editor-main">
         <div
           v-if="markdownToggleVisible"
           class="md-editor-switch"
@@ -6254,7 +6391,7 @@ defineExpose({
         />
         </template>
       </div>
-      <div v-else class="editor-welcome">
+      <div v-else-if="!activeCanvas" class="editor-welcome">
         <ul class="editor-shortcut-hints">
           <li v-for="item in editorShortcutHints" :key="item.label">
             <span>{{ item.label }}</span>

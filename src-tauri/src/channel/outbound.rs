@@ -156,6 +156,7 @@ fn send_one(
         return Err(tr!("运行没有产生可回发的文本"));
     };
     let (body, questions) = split_questions(content);
+    let body = strip_genui(&body, &tr!("（此处有一个界面块，请在 Multara 中查看）"));
     let text = format_outbound(&installation, delivery, &body);
     let chunks = split_message(&text, 18_000);
     let mut first = true;
@@ -264,6 +265,51 @@ fn send_one(
         return Err(tr!("运行没有产生可回发的文本"));
     }
     Ok(())
+}
+
+/// IM 渠道渲染不了 ```multara-ui 界面块：整块换成一行提示，前后文字原样保留。
+/// 只认行首的围栏；嵌在其它代码块里的（例如演示协议）不动。
+fn strip_genui(content: &str, placeholder: &str) -> String {
+    if !content.contains("multara-ui") {
+        return content.to_string();
+    }
+    let mut out: Vec<&str> = Vec::new();
+    // (围栏字符, 长度, 是否界面块)
+    let mut open: Option<(char, usize, bool)> = None;
+    for line in content.split('\n') {
+        let trimmed = line.trim_start_matches([' ', '\t']);
+        let fence = trimmed
+            .chars()
+            .next()
+            .filter(|ch| *ch == '`' || *ch == '~')
+            .map(|ch| (ch, trimmed.chars().take_while(|c| *c == ch).count()))
+            .filter(|(_, len)| *len >= 3);
+        match (open, fence) {
+            (None, Some((ch, len))) => {
+                let info = trimmed[len * ch.len_utf8()..].trim();
+                let is_ui = info.split_whitespace().next() == Some("multara-ui");
+                open = Some((ch, len, is_ui));
+                if is_ui {
+                    out.push(placeholder);
+                } else {
+                    out.push(line);
+                }
+            }
+            (Some((ch, len, is_ui)), Some((close_ch, close_len)))
+                if close_ch == ch
+                    && close_len >= len
+                    && trimmed[close_len * ch.len_utf8()..].trim().is_empty() =>
+            {
+                open = None;
+                if !is_ui {
+                    out.push(line);
+                }
+            }
+            (Some((_, _, true)), _) => {}
+            _ => out.push(line),
+        }
+    }
+    out.join("\n")
 }
 
 /// 从回复里取出 ```multara-questions 代码块，剩余正文照常发送。
@@ -497,7 +543,24 @@ pub fn recover_pending(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{split_message, split_questions};
+    use super::{split_message, split_questions, strip_genui};
+
+    #[test]
+    fn replaces_genui_blocks_and_keeps_text() {
+        let text = "前面。\n\n```multara-ui\n{\"type\":\"table\"}\n```\n\n后面。";
+        assert_eq!(strip_genui(text, "[UI]"), "前面。\n\n[UI]\n\n后面。");
+    }
+
+    #[test]
+    fn keeps_genui_demo_inside_other_fence() {
+        let text = "````markdown\n```multara-ui\n{}\n```\n````";
+        assert_eq!(strip_genui(text, "[UI]"), text);
+    }
+
+    #[test]
+    fn drops_unclosed_genui_block() {
+        assert_eq!(strip_genui("看这里：\n```multara-ui\n{\"type\"", "[UI]"), "看这里：\n[UI]");
+    }
 
     #[test]
     fn extracts_questions_and_keeps_body() {

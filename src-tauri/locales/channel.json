@@ -520,5 +520,11 @@
     "zh-TW": "上游事件過大",
     "ja": "上流のイベントが大きすぎます",
     "ko": "업스트림 이벤트가 너무 큽니다"
+  },
+  "（此处有一个界面块，请在 Multara 中查看）": {
+    "en": "(There is a UI block here. Open Multara to view it.)",
+    "zh-TW": "（此處有一個介面區塊，請在 Multara 中查看）",
+    "ja": "（ここに UI ブロックがあります。Multara で確認してください）",
+    "ko": "(여기에 UI 블록이 있습니다. Multara에서 확인하세요)"
   }
 }

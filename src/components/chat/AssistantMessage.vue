@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import type { ChatMessage } from "../../domain/types";
+import type { ChatMessage, TimelineItem } from "../../domain/types";
 import AgentAvatar from "../AgentAvatar.vue";
 import AgentLiveStatus from "../AgentLiveStatus.vue";
 import { liveAssistantText } from "../../domain/assistant-text";
@@ -22,6 +22,11 @@ import { plansInMessage } from "./plan-state";
 import { useAppStore } from "../../stores/app";
 import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
 import { extractQuestions } from "./question-block";
+import { GENUI_MAX_BLOCKS, isGenUiEnabled, splitGenUi } from "./genui/block";
+import GenUiBlock from "./genui/GenUiBlock.vue";
+import { genUiSendingIds, genUiSubmissions, sendGenUiAction } from "./ui-outbound";
+import { toolResultUis } from "./genui/tool-ui";
+import McpAppFrame from "./McpAppFrame.vue";
 import { t } from "../../i18n";
 
 const props = withDefaults(defineProps<{
@@ -40,16 +45,21 @@ const props = withDefaults(defineProps<{
   hideSpeaker?: boolean;
   /** 派活后第一条回复下方嵌子任务回复 */
   embedSubtask?: AssignmentSubtaskRef | null;
+  /** 界面块能否提交（预览、只读回看时为 false） */
+  uiInteractive?: boolean;
 }>(), {
   allowFork: false,
   compact: false,
   hideSpeaker: false,
   embedSubtask: null,
+  uiInteractive: true,
 });
 const emit = defineEmits<{
   "pick-action": [prompt: string];
 }>();
 const store = useAppStore();
+// 生成式界面开关：提问别名和界面块渲染都跟它走
+const genUiEnabled = computed(() => isGenUiEnabled(store.data?.settings));
 const liveText = computed(() => liveAssistantText(props.message.timeline));
 const rawContent = computed(() =>
   props.running ? liveText.value || props.message.content : props.message.content || liveText.value,
@@ -58,7 +68,7 @@ const hidesAssignment = computed(() => isLeaderAssignment(props.message));
 const bodyRaw = computed(() =>
   props.message.failureReason ? liveText.value : rawContent.value,
 );
-const extracted = computed(() => extractQuestions(bodyRaw.value));
+const extracted = computed(() => extractQuestions(bodyRaw.value, { genui: genUiEnabled.value }));
 const bodyText = computed(() => {
   if (!hidesAssignment.value) return extracted.value.body;
   // 有子任务链接时不再复述「请处理子任务…」全文
@@ -134,6 +144,51 @@ const assignmentText = computed(() => {
   return bodyText.value.trim();
 });
 const showSpeaker = computed(() => Boolean(props.speaker) && !props.hideSpeaker);
+
+// 生成式界面（实验功能）：正文按 ```multara-ui 切片，界面块原地换成组件。关闭时整段仍按 Markdown 渲染。
+const genUiSegments = computed(() => {
+  if (!genUiEnabled.value || isInternalReply.value) return null;
+  const { segments } = splitGenUi(bodyText.value);
+  return segments.some((segment) => segment.kind !== "md") ? segments : null;
+});
+const genUiSubmitted = computed(() =>
+  genUiSegments.value
+    ? genUiSubmissions(store.messages[props.message.sessionId] ?? [], props.message.id)
+    : new Map(),
+);
+/** 生成式界面开关打开时，`multara ... --ui` 的工具结果在正文下方显示成界面块 */
+const toolUis = computed(() => (genUiEnabled.value ? toolResultUis(props.message.timeline) : []));
+/** MCP Apps：MCP 工具调用（mcp__<server>__<tool>）；有没有界面由 McpAppFrame 自己去问 */
+const mcpAppsOn = computed(() => genUiEnabled.value && store.data?.settings.mcpAppsEnabled === "true");
+const mcpCalls = computed(() => {
+  if (!mcpAppsOn.value) return [];
+  const results = new Map<string, TimelineItem>();
+  for (const item of props.message.timeline) {
+    if (item.eventType === "tool_result" && item.callId) results.set(item.callId, item);
+  }
+  return props.message.timeline
+    .filter((item) => item.eventType === "tool_use" && item.callId && item.tool?.startsWith("mcp__"))
+    .map((use) => ({ use, result: results.get(use.callId as string) ?? null }));
+});
+/**
+ * 点了、还在发送队列里的块：点击后立即置灰，防止连点发多条。
+ * 从队列推出来而不是另存：发送成功后乐观消息接手（变成已提交），失败时出队，按钮自动恢复。
+ */
+const genUiSending = computed(() => genUiSendingIds(store.queuedMessages, props.message.id));
+const genUiBusy = computed(() => Boolean(props.running) || store.sessionProcessing(props.message.sessionId));
+const genUiDisabled = computed(() => !props.uiInteractive || genUiBusy.value);
+const genUiDisabledReason = computed(() =>
+  !props.uiInteractive ? t("genui.readonly") : genUiBusy.value ? t("genui.busy") : "",
+);
+
+function onGenUiAction(payload: { blockId: string; type: string; title?: string; action: string; values?: unknown }) {
+  if (genUiDisabled.value || genUiSending.value.has(payload.blockId) || genUiSubmitted.value.has(payload.blockId)) return;
+  sendGenUiAction(
+    // priority：上方若还有没回答的提问，排队会停住；界面块提交本身就是用户的回答
+    (content, sessionId, attachments, options) => store.send(content, sessionId, attachments, { ...options, priority: true }),
+    { sessionId: props.message.sessionId, messageId: props.message.id, agentId: props.message.agentId, ...payload },
+  );
+}
 const isInternal = computed(() =>
   Boolean(props.speaker?.internal) || hidesAssignment.value,
 );
@@ -199,7 +254,47 @@ const isInternal = computed(() =>
         :run-id="message.runId"
         :default-collapse-subagents="defaultCollapseSubagents"
       />
-      <RichContent v-if="bodyText.trim() && !isInternalReply" :content="bodyText" />
+      <template v-if="genUiSegments">
+        <template v-for="(segment, index) in genUiSegments" :key="segment.kind === 'md' ? `md-${index}` : `ui-${segment.index}`">
+          <RichContent v-if="segment.kind === 'md'" v-show="segment.text.trim()" :content="segment.text" />
+          <GenUiBlock
+            v-else
+            :segment="segment"
+            :message-id="message.id"
+            :state-id="message.runId || message.id"
+            :over-limit="segment.index >= GENUI_MAX_BLOCKS"
+            :submissions="genUiSubmitted"
+            :sending="genUiSending"
+            :disabled="genUiDisabled"
+            :disabled-reason="genUiDisabledReason"
+            :session-id="uiInteractive ? message.sessionId : undefined"
+            @action="onGenUiAction"
+          />
+        </template>
+      </template>
+      <RichContent v-else-if="bodyText.trim() && !isInternalReply" :content="bodyText" />
+      <!-- 工具结果带 UI：multara ... --ui 的输出提到正文下方，工具本身仍在过程里折叠 -->
+      <div v-for="(tool, index) in toolUis" :key="tool.callId" class="tool-ui">
+        <GenUiBlock
+          :segment="{ kind: 'ui', index: 100 + index, raw: tool.raw, source: tool.raw, specs: [tool.spec] }"
+          :message-id="message.id"
+          :state-id="`${message.runId || message.id}-tool`"
+          :disabled="true"
+          :disabled-reason="t('genui.readonly')"
+        />
+        <details class="tool-ui-raw">
+          <summary>{{ t("genui.viewRawOutput") }}</summary>
+          <pre><code>$ {{ tool.command }}
+{{ tool.raw }}</code></pre>
+        </details>
+      </div>
+      <McpAppFrame
+        v-for="call in mcpCalls"
+        :key="call.use.callId ?? call.use.seq"
+        :session-id="message.sessionId"
+        :tool-use="call.use"
+        :tool-result="call.result"
+      />
       <SubtaskReplyEmbed v-if="embedSubtask" :subtask="embedSubtask" />
       <PlanArtifactCard
         v-for="entry in plans"

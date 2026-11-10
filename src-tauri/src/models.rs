@@ -462,6 +462,10 @@ pub struct TimelineItem {
     /// 工具调用结果：`ok` 或 `error`。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// MCP 工具的原始结果（`CallToolResult`：content / structuredContent / isError），MCP Apps 推给页面用。
+    /// `output` 仍是压平的文本。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_json: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

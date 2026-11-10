@@ -23,6 +23,7 @@ import type { EditorSelectionContext } from "../../domain/types";
 import type { SelectOption } from "../ui/select-types";
 import type { ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
+import { useCanvasStore } from "../../stores/canvas";
 import { getCaretClientRect } from "./composer-caret";
 import { filterCommands } from "./composer-mentions";
 import { replaceSlashToken } from "./skill-slash";
@@ -121,6 +122,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
+const canvas = useCanvasStore();
 const dictationStore = useDictationStore();
 const dictationTargetId = `composer-${crypto.randomUUID()}`;
 const rootEl = ref<HTMLElement | null>(null);
@@ -356,6 +358,35 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     { id: "task", label: t("chat.context.tasks"), groups: [group("tasks", t("chat.context.tasks"))] },
     { id: "requirement", label: t("chat.context.requirements"), groups: [group("requirements", t("chat.context.requirements"))] },
   );
+  // 「添加上下文 → Canvas...」（R15）：不产生附件，选中即打开或聚焦；页面内容只能经 __multara/context 进上下文
+  const canvasOn = data?.settings.genuiEnabled === "true" && data?.settings.canvasesEnabled === "true";
+  // 懒加载：菜单打开时这个会话的列表还没拉过就去拉，拉回来菜单自动刷新
+  if (canvasOn && currentSessionId && !canvas.isLoaded(currentSessionId)) void canvas.refresh(currentSessionId);
+  if (canvasOn && currentSessionId) {
+    const running = canvas.listFor(currentSessionId).map((item): ComposerSuggestItem => ({
+      id: `canvas-instance:${item.instanceId}`,
+      kind: "canvas",
+      label: item.title,
+      description: item.status || item.canvasId,
+      leading: "canvas",
+    }));
+    const available = (canvas.available[currentSessionId] ?? []).map((item): ComposerSuggestItem => ({
+      id: `canvas-def:${item.canvasId}`,
+      kind: "canvas",
+      label: item.title,
+      description: item.description || item.canvasId,
+      leading: "canvas",
+    }));
+    categories.push({
+      id: "canvas",
+      label: t("canvas.menu"),
+      groups: [
+        { id: "canvas-running", label: t("canvas.menuRunning"), items: running },
+        { id: "canvas-available", label: t("canvas.menuAvailable"), items: available },
+      ],
+      emptyText: t("canvas.menuEmpty"),
+    });
+  }
   return categories;
 });
 
@@ -463,6 +494,28 @@ async function onSuggestSelect(item: ComposerSuggestItem) {
     stripSuggestTrigger();
     closeSuggest();
     emit("pick-files-or-folders");
+    return;
+  }
+  if (item.kind === "canvas") {
+    stripSuggestTrigger();
+    closeSuggest();
+    const sessionId = props.modeSessionId;
+    if (!sessionId) return;
+    // 不插附件（R15）：只打开或聚焦。失败要说出来，不能静默
+    try {
+      if (item.id.startsWith("canvas-instance:")) {
+        const instanceId = item.id.slice("canvas-instance:".length);
+        const target = canvas.listFor(sessionId).find((entry) => entry.instanceId === instanceId);
+        await canvas.show(target?.sessionId ?? sessionId, instanceId);
+      } else if (item.id.startsWith("canvas-def:")) {
+        await canvas.openRegistered(sessionId, item.id.slice("canvas-def:".length));
+      }
+      store.reportComposerNotice(t("canvas.opened", { title: item.label }));
+    } catch (cause) {
+      store.reportComposerNotice(cause instanceof Error ? cause.message : String(cause));
+    }
+    await nextTick();
+    field.value?.focusEnd();
     return;
   }
   if (item.kind === "file") {

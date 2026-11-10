@@ -60,6 +60,8 @@ struct NormalizedEvent {
     replaces_final_text: bool,
     parent_call_id: Option<String>,
     status: Option<String>,
+    /// MCP 工具的原始结果（见 `mcp_result_json`）
+    output_json: Option<Value>,
 }
 
 pub fn dispatch(app: AppHandle) {
@@ -890,6 +892,7 @@ fn abort_tool_error_loop(
             replaces_final_text: false,
             parent_call_id: actor.parent_call_id(),
             status: None,
+            output_json: None,
         },
     );
     persist_timeline_item(app, run_id, session_id, &item);
@@ -1158,7 +1161,12 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 .join("builtin-skills");
             let _ = builtin_skills::materialize(&skill_root, locale);
             let skill_root_text = skill_root.to_string_lossy().to_string();
-            let skill_names = builtin_skills::names();
+            let genui_enabled = app
+                .state::<AppState>()
+                .lock_db()
+                .ok()
+                .is_some_and(|db| crate::commands::genui_enabled(&db));
+            let skill_names = builtin_skills::names(genui_enabled);
             let roster = app
                 .state::<AppState>()
                 .lock_db()
@@ -1201,6 +1209,13 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 user_skill_context: &resource_context,
                 roster: &roster,
                 has_project_workspace: workspace_context.2,
+                genui_enabled,
+                canvas_enabled: genui_enabled
+                    && app
+                        .state::<AppState>()
+                        .lock_db()
+                        .ok()
+                        .is_some_and(|db| crate::ops::canvas::canvases_enabled(&db)),
                 locale,
             });
             let prompt = conversation::build_prompt(
@@ -1310,6 +1325,13 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     "multara"
                 };
                 command.env("MULTARA_CLI", bin_dir.join(shim_name));
+                // Canvas：会话级定义写在这里；控制通道每个 run 一个 token，run 结束注销
+                let canvas_dir = crate::ops::canvas::session_root(&data_dir, &run.session_id);
+                let _ = std::fs::create_dir_all(&canvas_dir);
+                command.env("MULTARA_CANVAS_DIR", &canvas_dir);
+            }
+            if let Some(ctl) = crate::ctl::register_run(&run.id, &run.session_id, &run.agent_id) {
+                command.env("MULTARA_CTL", ctl);
             }
             if let Some(launch) = &custom_launch {
                 if launch.kind == "gateway" {
@@ -2203,6 +2225,7 @@ fn finish(
 ) {
     let _span = crate::diag::span("finish_run");
     crate::diag::write(&format!("RUN end {} {status}", run.id));
+    crate::ctl::unregister_run(&run.id);
     let state = app.state::<AppState>();
     let completed_at = Utc::now();
     let mut elapsed_ms = None;
@@ -2299,6 +2322,7 @@ fn finish(
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             };
             let _ = db.execute(
                 "INSERT INTO run_events
@@ -2512,6 +2536,7 @@ fn persist_plan_artifact(
         replaces_final_text: false,
         parent_call_id: None,
         status: None,
+        output_json: None,
     })
 }
 
@@ -3647,6 +3672,7 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             }],
             _ => Vec::new(),
         };
@@ -3678,6 +3704,7 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
                         replaces_final_text: false,
                         parent_call_id: None,
                         status: None,
+                        output_json: None,
                     });
                 }
                 events
@@ -3704,6 +3731,7 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }];
     }
     Vec::new()
@@ -3731,6 +3759,7 @@ fn normalize_claude_tool_use(block: &Value) -> Vec<NormalizedEvent> {
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             };
             if tool == "ExitPlanMode" {
                 vec![tool_use_event(block), mode_change]
@@ -3758,6 +3787,7 @@ fn normalize_claude_tool_use(block: &Value) -> Vec<NormalizedEvent> {
                     replaces_final_text: false,
                     parent_call_id: None,
                     status: None,
+                    output_json: None,
                 },
             ]
         }
@@ -3801,6 +3831,7 @@ fn normalize_claude_task_event(value: &Value) -> Vec<NormalizedEvent> {
         replaces_final_text: false,
         parent_call_id: None,
         status: None,
+        output_json: None,
     }]
 }
 
@@ -3871,6 +3902,7 @@ fn cursor_nested_tool_event(value: &Value) -> Option<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         })
     } else {
         Some(NormalizedEvent {
@@ -3883,6 +3915,7 @@ fn cursor_nested_tool_event(value: &Value) -> Option<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         })
     }
 }
@@ -4005,11 +4038,22 @@ fn normalize_codex(value: &Value) -> Vec<NormalizedEvent> {
             text_at(item, &["/text", "/content"]),
         )],
         "command_execution" | "mcp_tool_call" | "tool_call" => {
-            if event_type == "item.completed" {
-                vec![tool_result_event(item)]
+            let mut event = if event_type == "item.completed" {
+                tool_result_event(item)
             } else {
-                vec![tool_use_event(item)]
+                tool_use_event(item)
+            };
+            // codex 的 MCP 调用把 server 和 tool 分开放；通用解析只留了 tool，
+            // 这里统一成 claude 的 mcp__<server>__<tool>，MCP Apps 才能找到是哪个 server（R27）
+            if item.get("type").and_then(Value::as_str) == Some("mcp_tool_call") {
+                if let (Some(server), Some(tool)) = (
+                    item.get("server").and_then(Value::as_str),
+                    item.get("tool").and_then(Value::as_str),
+                ) {
+                    event.tool = Some(format!("mcp__{server}__{tool}"));
+                }
             }
+            vec![event]
         }
         _ => Vec::new(),
     }
@@ -4060,6 +4104,7 @@ fn normalize_copilot(value: &Value) -> Vec<NormalizedEvent> {
                         replaces_final_text: false,
                         parent_call_id: None,
                         status: None,
+                        output_json: None,
                     });
                 }
             }
@@ -4090,6 +4135,7 @@ fn normalize_copilot(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }],
         _ => Vec::new(),
     }
@@ -4120,6 +4166,7 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             }];
             if let Some(output) =
                 text_at(value, &["/part/state/output"]).filter(|text| !text.is_empty())
@@ -4134,6 +4181,7 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
                     replaces_final_text: false,
                     parent_call_id: None,
                     status: None,
+                    output_json: None,
                 });
             }
             events
@@ -4177,6 +4225,7 @@ fn normalize_pi(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }],
         "tool_execution_end" => text_at(value, &["/result", "/result/content/0/text"])
             .map(|output| NormalizedEvent {
@@ -4189,6 +4238,7 @@ fn normalize_pi(value: &Value) -> Vec<NormalizedEvent> {
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             })
             .into_iter()
             .collect(),
@@ -4224,6 +4274,7 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }],
         "tool_result" => vec![NormalizedEvent {
             event_type: "tool_result",
@@ -4235,6 +4286,7 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }],
         "error" => text_at(value, &["/error"])
             .map(|text| NormalizedEvent {
@@ -4266,6 +4318,7 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }],
         "permission" => vec![NormalizedEvent {
             event_type: "permission",
@@ -4280,6 +4333,7 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: Some("pending".into()),
+            output_json: None,
         }],
         "mode" => vec![NormalizedEvent {
             event_type: "mode_change",
@@ -4295,6 +4349,7 @@ fn normalize_wire(value: &Value) -> Vec<NormalizedEvent> {
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }],
         _ => Vec::new(),
     }
@@ -4340,6 +4395,7 @@ fn normalized(event_type: &'static str, content: Option<String>) -> NormalizedEv
         replaces_final_text: false,
         parent_call_id: None,
         status: None,
+        output_json: None,
     }
 }
 
@@ -4368,6 +4424,7 @@ fn tool_use_event(value: &Value) -> NormalizedEvent {
         replaces_final_text: false,
         parent_call_id: None,
         status: None,
+        output_json: None,
     }
 }
 
@@ -4422,7 +4479,41 @@ fn tool_result_event(value: &Value) -> NormalizedEvent {
         replaces_final_text: false,
         parent_call_id: None,
         status: Some(if failed { "error" } else { "ok" }.to_string()),
+        output_json: mcp_result_json(value),
     }
+}
+
+/// 单条原始结果上限（方案 §7.2）
+const MAX_OUTPUT_JSON_BYTES: usize = 256 * 1024;
+
+/// MCP 工具的原始 `CallToolResult`（content / structuredContent / isError），MCP Apps 的
+/// `ui/notifications/tool-result` 要原样推给页面。`output` 里压平的文本不够用（structuredContent 会丢）。
+/// - codex `mcp_tool_call.result`：`{ content, structured_content? }`
+/// - claude `tool_result`：`content` 是块数组
+fn mcp_result_json(value: &Value) -> Option<Value> {
+    let is_error = value
+        .get("is_error")
+        .or_else(|| value.get("isError"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut result = if let Some(result) = value.get("result").filter(|result| {
+        result.get("content").is_some_and(Value::is_array)
+            || result.get("structured_content").is_some()
+            || result.get("structuredContent").is_some()
+    }) {
+        result.clone()
+    } else {
+        let content = value.get("content").filter(|content| content.is_array())?;
+        serde_json::json!({ "content": content })
+    };
+    let object = result.as_object_mut()?;
+    if let Some(structured) = object.remove("structured_content") {
+        object.insert("structuredContent".into(), structured);
+    }
+    if is_error && !object.contains_key("isError") {
+        object.insert("isError".into(), Value::Bool(true));
+    }
+    (serde_json::to_string(&result).ok()?.len() <= MAX_OUTPUT_JSON_BYTES).then_some(result)
 }
 
 fn text_at(value: &Value, pointers: &[&str]) -> Option<String> {
@@ -4539,6 +4630,7 @@ fn timeline_item(seq: u32, event: NormalizedEvent) -> TimelineItem {
         replaces_final_text: event.replaces_final_text,
         parent_call_id: event.parent_call_id,
         status: event.status,
+        output_json: event.output_json,
     }
 }
 
@@ -4588,12 +4680,19 @@ fn merge_timeline_item(previous: &TimelineItem, mut item: TimelineItem) -> Timel
     if item.status.is_none() {
         item.status = previous.status.clone();
     }
+    if item.output_json.is_none() {
+        item.output_json = previous.output_json.clone();
+    }
     item
 }
 
 fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: &TimelineItem) {
     let input_json = item
         .input
+        .as_ref()
+        .and_then(|value| serde_json::to_string(value).ok());
+    let output_json = item
+        .output_json
         .as_ref()
         .and_then(|value| serde_json::to_string(value).ok());
     let state = app.state::<AppState>();
@@ -4607,12 +4706,13 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
     let result = db.execute(
         "INSERT INTO run_events
              (id, run_id, session_id, seq, event_type, call_id, tool, content, input_json, output, created_at,
-              parent_call_id, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+              parent_call_id, status, output_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(run_id, seq) DO UPDATE SET
                call_id=excluded.call_id, tool=excluded.tool, content=excluded.content,
                input_json=excluded.input_json, output=excluded.output,
-               parent_call_id=excluded.parent_call_id, status=excluded.status",
+               parent_call_id=excluded.parent_call_id, status=excluded.status,
+               output_json=excluded.output_json",
         params![
             format!("{run_id}:{}", item.seq),
             run_id,
@@ -4626,7 +4726,8 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
             item.output,
             item.created_at,
             item.parent_call_id,
-            item.status
+            item.status,
+            output_json
         ],
     );
     if let Err(error) = result {
@@ -4658,6 +4759,7 @@ mod tests {
             replaces_final_text: replaces,
             parent_call_id: None,
             status: None,
+            output_json: None,
         }
     }
 
@@ -5018,6 +5120,7 @@ mod tests {
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             },
         );
         assert!(should_merge_timeline(
@@ -5032,6 +5135,7 @@ mod tests {
                 replaces_final_text: false,
                 parent_call_id: None,
                 status: None,
+                output_json: None,
             }
         ));
         let merged = merge_timeline_item(&start, delta);
@@ -5047,6 +5151,35 @@ mod tests {
         assert_eq!(value["type"], "user");
         assert_eq!(value["message"]["content"][0]["text"], "hello \"world\"");
         assert!(payload.ends_with(b"\n"));
+    }
+
+    #[test]
+    fn codex_mcp_calls_keep_server_and_raw_result() {
+        let started = super::normalize_codex(&serde_json::json!({
+            "type": "item.started",
+            "item": { "type": "mcp_tool_call", "id": "m1", "server": "charts", "tool": "draw", "arguments": { "n": 1 } }
+        }));
+        assert_eq!(started[0].tool.as_deref(), Some("mcp__charts__draw"));
+        let done = super::normalize_codex(&serde_json::json!({
+            "type": "item.completed",
+            "item": {
+                "type": "mcp_tool_call", "id": "m1", "server": "charts", "tool": "draw",
+                "result": { "content": [{ "type": "text", "text": "ok" }], "structured_content": { "points": [1, 2] } }
+            }
+        }));
+        assert_eq!(done[0].tool.as_deref(), Some("mcp__charts__draw"));
+        let raw = done[0].output_json.as_ref().unwrap();
+        assert_eq!(raw["structuredContent"]["points"][1], 2);
+        assert_eq!(raw["content"][0]["text"], "ok");
+        // claude 的 tool_result 块：content 数组原样保留
+        let claude = super::mcp_result_json(&serde_json::json!({
+            "type": "tool_result", "tool_use_id": "t1", "is_error": true,
+            "content": [{ "type": "text", "text": "boom" }]
+        }))
+        .unwrap();
+        assert_eq!(claude["isError"], true);
+        // 纯文本结果不存
+        assert!(super::mcp_result_json(&serde_json::json!({ "tool_use_id": "t2", "content": "plain" })).is_none());
     }
 
     #[test]

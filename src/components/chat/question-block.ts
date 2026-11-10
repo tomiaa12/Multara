@@ -1,6 +1,8 @@
 // 无头 CLI（claude -p / cursor-agent -p）没法在运行中途等用户回答，
 // 所以智能体用一个约定的代码块把问题写在回复末尾，界面把它渲染成输入框上方的选项卡片。
 // 字段名沿用 Claude AskUserQuestion 的结构（question / header / options / multiSelect），模型最熟悉。
+import { GENUI_FENCE, scanFences, splitGenUi } from "./genui/block";
+
 export const QUESTION_FENCE = "multara-questions";
 
 export interface ChatQuestionOption {
@@ -29,26 +31,63 @@ export interface ExtractedQuestions {
   streaming: boolean;
 }
 
-// 匹配完整的提问块；info 允许带空格，结尾围栏可以没有换行
-const CLOSED_BLOCK = new RegExp("(^|\\n)[ \\t]*```[ \\t]*" + QUESTION_FENCE + "[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*```[ \\t]*(?=\\n|$)", "g");
-const OPEN_BLOCK = new RegExp("(^|\\n)[ \\t]*```[ \\t]*" + QUESTION_FENCE + "[^\\n]*(\\n[\\s\\S]*)?$");
-
-export function extractQuestions(text: string): ExtractedQuestions {
+/**
+ * genui：生成式界面开关。打开时 ```multara-ui 里 type 为 question 的块也算提问；
+ * 关闭时 multara-ui 块一律按代码块显示，不抽成提问卡片。multara-questions 不受开关影响。
+ */
+export function extractQuestions(text: string, options: { genui?: boolean } = {}): ExtractedQuestions {
   const source = text ?? "";
+  const hasUi = Boolean(options.genui) && source.includes(GENUI_FENCE);
+  if (!source.includes(QUESTION_FENCE) && !hasUi) return { body: source, questions: [], streaming: false };
+  const legacy = extractLegacyQuestions(source);
+  if (!hasUi) return legacy;
+  const alias = extractUiQuestions(legacy.body);
+  if (!alias.questions.length) return legacy;
+  return { body: alias.body, questions: alias.questions, streaming: legacy.streaming };
+}
+
+/** ```multara-ui 里 type 为 question 的块：等同 multara-questions，抽出来给输入框上方的卡片 */
+function extractUiQuestions(source: string): { body: string; questions: ChatQuestion[] } {
+  const { segments } = splitGenUi(source);
+  let questions: ChatQuestion[] = [];
+  const kept: string[] = [];
+  for (const segment of segments) {
+    if (segment.kind === "md") {
+      kept.push(segment.text);
+      continue;
+    }
+    const specs = segment.kind === "ui" ? segment.specs : null;
+    if (specs?.length && specs.every((spec) => spec.type === "question")) {
+      const parsed = specs.flatMap((spec) => parseQuestions(JSON.stringify(spec.props ?? null)));
+      if (parsed.length) {
+        questions = parsed;
+        continue;
+      }
+    }
+    kept.push(segment.source);
+  }
+  if (!questions.length) return { body: source, questions };
+  return { body: kept.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd(), questions };
+}
+
+function extractLegacyQuestions(source: string): ExtractedQuestions {
   if (!source.includes(QUESTION_FENCE)) return { body: source, questions: [], streaming: false };
   let questions: ChatQuestion[] = [];
-  let body = source.replace(CLOSED_BLOCK, (_match, lead: string, json: string) => {
-    const parsed = parseQuestions(json);
-    if (parsed.length) questions = parsed;
-    return lead;
-  });
   let streaming = false;
-  const open = OPEN_BLOCK.exec(body);
-  if (open) {
-    streaming = true;
-    body = body.slice(0, open.index + open[1].length);
+  const kept: string[] = [];
+  for (const segment of scanFences(source, QUESTION_FENCE)) {
+    if (segment.kind === "text") {
+      kept.push(segment.text);
+    } else if (segment.kind === "open") {
+      // 流式中途：半截 JSON 不显示
+      streaming = true;
+    } else {
+      // 闭合块一律从正文拿掉；解析失败也不把 JSON 漏给用户
+      const parsed = parseQuestions(segment.raw);
+      if (parsed.length) questions = parsed;
+    }
   }
-  return { body: body.replace(/\n{3,}/g, "\n\n").trimEnd(), questions, streaming };
+  return { body: kept.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd(), questions, streaming };
 }
 
 export function parseQuestions(raw: string): ChatQuestion[] {

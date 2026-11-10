@@ -10,6 +10,7 @@ import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import UserPrompt from "../components/chat/UserPrompt.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
+import { isGenUiEnabled } from "../components/chat/genui/block";
 import { formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
@@ -189,7 +190,7 @@ const pendingQuestion = computed(() => {
     const message = messages.value[index];
     if (message.role === "user") return null;
     if (message.role !== "assistant" || message.failureReason) continue;
-    const questions = extractQuestions(message.content).questions;
+    const questions = extractQuestions(message.content, { genui: isGenUiEnabled(store.data?.settings) }).questions;
     if (!questions.length) continue;
     return { messageId: message.id, questions, agentName: agent.value?.name ?? t("inbox.agentFallback") };
   }

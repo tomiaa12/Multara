@@ -6,6 +6,7 @@ export type ComposerSuggestCategory = ComposerEntityKind;
 export type ComposerSuggestCategoryId =
   | ComposerSuggestCategory
   | "file"
+  | "canvas"
   | "issue"
   | "pullRequest";
 

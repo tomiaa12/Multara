@@ -16,10 +16,9 @@ pub fn get(id: &str) -> Result<crate::models::GlobalResource, String> {
         .ok_or_else(|| tr!("Skill 不存在"))
 }
 
-pub fn builtin(locale: &str) -> serde_json::Value {
+pub fn builtin(locale: &str, genui_enabled: bool) -> serde_json::Value {
     serde_json::Value::Array(
-        builtin_skills::ALL
-            .iter()
+        builtin_skills::enabled(genui_enabled)
             .map(|skill| {
                 serde_json::json!({
                     "name": skill.name,

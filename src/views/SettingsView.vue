@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Download, FolderTree, GitBranch, Info, MessageSquare, Mic, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
+import { Download, FlaskConical, FolderTree, GitBranch, Info, MessageSquare, Mic, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
 import {
   DEFAULT_EXPLORER_SETTINGS,
   filesExcludeFromText,
@@ -40,7 +40,7 @@ const WEBHOOK_PORT_MAX = 65535;
 const defaultBranch = computed(() => defaultBranchPrompt());
 const defaultCommit = computed(() => defaultCommitPrompt());
 
-const SECTION_IDS = ["general", "dictation", "explorer", "git", "branch", "commit", "automation", "updates", "about"] as const;
+const SECTION_IDS = ["general", "dictation", "explorer", "git", "branch", "commit", "automation", "experimental", "updates", "about"] as const;
 type SectionId = (typeof SECTION_IDS)[number];
 
 const SECTION_META: Array<{
@@ -58,6 +58,7 @@ const SECTION_META: Array<{
   { id: "branch", icon: GitBranch, groupKey: "settings.group.git", labelKey: "settings.section.branch", titleKey: "settings.section.branch", descKey: "settings.section.branchDesc" },
   { id: "commit", icon: MessageSquare, groupKey: "settings.group.git", labelKey: "settings.section.commit", titleKey: "settings.section.commitTitle", descKey: "settings.section.commitDesc" },
   { id: "automation", icon: Workflow, groupKey: null, labelKey: "settings.section.automation", titleKey: "settings.section.automationTitle", descKey: "settings.section.automationDesc" },
+  { id: "experimental", icon: FlaskConical, groupKey: null, labelKey: "settings.section.experimental", titleKey: "settings.section.experimental", descKey: "settings.section.experimentalDesc" },
   { id: "updates", icon: Shield, groupKey: null, labelKey: "settings.section.updates", titleKey: "settings.section.updates", descKey: "settings.section.updatesDesc" },
   { id: "about", icon: Info, groupKey: null, labelKey: "settings.section.about", titleKey: "settings.section.aboutTitle", descKey: "settings.section.aboutDesc" },
 ];
@@ -89,6 +90,9 @@ const form = reactive({
   permissionMode: "bypass",
   dictationEnabled: true,
   dictationLanguage: "auto",
+  genuiEnabled: false,
+  canvasesEnabled: false,
+  mcpAppsEnabled: false,
   webhookPort: 43127,
   branchGenMode: GEN_MODE_AGENT,
   branchAgentId: "",
@@ -211,6 +215,9 @@ watch(
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
     form.dictationEnabled = settings.dictationEnabled !== "false";
     form.dictationLanguage = settings.dictationLanguage ?? "auto";
+    form.genuiEnabled = settings.genuiEnabled === "true";
+    form.canvasesEnabled = settings.canvasesEnabled === "true";
+    form.mcpAppsEnabled = settings.mcpAppsEnabled === "true";
     form.webhookPort = Number(settings.webhookPort ?? 43127);
     form.branchGenMode = normalizeGenMode(settings.branchGenMode);
     form.branchAgentId = settings.branchAgentId ?? "";
@@ -259,6 +266,9 @@ watch(
     form.permissionMode,
     form.dictationEnabled,
     form.dictationLanguage,
+    form.genuiEnabled,
+    form.canvasesEnabled,
+    form.mcpAppsEnabled,
     form.webhookPort,
     form.branchGenMode,
     form.branchAgentId,
@@ -309,6 +319,9 @@ function settingsPayload() {
     permissionMode: form.permissionMode,
     dictationEnabled: String(form.dictationEnabled),
     dictationLanguage: form.dictationLanguage,
+    genuiEnabled: String(form.genuiEnabled),
+    canvasesEnabled: String(form.genuiEnabled && form.canvasesEnabled),
+    mcpAppsEnabled: String(form.genuiEnabled && form.mcpAppsEnabled),
     ...integerSettingEntry("webhookPort", form.webhookPort, WEBHOOK_PORT_MIN, WEBHOOK_PORT_MAX),
     branchGenMode: normalizeGenMode(form.branchGenMode),
     branchAgentId: form.branchAgentId.trim(),
@@ -543,6 +556,22 @@ onBeforeUnmount(() => {
             </div>
             <p class="settings-hint">{{ t("dictation.privacyNote") }}</p>
           </template>
+        </section>
+
+        <section v-else-if="section === 'experimental'" class="settings-card">
+          <label class="settings-row">
+            <div><strong>{{ t("settings.experimental.genui") }}</strong><p>{{ t("settings.experimental.genuiHint") }}</p></div>
+            <UiInput v-model="form.genuiEnabled" class="ds-switch" type="checkbox" />
+          </label>
+          <!-- Canvas 是生成式界面下面的子开关：总开关关着时不能开 -->
+          <label class="settings-row" :class="{ disabled: !form.genuiEnabled }">
+            <div><strong>{{ t("settings.experimental.canvas") }}</strong><p>{{ t("settings.experimental.canvasHint") }}</p></div>
+            <UiInput v-model="form.canvasesEnabled" class="ds-switch" type="checkbox" :disabled="!form.genuiEnabled" />
+          </label>
+          <label class="settings-row" :class="{ disabled: !form.genuiEnabled }">
+            <div><strong>{{ t("settings.experimental.mcpApps") }}</strong><p>{{ t("settings.experimental.mcpAppsHint") }}</p></div>
+            <UiInput v-model="form.mcpAppsEnabled" class="ds-switch" type="checkbox" :disabled="!form.genuiEnabled" />
+          </label>
         </section>
 
         <section v-else-if="section === 'explorer'" class="settings-card">

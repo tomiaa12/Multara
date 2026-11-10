@@ -68,7 +68,51 @@ pub const ALL: &[BuiltinSkill] = &[
         ja: include_str!("../skills/multara-skill-importing/SKILL.ja.md"),
         ko: include_str!("../skills/multara-skill-importing/SKILL.ko.md"),
     },
+    BuiltinSkill {
+        name: GENUI_SKILL,
+        zh_cn: include_str!("../skills/multara-ui/SKILL.md"),
+        en: include_str!("../skills/multara-ui/SKILL.en.md"),
+        zh_tw: include_str!("../skills/multara-ui/SKILL.zh-TW.md"),
+        ja: include_str!("../skills/multara-ui/SKILL.ja.md"),
+        ko: include_str!("../skills/multara-ui/SKILL.ko.md"),
+    },
 ];
+
+/// 生成式界面（实验功能）的 skill：只有设置里打开时才列进简报。
+pub const GENUI_SKILL: &str = "multara-ui";
+
+/// skill 目录里的附属文件（`SKILL.md` 按需引用）。目前只有 multara-ui 的 Canvas 说明。
+struct ExtraFile {
+    skill: &'static str,
+    file: &'static str,
+    zh_cn: &'static str,
+    en: &'static str,
+    zh_tw: &'static str,
+    ja: &'static str,
+    ko: &'static str,
+}
+
+const EXTRA_FILES: &[ExtraFile] = &[ExtraFile {
+    skill: GENUI_SKILL,
+    file: "canvas.md",
+    zh_cn: include_str!("../skills/multara-ui/canvas.md"),
+    en: include_str!("../skills/multara-ui/canvas.en.md"),
+    zh_tw: include_str!("../skills/multara-ui/canvas.zh-TW.md"),
+    ja: include_str!("../skills/multara-ui/canvas.ja.md"),
+    ko: include_str!("../skills/multara-ui/canvas.ko.md"),
+}];
+
+impl ExtraFile {
+    fn markdown_for(&self, locale: &str) -> &'static str {
+        match locale {
+            "en" => self.en,
+            "zh-TW" => self.zh_tw,
+            "ja" => self.ja,
+            "ko" => self.ko,
+            _ => self.zh_cn,
+        }
+    }
+}
 
 impl BuiltinSkill {
     pub fn markdown_for(&self, locale: &str) -> &'static str {
@@ -86,17 +130,30 @@ impl BuiltinSkill {
     }
 }
 
-pub fn names() -> Vec<&'static str> {
-    ALL.iter().map(|skill| skill.name).collect()
+/// 当前开关下对智能体可见的内置 skill。正文仍全部落盘（`materialize`），只是不列出来。
+pub fn enabled(genui_enabled: bool) -> impl Iterator<Item = &'static BuiltinSkill> {
+    ALL.iter()
+        .filter(move |skill| genui_enabled || skill.name != GENUI_SKILL)
+}
+
+pub fn names(genui_enabled: bool) -> Vec<&'static str> {
+    enabled(genui_enabled).map(|skill| skill.name).collect()
 }
 
 /// 每次启动运行都会调；内容没变就不写。写入走同目录临时文件 + rename，
 /// 并发运行或 CLI 正在读时不会看到写了一半的文件。
 pub fn materialize(root: &Path, locale: &str) -> Result<(), String> {
-    for skill in ALL {
-        let dir = root.join(skill.name);
-        let path = dir.join("SKILL.md");
-        let markdown = skill.markdown_for(locale);
+    let files = ALL
+        .iter()
+        .map(|skill| (skill.name, "SKILL.md", skill.markdown_for(locale)))
+        .chain(
+            EXTRA_FILES
+                .iter()
+                .map(|extra| (extra.skill, extra.file, extra.markdown_for(locale))),
+        );
+    for (name, file_name, markdown) in files {
+        let dir = root.join(name);
+        let path = dir.join(file_name);
         if fs::read(&path).is_ok_and(|current| current == markdown.as_bytes()) {
             continue;
         }
@@ -144,8 +201,10 @@ mod tests {
 
     #[test]
     fn embeds_every_product_skill() {
-        let names = names();
+        let names = names(true);
         assert!(names.contains(&"multara-onboarding"));
+        assert!(names.contains(&GENUI_SKILL));
+        assert!(!super::names(false).contains(&GENUI_SKILL));
         assert!(names.contains(&"multara-working-on-tasks"));
         assert!(names.contains(&"multara-creating-agents"));
         for skill in ALL {
