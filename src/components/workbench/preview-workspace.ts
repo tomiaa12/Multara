@@ -31,6 +31,7 @@ export const previewGitRepository: GitRepositoryStatus = {
   behind: 0,
   hasRemote: false,
   merging: false,
+  commitMessage: "",
   changes: [
     { path: "src/composer.ts", indexStatus: " ", worktreeStatus: "M", staged: false },
     { path: "src/router.ts", indexStatus: " ", worktreeStatus: "?", staged: false },
@@ -122,6 +123,7 @@ export const previewGitRepositoryB: GitRepositoryStatus = {
   behind: 0,
   hasRemote: true,
   merging: false,
+  commitMessage: "",
   changes: [
     { path: "src/main.ts", indexStatus: " ", worktreeStatus: "M", staged: false },
   ],

@@ -186,6 +186,8 @@ pub struct GitRepositoryStatus {
     pub behind: u32,
     pub has_remote: bool,
     pub merging: bool,
+    /// 合并或压合进行中时，git 写在 MERGE_MSG / SQUASH_MSG 里的提交说明（已去掉 # 注释）。
+    pub commit_message: String,
     pub changes: Vec<GitFileStatus>,
     pub branches: Vec<String>,
     pub remote_branches: Vec<String>,
