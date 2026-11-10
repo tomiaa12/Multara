@@ -59,7 +59,7 @@ import { isExcluded } from "./workbench/explorer/explorer-glob";
 import { explorerHoverTitle, highlightName } from "./workbench/explorer/explorer-format";
 import { renameSelection, validateFileName, wellFormedFileName } from "./workbench/explorer/explorer-names";
 import { isCopyDrag } from "./workbench/explorer/explorer-dnd";
-import { collectDroppedItems } from "./workbench/explorer/explorer-import";
+import { collectDroppedItems, type DroppedItem } from "./workbench/explorer/explorer-import";
 import { explorerItemKey, useExplorer, type ExplorerItem } from "./workbench/explorer/use-explorer";
 import * as explorerBackend from "../services/explorer-backend";
 import {
@@ -152,6 +152,7 @@ import {
   resolvePathInWorkspaces,
 } from "./chat/workspace-file-drag";
 import { isOversizedInlineSelection } from "./chat/composer-content";
+import { OS_DROP_EVENT, onOsDropHover, type OsDropDetail } from "./chat/os-file-drop";
 import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
@@ -4825,21 +4826,9 @@ function resolveDroppedOsFile(raw: string): { workspaceId: string; path: string 
   return resolvePathInWorkspaces(raw, workspaces.value);
 }
 
-async function attachDroppedFiles(event: DragEvent) {
-  const fromTree = readWorkspaceFileDragData(event.dataTransfer);
-  const items = collectDroppedItems(event.dataTransfer);
-  if (!fromTree && !items.length) return;
-  const zone = workbenchDropZone(event);
-  if (zone === "composer") return;
-  // 必须拦住默认行为：WebView/Monaco 会按系统编码把文件正文插进当前文档，中文会乱码。
-  event.preventDefault();
-  event.stopPropagation();
-  const target = treeItemFromPoint(event.clientX, event.clientY);
-  if (fromTree) {
-    if (target) await explorer.dropOnTarget(target, isCopyDrag(event, explorer.isMac));
-    else await finishTreeDrag(fromTree, zone, null);
-    return;
-  }
+async function importOsDroppedItems(items: DroppedItem[], zone: string | null, clientX: number, clientY: number) {
+  if (!items.length || !zone || zone === "composer") return;
+  const target = treeItemFromPoint(clientX, clientY);
   if (zone === "explorer" && !target) {
     const folders = items.filter((item) => item.isDirectory && item.nativePath && !resolveDroppedOsFile(item.nativePath));
     if (folders.length && folders.length === items.length) {
@@ -4855,6 +4844,54 @@ async function attachDroppedFiles(event: DragEvent) {
   await explorer.importDropped(items, target ?? (selectedTree.value
     ? treeItem(selectedTree.value.workspaceId, selectedTree.value.path, selectedTree.value.isDirectory)
     : null));
+}
+
+async function attachDroppedFiles(event: DragEvent) {
+  const fromTree = readWorkspaceFileDragData(event.dataTransfer);
+  const items = collectDroppedItems(event.dataTransfer);
+  if (!fromTree && !items.length) return;
+  const zone = workbenchDropZone(event);
+  if (zone === "composer") return;
+  // 必须拦住默认行为：WebView/Monaco 会按系统编码把文件正文插进当前文档，中文会乱码。
+  event.preventDefault();
+  event.stopPropagation();
+  const target = treeItemFromPoint(event.clientX, event.clientY);
+  if (fromTree) {
+    if (target) await explorer.dropOnTarget(target, isCopyDrag(event, explorer.isMac));
+    else await finishTreeDrag(fromTree, zone, null);
+    return;
+  }
+  await importOsDroppedItems(items, zone, event.clientX, event.clientY);
+}
+
+function onNativeOsDrop(event: Event) {
+  const detail = (event as CustomEvent<OsDropDetail>).detail;
+  const paths = detail?.paths ?? [];
+  if (!paths.length) return;
+  const hit = event.target instanceof Element ? event.target : null;
+  const zone = hit?.closest("[data-workspace-drop]")?.getAttribute("data-workspace-drop") ?? null;
+  if (!zone || zone === "composer") return;
+  event.stopPropagation();
+  void importNativeOsPaths(paths, zone, detail.x, detail.y);
+}
+
+async function importNativeOsPaths(paths: string[], zone: string, clientX: number, clientY: number) {
+  const items: DroppedItem[] = [];
+  for (const nativePath of paths) {
+    let isDirectory = false;
+    try {
+      await backend.listExternalDirectory(nativePath);
+      isDirectory = true;
+    } catch {
+      isDirectory = false;
+    }
+    items.push({
+      name: nativePath.split(/[\\/]/).pop() || nativePath,
+      isDirectory,
+      nativePath,
+    });
+  }
+  await importOsDroppedItems(items, zone, clientX, clientY);
 }
 
 function addTerminalSelectionToChat(payload: { text: string; startLine: number; endLine: number }) {
@@ -5233,7 +5270,16 @@ onActivated(() => {
 });
 onDeactivated(unbindGlobalKeys);
 
+const stopOsHover = onOsDropHover((zone, point) => {
+  if (zone?.getAttribute("data-workspace-drop") !== "explorer" || !point) {
+    explorer.updateDragOver(null, false);
+    return;
+  }
+  explorer.updateDragOver(treeItemFromPoint(point.x, point.y), false);
+});
+
 onMounted(() => {
+  workbenchEl.value?.addEventListener(OS_DROP_EVENT, onNativeOsDrop);
   startCodeNavigation();
   editorStatus.setLanguages(listSelectableLanguages(monaco.languages.getLanguages()));
   stopThemeWatch = watchDocumentTheme((theme) => {
@@ -5260,6 +5306,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  stopOsHover();
+  workbenchEl.value?.removeEventListener(OS_DROP_EVENT, onNativeOsDrop);
   gitChangeRefreshScheduler.dispose();
   diskChangeRefreshScheduler.dispose();
   window.removeEventListener("pointerdown", onTerminalPickOutside, true);

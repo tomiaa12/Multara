@@ -260,7 +260,8 @@ async function attachFileFromSuggest(file: { workspaceId: string; path: string; 
     return;
   }
   const name = file.path.split(/[\\/]/).pop() || file.path;
-  rememberChip(await externalPathChip({ path: file.path, name, isDirectory: Boolean(file.isDirectory) }, workspaces.value, t("chat.externalFile")));
+  const chip = await externalPathChip({ path: file.path, name, isDirectory: Boolean(file.isDirectory) }, workspaces.value);
+  if (chip) rememberChip(chip);
 }
 
 async function onDropWorkspace(file: WorkspaceFileDragPayload) {
@@ -269,7 +270,12 @@ async function onDropWorkspace(file: WorkspaceFileDragPayload) {
 
 async function onDropOs(entries: OsDroppedEntry[]) {
   for (const entry of entries) {
-    rememberChip(await externalPathChip(entry, workspaces.value, t("chat.externalFile")));
+    const chip = await externalPathChip(entry, workspaces.value);
+    if (!chip) {
+      pasteError.value = t("chat.noRefFiles");
+      continue;
+    }
+    rememberChip(chip);
   }
 }
 
@@ -277,11 +283,11 @@ async function pickFilesOrFolders() {
   const picked = await backend.selectFilesOrFolders();
   for (const item of picked) {
     const name = item.path.split(/[\\/]/).pop() || item.path;
-    rememberChip(await externalPathChip(
+    const chip = await externalPathChip(
       { path: item.path, name, isDirectory: item.isDirectory },
       workspaces.value,
-      t("chat.externalFile"),
-    ));
+    );
+    if (chip) rememberChip(chip);
   }
 }
 
@@ -311,7 +317,7 @@ function removePaste(path: string) {
 function submit() {
   const text = formatAgentPrompt(
     composer.value?.serialize().nodes ?? [],
-    { directMentions: true },
+    { directMentions: true, workspaces: workspaces.value },
   ).trim();
   if (!text && !pastes.value.length) return;
   const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));

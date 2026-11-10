@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   formatAgentPrompt,
+  locatedChipPath,
   isOversizedInlineSelection,
   isPastedImage,
   MAX_INLINE_SELECTION_LINES,
@@ -78,6 +79,42 @@ describe("parseUserPromptNodes", () => {
       { ...folder, text: "" },
       { ...file, text: "" },
     ]);
+  });
+
+  test("joins a workspace-relative chip to that workspace root", () => {
+    const folder: ComposerNode = {
+      type: "chip",
+      id: "src:folder",
+      path: "src",
+      startLine: 0,
+      endLine: 0,
+      text: "",
+      isDirectory: true,
+      workspaceId: "ws-1",
+    };
+    const workspaces = [{ id: "ws-1", workPath: "/Users/tomiaa/Documents/work/pages", sourcePath: "/other" }];
+    const content = formatAgentPrompt([folder, { type: "text", value: "看这里" }], { workspaces });
+    expect(content).toContain("[文件夹] /Users/tomiaa/Documents/work/pages/src");
+    expect(locatedChipPath({ path: "/Users/tomiaa/Documents/work", workspaceId: "" }, workspaces))
+      .toBe("/Users/tomiaa/Documents/work");
+  });
+
+  test("drops a bare name that does not match a workspace", () => {
+    const folder: ComposerNode = {
+      type: "chip",
+      id: "work:folder",
+      path: "work",
+      startLine: 0,
+      endLine: 0,
+      text: "",
+      isDirectory: true,
+    };
+    const content = formatAgentPrompt(
+      [folder, { type: "text", value: "找一下" }],
+      { workspaces: [{ id: "ws-1", sourcePath: "/Users/tomiaa/Documents/work/pages" }] },
+    );
+    expect(content).not.toContain("[文件夹]");
+    expect(content).toContain("找一下");
   });
 
   test("still parses older whole-file and folder prompts that inlined content", () => {
