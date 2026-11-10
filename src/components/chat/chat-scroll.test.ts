@@ -9,6 +9,8 @@ import {
   stickListToBottom,
   stickyUserTurnPushOffsets,
   syncStickyExchangeMinHeight,
+  syncStickyUserTurnPush,
+  userTurnCoversAnswer,
 } from "./chat-scroll";
 
 describe("listIsAtBottom", () => {
@@ -106,6 +108,81 @@ describe("stickyUserTurnPushOffsets", () => {
         { height: 20, top: 180 },
       ]),
     ).toEqual([0, 0]);
+  });
+});
+
+function rect(top: number, bottom: number) {
+  return () => ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top }) as DOMRect;
+}
+
+describe("userTurnCoversAnswer", () => {
+  function turnWithAnswer(answerTop: number) {
+    const slot = document.createElement("div");
+    slot.className = "message-user-slot";
+    const turn = document.createElement("article");
+    turn.className = "user-turn";
+    turn.getBoundingClientRect = rect(80, 160);
+    slot.append(turn);
+    const answer = document.createElement("article");
+    answer.className = "chat-turn";
+    answer.getBoundingClientRect = rect(answerTop, answerTop + 200);
+    const exchange = document.createElement("section");
+    exchange.append(slot, answer);
+    return { turn, answer };
+  }
+
+  test("hides the fade while the answer still sits below the sent prompt", () => {
+    const { turn } = turnWithAnswer(160);
+    expect(userTurnCoversAnswer(turn)).toBe(false);
+  });
+
+  test("shows the fade once this send's answer scrolls under the prompt", () => {
+    const { turn } = turnWithAnswer(120);
+    expect(userTurnCoversAnswer(turn)).toBe(true);
+  });
+
+  test("does not treat the next question as this send's answer", () => {
+    const slot = document.createElement("div");
+    slot.className = "message-user-slot";
+    const turn = document.createElement("article");
+    turn.className = "user-turn";
+    turn.getBoundingClientRect = rect(80, 160);
+    slot.append(turn);
+    const next = document.createElement("div");
+    next.className = "message-user-slot";
+    next.getBoundingClientRect = rect(100, 180);
+    const exchange = document.createElement("section");
+    exchange.append(slot, next);
+    expect(userTurnCoversAnswer(turn)).toBe(false);
+  });
+});
+
+describe("syncStickyUserTurnPush", () => {
+  test("toggles the covering class from the answer position", () => {
+    const root = document.createElement("div");
+    Object.defineProperty(root, "scrollTop", { value: 0 });
+    root.getBoundingClientRect = rect(0, 400);
+    const slot = document.createElement("div");
+    slot.className = "message-user-slot";
+    const turn = document.createElement("article");
+    turn.className = "user-turn";
+    turn.getBoundingClientRect = rect(0, 40);
+    slot.append(turn);
+    const answer = document.createElement("article");
+    answer.getBoundingClientRect = rect(40, 200);
+    root.append(slot, answer);
+    document.body.append(root);
+
+    syncStickyUserTurnPush(root, true);
+    expect(turn.classList.contains("is-covering")).toBe(false);
+
+    answer.getBoundingClientRect = rect(10, 200);
+    syncStickyUserTurnPush(root, true);
+    expect(turn.classList.contains("is-covering")).toBe(true);
+
+    syncStickyUserTurnPush(root, false);
+    expect(turn.classList.contains("is-covering")).toBe(false);
+    root.remove();
   });
 });
 

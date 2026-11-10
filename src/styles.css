@@ -558,9 +558,9 @@
   background: var(--color-bg);
   pointer-events: none;
 }
-/* 粘住时底边用渐变过渡到下方回答，避免硬白条像 margin */
-.shared-chat-panel.is-sticky-user-turn .user-turn::after,
-.task-activity .user-turn::after {
+/* 回答滚到粘性提问下面、被挡住时才用渐变过渡，避免没压住内容也挂一条遮罩 */
+.shared-chat-panel.is-sticky-user-turn .user-turn.is-covering::after,
+.task-activity .user-turn.is-covering::after {
   content: "";
   position: absolute;
   z-index: 0;
