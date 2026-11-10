@@ -3,9 +3,17 @@ use rusqlite::{params, Connection};
 use crate::{builtin_skills, resources};
 
 pub fn list_scanned() -> Vec<crate::models::GlobalResource> {
+    list_kind("skill")
+}
+
+pub fn list_mcp() -> Vec<crate::models::GlobalResource> {
+    list_kind("mcp")
+}
+
+fn list_kind(kind: &str) -> Vec<crate::models::GlobalResource> {
     resources::scan()
         .into_iter()
-        .filter(|resource| resource.kind == "skill")
+        .filter(|resource| resource.kind == kind)
         .collect()
 }
 

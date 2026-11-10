@@ -227,6 +227,8 @@ pub fn create(
     runtime_id: &str,
     avatar: &str,
     max_concurrent_tasks: u8,
+    skill_ids: Vec<String>,
+    mcp_ids: Vec<String>,
 ) -> Result<Agent, String> {
     let id = Uuid::new_v4().to_string();
     save(
@@ -248,8 +250,8 @@ pub fn create(
             },
             model: "auto".into(),
             max_concurrent_tasks: max_concurrent_tasks.clamp(1, 6),
-            skill_ids: Vec::new(),
-            mcp_ids: Vec::new(),
+            skill_ids,
+            mcp_ids,
         },
         false,
     )?;
