@@ -12,6 +12,7 @@ const backend = vi.hoisted(() => ({
   listTaskInboxSurfaces: vi.fn(),
   listChatMessages: vi.fn(async () => []),
   listAgentsAndSquads: vi.fn(async () => ({ agents: [], squads: [] })),
+  scanResources: vi.fn(async () => []),
   sendMessage: vi.fn<(sessionId: string, content: string, attachments: unknown[], requestedMode?: string) => Promise<ChatMessage[]>>(),
   setSessionDefaultMode: vi.fn(async () => undefined),
   stopRun: vi.fn(),
@@ -142,6 +143,7 @@ describe("run-event surface refresh", () => {
     expect(store.messages.welcome?.[0]?.content).toBe("x".repeat(50));
     await emit({ status: "completed" });
     expect(backend.listTaskInboxSurfaces).toHaveBeenCalledTimes(calls + 1);
+    expect(backend.scanResources).toHaveBeenCalledTimes(1);
     expect(backend.bootstrap).toHaveBeenCalledTimes(1);
   });
 

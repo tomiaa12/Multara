@@ -299,6 +299,13 @@ watch(
   },
 );
 
+watch(
+  () => suggestTrigger.value?.category,
+  (category) => {
+    if (category === "skill") void store.refreshResources();
+  },
+);
+
 const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
   const data = store.data;
   const currentSessionId = props.modeSessionId;
