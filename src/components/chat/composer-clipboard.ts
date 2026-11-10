@@ -55,6 +55,7 @@ export function decodeComposerClipboard(raw: string): ComposerNode[] | null {
         text: typeof node.text === "string" ? node.text : "",
         ...(node.isDirectory ? { isDirectory: true } : {}),
         ...(node.source === "terminal" ? { source: "terminal" as const } : {}),
+        ...(typeof node.workspaceId === "string" && node.workspaceId ? { workspaceId: node.workspaceId } : {}),
       });
     }
     return nodes.length ? nodes : null;

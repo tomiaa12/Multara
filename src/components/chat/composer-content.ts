@@ -9,6 +9,14 @@ export type ComposerFileChipNode = {
   text: string;
   isDirectory?: boolean;
   source?: "terminal";
+  /** 工作区内的相对路径要靠它拼成绝对路径；系统拖入的绝对路径可以不带。 */
+  workspaceId?: string;
+};
+
+export type PromptWorkspace = {
+  id: string;
+  workPath?: string | null;
+  sourcePath?: string | null;
 };
 
 export type ComposerEntityKind = "agent" | "squad" | "skill" | "task" | "requirement" | "session";
@@ -125,7 +133,35 @@ function decodeReferencePart(value: string) {
   }
 }
 
-export function formatAgentPrompt(nodes: ComposerNode[], options: { directMentions?: boolean } = {}) {
+function isAbsolutePath(path: string) {
+  return path.startsWith("/") || /^[A-Za-z]:\//.test(path);
+}
+
+function workspaceRoot(workspaceId: string | undefined, workspaces: PromptWorkspace[]) {
+  if (!workspaceId) return "";
+  const workspace = workspaces.find((item) => item.id === workspaceId);
+  return (workspace?.workPath || workspace?.sourcePath || "").replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+/**
+ * 发给智能体的路径。界面只显示短名字，这里必须是磁盘上的位置。
+ * 已是绝对路径就原样用；工作区内的相对路径拼上该工作区根目录。
+ * 传了工作区列表、却只剩一个对不上的名字（没有斜杠）时返回空，避免把 `work` 当成目录。
+ */
+export function locatedChipPath(node: { path: string; workspaceId?: string }, workspaces: PromptWorkspace[] = []) {
+  const path = node.path.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!path) return "";
+  if (isAbsolutePath(path)) return path;
+  const root = workspaceRoot(node.workspaceId, workspaces);
+  if (root) return `${root}/${path}`;
+  if (workspaces.length && !path.includes("/")) return "";
+  return path;
+}
+
+export function formatAgentPrompt(
+  nodes: ComposerNode[],
+  options: { directMentions?: boolean; workspaces?: PromptWorkspace[] } = {},
+) {
   const assignees = nodes.flatMap((node) =>
     isReferenceChip(node) && (node.referenceKind === "agent" || node.referenceKind === "squad")
       ? [`${node.referenceKind}:${node.referenceId}:${node.label}`]
@@ -136,6 +172,8 @@ export function formatAgentPrompt(nodes: ComposerNode[], options: { directMentio
       return [`[实体引用] ${node.referenceKind} ${encodeURIComponent(node.referenceId)} ${encodeURIComponent(node.label)}`];
     }
     if (!isFileChip(node) || !node.path) return [];
+    const located = node.source === "terminal" ? "" : locatedChipPath(node, options.workspaces ?? []);
+    if (node.source !== "terminal" && !located) return [];
     if (node.source === "terminal") {
       if (!node.text.trim() || isOversizedInlineSelection(node.text, node.startLine, node.endLine)) {
         return [];
@@ -146,14 +184,14 @@ export function formatAgentPrompt(nodes: ComposerNode[], options: { directMentio
     // 整文件 / 文件夹只发路径引用（对齐 VS Code Agent Host），正文由运行时按需读取。
     // 小选区仍内联；超大选区只发 path:range。历史全文围栏仍可由 parseUserPromptNodes 回放。
     if (node.isDirectory) {
-      return [`[文件夹] ${node.path}`];
+      return [`[文件夹] ${located}`];
     }
     if (isWholeFileChip(node)) {
-      return [`[文件] ${node.path}`];
+      return [`[文件] ${located}`];
     }
     const location = node.startLine === node.endLine
-      ? `${node.path}:${node.startLine}`
-      : `${node.path}:${node.startLine}-${node.endLine}`;
+      ? `${located}:${node.startLine}`
+      : `${located}:${node.startLine}-${node.endLine}`;
     const inline = node.text.trim()
       && !isOversizedInlineSelection(node.text, node.startLine, node.endLine);
     if (!inline) return [`[代码引用] ${location}`];

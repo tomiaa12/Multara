@@ -31,10 +31,10 @@ export async function workspacePathChip(file: {
 export async function externalPathChip(
   entry: OsDroppedEntry,
   workspaces: Array<{ id: string; workPath?: string | null; sourcePath?: string | null }>,
-  fallbackName: string,
-): Promise<EditorSelectionContext> {
-  const path = entry.path || entry.name || fallbackName;
-  const resolved = entry.path ? resolvePathInWorkspaces(entry.path, workspaces) : null;
+): Promise<EditorSelectionContext | null> {
+  const path = entry.path;
+  if (!path) return null;
+  const resolved = resolvePathInWorkspaces(path, workspaces);
   if (resolved) {
     return workspacePathChip({ ...resolved, isDirectory: entry.isDirectory });
   }

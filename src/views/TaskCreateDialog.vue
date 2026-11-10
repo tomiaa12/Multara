@@ -233,7 +233,12 @@ async function addWorkspaceChip(file: { workspaceId: string; path: string; isDir
 }
 
 async function addExternalChip(entry: OsDroppedEntry) {
-  rememberChip(await externalPathChip(entry, workspaces.value, t("chat.externalFile")));
+  const chip = await externalPathChip(entry, workspaces.value);
+  if (!chip) {
+    error.value = t("chat.noRefFiles");
+    return;
+  }
+  rememberChip(chip);
 }
 
 async function onDropWorkspace(file: WorkspaceFileDragPayload) {
@@ -273,7 +278,7 @@ async function create() {
   error.value = "";
   try {
     const nodes = composer.value?.serialize().nodes ?? [];
-    const description = formatAgentPrompt(nodes);
+    const description = formatAgentPrompt(nodes, { workspaces: workspaces.value });
     const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));
     const titleSeed = description || attachments[0]?.name || "";
     const title = backend.titleFromPrompt(titleSeed);

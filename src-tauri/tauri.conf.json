@@ -29,7 +29,7 @@
           "x": 14,
           "y": 19
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ],
     "security": {
