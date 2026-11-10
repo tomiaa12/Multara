@@ -11,7 +11,13 @@ description: プロジェクト（要件）の作成・更新とワークスペ�
 
 `multara project create --name "…" [--description "…"]`
 
-ワークスペースの紐づけはアプリ内で行います（Git リポジトリまたはフォルダーを追加）。紐づけ後は、そのプロジェクトでキューに入った実行がリポジトリのパス付きで起動します。
+プロジェクトにフォルダーを 1 つ追加します。`--path` はリポジトリまたは通常のディレクトリを 1 つだけ渡します。複数のリポジトリを含む親ディレクトリは拒否され、個別に追加できるパスが列挙されます。
+
+- 新しい Worktree：`multara workspace add --project PROJECT_ID --path /絶対パス --mode worktree-new --branch 新しいブランチ名 [--base 分岐元]`
+- 既存ブランチを Worktree にする：`multara workspace add --project PROJECT_ID --path /絶対パス --mode worktree-existing --branch 既存ブランチ`
+- 実ディレクトリを直接編集：`multara workspace add --project PROJECT_ID --path /絶対パス --mode current`
+
+`--base` を省略すると `HEAD` から分岐します。`multara workspace list [--project PROJECT_ID]` で紐づいたディレクトリを確認します。紐づけ後は、そのプロジェクトでキューに入った実行がリポジトリのパス付きで起動します。
 
 ## 一覧 / 取得 / 更新
 
@@ -24,4 +30,4 @@ description: プロジェクト（要件）の作成・更新とワークスペ�
 - 複数のタスクが成果物を共有する場合は、同じプロジェクトにまとめます。
 - この実行がすでにプロジェクトのワークスペースに紐づいている場合：ユーザーからコード変更を求められたら、一覧にあるディレクトリを直接編集します。
 - まだプロジェクトのワークスペースがない場合：ユーザーにプロジェクトを開いてもらうか、`multara task create --project <id> --status todo` を実行します。
-- 分離モード（worktree / copy / direct）は、アプリがワークスペースを作成するときに決まります。ディスク上の分離コピーのパスを手で書き換えないでください。
+- 上のコマンドで Worktree か実ディレクトリかを選びます。作成後に、ディスク上の分離コピーのパスを手で書き換えないでください。

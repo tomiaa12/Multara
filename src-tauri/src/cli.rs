@@ -26,6 +26,7 @@ multara — Multara 内置 CLI
   agent        list|get|create|update|skills
   squad        list|get|create|update|member
   project      list|get|create|update
+  workspace    list|add
   automation   list|get|create
   channel      list|get|enable|disable
   skill        list|get|builtin|import
@@ -67,6 +68,7 @@ pub fn should_run_as_cli(args: &[String]) -> bool {
             | "agent"
             | "squad"
             | "project"
+            | "workspace"
             | "automation"
             | "channel"
             | "skill"
@@ -423,6 +425,17 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                 parsed.flag(&["description", "note"]),
             )?)
         }
+        ("workspace", "list") => {
+            let rows = match parsed.flag(&["project", "project-id"]) {
+                Some(project_id) => {
+                    ops::require_project(db, project_id)?;
+                    crate::commands::list_project_workspaces(db, project_id)?
+                }
+                None => crate::commands::list_workspaces(db)?,
+            };
+            ops::json(&rows)
+        }
+        ("workspace", "add") => add_workspace_cli(db, &parsed),
         ("automation", "list") => ops::json(&ops::automation::list(db)?),
         ("automation", "get") => {
             let id = id.ok_or_else(|| tr!("缺少自动化 id"))?;
@@ -528,6 +541,7 @@ fn ensure_write_allowed(
         ("squad", "member"),
         ("project", "create"),
         ("project", "update"),
+        ("workspace", "add"),
         ("automation", "create"),
         ("channel", "enable"),
         ("channel", "disable"),
@@ -553,6 +567,84 @@ fn ensure_write_allowed(
         ));
     }
     Ok(())
+}
+
+fn add_workspace_cli(db: &Connection, parsed: &ParsedArgs) -> Result<String, String> {
+    let project_id = parsed
+        .flag(&["project-id", "project"])
+        .ok_or_else(|| tr!("缺少 --project"))?;
+    let path = parsed
+        .flag(&["path"])
+        .ok_or_else(|| tr!("缺少 --path"))?;
+    let mode = parsed
+        .flag(&["mode"])
+        .unwrap_or("worktree-new");
+    ops::require_project(db, project_id)?;
+    let git_command = crate::commands::setting_value(db, "gitExecutable", "git");
+    let candidates = crate::workspace::discover(path, &git_command)?;
+    if candidates.len() != 1 {
+        let listed = candidates
+            .iter()
+            .map(|item| item.path.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(tr!(
+            "这个目录里有多个仓库，请分别传入其中一个路径：\n{listed}",
+            listed = listed
+        ));
+    }
+    let candidate = &candidates[0];
+    let (storage_mode, create_branch, checkout_name, base_ref) = match mode {
+        "current" | "direct" => ("direct", false, None, None),
+        "worktree-existing" | "existing" => {
+            if candidate.kind != "git" {
+                return Err(tr!("普通文件夹不能迁出 Worktree，请改用 --mode current"));
+            }
+            let branch = parsed
+                .flag(&["branch"])
+                .filter(|name| !name.trim().is_empty())
+                .ok_or_else(|| tr!("迁出已有分支需要 --branch"))?;
+            ("isolated", false, Some(branch), Some(branch))
+        }
+        "worktree-new" | "new" => {
+            if candidate.kind != "git" {
+                return Err(tr!("普通文件夹不能新建 Worktree，请改用 --mode current"));
+            }
+            let branch = parsed
+                .flag(&["branch"])
+                .filter(|name| !name.trim().is_empty())
+                .ok_or_else(|| tr!("新建 Worktree 需要 --branch"))?;
+            let base = parsed.flag(&["base", "base-ref"]).unwrap_or("HEAD");
+            ("isolated", true, Some(branch), Some(base))
+        }
+        _ => return Err(tr!("--mode 只能是 worktree-new、worktree-existing 或 current")),
+    };
+    let configured = db
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'isolationRoot'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_default();
+    let prepared = crate::workspace::prepare(
+        &app_data_dir()?,
+        project_id,
+        &candidate.path,
+        storage_mode,
+        crate::commands::expand_user_path(&configured),
+        &git_command,
+        base_ref,
+        checkout_name,
+        create_branch,
+    )?;
+    let workspace = crate::commands::commit_workspace(
+        db,
+        prepared,
+        &git_command,
+        create_branch,
+        base_ref,
+    )?;
+    ops::json(&workspace)
 }
 
 fn create_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String, String> {
@@ -1056,6 +1148,89 @@ mod tests {
         super::run_args(&["-h".into()], &mut stdout, &mut stderr).unwrap();
         assert!(String::from_utf8_lossy(&stderr).contains("用法"));
         assert!(stdout.is_empty());
+    }
+
+    #[test]
+    fn workspace_add_keeps_a_plain_folder_on_its_real_path() {
+        let mut db = db();
+        let created = execute(
+            &[
+                "project".into(),
+                "create".into(),
+                "--name".into(),
+                "需求".into(),
+            ],
+            &mut db,
+        )
+        .unwrap();
+        let project_id = serde_json::from_str::<serde_json::Value>(&created).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let added = execute(
+            &[
+                "workspace".into(),
+                "add".into(),
+                "--project".into(),
+                project_id.clone(),
+                "--path".into(),
+                dir.path().display().to_string(),
+                "--mode".into(),
+                "current".into(),
+            ],
+            &mut db,
+        )
+        .unwrap();
+        let workspace: serde_json::Value = serde_json::from_str(&added).unwrap();
+        assert_eq!(workspace["projectId"], project_id);
+        assert_eq!(workspace["isolationMode"], "direct");
+        assert_eq!(workspace["kind"], "folder");
+        let listed = execute(
+            &[
+                "workspace".into(),
+                "list".into(),
+                "--project".into(),
+                project_id,
+            ],
+            &mut db,
+        )
+        .unwrap();
+        let rows: serde_json::Value = serde_json::from_str(&listed).unwrap();
+        assert_eq!(rows.as_array().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn workspace_add_rejects_a_new_worktree_without_a_branch_name() {
+        let mut db = db();
+        let dir = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .arg("init")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        db.execute(
+            "INSERT INTO projects (id, name, created_at, opened_at) VALUES ('p', 'P', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+        let error = execute(
+            &[
+                "workspace".into(),
+                "add".into(),
+                "--project".into(),
+                "p".into(),
+                "--path".into(),
+                dir.path().display().to_string(),
+                "--mode".into(),
+                "worktree-new".into(),
+            ],
+            &mut db,
+        )
+        .unwrap_err();
+        assert!(error.contains("--branch"), "{error}");
     }
 
     #[test]

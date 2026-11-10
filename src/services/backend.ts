@@ -161,6 +161,22 @@ export async function listTaskInboxSurfaces(): Promise<TaskInboxSurfaces> {
 }
 
 /** 智能体/小队页轻量刷新，避免整包 bootstrap（含 detect）卡住首屏。 */
+export async function listProjectsAndWorkspaces(): Promise<{
+  projects: BootstrapData["projects"];
+  workspaces: BootstrapData["workspaces"];
+}> {
+  if (!inTauri()) {
+    return {
+      projects: structuredClone(previewData.projects),
+      workspaces: structuredClone(previewData.workspaces),
+    };
+  }
+  const [projects, workspaces] = await invoke<
+    [BootstrapData["projects"], BootstrapData["workspaces"]]
+  >("list_projects_and_workspaces");
+  return { projects, workspaces };
+}
+
 export async function listAgentsAndSquads(): Promise<{
   agents: BootstrapData["agents"];
   squads: BootstrapData["squads"];
