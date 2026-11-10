@@ -18,7 +18,7 @@ import * as backend from "../../services/backend";
 
 loader.config({ monaco });
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   filePath: string;
   workspaceId: string;
   content: string;
@@ -34,7 +34,9 @@ const props = defineProps<{
   writing?: boolean;
   /** 关掉后不挂 diff、行号装饰和 blame。Skill 这类不在工作区里的文件用。 */
   git?: boolean;
-}>();
+}>(), {
+  git: true,
+});
 
 const emit = defineEmits<{
   change: [content: string, fromUser: boolean];
