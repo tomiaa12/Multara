@@ -89,6 +89,22 @@ export function pinLastExchangeToTop(list: HTMLElement, _last: HTMLElement) {
 }
 
 const USER_TURN_SELECTOR = ".user-turn";
+const USER_TURN_COVERING_CLASS = "is-covering";
+/** 回答顶缘比提问底缘高出这点以内仍算贴着，不算被遮罩压住。 */
+const STICKY_COVER_TOLERANCE_PX = 1;
+
+/**
+ * 这次发送的回答是否已经滚到粘性提问下面。
+ * 回答还在提问底边之下时不画渐变；顶缘越过底边才算被压住。
+ */
+export function userTurnCoversAnswer(turn: HTMLElement): boolean {
+  const slot = turn.closest(".message-user-slot");
+  const answer = (slot ?? turn).nextElementSibling;
+  if (!(answer instanceof HTMLElement)) return false;
+  if (answer.classList.contains("message-user-slot") || answer.classList.contains("user-turn")) return false;
+  const bottom = turn.getBoundingClientRect().bottom;
+  return answer.getBoundingClientRect().top < bottom - STICKY_COVER_TOLERANCE_PX;
+}
 
 /**
  * 计算粘性提问被下一轮顶上来时的 top 偏移。
@@ -126,7 +142,10 @@ function scrollParentOf(el: HTMLElement): HTMLElement | null {
 export function syncStickyUserTurnPush(root: HTMLElement, enabled: boolean) {
   const stickies = [...root.querySelectorAll<HTMLElement>(USER_TURN_SELECTOR)];
   if (!enabled || stickies.length === 0) {
-    for (const el of stickies) el.style.top = "";
+    for (const el of stickies) {
+      el.style.top = "";
+      el.classList.remove(USER_TURN_COVERING_CLASS);
+    }
     return;
   }
   const scroller = scrollParentOf(stickies[0]!) ?? root;
@@ -141,4 +160,7 @@ export function syncStickyUserTurnPush(root: HTMLElement, enabled: boolean) {
     const el = stickies[index];
     if (el) el.style.top = offset === 0 ? "0px" : `${offset}px`;
   });
+  for (const el of stickies) {
+    el.classList.toggle(USER_TURN_COVERING_CLASS, userTurnCoversAnswer(el));
+  }
 }
