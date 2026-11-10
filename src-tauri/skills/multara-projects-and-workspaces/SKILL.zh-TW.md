@@ -11,7 +11,13 @@ description: 建立、更新需求（專案），綁定工作區。多個任務�
 
 `multara project create --name "…" [--description "…"]`
 
-綁定工作區在應用程式內完成（新增 Git 儲存庫或資料夾）。綁定後，該需求下排隊的執行會帶著儲存庫路徑啟動。
+給需求新增一個資料夾。`--path` 一次只傳一個儲存庫或普通目錄；父目錄裡有多個儲存庫時會拒絕，並列出可以分別新增的路徑。
+
+- 新建 Worktree：`multara workspace add --project PROJECT_ID --path /絕對路徑 --mode worktree-new --branch 新分支名 [--base 遷出的分支]`
+- 遷出已有分支：`multara workspace add --project PROJECT_ID --path /絕對路徑 --mode worktree-existing --branch 已有分支`
+- 直接改真實目錄：`multara workspace add --project PROJECT_ID --path /絕對路徑 --mode current`
+
+`--base` 不寫時從 `HEAD` 遷出。`multara workspace list [--project PROJECT_ID]` 查看已綁定的目錄。綁定後，該需求下排隊的執行會帶著儲存庫路徑啟動。
 
 ## 列出 / 讀取 / 更新
 
@@ -24,4 +30,4 @@ description: 建立、更新需求（專案），綁定工作區。多個任務�
 - 多個任務共用交付物時放到同一個需求下。
 - 這次執行已經綁定需求工作區：使用者要求修改程式碼時，直接修改所列出的目錄。
 - 還沒有需求工作區：請使用者開啟一個需求，或執行 `multara task create --project <id> --status todo`。
-- 隔離模式（worktree / copy / direct）由應用程式建立工作區時決定，不要手動修改磁碟上隔離副本的路徑。
+- 用上面的命令選擇 Worktree 或真實目錄。建好後不要手動修改磁碟上隔離副本的路徑。

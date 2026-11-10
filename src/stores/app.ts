@@ -361,8 +361,11 @@ export const useAppStore = defineStore("app", () => {
         if (payload.status === "completed") {
           void useDiffStore().loadActive();
         }
-        // 对话里可能通过 CLI 增删智能体/小队，或直接写入 SKILL.md，结束后同步列表
+        // 对话里可能通过 CLI 增删智能体、小队、需求、工作区，或直接写入 SKILL.md
         void refreshAgentsAndSquads();
+        await refreshProjects().catch((cause) => {
+          console.error("[app] project refresh failed", cause);
+        });
         await refreshResources().catch((cause) => {
           console.error("[app] skills refresh failed", cause);
         });
@@ -754,6 +757,14 @@ export const useAppStore = defineStore("app", () => {
       taskInboxRefreshQueued = false;
     });
     return taskInboxRefresh;
+  }
+
+  /** CLI（如对话里 `multara project create`）只写库，需主动拉回需求和工作区。 */
+  async function refreshProjects() {
+    if (!data.value) return;
+    const next = await backend.listProjectsAndWorkspaces();
+    data.value.projects = mergeById(data.value.projects, next.projects);
+    data.value.workspaces = mergeById(data.value.workspaces, next.workspaces);
   }
 
   /** CLI（如对话里 `multara agent create`）只写库，需主动拉回前端缓存。 */
