@@ -361,8 +361,11 @@ export const useAppStore = defineStore("app", () => {
         if (payload.status === "completed") {
           void useDiffStore().loadActive();
         }
-        // 对话里可能通过 CLI 增删智能体/小队，结束后同步列表
+        // 对话里可能通过 CLI 增删智能体/小队，或直接写入 SKILL.md，结束后同步列表
         void refreshAgentsAndSquads();
+        await refreshResources().catch((cause) => {
+          console.error("[app] skills refresh failed", cause);
+        });
         // 完成才继续队列；停止或失败时队列原样保留，等用户手动「立即发送」或再发一条。
         if (payload.status === "completed") {
           queueMicrotask(() => {
