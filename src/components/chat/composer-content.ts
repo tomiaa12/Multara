@@ -19,7 +19,7 @@ export type PromptWorkspace = {
   sourcePath?: string | null;
 };
 
-export type ComposerEntityKind = "agent" | "squad" | "skill" | "task" | "requirement" | "session";
+export type ComposerEntityKind = "agent" | "squad" | "skill" | "mcp" | "task" | "requirement" | "session";
 
 export type ComposerReferenceChipNode = {
   type: "chip";
@@ -68,7 +68,7 @@ export function fencedBlock(text: string) {
   return `${fence}\n${text}\n${fence}`;
 }
 const REFERENCE_PATTERN =
-  /\[实体引用\][ \t]+(agent|squad|skill|task|requirement|session)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
+  /\[实体引用\][ \t]+(agent|squad|skill|mcp|task|requirement|session)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
 const ASSIGNMENT_PATTERN =
   /\[指派要求\][^\n]*\n(?:-[^\n]*\n?)+/g;
 
@@ -100,6 +100,7 @@ const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
   agent: "@",
   squad: "@",
   skill: "/",
+  mcp: "",
   task: "#",
   requirement: "",
   session: "",

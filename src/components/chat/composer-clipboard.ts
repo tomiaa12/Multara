@@ -34,13 +34,13 @@ export function decodeComposerClipboard(raw: string): ComposerNode[] | null {
         node.type === "chip"
         && typeof node.referenceId === "string"
         && typeof node.label === "string"
-        && ["agent", "squad", "skill", "task", "requirement"].includes(String(node.referenceKind))
+        && ["agent", "squad", "skill", "mcp", "task", "requirement"].includes(String(node.referenceKind))
       ) {
         nodes.push({
           type: "chip",
           id: `${String(node.referenceKind)}:${node.referenceId}`,
           referenceId: node.referenceId,
-          referenceKind: node.referenceKind as "agent" | "squad" | "skill" | "task" | "requirement",
+          referenceKind: node.referenceKind as "agent" | "squad" | "skill" | "mcp" | "task" | "requirement",
           label: node.label,
         });
         continue;

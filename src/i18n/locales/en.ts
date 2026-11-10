@@ -1542,6 +1542,8 @@ Who is this for? Any constraints?
   "chat.context.pullRequestsEmpty": "Pull Requests are not connected yet",
   "chat.context.agents": "Agents",
   "chat.context.skills": "Skills",
+  "chat.context.mcp": "MCP",
+  "chat.context.mcpEmpty": "No MCP servers to mention",
   "chat.context.commands": "Session commands",
   "chat.context.tasks": "Tasks",
   "chat.context.requirements": "Requirements",
