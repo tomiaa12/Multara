@@ -11,29 +11,16 @@ use std::{
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-const CURSOR_BACKUP: &str = "mcp.json.multara-bak";
-const CURSOR_ABSENT: &str = "mcp.json.multara-absent";
-
 pub struct McpLaunch {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     /// ACP `session/new` 和 dsh `mcp_servers` 用的服务器列表。
     pub protocol_servers: Vec<Value>,
-    restores: Vec<FileRestore>,
     temps: Vec<PathBuf>,
-}
-
-struct FileRestore {
-    path: PathBuf,
-    backup: PathBuf,
-    absent_marker: PathBuf,
 }
 
 impl Drop for McpLaunch {
     fn drop(&mut self) {
-        for restore in self.restores.drain(..) {
-            restore_file(&restore);
-        }
         for dir in self.temps.drain(..) {
             let _ = fs::remove_dir_all(dir);
         }
@@ -49,7 +36,6 @@ pub fn prepare(
         args: Vec::new(),
         env: Vec::new(),
         protocol_servers: Vec::new(),
-        restores: Vec::new(),
         temps: Vec::new(),
     };
     let Some(path) = config_file else {
@@ -79,7 +65,13 @@ pub fn prepare(
             launch.env.push(("OPENCODE_CONFIG_CONTENT".into(), content));
         }
         "pi" => prepare_pi(&mut launch, &servers)?,
-        "omp" => prepare_omp(&mut launch, cwd, &config)?,
+        // OMP 会读附加工作区里的 .cursor/mcp.json，不写进用户仓库。
+        "omp" => {
+            let root = mcp_root(&servers)?;
+            launch.args.push("--add-dir".into());
+            launch.args.push(root.display().to_string());
+            launch.temps.push(root);
+        }
         _ => {}
     }
     Ok(launch)
@@ -136,28 +128,21 @@ fn env_pairs(value: Option<&Value>) -> Vec<Value> {
 }
 
 fn prepare_cursor(launch: &mut McpLaunch, cwd: &Path, servers: &Map<String, Value>) -> Result<(), String> {
-    let project = project_root(cwd);
-    let cursor_dir = project.join(".cursor");
-    fs::create_dir_all(&cursor_dir).map_err(|error| error.to_string())?;
-    let config_path = cursor_dir.join("mcp.json");
-    recover_file(&config_path, &cursor_dir.join(CURSOR_BACKUP), &cursor_dir.join(CURSOR_ABSENT));
-    stage_file(&config_path)?;
-    write_private(
-        &config_path,
-        &serde_json::to_vec_pretty(&serde_json::json!({ "mcpServers": servers }))
-            .map_err(|error| error.to_string())?,
-    )?;
-    launch.restores.push(FileRestore {
-        path: config_path,
-        backup: cursor_dir.join(CURSOR_BACKUP),
-        absent_marker: cursor_dir.join(CURSOR_ABSENT),
-    });
+    // cursor-agent 只从各个 workspace root 的 .cursor/mcp.json 和 ~/.cursor/mcp.json 读配置。
+    // 把配置放在临时目录，用 --add-dir 挂进去，避免写进用户仓库。
+    let root = mcp_root(servers)?;
+    launch.temps.push(root.clone());
+    launch.args.push("--add-dir".into());
+    launch.args.push(root.display().to_string());
+    launch.args.push("--approve-mcps".into());
 
+    let project = project_root(cwd);
     let data_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
     let cursor_data = data_dir.path().join("cursor-data");
+    let mut approvals = approval_keys(&project, servers)?;
+    approvals.extend(approval_keys(&root, servers)?);
     let project_data = cursor_data.join("projects").join(slugify(&project));
     fs::create_dir_all(&project_data).map_err(|error| error.to_string())?;
-    let approvals = approval_keys(&project, servers)?;
     write_private(
         &project_data.join("mcp-approvals.json"),
         &serde_json::to_vec_pretty(&approvals).map_err(|error| error.to_string())?,
@@ -177,6 +162,19 @@ fn prepare_cursor(launch: &mut McpLaunch, cwd: &Path, servers: &Map<String, Valu
     ));
     launch.temps.push(data_dir.keep());
     Ok(())
+}
+
+/// 临时目录里放一份 `.cursor/mcp.json`，给会扫描附加工作区的 CLI 用。
+fn mcp_root(servers: &Map<String, Value>) -> Result<PathBuf, String> {
+    let dir = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let cursor_dir = dir.path().join(".cursor");
+    fs::create_dir_all(&cursor_dir).map_err(|error| error.to_string())?;
+    write_private(
+        &cursor_dir.join("mcp.json"),
+        &serde_json::to_vec_pretty(&serde_json::json!({ "mcpServers": servers }))
+            .map_err(|error| error.to_string())?,
+    )?;
+    Ok(dir.keep())
 }
 
 fn prepare_codex(launch: &mut McpLaunch, servers: &Map<String, Value>) -> Result<(), String> {
@@ -234,24 +232,6 @@ fn prepare_pi(launch: &mut McpLaunch, servers: &Map<String, Value>) -> Result<()
     launch.args.push("--extension".into());
     launch.args.push(path.display().to_string());
     launch.temps.push(dir.keep());
-    Ok(())
-}
-
-fn prepare_omp(launch: &mut McpLaunch, cwd: &Path, config: &Value) -> Result<(), String> {
-    let dir = cwd.join(".omp");
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    let path = dir.join("mcp.json");
-    recover_file(&path, &dir.join(CURSOR_BACKUP), &dir.join(CURSOR_ABSENT));
-    stage_file(&path)?;
-    write_private(
-        &path,
-        &serde_json::to_vec_pretty(config).map_err(|error| error.to_string())?,
-    )?;
-    launch.restores.push(FileRestore {
-        path,
-        backup: dir.join(CURSOR_BACKUP),
-        absent_marker: dir.join(CURSOR_ABSENT),
-    });
     Ok(())
 }
 
@@ -438,34 +418,6 @@ fn slugify(path: &Path) -> String {
         }
     }
     slug.trim_matches('-').to_string()
-}
-
-fn stage_file(path: &Path) -> Result<(), String> {
-    let backup = path.with_file_name(CURSOR_BACKUP);
-    let absent = path.with_file_name(CURSOR_ABSENT);
-    if path.is_file() {
-        fs::copy(path, &backup).map_err(|error| error.to_string())?;
-        let _ = fs::remove_file(&absent);
-    } else {
-        write_private(&absent, b"")?;
-        let _ = fs::remove_file(&backup);
-    }
-    Ok(())
-}
-
-fn recover_file(path: &Path, backup: &Path, absent: &Path) {
-    if absent.is_file() {
-        let _ = fs::remove_file(path);
-        let _ = fs::remove_file(absent);
-        return;
-    }
-    if backup.is_file() {
-        let _ = fs::rename(backup, path);
-    }
-}
-
-fn restore_file(restore: &FileRestore) {
-    recover_file(&restore.path, &restore.backup, &restore.absent_marker);
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
