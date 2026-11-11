@@ -2434,10 +2434,15 @@ textarea:not(.inputarea) {
   white-space: nowrap;
 }
 
-.chat-fab {
+/* tip 包在 .ds-tooltip-trigger 上；fixed 必须落在 trigger，否则定位相对塌缩的 span */
+.floating-chat-host > .ds-tooltip-trigger:has(> .chat-fab) {
   position: fixed;
   right: 25px;
   bottom: 42px;
+  z-index: 20;
+}
+.chat-fab {
+  position: relative;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -2445,7 +2450,26 @@ textarea:not(.inputarea) {
   background: var(--color-primary);
   box-shadow: var(--shadow-md);
   color: var(--color-on-primary);
-  z-index: 20;
+}
+.floating-chat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: var(--color-overlay);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 200ms ease,
+    visibility 0s linear 200ms;
+}
+.floating-chat-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 200ms ease,
+    visibility 0s;
 }
 .floating-chat {
   position: fixed;
@@ -2467,19 +2491,25 @@ textarea:not(.inputarea) {
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   z-index: 20;
+  transform: translateX(100%);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 200ms ease,
+    visibility 0s linear 200ms;
+}
+.floating-chat.open {
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    transform 200ms ease,
+    visibility 0s;
 }
 .floating-chat.expanded {
   width: min(720px, 100vw);
   /* 高度始终满屏，放大只加宽 */
   resize: none;
-}
-.floating-chat-enter-active,
-.floating-chat-leave-active {
-  transition: transform 200ms ease;
-}
-.floating-chat-enter-from,
-.floating-chat-leave-to {
-  transform: translateX(100%);
 }
 .chat-header-actions {
   display: flex;
