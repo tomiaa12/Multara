@@ -150,6 +150,10 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           kind TEXT NOT NULL CHECK(kind IN ('skill', 'mcp')),
           PRIMARY KEY (agent_id, resource_id)
         );
+        -- Miku 默认拥有全部 Skill / MCP。这里只记下用户后来关掉的，避免下次扫描又打开。
+        CREATE TABLE IF NOT EXISTS miku_resource_off (
+          resource_id TEXT PRIMARY KEY
+        );
         CREATE TABLE IF NOT EXISTS squads (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
