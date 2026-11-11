@@ -267,6 +267,7 @@ const catalog: MessageCatalog = {
   "runtime.unknownVersion": "版本未知",
   "runtime.online": "可用",
   "runtime.offline": "未偵測到",
+  "runtime.detecting": "偵測中…",
   "runtime.notFound": "{command} 未偵測到",
   "runtimeAccount.unknown": "讀不到登入狀態",
   "runtimeAccount.signedOut": "未登入",

@@ -193,6 +193,12 @@ export async function listAgentsAndSquads(): Promise<{
   return { agents, squads };
 }
 
+/** 启动后台加载运行时（走后端缓存）；用户点「重新检测」用 detectRuntimes。 */
+export async function listRuntimes(): Promise<BootstrapData["runtimes"]> {
+  if (!inTauri()) return structuredClone(previewData.runtimes);
+  return invoke<BootstrapData["runtimes"]>("list_runtimes");
+}
+
 export async function detectRuntimes(): Promise<BootstrapData["runtimes"]> {
   if (!inTauri()) return structuredClone(previewData.runtimes);
   return invoke<BootstrapData["runtimes"]>("detect_runtimes");

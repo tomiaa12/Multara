@@ -1586,6 +1586,18 @@ pub async fn scan_workspace_candidates(
     .await
 }
 
+/// 启动后台加载用：走进程内缓存，不清缓存也不重读登录 PATH。
+#[tauri::command]
+pub async fn list_runtimes(app: AppHandle) -> Result<Vec<crate::models::Runtime>, String> {
+    let _span = crate::diag::span("list_runtimes");
+    off_main(app, |state| {
+        let detected = runtime::detect();
+        let (custom, limits) = runtime_configuration(&*state.lock_db()?, &detected)?;
+        Ok(detect_configured_runtimes(detected, custom, limits))
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn detect_runtimes(app: AppHandle) -> Result<Vec<crate::models::Runtime>, String> {
     let _span = crate::diag::span("detect_runtimes");
@@ -3324,11 +3336,10 @@ pub async fn bootstrap(app: AppHandle) -> Result<BootstrapData, String> {
             let db = state.lock_db()?;
             runtime::load_acp_mode_cache(&settings_map(&db)?);
         }
-        let detected = runtime::detect();
-        let (mut data, custom, limits) = {
+        // 运行时探测要逐个跑 CLI，耗时数秒，由前端在首屏后调用 list_runtimes 补上。
+        let mut data = {
             let db = state.lock_db()?;
-            let (custom, limits) = runtime_configuration(&db, &detected)?;
-            let data = BootstrapData {
+            BootstrapData {
                 projects: list_projects(&db)?,
                 workspaces: list_workspaces(&db)?,
                 runtimes: Vec::new(),
@@ -3342,10 +3353,8 @@ pub async fn bootstrap(app: AppHandle) -> Result<BootstrapData, String> {
                 inbox: list_inbox(&db)?,
                 settings: settings_map(&db)?,
                 merge_sessions: crate::merge_flow::list_active(&db)?,
-            };
-            (data, custom, limits)
+            }
         };
-        data.runtimes = detect_configured_runtimes(detected, custom, limits);
         resource_manager::set_workspace_roots(
             data.workspaces
                 .iter()

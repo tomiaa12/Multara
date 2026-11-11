@@ -3,6 +3,7 @@
  * 公共运行时下拉：在线运行时列表，选项展示 ProviderLogo（与智能体头像位一致）。
  */
 import { computed } from "vue";
+import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import type { SelectOption } from "./ui/select-types";
 import ProviderLogo from "./ProviderLogo.vue";
@@ -55,7 +56,7 @@ function providerOf(option?: SelectOption | null) {
     :options="options"
     :required="required"
     :disabled="disabled || !options.length"
-    :placeholder="options.length ? placeholder : '没有可用运行时'"
+    :placeholder="options.length ? placeholder : store.runtimesReady ? '没有可用运行时' : t('runtime.detecting')"
     :clearable="clearable"
     :size="size"
     :variant="variant"
