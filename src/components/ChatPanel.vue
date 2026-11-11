@@ -776,7 +776,7 @@ function startSessionListResize(event: PointerEvent) {
   const startX = event.clientX;
   const startWidth = sessionListWidth.value;
   const onMove = (move: PointerEvent) => {
-    const width = clampSessionListWidth(startWidth + move.clientX - startX, panelWidth.value);
+    const width = clampSessionListWidth(startWidth + startX - move.clientX, panelWidth.value);
     sessionListPrefs.value = { ...sessionListPrefs.value, width };
   };
   const onUp = () => {
@@ -1767,50 +1767,9 @@ defineExpose({
       aria-hidden="true"
       @click="closeSessionDrawer"
     />
-    <aside
-      v-if="sessionListVisible"
-      class="chat-session-pane"
-      :class="sessionListMode === 'side' ? 'is-side' : 'is-drawer'"
-      @keydown="onSessionListKeydown"
-    >
-      <ChatSessionList
-        ref="sessionListRef"
-        :rows="sessionListRows"
-        :create-disabled="!preview && !targetOptions.length"
-        :editable="!preview"
-        :session-commands="sessionCommands"
-        @select="selectFromSessionList"
-        @create="createFromSessionList"
-        @rename="renameFromSessionList"
-        @close-tab="closeSessionTab"
-        @fork="store.forkSession"
-        @compact="store.compactSession"
-      />
-      <div
-        v-if="sessionListMode === 'side'"
-        class="chat-session-sash"
-        role="separator"
-        aria-orientation="vertical"
-        @pointerdown="startSessionListResize"
-      />
-    </aside>
-
     <section class="chat-surface">
       <header v-if="!embedded" class="chat-surface-header is-tabs">
         <div class="chat-session-bar">
-          <UiButton
-            v-if="sessionListEnabled"
-            class="chat-session-list-toggle"
-            variant="ghost"
-            size="icon"
-            :class="{ active: sessionListVisible }"
-            :aria-pressed="sessionListVisible"
-            :tip="t('chat.sessionList.toggle')"
-            :aria-label="t('chat.sessionList.toggle')"
-            @click="toggleSessionList"
-          >
-            <History :size="15" />
-          </UiButton>
           <div ref="sessionTabs" class="chat-session-tabs vs-scroll">
             <template v-for="item in displaySessions" :key="item.id">
               <UiTooltip :content="item.title">
@@ -1859,6 +1818,19 @@ defineExpose({
             @click="openNewCanvasMenu"
           >
             <ChevronDown :size="13" />
+          </UiButton>
+          <UiButton
+            v-if="sessionListEnabled"
+            class="chat-session-list-toggle"
+            variant="ghost"
+            size="icon"
+            :class="{ active: sessionListVisible }"
+            :aria-pressed="sessionListVisible"
+            :tip="t('chat.sessionList.toggle')"
+            :aria-label="t('chat.sessionList.toggle')"
+            @click="toggleSessionList"
+          >
+            <History :size="15" />
           </UiButton>
           <div v-if="$slots['header-actions']" class="chat-header-actions">
             <slot name="header-actions" />
@@ -2116,6 +2088,33 @@ defineExpose({
       </ChatComposer>
       </div>
     </section>
+    <aside
+      v-if="sessionListVisible"
+      class="chat-session-pane"
+      :class="sessionListMode === 'side' ? 'is-side' : 'is-drawer'"
+      @keydown="onSessionListKeydown"
+    >
+      <div
+        v-if="sessionListMode === 'side'"
+        class="chat-session-sash"
+        role="separator"
+        aria-orientation="vertical"
+        @pointerdown="startSessionListResize"
+      />
+      <ChatSessionList
+        ref="sessionListRef"
+        :rows="sessionListRows"
+        :create-disabled="!preview && !targetOptions.length"
+        :editable="!preview"
+        :session-commands="sessionCommands"
+        @select="selectFromSessionList"
+        @create="createFromSessionList"
+        @rename="renameFromSessionList"
+        @close-tab="closeSessionTab"
+        @fork="store.forkSession"
+        @compact="store.compactSession"
+      />
+    </aside>
     <Teleport to="body">
       <ReshuffleModal
         v-if="reshuffleOpen"
