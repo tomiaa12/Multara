@@ -1226,6 +1226,12 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 resume_id.as_deref(),
                 &launch_provider,
             );
+            let scanned = if prompt.contains("[实体引用] skill") || prompt.contains("[实体引用] mcp") {
+                resources::scan()
+            } else {
+                Vec::new()
+            };
+            let prompt = describe_references(&prompt, &scanned);
             // 续接会话时 build_prompt 只回传本轮任务，规则要跟着每一轮走
             let auto_plan = run.mode == RunMode::Auto
                 && runtime::capabilities(&run.runtime_id, &launch_provider).auto_plan;
@@ -3270,11 +3276,76 @@ fn referenced_resource_ids(message: &str, kind: &str) -> Vec<String> {
         .collect()
 }
 
+/// 把提示词里的 `[实体引用] <kind> <id> <label>` 改写成智能体能直接照做的一行。
+/// 每轮都要做：`--resume` 续接时不发 brief，@ 的 Skill 只能靠这里告诉它文件在哪。
+fn describe_references(prompt: &str, scanned: &[crate::models::GlobalResource]) -> String {
+    let lines: Vec<String> = prompt
+        .lines()
+        .map(|line| {
+            let Some(rest) = line.trim().strip_prefix("[实体引用] ") else {
+                return line.to_string();
+            };
+            let mut fields = rest.splitn(3, char::is_whitespace);
+            let (Some(kind), Some(id)) = (fields.next(), fields.next()) else {
+                return line.to_string();
+            };
+            let id = resources::percent_decode(id);
+            let label = resources::percent_decode(fields.next().unwrap_or("").trim());
+            let name = if label.is_empty() { id.clone() } else { label };
+            match kind {
+                "skill" => match scanned
+                    .iter()
+                    .find(|resource| resource.kind == "skill" && resource.id == id)
+                {
+                    Some(resource) => tr!(
+                        "[引用 Skill] {name}：{path}（本轮已授权。按它执行前先读这个文件；用户要修改这个 Skill 时直接改这个文件）",
+                        name = resource.name,
+                        path = std::path::Path::new(&resource.source_path)
+                            .join("SKILL.md")
+                            .display()
+                    ),
+                    None => tr!(
+                        "[引用 Skill] {name}：本机没有找到这个 Skill，用 `multara skill list` 查看",
+                        name = name
+                    ),
+                },
+                "mcp" if scanned.iter().any(|resource| {
+                    resource.kind == "mcp" && resource.id == id && resource.enabled
+                }) => tr!("[引用 MCP] {name}（本轮已授权）", name = name),
+                "mcp" => tr!(
+                    "[引用 MCP] {name}：这个 MCP 未启用，本轮不可用",
+                    name = name
+                ),
+                "task" => tr!(
+                    "[引用任务] {name}（id `{id}`）：用 `multara task get {id}` 查看",
+                    name = name,
+                    id = id
+                ),
+                "requirement" => tr!(
+                    "[引用需求] {name}（id `{id}`）：已关联到本会话；用 `multara project get {id}` 查看",
+                    name = name,
+                    id = id
+                ),
+                "session" => tr!(
+                    "[引用会话] {name}（id `{id}`）：用 `multara session history {id}` 查看对话内容",
+                    name = name,
+                    id = id
+                ),
+                "agent" => tr!("[点名智能体] {name}（id `{id}`）", name = name, id = id),
+                "squad" => tr!("[点名小队] {name}（id `{id}`）", name = name, id = id),
+                _ => line.to_string(),
+            }
+        })
+        .collect();
+    lines.join("\n")
+}
+
 /// 消息里以 `/name` 开头（或单独成词）点名的 Skill 名称。
+/// 输入框里的标签两边带 U+2060（界面用来识别标签），解析前去掉。
 fn invoked_skill_names(message: &str) -> Vec<String> {
     message
         .split_whitespace()
-        .filter_map(|word| word.strip_prefix('/'))
+        .filter_map(|word| word.trim_matches('\u{2060}').strip_prefix('/'))
         .map(|name| {
             name.trim_end_matches([',', '，', '。', '.', ':', '：'])
                 .to_string()
@@ -3331,6 +3402,14 @@ fn resource_context(
             mcp_ids.push(id);
         }
     }
+    for id in referenced_resource_ids(message, "skill") {
+        let exists = scanned
+            .iter()
+            .any(|resource| resource.id == id && resource.kind == "skill");
+        if exists && !skill_ids.contains(&id) {
+            skill_ids.push(id);
+        }
+    }
     for name in invoked_skill_names(message) {
         let mut matches: Vec<_> = scanned
             .iter()
@@ -3354,9 +3433,14 @@ fn resource_context(
         if size > 128 * 1024 || skill_bytes + size > 256 * 1024 {
             return Err(tr!("Skill 内容过大，无法安全注入：{name}", name = resource.name));
         }
-        let content = std::fs::read_to_string(skill_path).map_err(|error| error.to_string())?;
+        let content = std::fs::read_to_string(&skill_path).map_err(|error| error.to_string())?;
         skill_bytes += size;
-        skill_sections.push(format!("### {}\n{}", resource.name, content));
+        skill_sections.push(format!(
+            "### {} (`{}`)\n{}",
+            resource.name,
+            skill_path.display(),
+            content
+        ));
     }
     let mut context = if skill_sections.is_empty() {
         tr!("本次未授权任何 Multara Skill。")
@@ -4798,6 +4882,50 @@ mod tests {
         ToolErrorActor, ToolErrorTracker, MAX_CONSECUTIVE_TOOL_ERRORS,
     };
     use serde_json::{json, Value};
+
+    fn skill_resource(id: &str, name: &str, source_path: &str) -> crate::models::GlobalResource {
+        crate::models::GlobalResource {
+            id: id.into(),
+            kind: "skill",
+            owner: "multara".into(),
+            scope: "global",
+            source_label: String::new(),
+            name: name.into(),
+            description: String::new(),
+            source_path: source_path.into(),
+            enabled: true,
+            updated_at: String::new(),
+            transport: String::new(),
+            summary: String::new(),
+            needs_auth: false,
+            config_status: String::new(),
+        }
+    }
+
+    #[test]
+    fn skill_chips_are_parsed_by_id_and_by_marked_slash_name() {
+        let message = "[实体引用] skill skill%3Amultara%3Arepo repo\n\n修改这个skill \u{2060}/repo\u{2060} ，加一条";
+        assert_eq!(super::referenced_resource_ids(message, "skill"), ["skill:multara:repo"]);
+        assert_eq!(super::invoked_skill_names(message), ["repo"]);
+    }
+
+    #[test]
+    fn reference_lines_tell_the_agent_where_and_how_to_look() {
+        let prompt = "[实体引用] skill skill%3Amultara%3Arepo repo\n\
+                      [实体引用] task t1 %E4%BF%AE%E6%8C%89%E9%92%AE\n\
+                      [实体引用] session s1 %E6%97%A7%E4%BC%9A%E8%AF%9D\n\
+                      [实体引用] skill skill%3Amultara%3Agone gone\n\
+                      \n\
+                      改一下";
+        let scanned = [skill_resource("skill:multara:repo", "repo", "/skills/repo")];
+        let described = super::describe_references(prompt, &scanned);
+        assert!(described.contains("[引用 Skill] repo：/skills/repo/SKILL.md"));
+        assert!(described.contains("[引用任务] 修按钮（id `t1`）：用 `multara task get t1` 查看"));
+        assert!(described.contains("`multara session history s1`"));
+        assert!(described.contains("[引用 Skill] gone：本机没有找到这个 Skill"));
+        assert!(!described.contains("[实体引用]"));
+        assert!(described.ends_with("改一下"));
+    }
 
     fn text_event(text: &str, replaces: bool) -> NormalizedEvent {
         NormalizedEvent {

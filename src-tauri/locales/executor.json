@@ -460,5 +460,59 @@
     "zh-TW": "你上次回覆之後，這個會話裡還有以下對話（你沒有參與）：",
     "ja": "あなたの前回の返信以降、この会話では次のやり取りがありました（あなたは参加していません）：",
     "ko": "마지막으로 답한 뒤 이 대화에서 다음 내용이 오갔습니다(당신은 참여하지 않았습니다):"
+  },
+  "[引用 Skill] {name}：{path}（本轮已授权。按它执行前先读这个文件；用户要修改这个 Skill 时直接改这个文件）": {
+    "en": "[Referenced Skill] {name}: {path} (authorized for this turn. Read this file before following it; if the user wants to change this Skill, edit this file directly)",
+    "zh-TW": "[引用 Skill] {name}：{path}（本輪已授權。依它執行前先讀這個檔案；使用者要修改這個 Skill 時直接改這個檔案）",
+    "ja": "[参照 Skill] {name}：{path}（このターンで許可済み。従う前にこのファイルを読んでください。ユーザーがこの Skill の変更を求めたら、このファイルを直接編集してください）",
+    "ko": "[참조 Skill] {name}: {path} (이번 턴에 허용됨. 따르기 전에 이 파일을 먼저 읽고, 사용자가 이 Skill 수정을 원하면 이 파일을 직접 고치세요)"
+  },
+  "[引用 Skill] {name}：本机没有找到这个 Skill，用 `multara skill list` 查看": {
+    "en": "[Referenced Skill] {name}: this Skill was not found on this machine; run `multara skill list` to check",
+    "zh-TW": "[引用 Skill] {name}：本機沒有找到這個 Skill，用 `multara skill list` 查看",
+    "ja": "[参照 Skill] {name}：この Skill はこのマシンで見つかりませんでした。`multara skill list` で確認してください",
+    "ko": "[참조 Skill] {name}: 이 컴퓨터에서 이 Skill을 찾지 못했습니다. `multara skill list`로 확인하세요"
+  },
+  "[引用 MCP] {name}（本轮已授权）": {
+    "en": "[Referenced MCP] {name} (authorized for this turn)",
+    "zh-TW": "[引用 MCP] {name}（本輪已授權）",
+    "ja": "[参照 MCP] {name}（このターンで許可済み）",
+    "ko": "[참조 MCP] {name} (이번 턴에 허용됨)"
+  },
+  "[引用 MCP] {name}：这个 MCP 未启用，本轮不可用": {
+    "en": "[Referenced MCP] {name}: this MCP is not enabled and is unavailable this turn",
+    "zh-TW": "[引用 MCP] {name}：這個 MCP 未啟用，本輪不可用",
+    "ja": "[参照 MCP] {name}：この MCP は有効になっていないため、このターンでは使えません",
+    "ko": "[참조 MCP] {name}: 이 MCP는 활성화되지 않아 이번 턴에는 쓸 수 없습니다"
+  },
+  "[引用任务] {name}（id `{id}`）：用 `multara task get {id}` 查看": {
+    "en": "[Referenced task] {name} (id `{id}`): run `multara task get {id}` to view it",
+    "zh-TW": "[引用任務] {name}（id `{id}`）：用 `multara task get {id}` 查看",
+    "ja": "[参照タスク] {name}（id `{id}`）：`multara task get {id}` で確認できます",
+    "ko": "[참조 작업] {name} (id `{id}`): `multara task get {id}`로 확인하세요"
+  },
+  "[引用需求] {name}（id `{id}`）：已关联到本会话；用 `multara project get {id}` 查看": {
+    "en": "[Referenced requirement] {name} (id `{id}`): linked to this conversation; run `multara project get {id}` to view it",
+    "zh-TW": "[引用需求] {name}（id `{id}`）：已關聯到本會話；用 `multara project get {id}` 查看",
+    "ja": "[参照要件] {name}（id `{id}`）：この会話にひも付け済み。`multara project get {id}` で確認できます",
+    "ko": "[참조 요구사항] {name} (id `{id}`): 이 대화에 연결됨. `multara project get {id}`로 확인하세요"
+  },
+  "[引用会话] {name}（id `{id}`）：用 `multara session history {id}` 查看对话内容": {
+    "en": "[Referenced conversation] {name} (id `{id}`): run `multara session history {id}` to read it",
+    "zh-TW": "[引用會話] {name}（id `{id}`）：用 `multara session history {id}` 查看對話內容",
+    "ja": "[参照会話] {name}（id `{id}`）：`multara session history {id}` で会話の内容を確認できます",
+    "ko": "[참조 대화] {name} (id `{id}`): `multara session history {id}`로 대화 내용을 확인하세요"
+  },
+  "[点名智能体] {name}（id `{id}`）": {
+    "en": "[Mentioned agent] {name} (id `{id}`)",
+    "zh-TW": "[點名智慧體] {name}（id `{id}`）",
+    "ja": "[指名エージェント] {name}（id `{id}`）",
+    "ko": "[지목한 에이전트] {name} (id `{id}`)"
+  },
+  "[点名小队] {name}（id `{id}`）": {
+    "en": "[Mentioned squad] {name} (id `{id}`)",
+    "zh-TW": "[點名小隊] {name}（id `{id}`）",
+    "ja": "[指名スクワッド] {name}（id `{id}`）",
+    "ko": "[지목한 스쿼드] {name} (id `{id}`)"
   }
 }
