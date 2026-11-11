@@ -50,7 +50,7 @@ watch(squad, (value, previous) => {
   }, value.id !== previous?.id);
 }, { immediate: true });
 
-type MemberStatusKind = "working" | "idle" | "offline";
+type MemberStatusKind = "working" | "idle" | "offline" | "detecting";
 
 function memberStatusKind(agent: Agent): MemberStatusKind {
   const running = Object.values(store.runStates).some((event) =>
@@ -59,12 +59,14 @@ function memberStatusKind(agent: Agent): MemberStatusKind {
     && !event.runId.startsWith("pending:"),
   );
   if (running) return "working";
+  if (!store.runtimesReady) return "detecting";
   const runtime = store.data?.runtimes.find((item) => item.id === agent.runtimeId);
   return runtime?.status === "online" ? "idle" : "offline";
 }
 
 function memberStatusLabel(agent: Agent) {
-  return t(`squad.status.${memberStatusKind(agent)}`);
+  const kind = memberStatusKind(agent);
+  return kind === "detecting" ? t("runtime.detecting") : t(`squad.status.${kind}`);
 }
 
 function memberStatusData(agent: Agent) {

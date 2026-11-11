@@ -147,14 +147,16 @@ function agentTaskCount(agentId: string) {
   return taskCountByAgent.value.get(agentId) ?? 0;
 }
 
-function agentStatusKey(agent: Agent): "running" | "online" | "offline" {
+function agentStatusKey(agent: Agent): "running" | "online" | "offline" | "detecting" {
   if (busyAgentIds.value.has(agent.id)) return "running";
+  if (!store.runtimesReady) return "detecting";
   return agentRuntime(agent)?.status === "online" ? "online" : "offline";
 }
 
 function agentStatus(agent: Agent) {
   const key = agentStatusKey(agent);
   if (key === "running") return t("collection.status.running");
+  if (key === "detecting") return t("runtime.detecting");
   if (key === "online") return t("collection.status.online");
   return t("collection.status.offline");
 }
@@ -378,7 +380,11 @@ function runtimeSubtitle(runtime: Runtime) {
     </div>
 
     <section v-if="kind === 'runtimes'" class="page-section">
-      <div v-if="!allVisibleRuntimes.length" class="ds-card ds-empty">
+      <div v-if="!store.runtimesReady" class="ds-card ds-empty">
+        <span class="ds-empty-icon"><Boxes :size="18" /></span>
+        <h3>{{ t("runtime.detecting") }}</h3>
+      </div>
+      <div v-else-if="!allVisibleRuntimes.length" class="ds-card ds-empty">
         <span class="ds-empty-icon"><Boxes :size="18" /></span>
         <h3>{{ t("runtime.empty") }}</h3>
         <p>{{ t("runtime.emptyHint") }}</p>

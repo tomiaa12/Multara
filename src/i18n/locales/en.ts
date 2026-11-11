@@ -268,6 +268,7 @@ const catalog: MessageCatalog = {
   "runtime.unknownVersion": "Unknown version",
   "runtime.online": "Ready",
   "runtime.offline": "Not found",
+  "runtime.detecting": "Detecting…",
   "runtime.notFound": "{command} not found",
   "runtimeAccount.unknown": "Sign-in status unavailable",
   "runtimeAccount.signedOut": "Not signed in",

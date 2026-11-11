@@ -62,6 +62,8 @@ export const useAppStore = defineStore("app", () => {
   const data = ref<BootstrapData | null>(null);
   const messages = ref<Record<string, ChatMessage[]>>({});
   const loading = ref(false);
+  /** 运行时列表在首屏后后台探测；为 false 时 `data.runtimes` 还不可信，界面显示「检测中」。 */
+  const runtimesReady = ref(false);
   const error = ref("");
   const chatOpen = ref(false);
   const activeSessionId = ref("welcome");
@@ -168,7 +170,10 @@ export const useAppStore = defineStore("app", () => {
     loading.value = true;
     error.value = "";
     try {
+      const previousRuntimes = data.value?.runtimes ?? [];
       data.value = await backend.bootstrap();
+      if (runtimesReady.value) data.value.runtimes = previousRuntimes;
+      else void loadRuntimes();
       const { applyThemeSetting } = await import("../theme");
       applyThemeSetting(data.value.settings.theme);
       const { applyLanguageSetting } = await import("../i18n");
@@ -417,9 +422,21 @@ export const useAppStore = defineStore("app", () => {
     for (const [runId] of finished.slice(0, excess)) delete runStates.value[runId];
   }
 
+  async function loadRuntimes() {
+    try {
+      const runtimes = await backend.listRuntimes();
+      if (data.value) data.value.runtimes = runtimes;
+    } catch (cause) {
+      console.error("[app] runtime detection failed", cause);
+    } finally {
+      runtimesReady.value = true;
+    }
+  }
+
   async function refreshRuntimes() {
     if (!data.value) return;
     data.value.runtimes = await backend.detectRuntimes();
+    runtimesReady.value = true;
   }
 
   async function configureRuntime(runtimeId: string, maxConcurrent: number) {
@@ -1657,6 +1674,7 @@ export const useAppStore = defineStore("app", () => {
     data,
     messages,
     loading,
+    runtimesReady,
     error,
     chatOpen,
     activeSessionId,

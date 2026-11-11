@@ -267,6 +267,7 @@ const catalog: MessageCatalog = {
   "runtime.unknownVersion": "Unknown version",
   "runtime.online": "Ready",
   "runtime.offline": "Not found",
+  "runtime.detecting": "감지 중…",
   "runtime.notFound": "{command} not found",
   "runtimeAccount.unknown": "로그인 상태를 확인할 수 없습니다",
   "runtimeAccount.signedOut": "로그인 안 됨",

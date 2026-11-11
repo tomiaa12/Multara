@@ -9,6 +9,7 @@ const events = vi.hoisted(() => ({
 }));
 const backend = vi.hoisted(() => ({
   bootstrap: vi.fn(),
+  listRuntimes: vi.fn(async () => []),
   listTaskInboxSurfaces: vi.fn(),
   listChatMessages: vi.fn(async () => []),
   listAgentsAndSquads: vi.fn(async () => ({ agents: [], squads: [] })),

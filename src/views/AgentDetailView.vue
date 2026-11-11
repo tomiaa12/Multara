@@ -304,7 +304,8 @@ function openRun(run: AgentActivityRecord) {
         <div class="agent-title-line">
           <h1>{{ agent.name }}</h1>
           <span v-if="isChief" class="ds-badge" data-tone="purple">{{ t("miku.steward") }}</span>
-          <span class="ds-badge" :data-tone="runtime?.status === 'online' ? 'success' : 'warning'"><i class="ds-dot" />{{ runtime?.status === "online" ? t("agent.runtimeOnline") : t("agent.runtimeOffline") }}</span>
+          <span v-if="!store.runtimesReady" class="ds-badge"><i class="ds-dot" />{{ t("runtime.detecting") }}</span>
+          <span v-else class="ds-badge" :data-tone="runtime?.status === 'online' ? 'success' : 'warning'"><i class="ds-dot" />{{ runtime?.status === "online" ? t("agent.runtimeOnline") : t("agent.runtimeOffline") }}</span>
         </div>
         <p>{{ agentDescription(agent) }}</p>
       </div>

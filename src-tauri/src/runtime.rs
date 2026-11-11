@@ -293,10 +293,21 @@ pub fn prompt_via_stdin(provider: &str) -> bool {
 
 /// 用进程内缓存（登录 shell PATH、命令路径、版本号）。首次调用会冷启动，之后很便宜。
 /// 并发调用串行执行，后来者直接吃前一个填好的缓存。
+/// 各 CLI 的 `--version` 互不依赖，每个一个线程，总耗时取最慢的那个而不是相加。
 pub fn detect() -> Vec<Runtime> {
     static GATE: Mutex<()> = Mutex::new(());
     let _gate = GATE.lock().unwrap_or_else(PoisonError::into_inner);
-    runtime_specs().iter().map(detect_spec).collect()
+    thread::scope(|scope| {
+        let handles: Vec<_> = runtime_specs()
+            .iter()
+            .map(|spec| scope.spawn(move || detect_spec(spec)))
+            .collect();
+        handles
+            .into_iter()
+            .zip(runtime_specs())
+            .map(|(handle, spec)| handle.join().unwrap_or_else(|_| missing_runtime(spec)))
+            .collect()
+    })
 }
 
 /// 用户点“重新检测”时用：重读登录 shell PATH，清掉命令路径和版本号缓存，
@@ -327,26 +338,35 @@ fn detect_spec(spec: &RuntimeSpec) -> Runtime {
     let detected = spec.commands.iter().find_map(|command| {
         resolve_runtime_command(command, &spec.provider).map(|path| (command.clone(), path))
     });
-    let (command, path, version, status) = match detected {
-        Some((command, path)) => {
-            let version = cli_version(&path);
-            (
-                command,
-                Some(path.to_string_lossy().to_string()),
-                version,
-                "online",
-            )
-        }
-        None => (
-            spec.commands
-                .first()
-                .cloned()
-                .unwrap_or_else(|| spec.id.clone()),
-            None,
-            None,
-            "not_found",
-        ),
+    let Some((command, path)) = detected else {
+        return missing_runtime(spec);
     };
+    let version = cli_version(&path);
+    runtime_from_spec(
+        spec,
+        command,
+        Some(path.to_string_lossy().to_string()),
+        version,
+        "online",
+    )
+}
+
+fn missing_runtime(spec: &RuntimeSpec) -> Runtime {
+    let command = spec
+        .commands
+        .first()
+        .cloned()
+        .unwrap_or_else(|| spec.id.clone());
+    runtime_from_spec(spec, command, None, None, "not_found")
+}
+
+fn runtime_from_spec(
+    spec: &RuntimeSpec,
+    command: String,
+    path: Option<String>,
+    version: Option<String>,
+    status: &'static str,
+) -> Runtime {
     Runtime {
         id: spec.id.clone(),
         name: spec.name.clone(),
@@ -931,9 +951,17 @@ fn version_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
 fn probe_cli_version(path: &Path) -> Option<Option<String>> {
     let mut command = crate::process::command(path);
     command.arg("--version").env("CI", "1");
+    let started = Instant::now();
     let output = match output_with_timeout(&mut command, VERSION_PROBE_TIMEOUT) {
         Ok(Some(output)) => output,
-        Ok(None) => return None,
+        Ok(None) => {
+            crate::diag::write(&format!(
+                "SLOW {} --version 超时（{:.1}s），未缓存",
+                path.display(),
+                started.elapsed().as_secs_f64()
+            ));
+            return None;
+        }
         Err(_) => return Some(None),
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
