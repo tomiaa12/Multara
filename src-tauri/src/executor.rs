@@ -3354,6 +3354,26 @@ fn invoked_skill_names(message: &str) -> Vec<String> {
         .collect()
 }
 
+/// 单份 SKILL.md，以及本次已经内联的正文合计。等于上限时仍内联。
+const MAX_INLINE_SKILL_BYTES: u64 = 128 * 1024;
+const MAX_INLINE_SKILL_TOTAL_BYTES: u64 = 256 * 1024;
+
+fn skill_fits_inline(size: u64, used_bytes: u64) -> bool {
+    size <= MAX_INLINE_SKILL_BYTES
+        && used_bytes.saturating_add(size) <= MAX_INLINE_SKILL_TOTAL_BYTES
+}
+
+/// `inline_body` 为 None 时只给路径，不把正文写进提示词。
+fn skill_prompt_section(name: &str, path_display: &str, inline_body: Option<&str>) -> String {
+    let body = match inline_body {
+        Some(content) => content.to_string(),
+        None => tr!(
+            "文件过大，正文没有贴进本次提示词。按它执行前先读这个文件；用户要修改这个 Skill 时直接改这个文件。"
+        ),
+    };
+    format!("### {name} (`{path_display}`)\n{body}")
+}
+
 fn resource_context(
     app: &AppHandle,
     agent_id: &str,
@@ -3430,17 +3450,21 @@ fn resource_context(
         let size = std::fs::metadata(&skill_path)
             .map_err(|error| error.to_string())?
             .len();
-        if size > 128 * 1024 || skill_bytes + size > 256 * 1024 {
-            return Err(tr!("Skill 内容过大，无法安全注入：{name}", name = resource.name));
+        let displayed = skill_path.display().to_string();
+        // 正文会拼进提示词。单条命令行参数在 Linux 上不能超过 128 KiB，整段再大还会撑破进程启动上限。
+        // 放不下的 Skill 只留路径，运行时自己读文件。
+        if skill_fits_inline(size, skill_bytes) {
+            let content =
+                std::fs::read_to_string(&skill_path).map_err(|error| error.to_string())?;
+            skill_bytes += size;
+            skill_sections.push(skill_prompt_section(
+                &resource.name,
+                &displayed,
+                Some(&content),
+            ));
+        } else {
+            skill_sections.push(skill_prompt_section(&resource.name, &displayed, None));
         }
-        let content = std::fs::read_to_string(&skill_path).map_err(|error| error.to_string())?;
-        skill_bytes += size;
-        skill_sections.push(format!(
-            "### {} (`{}`)\n{}",
-            resource.name,
-            skill_path.display(),
-            content
-        ));
     }
     let mut context = if skill_sections.is_empty() {
         tr!("本次未授权任何 Multara Skill。")
@@ -4900,6 +4924,37 @@ mod tests {
             needs_auth: false,
             config_status: String::new(),
         }
+    }
+
+    #[test]
+    fn oversized_skill_stays_authorized_as_a_path() {
+        let mut used = 0_u64;
+        let mut inlined = Vec::new();
+        for (name, size) in [
+            ("a", 100 * 1024_u64),
+            ("b", 100 * 1024),
+            ("c", 100 * 1024),
+            ("d", 50 * 1024),
+            ("huge", 128 * 1024 + 1),
+        ] {
+            if super::skill_fits_inline(size, used) {
+                used += size;
+                inlined.push(name);
+            }
+        }
+        assert_eq!(inlined, ["a", "b", "d"]);
+        assert!(super::skill_fits_inline(128 * 1024, 128 * 1024));
+        assert!(!super::skill_fits_inline(128 * 1024, 128 * 1024 + 1));
+
+        let section = super::skill_prompt_section("agency", "/skills/agency/SKILL.md", None);
+        assert!(section.starts_with("### agency (`/skills/agency/SKILL.md`)"));
+        assert!(section.contains("按它执行前先读这个文件"));
+        assert!(section.contains("直接改这个文件"));
+
+        let inlined_section =
+            super::skill_prompt_section("small", "/skills/small/SKILL.md", Some("do the thing"));
+        assert!(inlined_section.contains("do the thing"));
+        assert!(!inlined_section.contains("文件过大"));
     }
 
     #[test]

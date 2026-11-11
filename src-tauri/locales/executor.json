@@ -293,11 +293,11 @@
     "ja": "作業ディレクトリを準備できません：{error}",
     "ko": "작업 디렉터리를 준비할 수 없습니다: {error}"
   },
-  "Skill 内容过大，无法安全注入：{name}": {
-    "en": "Skill content is too large to inject safely: {name}",
-    "zh-TW": "Skill 內容過大，無法安全注入：{name}",
-    "ja": "Skill の内容が大きすぎて安全に注入できません：{name}",
-    "ko": "Skill 내용이 너무 커서 안전하게 주입할 수 없습니다: {name}"
+  "文件过大，正文没有贴进本次提示词。按它执行前先读这个文件；用户要修改这个 Skill 时直接改这个文件。": {
+    "en": "This file is too large to paste into the prompt. Read it before following the skill, and edit this file directly when the user wants the skill changed.",
+    "zh-TW": "檔案過大，正文沒有貼進本次提示詞。按它執行前先讀這個檔案；使用者要修改這個 Skill 時直接改這個檔案。",
+    "ja": "ファイルが大きすぎるため、本文は今回のプロンプトに入れていません。従う前にこのファイルを読み、ユーザーが Skill の変更を求めたらこのファイルを直接編集してください。",
+    "ko": "파일이 너무 커서 본문은 이번 프롬프트에 넣지 않았습니다. 따르기 전에 이 파일을 읽고, 사용자가 Skill 변경을 원하면 이 파일을 직접 수정하세요."
   },
   "本次未授权任何 Multara Skill。": {
     "en": "No Multara Skills are authorized for this run.",
