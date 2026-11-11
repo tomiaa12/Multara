@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { t } from "../i18n";
 import { Maximize2, MessageCircle, Minimize2, Minus } from "@lucide/vue";
 import { useRoute } from "vue-router";
 import ChatPanel from "./ChatPanel.vue";
 import { dictationService } from "../dictation/dictation-service";
 import { useAppStore } from "../stores/app";
+import { escapeClosesDialog } from "./ui/dialog-escape";
 
 const props = defineProps<{
   /** 需求工作台等自带聊天时隐藏，但保持挂载以免丢会话 */
@@ -39,33 +40,54 @@ const fabVisible = computed(() => !store.chatOpen);
 const pendingPlan = computed(() =>
   store.openedSessionIds(projectId.value).some((sessionId) => Boolean(store.planStates(sessionId).latestAwaitingKey)),
 );
+
+function close() {
+  store.chatOpen = false;
+}
+
+function onKeydown(event: KeyboardEvent) {
+  // 工作台/收件箱里气泡只是隐藏挂载，不能抢 Esc；有 modal 时留给弹层
+  if (props.hidden || !store.chatOpen) return;
+  if (!escapeClosesDialog(event)) return;
+  if (document.querySelector(".modal-backdrop")) return;
+  event.preventDefault();
+  close();
+}
+
+onMounted(() => document.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
-  <!-- 工作台等自带聊天时整块隐藏；ChatPanel 仍用 v-show/retained，避免拆掉丢会话 -->
+  <!-- 工作台等自带聊天时整块隐藏；ChatPanel 用 retained 常驻，避免拆掉丢会话 -->
   <div v-show="!hidden" class="floating-chat-host">
-    <Transition name="floating-chat">
-      <section v-show="panelOpen" class="floating-chat" :class="{ expanded }">
-        <ChatPanel
-          v-if="retained"
-          :key="projectId ?? 'global'"
-          :project-id="projectId"
-          compact
-          session-commands
-          :show-editing-bar="false"
-        >
-          <template #header-actions>
-            <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="expanded = !expanded">
-              <Minimize2 v-if="expanded" :size="15" />
-              <Maximize2 v-else :size="15" />
-            </UiButton>
-            <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.floatMinimize')" @click="store.chatOpen = false">
-              <Minus :size="16" />
-            </UiButton>
-          </template>
-        </ChatPanel>
-      </section>
-    </Transition>
+    <div
+      class="floating-chat-backdrop"
+      :class="{ open: panelOpen }"
+      aria-hidden="true"
+      @click="close"
+    />
+
+    <section class="floating-chat" :class="{ open: panelOpen, expanded }" :aria-hidden="!panelOpen">
+      <ChatPanel
+        v-if="retained"
+        :key="projectId ?? 'global'"
+        :project-id="projectId"
+        compact
+        session-commands
+        :show-editing-bar="false"
+      >
+        <template #header-actions>
+          <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="expanded = !expanded">
+            <Minimize2 v-if="expanded" :size="15" />
+            <Maximize2 v-else :size="15" />
+          </UiButton>
+          <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.floatMinimize')" @click="close">
+            <Minus :size="16" />
+          </UiButton>
+        </template>
+      </ChatPanel>
+    </section>
 
     <UiButton
       v-if="fabVisible"
