@@ -23,6 +23,6 @@ watch(projects, (items) => {
         />
       </label>
     </div>
-    <ChatPanel :key="selectedProjectId ?? 'global'" :project-id="selectedProjectId" show-session-list />
+    <ChatPanel :key="selectedProjectId ?? 'global'" :project-id="selectedProjectId" />
   </div>
 </template>
