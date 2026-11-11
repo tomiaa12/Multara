@@ -1226,6 +1226,8 @@ const catalog: MessageCatalog = {
   "chat.forkSession": "複製會話",
   "chat.forkFromMessage": "從此訊息複製會話",
   "chat.compact": "壓縮脈絡",
+  "chat.exportDiagnostics": "匯出診斷檔案",
+  "chat.exportDiagnosticsFailed": "匯出診斷檔案失敗。{error}",
   "chat.close": "關閉",
   "chat.closeOthers": "關閉其他",
   "chat.closeRight": "關閉右側標籤頁",

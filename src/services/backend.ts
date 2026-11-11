@@ -947,6 +947,30 @@ export async function listChatMessages(sessionId: string): Promise<ChatMessage[]
   return invoke<ChatMessage[]>("list_chat_messages", { sessionId });
 }
 
+export interface SessionDiagnostic {
+  kind: "multara-chat-diagnostics";
+  schemaVersion: number;
+  exportedAt: string;
+  appVersion: string;
+  note: string;
+  clipped: boolean;
+  session: { id: string; title: string } | null;
+  signals: unknown;
+  runs: Array<{ id: string; status: string }>;
+  messages: ChatMessage[];
+  processLog: { matchedLines: string[]; dropped: number; missing: string[] };
+}
+
+export async function exportSessionDiagnostics(sessionId: string): Promise<SessionDiagnostic> {
+  if (!inTauri()) throw new Error("Diagnostics export requires the desktop app");
+  return invoke<SessionDiagnostic>("export_session_diagnostics", { sessionId });
+}
+
+export async function saveDiagnosticFile(path: string, contents: string): Promise<void> {
+  if (!inTauri()) throw new Error("Diagnostics export requires the desktop app");
+  await invoke("save_diagnostic_file", { path, contents });
+}
+
 export async function loadAttachmentPreview(attachmentId: string): Promise<string | null> {
   if (!inTauri() || attachmentId.startsWith("pending:")) return null;
   try {

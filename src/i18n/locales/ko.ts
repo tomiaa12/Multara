@@ -1226,6 +1226,8 @@ const catalog: MessageCatalog = {
   "chat.forkSession": "세션 복제",
   "chat.forkFromMessage": "이 메시지에서 복제",
   "chat.compact": "컨텍스트 압축",
+  "chat.exportDiagnostics": "진단 파일 내보내기",
+  "chat.exportDiagnosticsFailed": "진단 파일을 내보내지 못했습니다. {error}",
   "chat.close": "닫기",
   "chat.closeOthers": "다른 탭 닫기",
   "chat.closeRight": "오른쪽 탭 닫기",

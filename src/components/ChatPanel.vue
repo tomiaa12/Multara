@@ -28,6 +28,7 @@ import ChatMessageItem from "./ChatMessageItem.vue";
 import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue";
 import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
 import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
+import { exportChatDiagnostics } from "./chat/export-session-diagnostics";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
@@ -652,6 +653,24 @@ function closeAllSessionTabs() {
   return closeSessionTabs(displaySessions.value.map((item) => item.id));
 }
 
+async function exportDiagnostics(sessionId: string) {
+  if (props.preview) return;
+  const session = store.data?.sessions.find((item) => item.id === sessionId);
+  composerError.value = "";
+  try {
+    await exportChatDiagnostics({
+      sessionId,
+      title: session?.title ?? "",
+      sessionProcessing: store.sessionProcessing(sessionId),
+      runStates: store.runStates,
+    });
+  } catch (error) {
+    composerError.value = t("chat.exportDiagnosticsFailed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function openTabMenu(sessionId: string, event: MouseEvent) {
   event.preventDefault();
   event.stopPropagation();
@@ -665,6 +684,7 @@ const tabMenuItems = computed<ContextMenuItem[]>(() => {
   return [
     { id: "fork", label: t("chat.forkSession") },
     { id: "compact", label: t("chat.compact") },
+    { id: "export", label: t("chat.exportDiagnostics"), disabled: props.preview },
     { id: "close", label: t("chat.close") },
     { id: "close-others", label: t("chat.closeOthers"), disabled: displaySessions.value.length < 2 },
     { id: "close-right", label: t("chat.closeRight"), disabled: index < 0 || index >= displaySessions.value.length - 1 },
@@ -678,6 +698,7 @@ function onTabMenuSelect(id: string) {
   if (!sessionId) return;
   if (id === "fork") void store.forkSession(sessionId);
   if (id === "compact") void store.compactSession(sessionId);
+  if (id === "export") void exportDiagnostics(sessionId);
   if (id === "close") void closeSessionTab(sessionId);
   if (id === "close-others") void closeOtherSessionTabs(sessionId);
   if (id === "close-right") void closeSessionTabsToTheRight(sessionId);
@@ -2107,12 +2128,14 @@ defineExpose({
         :create-disabled="!preview && !targetOptions.length"
         :editable="!preview"
         :session-commands="sessionCommands"
+        :allow-export="!preview"
         @select="selectFromSessionList"
         @create="createFromSessionList"
         @rename="renameFromSessionList"
         @close-tab="closeSessionTab"
         @fork="store.forkSession"
         @compact="store.compactSession"
+        @export="exportDiagnostics"
       />
     </aside>
     <Teleport to="body">

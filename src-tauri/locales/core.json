@@ -106,5 +106,29 @@
     "zh-TW": "請處理子任務「{child_title}」（`{child_id}`），完成後向我回報。",
     "ja": "サブタスク「{child_title}」（`{child_id}`）を進め、終わったら報告してください。",
     "ko": "하위 작업 \"{child_title}\"(`{child_id}`)을 처리하고 끝나면 보고해 주세요."
+  },
+  "诊断文件必须保存到绝对路径": {
+    "en": "The diagnostic file must be saved to an absolute path",
+    "zh-TW": "診斷檔案必須儲存到絕對路徑",
+    "ja": "診断ファイルは絶対パスに保存してください",
+    "ko": "진단 파일은 절대 경로에 저장해야 합니다"
+  },
+  "诊断文件必须是 JSON": {
+    "en": "The diagnostic file must be JSON",
+    "zh-TW": "診斷檔案必須是 JSON",
+    "ja": "診断ファイルは JSON である必要があります",
+    "ko": "진단 파일은 JSON이어야 합니다"
+  },
+  "诊断文件过大": {
+    "en": "The diagnostic file is too large",
+    "zh-TW": "診斷檔案過大",
+    "ja": "診断ファイルが大きすぎます",
+    "ko": "진단 파일이 너무 큽니다"
+  },
+  "诊断文件内容不正确": {
+    "en": "The diagnostic file contents are not valid",
+    "zh-TW": "診斷檔案內容不正確",
+    "ja": "診断ファイルの内容が正しくありません",
+    "ko": "진단 파일 내용이 올바르지 않습니다"
   }
 }

@@ -48,6 +48,7 @@ pub mod runtime_accounts;
 pub mod runtime_brief;
 pub mod runtime_models;
 pub mod session;
+pub mod session_export;
 pub mod snapshot;
 pub mod snapshot_db;
 pub mod terminal;
@@ -482,6 +483,8 @@ pub fn run() {
             runtime_accounts::commands::runtime_account_login,
             list_task_runs,
             list_chat_messages,
+            session_export::export_session_diagnostics,
+            session_export::save_diagnostic_file,
             upsert_inbox_item,
             mark_inbox_read,
             mark_inbox_unread,
