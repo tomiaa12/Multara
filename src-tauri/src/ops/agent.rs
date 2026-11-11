@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
@@ -6,10 +6,12 @@ use uuid::Uuid;
 use crate::{
     builtin_agents::{self, MIKU_SYSTEM_KEY},
     models::{Agent, AgentInput},
+    resources,
     runtime,
 };
 
 pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
+    grant_miku_defaults(db)?;
     let locale = crate::app_locale::from_db(db);
     let mut statement = db
         .prepare(
@@ -86,6 +88,97 @@ pub fn get(db: &Connection, agent_id: &str) -> Result<Agent, String> {
         .into_iter()
         .find(|agent| agent.id == agent_id)
         .ok_or_else(|| tr!("智能体不存在"))
+}
+
+/// 把扫描到、且用户没有关掉的 Skill / MCP 补到 Miku 上。其他智能体不补。
+pub fn grant_miku_defaults(db: &Connection) -> Result<(), String> {
+    let resources: Vec<(String, String)> = resources::scan()
+        .into_iter()
+        .filter(|resource| resource.enabled && (resource.kind == "skill" || resource.kind == "mcp"))
+        .map(|resource| (resource.id, resource.kind.to_string()))
+        .collect();
+    grant_miku_resources(db, &resources)
+}
+
+pub(crate) fn grant_miku_resources(
+    db: &Connection,
+    resources: &[(String, String)],
+) -> Result<(), String> {
+    let miku_id: Option<String> = db
+        .query_row(
+            "SELECT id FROM agents WHERE system_key = ?1 OR id = ?1 LIMIT 1",
+            [MIKU_SYSTEM_KEY],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some(miku_id) = miku_id else {
+        return Ok(());
+    };
+    let mut statement = db
+        .prepare("SELECT resource_id FROM miku_resource_off")
+        .map_err(|error| error.to_string())?;
+    let opted_out = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<HashSet<_>>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    for (resource_id, kind) in resources {
+        if kind != "skill" && kind != "mcp" {
+            continue;
+        }
+        if opted_out.contains(resource_id) {
+            continue;
+        }
+        db.execute(
+            "INSERT OR IGNORE INTO agent_resources (agent_id, resource_id, kind) VALUES (?1, ?2, ?3)",
+            params![miku_id, resource_id, kind],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+/// 本次保存从 Miku 拿掉的资源记成关闭；重新勾上的从关闭名单里去掉。
+fn remember_miku_opt_outs(
+    db: &Connection,
+    agent_id: &str,
+    skill_ids: &[String],
+    mcp_ids: &[String],
+) -> Result<(), String> {
+    let kept: HashSet<&str> = skill_ids
+        .iter()
+        .chain(mcp_ids.iter())
+        .map(String::as_str)
+        .collect();
+    let mut statement = db
+        .prepare("SELECT resource_id FROM agent_resources WHERE agent_id = ?1")
+        .map_err(|error| error.to_string())?;
+    let previous = statement
+        .query_map([agent_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    for resource_id in &previous {
+        if kept.contains(resource_id.as_str()) {
+            continue;
+        }
+        db.execute(
+            "INSERT OR IGNORE INTO miku_resource_off (resource_id) VALUES (?1)",
+            [resource_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    for resource_id in &kept {
+        db.execute(
+            "DELETE FROM miku_resource_off WHERE resource_id = ?1",
+            [*resource_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn system_key(db: &Connection, agent_id: &str) -> Result<Option<String>, String> {
@@ -186,6 +279,9 @@ pub fn save(
             ],
         )
         .map_err(|error| error.to_string())?;
+    if is_miku {
+        remember_miku_opt_outs(&transaction, &id, &input.skill_ids, &input.mcp_ids)?;
+    }
     transaction
         .execute("DELETE FROM agent_resources WHERE agent_id = ?1", [&id])
         .map_err(|error| error.to_string())?;
@@ -413,5 +509,77 @@ mod tests {
             "unexpected system instructions: {system}"
         );
         assert_eq!(agent.instructions, "主仓库是 acme。");
+    }
+
+    #[test]
+    fn miku_defaults_on_and_other_agents_stay_off() {
+        let mut db = db();
+        db.execute(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('spec', '前端', '🤖', '', '', 'cursor', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        let resources = [
+            ("skill:demo:alpha".to_string(), "skill".to_string()),
+            ("mcp:demo:beta".to_string(), "mcp".to_string()),
+        ];
+        grant_miku_resources(&db, &resources).unwrap();
+        let miku = get(&db, "miku").unwrap();
+        assert!(miku.skill_ids.iter().any(|id| id == "skill:demo:alpha"));
+        assert!(miku.mcp_ids.iter().any(|id| id == "mcp:demo:beta"));
+        let spec = get(&db, "spec").unwrap();
+        assert!(spec.skill_ids.is_empty());
+        assert!(spec.mcp_ids.is_empty());
+
+        let skill_ids = miku
+            .skill_ids
+            .iter()
+            .filter(|id| id.as_str() != "skill:demo:alpha")
+            .cloned()
+            .collect();
+        save(
+            &mut db,
+            AgentInput {
+                id: Some("miku".into()),
+                name: miku.name.clone(),
+                avatar: miku.avatar.clone(),
+                description: miku.description.clone(),
+                instructions: miku.instructions.clone(),
+                runtime_id: miku.runtime_id.clone(),
+                model: miku.model.clone(),
+                max_concurrent_tasks: miku.max_concurrent_tasks,
+                skill_ids,
+                mcp_ids: miku.mcp_ids.clone(),
+            },
+            false,
+        )
+        .unwrap();
+        grant_miku_resources(&db, &resources).unwrap();
+        let miku = get(&db, "miku").unwrap();
+        assert!(!miku.skill_ids.iter().any(|id| id == "skill:demo:alpha"));
+        assert!(miku.mcp_ids.iter().any(|id| id == "mcp:demo:beta"));
+
+        let mut skill_ids = miku.skill_ids.clone();
+        skill_ids.push("skill:demo:alpha".into());
+        save(
+            &mut db,
+            AgentInput {
+                id: Some("miku".into()),
+                name: miku.name.clone(),
+                avatar: miku.avatar.clone(),
+                description: miku.description.clone(),
+                instructions: miku.instructions.clone(),
+                runtime_id: miku.runtime_id.clone(),
+                model: miku.model.clone(),
+                max_concurrent_tasks: miku.max_concurrent_tasks,
+                skill_ids,
+                mcp_ids: miku.mcp_ids.clone(),
+            },
+            false,
+        )
+        .unwrap();
+        let miku = get(&db, "miku").unwrap();
+        assert!(miku.skill_ids.iter().any(|id| id == "skill:demo:alpha"));
     }
 }
