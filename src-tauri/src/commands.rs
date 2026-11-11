@@ -3994,7 +3994,7 @@ pub async fn list_chat_messages(
     .map_err(|error| error.to_string())?
 }
 
-fn list_chat_messages_blocking(
+pub(crate) fn list_chat_messages_blocking(
     state: &AppState,
     session_id: String,
 ) -> Result<Vec<ChatMessage>, String> {

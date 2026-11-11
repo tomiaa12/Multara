@@ -18,10 +18,12 @@ const props = withDefaults(defineProps<{
   createDisabled?: boolean;
   editable?: boolean;
   sessionCommands?: boolean;
+  allowExport?: boolean;
 }>(), {
   createDisabled: false,
   editable: true,
   sessionCommands: false,
+  allowExport: true,
 });
 
 const emit = defineEmits<{
@@ -31,6 +33,7 @@ const emit = defineEmits<{
   "close-tab": [sessionId: string];
   fork: [sessionId: string];
   compact: [sessionId: string];
+  export: [sessionId: string];
 }>();
 
 const query = ref("");
@@ -49,6 +52,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     ...(props.sessionCommands && props.editable
       ? [{ id: "fork", label: t("chat.forkSession") }, { id: "compact", label: t("chat.compact") }]
       : []),
+    ...(props.allowExport ? [{ id: "export", label: t("chat.exportDiagnostics") }] : []),
     ...(row.open ? [{ type: "sep" as const }, { id: "close-tab", label: t("chat.closeTab") }] : []),
   ];
 });
@@ -102,6 +106,7 @@ function onMenuSelect(id: string) {
   if (id === "rename") void startRename(row);
   if (id === "fork") emit("fork", row.id);
   if (id === "compact") emit("compact", row.id);
+  if (id === "export") emit("export", row.id);
   if (id === "close-tab") emit("close-tab", row.id);
 }
 

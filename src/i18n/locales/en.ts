@@ -1227,6 +1227,8 @@ Who is this for? Any constraints?
   "chat.forkSession": "Fork session",
   "chat.forkFromMessage": "Fork from this message",
   "chat.compact": "Compact context",
+  "chat.exportDiagnostics": "Export diagnostics",
+  "chat.exportDiagnosticsFailed": "Couldn't export diagnostics. {error}",
   "chat.close": "Close",
   "chat.closeOthers": "Close others",
   "chat.closeRight": "Close tabs to the right",
