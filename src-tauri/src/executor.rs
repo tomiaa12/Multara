@@ -595,20 +595,21 @@ fn permission_prompt(app: &AppHandle) -> bool {
 type StdinSlot = Arc<Mutex<Option<ChildStdin>>>;
 
 /// 只在 `active_runs` 锁里拿出 stdin 槽位，写入和判断都在锁外做，慢 stdin 不会卡住整个执行器。
-fn session_stdin_slots(app: &AppHandle, session_id: &str) -> Vec<(StdinSlot, String)> {
+/// 只取 `agent_id` 自己的运行：会话里同时跑着别的智能体时，追加消息不能写进它们的进程。
+fn session_stdin_slots(app: &AppHandle, session_id: &str, agent_id: &str) -> Vec<(StdinSlot, String)> {
     let state = app.state::<AppState>();
     let Ok(active) = state.active_runs.lock() else {
         return Vec::new();
     };
     active
         .values()
-        .filter(|run| run.session_id == session_id)
+        .filter(|run| run.session_id == session_id && run.agent_id == agent_id)
         .map(|run| (run.stdin.clone(), run.provider.clone()))
         .collect()
 }
 
-pub fn can_steer(app: &AppHandle, session_id: &str) -> bool {
-    session_stdin_slots(app, session_id)
+pub fn can_steer(app: &AppHandle, session_id: &str, agent_id: &str) -> bool {
+    session_stdin_slots(app, session_id, agent_id)
         .iter()
         .any(|(slot, _)| match slot.try_lock() {
             Ok(stdin) => stdin.is_some(),
@@ -618,8 +619,8 @@ pub fn can_steer(app: &AppHandle, session_id: &str) -> bool {
         })
 }
 
-pub fn steer(app: &AppHandle, session_id: &str, text: &str) -> Result<bool, String> {
-    let Some((slot, provider)) = session_stdin_slots(app, session_id).into_iter().next() else {
+pub fn steer(app: &AppHandle, session_id: &str, agent_id: &str, text: &str) -> Result<bool, String> {
+    let Some((slot, provider)) = session_stdin_slots(app, session_id, agent_id).into_iter().next() else {
         return Ok(false);
     };
     let mut stdin = slot
@@ -1495,6 +1496,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     child: child.clone(),
                     supervisor_alive,
                     session_id: run.session_id.clone(),
+                    agent_id: run.agent_id.clone(),
                     provider: launch_provider.clone(),
                     stdin: stdin_slot.clone(),
                     permissions: permissions.clone(),

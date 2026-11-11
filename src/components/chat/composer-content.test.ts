@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
 import {
+  carriedMentions,
   formatAgentPrompt,
   locatedChipPath,
   isOversizedInlineSelection,
@@ -19,6 +20,37 @@ const chip: ComposerNode = {
   endLine: 2,
   text: "const a = 1;",
 };
+
+describe("carriedMentions", () => {
+  const mention = (referenceKind: "agent" | "squad" | "skill", referenceId: string): ComposerNode => ({
+    type: "chip",
+    id: `${referenceKind}:${referenceId}`,
+    referenceId,
+    referenceKind,
+    label: referenceId,
+  });
+
+  test("carries @ agents and squads other than the session target into the next draft", () => {
+    const nodes: ComposerNode[] = [
+      mention("agent", "a1"),
+      { type: "text", value: " 改一下按钮 " },
+      mention("agent", "a1"),
+      mention("squad", "team"),
+      mention("skill", "s1"),
+      chip,
+    ];
+    expect(carriedMentions(nodes, "agent:miku")).toEqual([
+      mention("agent", "a1"),
+      mention("squad", "team"),
+      { type: "text", value: " " },
+    ]);
+  });
+
+  test("carries nothing when the message only mentions the session target", () => {
+    expect(carriedMentions([mention("agent", "miku"), { type: "text", value: "hi" }], "agent:miku")).toEqual([]);
+    expect(carriedMentions([{ type: "text", value: "hi" }], "agent:miku")).toEqual([]);
+  });
+});
 
 describe("isPastedImage", () => {
   test("keeps clipboard images that were saved under their original filename", () => {

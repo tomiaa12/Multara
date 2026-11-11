@@ -17,6 +17,7 @@ pub struct ActiveRun {
     /// `spawn_run` 线程还在。线程退出（包括 panic）后变为 false，轮询线程负责收尸。
     pub supervisor_alive: Arc<AtomicBool>,
     pub session_id: String,
+    pub agent_id: String,
     pub provider: String,
     pub stdin: Arc<Mutex<Option<ChildStdin>>>,
     pub permissions: Arc<Mutex<HashMap<String, Sender<String>>>>,

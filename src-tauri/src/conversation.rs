@@ -77,7 +77,10 @@ pub fn build_prompt(
     runtime_id: &str,
 ) -> String {
     if resume_id.is_some() && resumes_via_cli(runtime_id) {
-        return assignment.to_string();
+        if history.is_empty() {
+            return assignment.to_string();
+        }
+        return format!("{history}{}{assignment}", tr!("用户任务："));
     }
     format!(
         "{brief}\n\n{}\n{history}{}{assignment}",
@@ -304,7 +307,7 @@ pub fn prepare(
         resume_id = None;
     }
     let mut history = if resume_id.is_some() && resumes_via_cli(provider) {
-        String::new()
+        missed_block(&db, session_id, agent_id)?
     } else {
         history_block(&db, session_id)?
     };
@@ -318,14 +321,23 @@ pub fn prepare(
     Ok((resume_id, history))
 }
 
-pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String> {
+/// 从最新一条往回取（不含本轮的用户消息），超出预算就停，不把整个会话都读出来。
+/// `since` 给定时只取它之后的消息。
+fn history_entries(
+    db: &Connection,
+    session_id: &str,
+    since: Option<&str>,
+) -> Result<Vec<String>, String> {
     let mut statement = db
         .prepare(
-            "SELECT m.role, m.content, CASE WHEN COALESCE(m.audience_type, 'user') = 'agent' THEN a.name END
+            "SELECT m.role, m.content,
+                    CASE WHEN m.role = 'assistant' OR COALESCE(m.audience_type, 'user') = 'agent'
+                         THEN a.name END
              FROM messages m LEFT JOIN agents a ON a.id = m.agent_id
              WHERE m.session_id=?1
                AND m.role IN ('user', 'assistant')
                AND COALESCE(m.message_kind, 'message') = 'message'
+               AND (?2 IS NULL OR m.created_at > ?2)
                AND m.id != COALESCE((
                  SELECT id FROM messages
                  WHERE session_id=?1 AND role='user'
@@ -336,7 +348,7 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([session_id], |row| {
+        .query_map(params![session_id, since], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -344,16 +356,15 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
             ))
         })
         .map_err(|error| error.to_string())?;
-    // 从最新一条往回取，超出预算就停，不把整个会话都读出来。
     let mut selected = Vec::new();
     let mut used = 0usize;
     for row in rows {
-        let (role, content, member) = row.map_err(|error| error.to_string())?;
+        let (role, content, speaker) = row.map_err(|error| error.to_string())?;
         let text = clip(&content, ENTRY_CHAR_LIMIT);
         if text.is_empty() {
             continue;
         }
-        let label = if let Some(name) = member {
+        let label = if let Some(name) = speaker.filter(|name| !name.trim().is_empty()) {
             format!("{name}：")
         } else if role == "assistant" {
             tr!("助手：").to_string()
@@ -368,6 +379,37 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
         used += size;
         selected.push(entry);
     }
+    selected.reverse();
+    Ok(selected)
+}
+
+/// 续接 CLI 会话时运行时只记得自己参与过的轮次。把它上次回复之后、别人在这个会话里的问答补给它，
+/// 否则用户 @ 过别的智能体之后再回来，它对中间发生的事一无所知。
+pub fn missed_block(db: &Connection, session_id: &str, agent_id: &str) -> Result<String, String> {
+    let last_reply: Option<String> = db
+        .query_row(
+            "SELECT MAX(created_at) FROM messages
+             WHERE session_id=?1 AND role='assistant' AND agent_id=?2",
+            params![session_id, agent_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let Some(last_reply) = last_reply else {
+        return history_block(db, session_id);
+    };
+    let entries = history_entries(db, session_id, Some(&last_reply))?;
+    if entries.is_empty() {
+        return Ok(String::new());
+    }
+    Ok(format!(
+        "{}\n{}\n\n",
+        tr!("你上次回复之后，这个会话里还有以下对话（你没有参与）："),
+        entries.join("\n\n")
+    ))
+}
+
+pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String> {
+    let selected = history_entries(db, session_id, None)?;
     let compact: Option<String> = db
         .query_row(
             "SELECT compact_summary FROM chat_sessions WHERE id=?1",
@@ -383,7 +425,6 @@ pub fn history_block(db: &Connection, session_id: &str) -> Result<String, String
             .map(|summary| format!("{}\n{}\n\n", tr!("对话摘要："), summary.trim()))
             .unwrap_or_default());
     }
-    selected.reverse();
     let history = format!("{}\n{}\n\n", tr!("对话历史："), selected.join("\n\n"));
     Ok(match compact {
         Some(summary) => format!("{}\n{}\n\n{history}", tr!("对话摘要："), summary.trim()),
@@ -405,7 +446,8 @@ mod tests {
 
     use super::{
         apply_resume, build_prompt, clear_runtime_transcripts, clear_session, cursor_project_slug,
-        history_block, id_from_line, load_id, mark_rollback_reask, save_id, take_rollback_note,
+        history_block, id_from_line, load_id, mark_rollback_reask, missed_block, save_id,
+        take_rollback_note,
     };
 
     fn db() -> Connection {
@@ -530,13 +572,71 @@ mod tests {
     fn resume_sends_only_the_new_user_turn() {
         let prompt = build_prompt(
             "你是助手\n\n工作区：/repo\n\n无 Skills",
-            "对话历史：\n用户：上一轮\n\n",
+            "",
             "帮我修复",
             Some("chat-1"),
             "cursor",
         );
         assert_eq!(prompt, "帮我修复");
-        assert!(!prompt.contains("上一轮"));
+    }
+
+    #[test]
+    fn resume_prepends_turns_the_agent_missed_without_the_brief() {
+        let prompt = build_prompt(
+            "你是助手\n\n工作区：/repo\n\n无 Skills",
+            "你上次回复之后，这个会话里还有以下对话（你没有参与）：\n智能体1：\n改好了\n\n",
+            "继续",
+            Some("chat-1"),
+            "cursor",
+        );
+        assert!(!prompt.contains("你是助手"));
+        assert!(prompt.contains("智能体1：\n改好了"));
+        assert!(prompt.ends_with("用户任务：继续"));
+    }
+
+    #[test]
+    fn missed_block_keeps_only_other_turns_after_the_agents_last_reply() {
+        let db = db();
+        db.execute_batch(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id)
+             VALUES ('miku', 'Miku', 'M', '', '', 'cursor'), ('a1', '智能体1', 'M', '', '', 'cursor');",
+        )
+        .unwrap();
+        db.execute_batch(
+            "INSERT INTO messages (id, session_id, role, content, agent_id, created_at) VALUES
+               ('u1', 'sess', 'user', '你好', NULL, 't1'),
+               ('m1', 'sess', 'assistant', 'Miku 在', 'miku', 't2'),
+               ('u2', 'sess', 'user', '[实体引用] agent a1 智能体1\n\n帮我改按钮', NULL, 't3'),
+               ('r2', 'sess', 'assistant', '改好了', 'a1', 't4'),
+               ('u3', 'sess', 'user', '再调一下颜色', NULL, 't5');",
+        )
+        .unwrap();
+        let missed = missed_block(&db, "sess", "miku").unwrap();
+        assert!(!missed.contains("Miku 在"));
+        assert!(!missed.contains("你好"));
+        assert!(missed.contains("帮我改按钮"));
+        assert!(missed.contains("智能体1：\n改好了"));
+        assert!(!missed.contains("再调一下颜色"));
+
+        assert_eq!(missed_block(&db, "sess", "a1").unwrap(), "");
+    }
+
+    #[test]
+    fn history_labels_assistant_replies_with_the_agent_name() {
+        let db = db();
+        db.execute_batch(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id)
+             VALUES ('a1', '智能体1', 'M', '', '', 'cursor');
+             INSERT INTO messages (id, session_id, role, content, agent_id, created_at) VALUES
+               ('u1', 'sess', 'user', '问题', NULL, 't1'),
+               ('r1', 'sess', 'assistant', '回答', 'a1', 't2'),
+               ('r0', 'sess', 'assistant', '旧回答', NULL, 't2a'),
+               ('u2', 'sess', 'user', '追问', NULL, 't3');",
+        )
+        .unwrap();
+        let history = history_block(&db, "sess").unwrap();
+        assert!(history.contains("智能体1：\n回答"));
+        assert!(history.contains("助手：\n旧回答"));
     }
 
     #[test]

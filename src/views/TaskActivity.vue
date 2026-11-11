@@ -11,7 +11,7 @@ import UserPrompt from "../components/chat/UserPrompt.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { isGenUiEnabled } from "../components/chat/genui/block";
-import { formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { carriedMentions, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
@@ -50,6 +50,7 @@ const composer = ref<{
   focus: () => void;
   insertChip: (item: EditorSelectionContext) => void;
   openAttachMenu: (defaultCategory?: string) => void;
+  restore: (nodes: ComposerNode[]) => void;
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
 } | null>(null);
 const draftEmpty = ref(true);
@@ -315,8 +316,9 @@ function removePaste(path: string) {
 }
 
 function submit() {
+  const nodes = composer.value?.serialize().nodes ?? [];
   const text = formatAgentPrompt(
-    composer.value?.serialize().nodes ?? [],
+    nodes,
     { directMentions: true, workspaces: workspaces.value },
   ).trim();
   if (!text && !pastes.value.length) return;
@@ -329,6 +331,11 @@ function submit() {
   pastes.value = [];
   composer.value?.clear();
   draftEmpty.value = true;
+  const carried = carriedMentions(nodes, targetValue.value);
+  if (carried.length) {
+    composer.value?.restore(carried);
+    draftEmpty.value = false;
+  }
 }
 
 function stop() {
