@@ -16,7 +16,7 @@ import { useCanvasStore } from "../stores/canvas";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
-import { formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
+import { carriedMentions, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
 import ReshuffleModal from "./chat/ReshuffleModal.vue";
 import { countMessagesFrom, reaskTouchesFiles } from "../stores/reask";
 import { useDiffStore } from "../stores/diff";
@@ -787,6 +787,15 @@ function submit() {
   composerError.value = "";
   store.clearComposerNotice();
   followBottom.value = true;
+  const carried = carriedMentions(serialized.nodes, targetValue.value);
+  if (carried.length) {
+    const sessionId = session.value.id;
+    drafts.value[sessionId] = carried;
+    composerEmpty.value = false;
+    void nextTick(() => {
+      if (session.value?.id === sessionId) composerInput.value?.restore(carried);
+    });
+  }
   const command = content.trim();
   if (props.sessionCommands && command === "/compact") {
     void store.compactSession(session.value.id);

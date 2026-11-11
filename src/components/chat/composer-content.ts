@@ -76,6 +76,23 @@ export function isReferenceChip(node: ComposerNode): node is ComposerReferenceCh
   return node.type === "chip" && "referenceKind" in node;
 }
 
+/**
+ * 发出的消息 @ 了会话目标以外的智能体/小队时，把这些 @ 带到下一条输入框里：
+ * 追问默认还发给刚才点名的对象，用户删掉 @ 才回到会话目标。
+ * `sessionTarget` 形如 `agent:<id>` / `squad:<id>`。
+ */
+export function carriedMentions(nodes: ComposerNode[], sessionTarget: string): ComposerNode[] {
+  const seen = new Set<string>();
+  const chips = nodes.filter((node): node is ComposerReferenceChipNode => {
+    if (!isReferenceChip(node) || (node.referenceKind !== "agent" && node.referenceKind !== "squad")) return false;
+    const key = `${node.referenceKind}:${node.referenceId}`;
+    if (key === sessionTarget || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return chips.length ? [...chips, { type: "text", value: " " }] : [];
+}
+
 export function isFileChip(node: ComposerNode): node is ComposerFileChipNode {
   return node.type === "chip" && "path" in node;
 }

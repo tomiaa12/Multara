@@ -4662,9 +4662,18 @@ fn send_message_inner_ext(
         }
     }
     ensure_session_targets_mode_supported(&state, &session_id, &explicit_targets, requested_mode)?;
-    let can_steer = explicit_targets.is_empty()
-        && executor::can_steer(&app, &session_id)
-        && running_mode_allows_steer(&state, &session_id, requested_mode)?;
+    let steer_agent_id = if explicit_targets.is_empty() {
+        session_target_agent(&*state.lock_db()?, &session_id)?
+    } else {
+        None
+    };
+    let can_steer = match steer_agent_id.as_deref() {
+        Some(agent_id) => {
+            executor::can_steer(&app, &session_id, agent_id)
+                && running_mode_allows_steer(&state, &session_id, agent_id, requested_mode)?
+        }
+        None => false,
+    };
     let mut db = state.lock_db()?;
     let transaction = db.transaction().map_err(|error| error.to_string())?;
     let mut implicit_plan_event: Option<(String, String, TimelineItem)> = None;
@@ -4891,7 +4900,8 @@ fn send_message_inner_ext(
         if let Some((run_id, agent_id, item)) = implicit_plan_event {
             executor::emit_timeline_event(&app, &run_id, &session_id, &agent_id, item);
         }
-        if executor::steer(&app, &session_id, assignment.trim())? {
+        let steer_agent_id = steer_agent_id.as_deref().unwrap_or_default();
+        if executor::steer(&app, &session_id, steer_agent_id, assignment.trim())? {
             return Ok((vec![user], Vec::new(), true));
         }
         // 运行刚好在这一刻结束：退回普通派发，别把已经落库的消息丢掉。
@@ -5826,17 +5836,40 @@ fn ensure_session_targets_mode_supported(
     Ok(())
 }
 
+/// 不带 @ 的消息由谁执行：会话目标是智能体就是它，是小队就是队长。
+fn session_target_agent(db: &Connection, session_id: &str) -> Result<Option<String>, String> {
+    let (target_type, target_id): (String, String) = db
+        .query_row(
+            "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| tr!("聊天不存在"))?;
+    if target_type != "squad" {
+        return Ok(Some(target_id));
+    }
+    db.query_row(
+        "SELECT leader_agent_id FROM squads WHERE id=?1",
+        [&target_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
 fn running_mode_allows_steer(
     state: &AppState,
     session_id: &str,
+    agent_id: &str,
     requested_mode: RunMode,
 ) -> Result<bool, String> {
     let active: Option<(String, String)> = state
         .lock_db()?
         .query_row(
             "SELECT mode, runtime_id FROM agent_runs
-             WHERE session_id=?1 AND status='running' ORDER BY started_at DESC LIMIT 1",
-            [session_id],
+             WHERE session_id=?1 AND agent_id=?2 AND status='running'
+             ORDER BY started_at DESC LIMIT 1",
+            params![session_id, agent_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
