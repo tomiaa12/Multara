@@ -3289,6 +3289,7 @@ fn resource_context(
 ) -> Result<(String, Option<tempfile::NamedTempFile>), String> {
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
+    crate::ops::agent::grant_miku_defaults(&db)?;
     let mut statement = db
         .prepare(
             "SELECT resource_id, kind FROM agent_resources WHERE agent_id = ?1 ORDER BY resource_id",
