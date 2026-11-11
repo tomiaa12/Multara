@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { t } from "../i18n";
-import { ArrowDown, ArrowUp, ChevronDown, FileText, LoaderCircle, MessageSquare, MessageSquarePlus, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
 import AgentAvatar from "./AgentAvatar.vue";
 import ChatComposer from "./chat/ChatComposer.vue";
 import { chatMessagesKey } from "./chat/context-usage";
@@ -25,6 +25,9 @@ import {
   listDirtyEditorPaths,
 } from "./workbench/unsaved-editor";
 import ChatMessageItem from "./ChatMessageItem.vue";
+import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue";
+import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
+import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
@@ -52,7 +55,6 @@ const emit = defineEmits<{
 const props = withDefaults(defineProps<{
   projectId?: string | null;
   sessionId?: string | null;
-  showSessionList?: boolean;
   compact?: boolean;
   embedded?: boolean;
   historyViewOnly?: boolean;
@@ -84,7 +86,6 @@ const props = withDefaults(defineProps<{
 }>(), {
   projectId: null,
   sessionId: null,
-  showSessionList: false,
   compact: false,
   embedded: false,
   historyViewOnly: false,
@@ -329,11 +330,6 @@ const targetLabel = computed(() =>
   props.preview
     ? t("chat.sampleAgent")
     : targetOptions.value.find((option) => option.value === targetValue.value)?.label ?? t("chat.pickTarget"),
-);
-const headerSubtitle = computed(() =>
-  !props.preview && sessionProcessing.value
-    ? t("chat.executingQueued", { n: sessionQueue.value.length })
-    : targetLabel.value,
 );
 const resolvedPlaceholderPlace = computed(() => {
   if (props.placeholderPlace) return props.placeholderPlace;
@@ -687,6 +683,116 @@ function onTabMenuSelect(id: string) {
   if (id === "close-right") void closeSessionTabsToTheRight(sessionId);
   if (id === "close-all") void closeAllSessionTabs();
 }
+
+// ---------- 会话列表：够宽时并排，窄时收进抽屉；关掉标签的会话也在这里 ----------
+const sessionListEnabled = computed(() => !props.sessionId && !props.embedded);
+const panelWidth = ref(0);
+const sessionListMode = computed(() => sessionListLayout(panelWidth.value));
+const sessionListPrefs = ref(loadSessionListPrefs(resolvedPlaceholderPlace.value));
+const sessionDrawerOpen = ref(false);
+const sessionListVisible = computed(() =>
+  sessionListEnabled.value
+  && (sessionListMode.value === "side" ? sessionListPrefs.value.open : sessionDrawerOpen.value),
+);
+const sessionListWidth = computed(() => clampSessionListWidth(sessionListPrefs.value.width, panelWidth.value));
+const sessionListRef = ref<{ focusSearch: () => void } | null>(null);
+let panelResize: ResizeObserver | null = null;
+
+const sessionListRows = computed<SessionListRow[]>(() => {
+  if (props.preview) {
+    return previewTabs.value.map((tab) => ({
+      id: tab.id,
+      title: tab.title,
+      activityAt: "",
+      open: true,
+      active: tab.id === session.value?.id,
+      running: false,
+      awaitingPlan: false,
+    }));
+  }
+  const opened = new Set(store.openedSessionIds(props.projectId));
+  return sessions.value.map((item) => ({
+    id: item.id,
+    title: item.title,
+    activityAt: latestActivity(item.updatedAt, item.createdAt, store.messages[item.id]?.at(-1)?.createdAt),
+    open: opened.has(item.id),
+    active: item.id === session.value?.id,
+    running: store.sessionProcessing(item.id),
+    awaitingPlan: Boolean(store.planStates(item.id).latestAwaitingKey),
+  }));
+});
+
+function persistSessionListPrefs() {
+  saveSessionListPrefs(resolvedPlaceholderPlace.value, sessionListPrefs.value);
+}
+
+async function toggleSessionList() {
+  if (sessionListMode.value === "side") {
+    sessionListPrefs.value = { ...sessionListPrefs.value, open: !sessionListPrefs.value.open };
+    persistSessionListPrefs();
+    return;
+  }
+  sessionDrawerOpen.value = !sessionDrawerOpen.value;
+  if (!sessionDrawerOpen.value) return;
+  await nextTick();
+  sessionListRef.value?.focusSearch();
+}
+
+function closeSessionDrawer() {
+  if (!sessionDrawerOpen.value) return;
+  sessionDrawerOpen.value = false;
+  void nextTick(() => composerInput.value?.focus());
+}
+
+async function selectFromSessionList(sessionId: string) {
+  await selectSession(sessionId);
+  closeSessionDrawer();
+}
+
+async function createFromSessionList() {
+  sessionDrawerOpen.value = false;
+  await createSession();
+}
+
+function renameFromSessionList(sessionId: string, title: string) {
+  store.updateSessionTitle(sessionId, title).catch((cause) => {
+    composerError.value = cause instanceof Error ? cause.message : String(cause);
+  });
+}
+
+function onSessionListKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape" || sessionListMode.value !== "drawer") return;
+  // 拦在这里，别让右下角气泡的 Esc 把整个面板关掉
+  event.preventDefault();
+  event.stopPropagation();
+  closeSessionDrawer();
+}
+
+function startSessionListResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const handle = event.currentTarget as HTMLElement;
+  handle.setPointerCapture(event.pointerId);
+  const startX = event.clientX;
+  const startWidth = sessionListWidth.value;
+  const onMove = (move: PointerEvent) => {
+    const width = clampSessionListWidth(startWidth + move.clientX - startX, panelWidth.value);
+    sessionListPrefs.value = { ...sessionListPrefs.value, width };
+  };
+  const onUp = () => {
+    handle.removeEventListener("pointermove", onMove);
+    handle.removeEventListener("pointerup", onUp);
+    handle.removeEventListener("pointercancel", onUp);
+    persistSessionListPrefs();
+  };
+  handle.addEventListener("pointermove", onMove);
+  handle.addEventListener("pointerup", onUp);
+  handle.addEventListener("pointercancel", onUp);
+}
+
+watch(sessionListMode, (mode) => {
+  if (mode === "side") sessionDrawerOpen.value = false;
+});
 
 const composerInput = ref<{
   focus: () => void;
@@ -1420,6 +1526,13 @@ watch(
 onMounted(() => {
   void ensureSession();
   canvas.startListening();
+  if (chatRoot.value) {
+    // 隐藏着的气泡实例宽度是 0，会停在抽屉模式且抽屉关着，不会和工作台的列表抢
+    panelResize = new ResizeObserver(([entry]) => {
+      panelWidth.value = entry.contentRect.width;
+    });
+    panelResize.observe(chatRoot.value);
+  }
   void nextTick(() => {
     sessionTabs.value?.addEventListener("wheel", onTabsWheel, { passive: false });
     bindMessageListResize();
@@ -1535,6 +1648,8 @@ onBeforeUnmount(() => {
   cancelStickFollowRelease = null;
   messageListResize?.disconnect();
   messageListResize = null;
+  panelResize?.disconnect();
+  panelResize = null;
   window.clearInterval(liveTimer);
   sessionTabs.value?.removeEventListener("wheel", onTabsWheel);
 });
@@ -1638,41 +1753,64 @@ defineExpose({
     class="shared-chat-panel"
     :class="{
       compact,
-      'with-session-list': showSessionList,
+      'has-session-side': sessionListVisible && sessionListMode === 'side',
       'is-sticky-user-turn': stickyUserTurn,
     }"
+    :style="sessionListVisible && sessionListMode === 'side' ? { '--chat-session-list-width': `${sessionListWidth}px` } : undefined"
     tabindex="-1"
     @pointerdown="onChatPointerDown"
     @keydown="onChatKeydown"
   >
-    <aside v-if="showSessionList" class="thread-list">
-      <div class="thread-heading">
-        <strong>{{ t("chat.threadsTitle") }}</strong>
-        <UiButton class="icon-button" :tip="t('chat.newChat')" :disabled="!targetOptions.length" @click="createSession">
-          <MessageSquarePlus :size="15" />
-        </UiButton>
-      </div>
-      <div class="thread-items vs-scroll">
-        <UiButton
-          v-for="item in sessions"
-          :key="item.id"
-          class="thread"
-          :class="{ active: item.id === session?.id }"
-          @click="selectSession(item.id)"
-        >
-          <strong>{{ item.title }}</strong>
-          <small>{{ item.targetType === "squad" ? t("nav.squads") : t("nav.agents") }}</small>
-        </UiButton>
-      </div>
+    <div
+      v-if="sessionListVisible && sessionListMode === 'drawer'"
+      class="chat-session-drawer-backdrop"
+      aria-hidden="true"
+      @click="closeSessionDrawer"
+    />
+    <aside
+      v-if="sessionListVisible"
+      class="chat-session-pane"
+      :class="sessionListMode === 'side' ? 'is-side' : 'is-drawer'"
+      @keydown="onSessionListKeydown"
+    >
+      <ChatSessionList
+        ref="sessionListRef"
+        :rows="sessionListRows"
+        :create-disabled="!preview && !targetOptions.length"
+        :editable="!preview"
+        :session-commands="sessionCommands"
+        @select="selectFromSessionList"
+        @create="createFromSessionList"
+        @rename="renameFromSessionList"
+        @close-tab="closeSessionTab"
+        @fork="store.forkSession"
+        @compact="store.compactSession"
+      />
+      <div
+        v-if="sessionListMode === 'side'"
+        class="chat-session-sash"
+        role="separator"
+        aria-orientation="vertical"
+        @pointerdown="startSessionListResize"
+      />
     </aside>
 
     <section class="chat-surface">
-      <header v-if="!embedded" class="chat-surface-header" :class="{ 'is-tabs': !showSessionList }">
-        <div v-if="showSessionList">
-          <strong>{{ session?.title ?? t("chat.newChatLabel") }}</strong>
-          <small>{{ headerSubtitle }}</small>
-        </div>
-        <div v-else class="chat-session-bar">
+      <header v-if="!embedded" class="chat-surface-header is-tabs">
+        <div class="chat-session-bar">
+          <UiButton
+            v-if="sessionListEnabled"
+            class="chat-session-list-toggle"
+            variant="ghost"
+            size="icon"
+            :class="{ active: sessionListVisible }"
+            :aria-pressed="sessionListVisible"
+            :tip="t('chat.sessionList.toggle')"
+            :aria-label="t('chat.sessionList.toggle')"
+            @click="toggleSessionList"
+          >
+            <History :size="15" />
+          </UiButton>
           <div ref="sessionTabs" class="chat-session-tabs vs-scroll">
             <template v-for="item in displaySessions" :key="item.id">
               <UiTooltip :content="item.title">
