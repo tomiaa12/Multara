@@ -9,7 +9,7 @@ description: Show cards, stats, tables, charts and forms in a chat reply with mu
 
 ```
 One sentence answers it        → plain text
-Pick among a few options       → multara-questions
+A mutually exclusive call only the user can make → multara-questions
 Look at data / fill in fields  → multara-ui block (card / stats / table / chart / form)
 ```
 

@@ -9,7 +9,7 @@ description: 채팅 답변에서 multara-ui 코드 블록으로 카드, 통계, 
 
 ```
 한 문장으로 답할 수 있음     → 텍스트만
-몇 가지 선택지 중 고르기     → multara-questions
+사용자만 정할 수 있는 양자택일 → multara-questions
 데이터 보기 / 여러 항목 입력 → multara-ui 블록 (card / stats / table / chart / form)
 ```
 

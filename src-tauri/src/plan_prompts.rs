@@ -4,19 +4,19 @@
 pub fn reply_rules(locale: &str) -> &'static str {
     match locale {
         "en" => "[Plan output rules]\n\
-- If something must be clarified first, only ask questions this turn and do not write a plan; write the plan after the user answers.\n\
+- Only when a key question would change the plan itself and you cannot reasonably decide it yourself, ask just that this turn and do not write a plan; write the plan after the user answers. Otherwise state your assumptions in the plan and write it directly.\n\
 - When you write a plan, do not append questions or multiple-choice prompts at the end, do not ask the user to reply to confirm, and do not explain how to exit plan mode. The UI provides an \"Approve & run\" button, and the user's replies are treated as revision feedback.",
         "zh-TW" => "【計畫輸出規則】\n\
-- 有必須先釐清的問題時，本輪只提問、不出計畫，等使用者回答後再出計畫。\n\
+- 只有會改變計畫本身、你又無法自己合理判斷的關鍵問題，才在本輪只提問、不出計畫，等使用者回答後再出；其餘情況把假設寫進計畫裡，直接出計畫。\n\
 - 出計畫時，結尾不要再附帶提問或選擇題，也不要請使用者回覆確認、不要說明如何退出計畫模式；介面會提供「核准並執行」按鈕，使用者的回覆會作為修改意見。",
         "ja" => "【計画の出力ルール】\n\
-- 先に確認すべき点がある場合、このターンでは質問だけして計画は出さず、ユーザーの回答を待ってから計画を出してください。\n\
+- 計画そのものを左右し、自分では妥当に判断できない重要な点があるときだけ、このターンは質問だけして計画は出さず、回答を待ってから計画を出してください。それ以外は前提を計画に書いたうえで、そのまま計画を出してください。\n\
 - 計画を出すときは、末尾に質問や選択肢を付けず、ユーザーに確認の返信を求めたり、計画モードの終了方法を説明したりしないでください。画面に「承認して実行」ボタンがあり、ユーザーの返信は修正意見として扱われます。",
         "ko" => "【계획 출력 규칙】\n\
-- 먼저 확인해야 할 점이 있으면 이번 턴에는 질문만 하고 계획은 내지 마세요. 사용자가 답한 뒤 계획을 작성하세요.\n\
+- 계획 자체를 바꿀 핵심 질문이 있고 스스로 합리적으로 판단할 수 없을 때만, 이번 턴에는 그 질문만 하고 계획은 내지 마세요. 사용자가 답한 뒤 계획을 작성하세요. 그 밖에는 가정을 계획에 적고 바로 계획을 작성하세요.\n\
 - 계획을 작성할 때는 끝에 질문이나 선택지를 덧붙이지 말고, 사용자에게 확인 답장을 요청하거나 계획 모드 종료 방법을 설명하지 마세요. 화면에 「승인 후 실행」 버튼이 있고, 사용자의 답장은 수정 의견으로 반영됩니다.",
         _ => "【计划输出规则】\n\
-- 有必须先澄清的问题时，本轮只提问、不出计划，等用户回答后再出计划。\n\
+- 只有会改变计划本身、你又无法自己合理判断的关键问题，才在本轮只提问、不出计划，等用户回答后再出；其余情况把假设写进计划里，直接出计划。\n\
 - 出计划时，末尾不要再附带提问或选择题，也不要请用户回复确认、不要说明如何退出计划模式；界面会提供「批准并执行」按钮，用户的回复会作为修改意见。",
     }
 }

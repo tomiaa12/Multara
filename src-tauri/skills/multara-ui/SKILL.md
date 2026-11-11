@@ -9,7 +9,7 @@ description: 在聊天回复里用 multara-ui 代码块展示卡片、统计、�
 
 ```
 一句话能答清    → 纯文字
-在几个选项里选  → multara-questions
+非要用户拍板的互斥选择（自己判断不了）→ multara-questions
 看数据、填多项  → multara-ui 块（card / stats / table / chart / form）
 ```
 

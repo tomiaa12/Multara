@@ -9,7 +9,7 @@ description: チャットの返答で multara-ui コードブロックを使い�
 
 ```
 一文で答えられる         → テキストだけ
-いくつかの選択肢から選ぶ → multara-questions
+ユーザーにしか決められない択一の判断 → multara-questions
 データを見る・複数入力   → multara-ui ブロック（card / stats / table / chart / form）
 ```
 
