@@ -15,7 +15,7 @@ function notice(partial: Partial<InboxNoticeInput> = {}): InboxNoticeInput {
 }
 
 describe("shouldNotifyInbox", () => {
-  it("notifies a workbench chat when the user is not on that requirement", () => {
+  it("marks a workbench chat unread when the user is not on that requirement", () => {
     expect(shouldNotifyInbox(notice())).toBe(true);
     expect(shouldNotifyInbox(notice({ currentPath: "/projects" }))).toBe(true);
     expect(shouldNotifyInbox(notice({ currentPath: "/projects/other" }))).toBe(true);
@@ -40,18 +40,42 @@ describe("shouldNotifyInbox", () => {
     }))).toBe(true);
   });
 
-  it("notifies a task chat from anywhere except its own detail page", () => {
+  it("marks a task chat unread from anywhere except its own detail page", () => {
     expect(shouldNotifyInbox(notice({
       taskId: "task-1",
       currentPath: "/projects/project-1",
     }))).toBe(true);
   });
 
-  it("ignores runs that are still going, automation sessions, and chats with no requirement", () => {
+  it("marks a floating chat unread when that bubble session is not open", () => {
+    expect(shouldNotifyInbox(notice({
+      projectId: null,
+      taskId: null,
+      currentPath: "/agents",
+    }))).toBe(true);
+    expect(shouldNotifyInbox(notice({
+      projectId: null,
+      taskId: null,
+      currentPath: "/agents",
+      chatOpen: true,
+      activeSessionId: "other-session",
+    }))).toBe(true);
+  });
+
+  it("stays quiet while the floating chat is open on that session", () => {
+    expect(shouldNotifyInbox(notice({
+      projectId: null,
+      taskId: null,
+      currentPath: "/agents",
+      chatOpen: true,
+      activeSessionId: "session-1",
+    }))).toBe(false);
+  });
+
+  it("ignores runs that are still going and automation sessions", () => {
     expect(shouldNotifyInbox(notice({ previousStatus: "queued" }))).toBe(false);
     expect(shouldNotifyInbox(notice({ status: "running" }))).toBe(false);
     expect(shouldNotifyInbox(notice({ sessionId: "automation-run:1" }))).toBe(false);
-    expect(shouldNotifyInbox(notice({ projectId: null, taskId: null }))).toBe(false);
   });
 
   it("notifies when the agent needs input or permission", () => {

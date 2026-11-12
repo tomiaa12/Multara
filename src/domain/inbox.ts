@@ -9,12 +9,15 @@ export type InboxNoticeInput = {
   currentPath: string;
   /** 收件箱里当前打开的会话；正在看则不再当未读通知。 */
   activeInboxSessionId?: string | null;
+  /** 右下角气泡是否打开，且当前会话就是这条。 */
+  chatOpen?: boolean;
+  activeSessionId?: string | null;
 };
 
 /**
- * 只在一次运行从「运行中」进入结束态时通知。
- * 正在看这条需求的工作台、任务详情，或收件箱里这条会话时，结果已经在眼前，不再当未读。
- * 自动化会话由后端直接写入收件箱，这里不再走工作台聊天那条通知。
+ * 运行从「运行中」进入结束态时，是否当作未读（并弹系统通知）。
+ * 收件箱仍会写入这条会话；只有当时不在对应界面（任务详情 / 需求工作台 / 气泡该会话 / 收件箱该会话）才标未读。
+ * 自动化会话由后端直接写入收件箱，这里跳过。
  */
 export function shouldNotifyInbox(input: InboxNoticeInput): boolean {
   const finished = input.status === "completed"
@@ -33,7 +36,9 @@ export function shouldNotifyInbox(input: InboxNoticeInput): boolean {
   }
   if (input.taskId) return input.currentPath !== `/tasks/${input.taskId}`;
   if (input.projectId) return input.currentPath !== `/projects/${input.projectId}`;
-  return false;
+  // 右下角气泡 / 无需求会话：正在看这条就不标未读
+  if (input.chatOpen && input.activeSessionId === input.sessionId) return false;
+  return true;
 }
 
 export function currentAppPath(): string {
