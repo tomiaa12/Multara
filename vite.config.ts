@@ -26,6 +26,8 @@ function vendorChunk(id: string) {
 }
 
 export default defineConfig({
+  // 生产包里 Monaco worker 若写成 /assets/*.js，自定义协议的 WebView 会加载失败，语法颜色和 diff 都不会出来。
+  base: "./",
   plugins: [vue(), e2eVitePlugin()],
   clearScreen: false,
   server: {

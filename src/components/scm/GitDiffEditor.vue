@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { registerDiffBreadcrumbs } from "../../editor/diff-breadcrumbs";
 import { monacoReadOnlyMessage } from "../../editor/monaco-nls";
 import { monacoOverflowWidgetsRoot } from "../../editor/monaco-overflow-widgets";
+import { settleDiffEditor } from "../../editor/monaco-settle";
 import { applyMonacoTheme } from "../../editor/monaco-workspace";
 import { languageFromFilePath } from "../../monaco-language";
 import { monaco, monacoLanguageId } from "../../monaco";
@@ -24,8 +25,8 @@ const props = withDefaults(
 );
 
 const host = ref<HTMLElement | null>(null);
-/** 等 hideUnchangedRegions 算完再露出，避免先全文再折叠 */
-const ready = ref(!props.autoHeight);
+/** 字宽和 diff 算完再露出，避免先看到叠成一行、没有着色的文字 */
+const ready = ref(false);
 let editor: monaco.editor.IStandaloneDiffEditor | null = null;
 let originalModel: monaco.editor.ITextModel | null = null;
 let modifiedModel: monaco.editor.ITextModel | null = null;
@@ -71,6 +72,15 @@ function modelUri(side: "original" | "modified") {
   });
 }
 
+function applyModelLanguage(language: string) {
+  if (originalModel && originalModel.getLanguageId() !== language) {
+    monaco.editor.setModelLanguage(originalModel, language);
+  }
+  if (modifiedModel && modifiedModel.getLanguageId() !== language) {
+    monaco.editor.setModelLanguage(modifiedModel, language);
+  }
+}
+
 function resolveLanguage() {
   const fromProp = props.language?.trim();
   const candidate = fromProp && fromProp !== "plaintext"
@@ -82,7 +92,7 @@ function resolveLanguage() {
 async function mount() {
   if (!host.value || props.binary) return;
   const generation = ++mountGeneration;
-  ready.value = !props.autoHeight;
+  ready.value = false;
   registerDiffBreadcrumbs();
   const originalUri = modelUri("original");
   const modifiedUri = modelUri("modified");
@@ -92,7 +102,7 @@ async function mount() {
   originalModel = monaco.editor.createModel(props.original, language, originalUri);
   modifiedModel = monaco.editor.createModel(props.modified, language, modifiedUri);
   applyMonacoTheme();
-  if (props.autoHeight) host.value.style.visibility = "hidden";
+  host.value.style.visibility = "hidden";
   editor = monaco.editor.createDiffEditor(host.value, {
     readOnly: true,
     readOnlyMessage: monacoReadOnlyMessage(),
@@ -137,12 +147,7 @@ async function mount() {
   editor.getOriginalEditor().updateOptions(semantic);
   editor.getModifiedEditor().updateOptions(semantic);
   monaco.editor.setTheme(props.theme);
-  if (originalModel.getLanguageId() !== language) {
-    monaco.editor.setModelLanguage(originalModel, language);
-  }
-  if (modifiedModel.getLanguageId() !== language) {
-    monaco.editor.setModelLanguage(modifiedModel, language);
-  }
+  applyModelLanguage(language);
   if (props.autoHeight) {
     // 先算 diff/折叠区，再 setModel，避免先全文再折叠
     const viewModel = editor.createViewModel({
@@ -173,13 +178,25 @@ async function mount() {
       },
     };
     await nextTick();
+    if (generation !== mountGeneration || !host.value) return;
+    await settleDiffEditor(editor, host.value, () => generation === mountGeneration);
+    if (generation !== mountGeneration || !host.value) return;
+    applyModelLanguage(language);
+    monaco.editor.setTheme(props.theme);
     syncAutoHeight();
     ready.value = true;
-    if (host.value) host.value.style.visibility = "";
+    host.value.style.visibility = "";
     await nextTick();
     syncAutoHeight();
   } else {
     editor.setModel({ original: originalModel, modified: modifiedModel });
+    if (generation !== mountGeneration || !host.value) return;
+    await settleDiffEditor(editor, host.value, () => generation === mountGeneration);
+    if (generation !== mountGeneration || !host.value) return;
+    applyModelLanguage(language);
+    monaco.editor.setTheme(props.theme);
+    ready.value = true;
+    host.value.style.visibility = "";
   }
 }
 
@@ -211,6 +228,6 @@ watch(
     v-else
     ref="host"
     class="monaco-host git-diff-editor"
-    :class="{ 'is-diff-pending': autoHeight && !ready }"
+    :class="{ 'is-diff-pending': !ready }"
   />
 </template>

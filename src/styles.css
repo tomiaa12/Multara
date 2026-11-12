@@ -6493,7 +6493,8 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 /* createViewModel/waitForDiff 完成前隐藏（含内联 visibility 双保险） */
 .commit-multi-diff .git-diff-editor.is-diff-pending,
-.git-diff-editor.is-diff-pending {
+.git-diff-editor.is-diff-pending,
+.monaco-host.is-editor-pending {
   visibility: hidden !important;
 }
 /* Diff 颜色：挂在 host 上继承，并用 !important 压过 monaco 内联变量为空的情况 */
