@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, getCurrentScope, ref, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
+import { visiblePromptText } from "../components/chat/composer-content";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
 import * as backend from "../services/backend";
@@ -1107,6 +1108,8 @@ export const useAppStore = defineStore("app", () => {
     if (trimmed === translate("chat.newChatLabel", "zh-CN")) return true;
     if (trimmed === t("chat.newChat")) return true;
     if (/^与 .+ 对话$/.test(trimmed)) return true;
+    // 旧逻辑会把协议头截进标题，仍允许自动改名覆盖
+    if (/^\[(实体引用|指派要求|代码引用|文件|文件夹|终端)\]/.test(trimmed)) return true;
     return false;
   }
 
@@ -1164,7 +1167,9 @@ export const useAppStore = defineStore("app", () => {
         }
       }
       try {
-        const generated = (await backend.generateChatSessionTitle(content)).trim();
+        // 给模型看可见正文，不要把 [实体引用] 协议头喂进去
+        const plainForModel = visiblePromptText(content).trim() || content;
+        const generated = (await backend.generateChatSessionTitle(plainForModel)).trim();
         if (!generated || generated === fallback) return;
         if (task) {
           const latest = data.value?.tasks.find((item) => item.id === task.id);
