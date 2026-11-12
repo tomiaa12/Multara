@@ -48,7 +48,7 @@ import {
 } from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { lastUnansweredUser } from "./chat/unanswered-turn";
-import { shouldHideAssistantSpeaker, subtaskEmbedForMessage } from "./chat/message-speaker";
+import { sentFromChannel, shouldHideAssistantSpeaker, subtaskEmbedForMessage } from "./chat/message-speaker";
 const emit = defineEmits<{
   "review-file": [file: { workspaceId: string; filePath: string }];
 }>();
@@ -195,13 +195,20 @@ const session = computed(() => {
   if (active && visible.some((item) => item.id === active.id)) return active;
   return undefined;
 });
+const reviewSession = computed(() => {
+  if (props.sessionId) return store.data?.sessions.find((item) => item.id === props.sessionId);
+  return session.value;
+});
+const reviewSessionId = computed(() => reviewSession.value?.id ?? "");
 const reviewWorkspaceIds = computed(() => {
   const workspaces = store.data?.workspaces ?? [];
-  const projectId = props.projectId ?? session.value?.projectId;
-  const inProject = projectId
-    ? workspaces.filter((item) => item.projectId === projectId)
-    : workspaces;
-  return (inProject.length ? inProject : workspaces).map((item) => item.id);
+  const explicit = props.projectId ?? reviewSession.value?.projectId ?? "";
+  const projectIds = explicit
+    ? [explicit]
+    : (reviewSession.value?.projectIds ?? []).filter((id) => id);
+  if (!projectIds.length) return [];
+  const allowed = new Set(projectIds);
+  return workspaces.filter((item) => allowed.has(item.projectId)).map((item) => item.id);
 });
 const sessionMessages = computed(() =>
   props.preview
@@ -437,7 +444,13 @@ const composerDraft = computed(() => session.value ? drafts.value[session.value.
 const composerLocked = computed(() =>
   reshuffleOpen.value || dirtyRollbackOpen.value || rollbackFailureOpen.value,
 );
-const canSend = computed(() => composerHasContent() && Boolean(session.value) && !composerLocked.value);
+const channelInbox = computed(() =>
+  props.embedded && sessionMessages.value.some(sentFromChannel),
+);
+const channelComposerLocked = computed(() => channelInbox.value && props.historyViewOnly);
+const canSend = computed(() =>
+  composerHasContent() && Boolean(session.value) && !composerLocked.value && !channelComposerLocked.value,
+);
 const canStop = computed(() => sessionProcessing.value);
 // 运行中停止按钮一直在；没有草稿时只显示停止，有草稿时再并排显示「加入队列」。
 const showComposerStop = computed(() => canStop.value && !composerHasContent());
@@ -1893,8 +1906,8 @@ defineExpose({
               :target-value="targetValue"
               :target-options="targetOptions"
               :allow-target-change="allowTargetChange"
-              :enable-replay="!preview && !historyViewOnly"
-              :view-only="historyViewOnly"
+              :enable-replay="!preview && !historyViewOnly && !(embedded && sentFromChannel(message))"
+              :view-only="historyViewOnly || (embedded && sentFromChannel(message))"
               :ui-interactive="!preview && !historyViewOnly"
               :default-collapse-subagents="embedded || historyViewOnly"
               :compact="compact"
@@ -2005,6 +2018,7 @@ defineExpose({
       <ChatEditingBar
         v-if="!preview && showEditingBar"
         :workspace-ids="reviewWorkspaceIds"
+        :session-id="reviewSessionId"
         :review-in-place="reviewInPlace"
         @open="emit('review-file', $event)"
       />
@@ -2025,6 +2039,7 @@ defineExpose({
         :allow-target-change="allowTargetChange"
         :can-send="canSend"
         :disabled="composerLocked"
+        :readonly="channelComposerLocked"
         :session-commands="sessionCommands"
         :mode-session-id="preview || historyViewOnly ? '' : session?.id"
         @change="onComposerChange"
@@ -2082,7 +2097,7 @@ defineExpose({
               variant="ghost"
               data-composer-attach
               :tip="t('chat.addContext')"
-              :disabled="composerLocked"
+              :disabled="composerLocked || channelComposerLocked"
               @click="composerInput?.openAttachMenu('file')"
             >
               <Plus :size="16" />

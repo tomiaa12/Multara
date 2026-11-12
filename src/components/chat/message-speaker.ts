@@ -240,3 +240,8 @@ export function sentTargetForMessage(
     avatar: agent?.avatar || "M",
   };
 }
+
+/** 已经从飞书 / Lark 发进来的用户消息，收件箱里不再当输入框改。 */
+export function sentFromChannel(message: ChatMessage) {
+  return message.role === "user" && (message.sourceType === "feishu" || message.sourceType === "lark");
+}

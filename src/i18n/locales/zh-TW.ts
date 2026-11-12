@@ -113,6 +113,7 @@ const catalog: MessageCatalog = {
   "nav.runtimes": "執行環境",
   "nav.skills": "Skills",
   "nav.mcp": "MCP",
+  "nav.channels": "整合",
   "nav.settings": "設定",
   "nav.preview": "样式预览",
   "nav.themeLight": "切換到淺色",

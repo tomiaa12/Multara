@@ -223,6 +223,21 @@ pub fn add_allowed_user(
     Ok(())
 }
 
+pub fn set_allowed_user_name(
+    db: &Connection,
+    installation_id: &str,
+    user_id: &str,
+    display_name: &str,
+) -> Result<(), String> {
+    db.execute(
+        "UPDATE channel_allowed_users SET display_name=?1
+         WHERE installation_id=?2 AND channel_user_id=?3",
+        params![display_name, installation_id, user_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub fn remove_allowed_user(
     db: &Connection,
     installation_id: &str,

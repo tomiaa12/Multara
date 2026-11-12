@@ -704,7 +704,7 @@ defineExpose({
     ref="editor"
     class="composer-field vs-scroll is-empty"
     :class="{ 'is-readonly': readonly }"
-    :contenteditable="disabled ? 'false' : 'true'"
+    :contenteditable="disabled || readonly ? 'false' : 'true'"
     role="textbox"
     aria-multiline="true"
     :aria-readonly="readonly || undefined"

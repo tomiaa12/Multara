@@ -200,13 +200,27 @@ export const useDiffStore = defineStore("diff", () => {
     return chunksForBaseline(workspaceId, filePath, currentContent);
   }
 
+  /** 这个会话实际拍过快照的文件。空会话 id 表示不按会话过滤。 */
+  function snapshotKeysForSession(sessionId?: string): Set<string> | null {
+    if (!sessionId) return null;
+    const keys = new Set<string>();
+    const turns = snapshots.value.get(sessionId);
+    if (!turns) return keys;
+    for (const files of turns.values()) {
+      for (const key of files.keys()) keys.add(key);
+    }
+    return keys;
+  }
+
   function listSnapshotFiles(
     workspaceIds: string[],
-    _sessionId?: string,
+    sessionId?: string,
   ): PendingDiffFile[] {
     const allowed = new Set(workspaceIds);
+    const owned = snapshotKeysForSession(sessionId);
     const files: PendingDiffFile[] = [];
     for (const key of baselines.value.keys()) {
+      if (owned && !owned.has(key)) continue;
       const parsed = parseFileKey(key);
       if (!parsed || (allowed.size && !allowed.has(parsed.workspaceId))) continue;
       files.push(parsed);
@@ -222,6 +236,7 @@ export const useDiffStore = defineStore("diff", () => {
     sessionId?: string,
   ): PendingDiffFile[] {
     const seen = new Set<string>();
+    const owned = snapshotKeysForSession(sessionId);
     const candidates: PendingDiffFile[] = [];
     for (const file of listSnapshotFiles(workspaceIds, sessionId)) {
       const key = fileKey(file.workspaceId, file.filePath);
@@ -230,6 +245,7 @@ export const useDiffStore = defineStore("diff", () => {
       candidates.push(file);
     }
     for (const key of contents.keys()) {
+      if (owned && !owned.has(key)) continue;
       const parsed = parseFileKey(key);
       if (!parsed || (workspaceIds.length && !workspaceIds.includes(parsed.workspaceId))) continue;
       if (seen.has(key)) continue;

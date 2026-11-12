@@ -299,10 +299,15 @@ pub async fn test_channel_installation(
 #[tauri::command]
 pub fn list_channel_allowed_users(
     id: String,
+    app: AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ChannelUserView>, String> {
-    let db = state.lock_db()?;
-    Ok(store::list_allowed_users(&db, &id)?
+    let mut users = {
+        let db = state.lock_db()?;
+        store::list_allowed_users(&db, &id)?
+    };
+    fill_missing_names(&app, &state, &id, &mut users);
+    Ok(users
         .into_iter()
         .map(|user| ChannelUserView {
             channel_user_id: user.channel_user_id,
@@ -310,6 +315,40 @@ pub fn list_channel_allowed_users(
             role: user.role,
         })
         .collect())
+}
+
+fn fill_missing_names(
+    app: &AppHandle,
+    state: &tauri::State<'_, AppState>,
+    installation_id: &str,
+    users: &mut [store::AllowedUser],
+) {
+    let missing = users.iter().any(|user| saved_name(user).is_none());
+    if !missing {
+        return;
+    }
+    let Ok((_, api)) = super::feishu::api_for(app, installation_id) else {
+        return;
+    };
+    for user in users.iter_mut() {
+        if saved_name(user).is_some() {
+            continue;
+        }
+        let Some(name) = api.user_name(&user.channel_user_id) else {
+            continue;
+        };
+        if let Ok(db) = state.lock_db() {
+            let _ = store::set_allowed_user_name(&db, installation_id, &user.channel_user_id, &name);
+        }
+        user.display_name = Some(name);
+    }
+}
+
+fn saved_name(user: &store::AllowedUser) -> Option<&str> {
+    user.display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
 }
 
 #[tauri::command]

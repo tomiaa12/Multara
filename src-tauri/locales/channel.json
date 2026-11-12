@@ -71,11 +71,11 @@
     "ja": "ツール呼び出し",
     "ko": "도구 호출"
   },
-  "你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。": {
-    "en": "You're not linked to Multara yet. Find the pairing code under \"Message channels\" in Multara, then send those digits here.",
-    "zh-TW": "你還沒有綁定到 Multara。請在 Multara 設定的「訊息管道」中查看配對碼，然後直接傳送這串數字。",
-    "ja": "まだ Multara と連携されていません。Multara の「メッセージチャネル」でペアリングコードを確認し、その数字をそのまま送信してください。",
-    "ko": "아직 Multara에 연결되지 않았습니다. Multara의 '메시지 채널'에서 페어링 코드를 확인한 뒤 그 숫자를 그대로 보내 주세요."
+  "你还没有绑定到 Multara。请在 Multara 的「集成」里查看配对码，然后直接发送这串数字。": {
+    "en": "You're not linked to Multara yet. Find the pairing code under Integrations in Multara, then send those digits here.",
+    "zh-TW": "你還沒有綁定到 Multara。請在 Multara 的「整合」裡查看配對碼，然後直接傳送這串數字。",
+    "ja": "まだ Multara と連携されていません。Multara の「連携」でペアリングコードを確認し、その数字をそのまま送信してください。",
+    "ko": "아직 Multara에 연결되지 않았습니다. Multara의 '통합'에서 페어링 코드를 확인한 뒤 그 숫자를 그대로 보내 주세요."
   },
   "无法创建会话：{error}": {
     "en": "Couldn't create a session: {error}",

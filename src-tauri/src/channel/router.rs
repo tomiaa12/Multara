@@ -77,11 +77,13 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
                 app,
                 installation,
                 &message,
-                &tr!("你还没有绑定到 Multara。请在 Multara 设置的「消息渠道」里查看配对码，然后直接发送这串数字。"),
+                &tr!("你还没有绑定到 Multara。请在 Multara 的「集成」里查看配对码，然后直接发送这串数字。"),
             );
         }
         return;
     }
+    message.sender_name = saved_sender_name(allowed.as_ref())
+        .or_else(|| remember_sender_name(app, installation, &message.sender_id));
 
     if handle_command(app, installation, &message) {
         return;
@@ -106,6 +108,29 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
     }
 
     enqueue(app, installation, binding, message, attachments);
+}
+
+fn saved_sender_name(user: Option<&store::AllowedUser>) -> Option<String> {
+    user.and_then(|item| item.display_name.clone())
+        .filter(|name| !name.trim().is_empty())
+}
+
+fn lookup_sender_name(app: &AppHandle, installation: &Installation, sender_id: &str) -> Option<String> {
+    api_for(app, &installation.id)
+        .ok()
+        .and_then(|(_, api)| api.user_name(sender_id))
+}
+
+fn remember_sender_name(app: &AppHandle, installation: &Installation, sender_id: &str) -> Option<String> {
+    let name = lookup_sender_name(app, installation, sender_id)?;
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return Some(name);
+    };
+    if store::set_allowed_user_name(&db, &installation.id, sender_id, &name).is_err() {
+        return Some(name);
+    }
+    Some(name)
 }
 
 fn is_reply_to_bot(app: &AppHandle, installation: &Installation, message: &InboundMessage) -> bool {
@@ -144,19 +169,22 @@ fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessa
         return false;
     }
     pairing::clear(&installation.id, sender);
-    let state = app.state::<AppState>();
-    let Ok(db) = state.lock_db() else {
-        return false;
+    let name = lookup_sender_name(app, installation, &message.sender_id);
+    let saved = {
+        let state = app.state::<AppState>();
+        let Ok(db) = state.lock_db() else {
+            return false;
+        };
+        store::add_allowed_user(
+            &db,
+            &installation.id,
+            &message.sender_id,
+            name.as_deref(),
+            "owner",
+        )
+        .is_ok()
     };
-    if store::add_allowed_user(
-        &db,
-        &installation.id,
-        &message.sender_id,
-        message.sender_name.as_deref(),
-        "owner",
-    )
-    .is_err()
-    {
+    if !saved {
         return false;
     }
     send_notice(

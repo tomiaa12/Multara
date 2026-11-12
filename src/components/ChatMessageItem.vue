@@ -115,7 +115,6 @@ function startReask(
 <template>
   <!-- display:contents：避免包一层矮 div，否则 .user-turn sticky 的父级和自身一样高，永远粘不住 -->
   <div v-if="message.role === 'user'" class="message-user-slot">
-    <div v-if="channelSource" class="channel-message-source">{{ channelSource }}</div>
     <UserPrompt
       :message="message"
       :target-label="sentTarget?.label ?? targetLabel"
@@ -131,7 +130,11 @@ function startReask(
       @start-reask="startReask"
       @stop="emit('stop')"
       @target-change="emit('target-change', $event)"
-    />
+    >
+      <template v-if="channelSource" #source>
+        <div class="channel-message-source">{{ channelSource }}</div>
+      </template>
+    </UserPrompt>
   </div>
   <AssistantMessage
     v-else
@@ -156,8 +159,10 @@ function startReask(
   display: contents;
 }
 .channel-message-source {
-  margin: 0 0 4px 12px;
-  font-size: 11px;
-  color: var(--text-muted);
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+  overflow-wrap: anywhere;
 }
 </style>
