@@ -10878,8 +10878,13 @@ body.is-dragging-inbox-float * {
   text-align: left;
   cursor: pointer;
 }
+/* 展开到二级时只标当前分类，底色淡一点；左右键把焦点切回一级后再用实色。 */
 .composer-suggest-categories button[data-active] {
-  background: var(--color-surface-hover);
+  background: color-mix(in srgb, var(--color-surface-hover) 48%, transparent);
+  color: var(--color-text);
+}
+.composer-suggest-categories button[data-focused] {
+  background: var(--color-surface-active);
   color: var(--color-text-strong);
 }
 .composer-suggest-categories button span {
@@ -10913,6 +10918,9 @@ body.is-dragging-inbox-float * {
   overflow: hidden;
   justify-content: flex-start;
   text-align: left;
+}
+.composer-suggest-menu .ds-select-option[data-active] {
+  background: var(--color-surface-active);
 }
 .composer-suggest-menu .ds-select-option-body {
   width: 0;
@@ -10962,7 +10970,7 @@ body.is-dragging-inbox-float * {
   cursor: pointer;
 }
 .composer-suggest-more[data-active] {
-  background: var(--color-surface-hover);
+  background: var(--color-surface-active);
   color: var(--color-text-strong);
 }
 .composer-chip[data-chip-kind="agent"],
@@ -11617,6 +11625,7 @@ button.runtime-key-toggle:hover {
   overflow-y: auto;
 }
 .automation-dialog-left {
+  overflow: hidden;
   border-right: 1px solid var(--color-border, var(--color-border-strong));
 }
 .automation-dialog-right {
@@ -11649,13 +11658,40 @@ button.runtime-key-toggle:hover {
   font-size: var(--font-size-sm);
   line-height: 1.45;
 }
-.automation-runbook {
+.automation-runbook.chat-composer {
+  display: flex;
   flex: 1;
-  min-height: 280px;
-  resize: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: var(--font-size-md);
-  line-height: 1.55;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.automation-runbook.chat-composer:focus-within,
+.automation-runbook.chat-composer.is-drop-over {
+  border-color: transparent;
+  box-shadow: none;
+}
+.automation-runbook.chat-composer .composer-drop-overlay {
+  border-radius: var(--radius-md);
+}
+.automation-runbook.chat-composer .composer-field {
+  flex: 1 1 auto;
+  min-height: 96px;
+  max-height: none;
+  padding: 0;
+  overflow: auto;
+}
+.automation-runbook.chat-composer .composer-footer-start {
+  display: none;
+}
+.automation-runbook.chat-composer .composer-actions {
+  margin-left: auto;
+}
+.automation-runbook.chat-composer .composer-actions .ui-button {
+  border-radius: var(--radius-md);
 }
 .automation-field {
   display: grid;
@@ -11833,8 +11869,16 @@ button.runtime-key-toggle:hover {
     overflow: auto;
   }
   .automation-dialog-left {
+    overflow: visible;
     border-right: 0;
     border-bottom: 1px solid var(--color-border, var(--color-border-strong));
+  }
+  .automation-runbook.chat-composer {
+    flex: none;
+    min-height: 280px;
+  }
+  .automation-runbook.chat-composer .composer-field {
+    min-height: 220px;
   }
   .automation-dialog-foot {
     flex-direction: column;

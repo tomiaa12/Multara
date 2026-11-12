@@ -1069,6 +1069,7 @@ const catalog: MessageCatalog = {
   "automation.namePlaceholder": "자동화 이름",
   "automation.promptHint": "목표·맥락·단계 — 매번 읽힙니다",
   "automation.promptPlaceholder": "# 목표",
+  "automation.promptRequired": "목표, 맥락 또는 단계를 입력하세요",
   "automation.runbookTemplate": `# 목표
 에이전트가 무엇을 완료해야 하나요?
 

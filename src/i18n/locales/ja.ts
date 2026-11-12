@@ -1069,6 +1069,7 @@ const catalog: MessageCatalog = {
   "automation.namePlaceholder": "自動化名",
   "automation.promptHint": "目標・文脈・手順 — 毎回読み込まれます",
   "automation.promptPlaceholder": "# 目標",
+  "automation.promptRequired": "目標・文脈・手順を入力してください",
   "automation.runbookTemplate": `# 目標
 エージェントに何を達成させますか？
 

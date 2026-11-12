@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref } from "vue";
 import { ChevronDown, ChevronUp, History, Pencil, Play, Plus, Trash2, Workflow, X } from "@lucide/vue";
-import type { Automation, AutomationRun, WebhookDelivery } from "../domain/types";
-import { listAutomationRuns, listWebhookDeliveries } from "../services/backend";
+import type { Automation, AutomationRun, EditorSelectionContext, MessageAttachmentInput, WebhookDelivery } from "../domain/types";
+import { listAutomationRuns, listWebhookDeliveries, savePastedAttachment, selectFilesOrFolders } from "../services/backend";
 import { confirmDialog } from "../components/ui/confirm-dialog";
+import ChatComposer from "../components/chat/ChatComposer.vue";
+import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
+import { formatAgentPrompt, parseUserPromptNodes, type ComposerNode } from "../components/chat/composer-content";
+import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
+import type { OsDroppedEntry, WorkspaceFileDragPayload } from "../components/chat/workspace-file-drag";
+import { fileToBase64 } from "../utils/file-base64";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
+import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { runStatusLabel, runStatusTone } from "../components/run-log";
 import {
   COMMON_TIMEZONES,
@@ -22,10 +29,23 @@ import {
   type ScheduleRepeat,
 } from "./automation-schedule";
 
+const PASTE_LIMIT = 8;
+const PASTE_MAX_BYTES = 25 * 1024 * 1024;
+
 const store = useAppStore();
 const showForm = ref(false);
 const busy = ref(false);
 const error = ref("");
+const composerKey = ref(0);
+const promptNodes = ref<ComposerNode[]>([]);
+const contexts = ref<EditorSelectionContext[]>([]);
+const pastes = ref<Array<MessageAttachmentInput & { previewUrl: string }>>([]);
+const composer = ref<{
+  insertChip: (item: EditorSelectionContext) => void;
+  focus: () => void;
+  serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
+  openAttachMenu: (defaultCategory?: string) => void;
+} | null>(null);
 const expandedId = ref<string | null>(null);
 const histories = reactive<Record<string, AutomationRun[]>>({});
 const deliveries = reactive<Record<string, WebhookDelivery[]>>({});
@@ -68,6 +88,11 @@ const timezoneOptions = computed(() => {
 });
 
 const schedulePreview = computed(() => buildSchedulePreview(form.schedule));
+const workspaces = computed(() => {
+  const all = store.data?.workspaces ?? [];
+  if (!form.projectId) return all;
+  return all.filter((item) => item.projectId === form.projectId);
+});
 
 const primaryTriggers = [
   { value: "schedule" as const, label: t("automation.trigger.schedule") },
@@ -80,14 +105,29 @@ const editOnlyTriggers = [
 ];
 
 
+function clearPastes() {
+  for (const image of pastes.value) URL.revokeObjectURL(image.previewUrl);
+  pastes.value = [];
+}
+
+function closeForm() {
+  clearPastes();
+  showForm.value = false;
+}
+
 function edit(item?: Automation) {
   const timezone = item?.timezone ?? browserTimezone();
+  const prompt = item?.prompt ?? runbookTemplate();
+  clearPastes();
+  contexts.value = [];
+  promptNodes.value = parseUserPromptNodes(prompt);
+  composerKey.value += 1;
   Object.assign(form, {
     id: item?.id,
     name: item?.name ?? "",
     projectId: item?.projectId ?? "",
     target: item ? `${item.targetType}:${item.targetId}` : targets.value[0]?.value ?? "",
-    prompt: item?.prompt ?? runbookTemplate(),
+    prompt,
     triggerType: item?.triggerType ?? "schedule",
     eventName: item?.eventName ?? "",
     signingSecret: "",
@@ -100,12 +140,126 @@ function edit(item?: Automation) {
   showForm.value = true;
 }
 
+function currentPrompt() {
+  const nodes = composer.value?.serialize().nodes;
+  const text = nodes
+    ? formatAgentPrompt(nodes, { workspaces: workspaces.value })
+    : form.prompt;
+  const images = pastes.value.map((image) => ({
+    type: "chip" as const,
+    id: image.path,
+    path: image.path,
+    startLine: 0,
+    endLine: 0,
+    text: "",
+  }));
+  const imageText = images.length
+    ? formatAgentPrompt(images, { workspaces: workspaces.value })
+    : "";
+  return [imageText, text].filter((part) => part.trim()).join("\n\n");
+}
+
+function rememberChip(context: EditorSelectionContext) {
+  contexts.value = [...contexts.value, context];
+  composer.value?.insertChip(context);
+  composer.value?.focus();
+  recordComposerRecent("task", {
+    path: context.path,
+    workspaceId: context.workspaceId,
+    isDirectory: context.isDirectory,
+  });
+}
+
+async function addWorkspaceChip(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
+  rememberChip(await workspacePathChip(file));
+}
+
+async function addExternalChip(entry: OsDroppedEntry) {
+  const chip = await externalPathChip(entry, workspaces.value);
+  if (!chip) {
+    error.value = t("chat.noRefFiles");
+    return;
+  }
+  rememberChip(chip);
+}
+
+async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
+  if (file.workspaceId) {
+    await addWorkspaceChip(file);
+    return;
+  }
+  const name = file.path.split(/[\\/]/).pop() || file.path;
+  await addExternalChip({ path: file.path, name, isDirectory: Boolean(file.isDirectory) });
+}
+
+async function pasteImages(files: File[]) {
+  error.value = "";
+  const room = Math.max(0, PASTE_LIMIT - pastes.value.length);
+  for (const file of files.slice(0, room)) {
+    try {
+      if (file.size > PASTE_MAX_BYTES) {
+        error.value = t("chat.pasteTooLarge");
+        continue;
+      }
+      const saved = await savePastedAttachment(await fileToBase64(file), file.type || "image/png", file.name || undefined);
+      pastes.value.push({ ...saved, previewUrl: URL.createObjectURL(file) });
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : t("chat.pasteFailed");
+    }
+  }
+}
+
+function removePaste(path: string) {
+  const target = pastes.value.find((item) => item.path === path);
+  if (target) URL.revokeObjectURL(target.previewUrl);
+  pastes.value = pastes.value.filter((item) => item.path !== path);
+}
+
+async function onDropWorkspace(file: WorkspaceFileDragPayload) {
+  error.value = "";
+  await addWorkspaceChip(file);
+}
+
+async function onDropOs(entries: OsDroppedEntry[]) {
+  error.value = "";
+  if (!entries.length) {
+    error.value = t("chat.noRefFiles");
+    return;
+  }
+  const images = entries.flatMap((entry) =>
+    entry.file?.type.startsWith("image/") ? [entry.file] : [],
+  );
+  if (images.length) await pasteImages(images);
+  for (const entry of entries) {
+    if (entry.file?.type.startsWith("image/")) continue;
+    await addExternalChip(entry);
+  }
+}
+
+async function pickFilesOrFolders() {
+  error.value = "";
+  const picked = await selectFilesOrFolders();
+  if (!picked.length) return;
+  for (const item of picked) {
+    const name = item.path.split(/[\\/]/).pop() || item.path;
+    await addExternalChip({ path: item.path, name, isDirectory: item.isDirectory });
+  }
+}
+
+onBeforeUnmount(clearPastes);
+
 async function save() {
   const [targetType, targetId] = form.target.split(":", 2);
   if (!targetType || !targetId) {
     error.value = t("automation.targetRequired");
     return;
   }
+  const prompt = currentPrompt();
+  if (!prompt) {
+    error.value = t("automation.promptRequired");
+    return;
+  }
+  form.prompt = prompt;
   busy.value = true;
   error.value = "";
   try {
@@ -129,7 +283,7 @@ async function save() {
       signingSecret: form.triggerType === "webhook" ? form.signingSecret || null : null,
       enabled: form.enabled,
     });
-    showForm.value = false;
+    closeForm();
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   } finally {
@@ -269,11 +423,11 @@ function toggleWeekday(day: number) {
       </article>
     </div>
 
-    <UiModal v-if="showForm" @click.self="showForm = false">
+    <UiModal v-if="showForm" @click.self="closeForm">
       <form class="modal automation-dialog" @submit.prevent="save">
         <header class="automation-dialog-head">
           <h2>{{ form.id ? t("automation.edit") : t("automation.create") }}</h2>
-          <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="showForm = false"><X :size="16" /></UiButton>
+          <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="closeForm"><X :size="16" /></UiButton>
         </header>
 
         <div class="automation-dialog-body">
@@ -288,13 +442,47 @@ function toggleWeekday(day: number) {
               <span>RUNBOOK</span>
               <small>{{ t("automation.promptHint") }}</small>
             </div>
-            <UiTextarea
-              v-model="form.prompt"
+            <ChatComposer
+              :key="composerKey"
+              ref="composer"
               class="automation-runbook"
-              required
-              rows="18"
+              embedded
+              dictation
+              allow-file-picker
+              recent-place="task"
+              :project-id="form.projectId || null"
               :placeholder="t('automation.promptPlaceholder')"
-            />
+              :initial-nodes="promptNodes"
+              :contexts="contexts"
+              target-label=""
+              target-avatar=""
+              :allow-target-change="false"
+              :show-context-usage="false"
+              :enter-to-submit="false"
+              @paste-image="pasteImages"
+              @drop-workspace-file="onDropWorkspace"
+              @drop-os-files="onDropOs"
+              @pick-files-or-folders="pickFilesOrFolders"
+              @attach-file-context="attachFileFromSuggest"
+            >
+              <ComposerPasteImages
+                :images="pastes.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
+                removable
+                @remove="removePaste"
+              />
+              <template #actions>
+                <UiButton
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  data-composer-attach
+                  :tip="t('chat.addContext')"
+                  @click="composer?.openAttachMenu('file')"
+                >
+                  <Plus :size="16" />
+                </UiButton>
+              </template>
+            </ChatComposer>
           </section>
 
           <aside class="automation-dialog-right">
@@ -477,7 +665,7 @@ function toggleWeekday(day: number) {
           </p>
           <div class="modal-actions">
             <p v-if="error" class="form-error">{{ error }}</p>
-            <UiButton type="button" @click="showForm = false">{{ t("common.cancel") }}</UiButton>
+            <UiButton type="button" @click="closeForm">{{ t("common.cancel") }}</UiButton>
             <UiButton variant="primary" type="submit" :class="{ 'is-loading': busy }" :disabled="busy">{{ busy ? t("common.saving") : (form.id ? t("common.save") : t("common.create")) }}</UiButton>
           </div>
         </footer>

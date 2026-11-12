@@ -26,7 +26,6 @@ import { useAppStore } from "../../stores/app";
 import { useCanvasStore } from "../../stores/canvas";
 import { isCanvasEnabled } from "./genui/block";
 import { getCaretClientRect } from "./composer-caret";
-import { filterCommands } from "./composer-mentions";
 import { replaceSlashToken } from "./skill-slash";
 import { groupChatTargetOptions, type ChatTargetOption } from "./chat-target-options";
 import ProviderLogo from "../ProviderLogo.vue";
@@ -78,8 +77,6 @@ const props = withDefaults(defineProps<{
   showContextUsage?: boolean;
   /** 嵌在别的表单里时用 div，避免再套一层 form。 */
   embedded?: boolean;
-  /** 是否展示 /compact、/fork 等会话命令（需求工作台 / 右下角气泡）。 */
-  sessionCommands?: boolean;
   /** 是否在级联一级菜单展示系统文件/文件夹选择入口。 */
   allowFilePicker?: boolean;
   /** 最近打开隔离场景；工作台再按 projectId 分桶。 */
@@ -104,7 +101,6 @@ const props = withDefaults(defineProps<{
   usagePlacement: "up",
   showContextUsage: true,
   embedded: false,
-  sessionCommands: false,
   allowFilePicker: false,
   recentPlace: "chat",
   projectId: null,
@@ -312,15 +308,6 @@ watch(
 const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
   const data = store.data;
   const currentSessionId = props.modeSessionId;
-  const commands = props.sessionCommands
-    ? filterCommands("").map((item) => ({
-      id: `command:${item.id}`,
-      kind: "skill" as const,
-      label: `/${item.label}`,
-      description: item.detail,
-      group: "commands",
-    }))
-    : [];
   const entities: ComposerEntityItem[] = [
     ...(data?.agents ?? []).map((item) => ({
       id: item.id,
@@ -362,7 +349,7 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       id: item.id,
       kind: "task" as const,
       label: item.title,
-      description: item.status,
+      description: t(`tasks.status.${item.status}`),
       group: "tasks",
     })),
     ...(data?.projects ?? []).map((item) => ({
@@ -381,14 +368,13 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
         description: item.targetType === "squad" ? t("nav.squads") : t("nav.agents"),
         group: "sessions",
       })),
-    ...commands,
   ];
   const group = (id: string, label: string) => ({
     id,
     label,
     items: entities.filter((item) => item.group === id).map(suggestItem),
   });
-  // 一级顺序：文件 / 会话 / Issue / PR，再是原有 @ 分类
+  // 一级顺序：文件 / 会话，再是原有 @ 分类。Issue / Pull Request 尚未接入，先不放进菜单。
   const categories: ComposerSuggestCategoryItem[] = [];
   if (props.allowFilePicker) {
     categories.push({
@@ -405,20 +391,8 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       groups: [group("sessions", t("chat.context.sessions"))],
       emptyText: t("chat.context.sessionsEmpty"),
     },
-    {
-      id: "issue",
-      label: t("chat.context.issues"),
-      groups: [],
-      emptyText: t("chat.context.issuesEmpty"),
-    },
-    {
-      id: "pullRequest",
-      label: t("chat.context.pullRequests"),
-      groups: [],
-      emptyText: t("chat.context.pullRequestsEmpty"),
-    },
     { id: "agent", label: t("chat.context.agents"), groups: [group("agents", t("nav.agents")), group("squads", t("nav.squads"))] },
-    { id: "skill", label: t("chat.context.skills"), groups: [group("skills", "Skills"), group("commands", t("chat.context.commands"))] },
+    { id: "skill", label: t("chat.context.skills"), groups: [group("skills", "Skills")] },
     { id: "mcp", label: t("chat.context.mcp"), groups: [group("mcp", t("nav.mcp"))], emptyText: t("chat.context.mcpEmpty") },
     { id: "task", label: t("chat.context.tasks"), groups: [group("tasks", t("chat.context.tasks"))] },
     { id: "requirement", label: t("chat.context.requirements"), groups: [group("requirements", t("chat.context.requirements"))] },

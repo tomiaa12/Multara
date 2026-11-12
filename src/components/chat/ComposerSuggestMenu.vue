@@ -293,6 +293,7 @@ onBeforeUnmount(() => {
           :key="category.id"
           type="button"
           :data-active="index === categoryIndex ? '' : undefined"
+          :data-focused="index === categoryIndex && activePane === 'categories' ? '' : undefined"
           @mousedown.prevent
           @mousemove="activePane = 'categories'; selectCategory(index)"
           @click="activateCategory(index)"

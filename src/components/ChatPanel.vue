@@ -2040,7 +2040,6 @@ defineExpose({
         :can-send="canSend"
         :disabled="composerLocked"
         :readonly="channelComposerLocked"
-        :session-commands="sessionCommands"
         :mode-session-id="preview || historyViewOnly ? '' : session?.id"
         @change="onComposerChange"
         @submit="submit"
