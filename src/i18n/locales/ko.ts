@@ -113,6 +113,7 @@ const catalog: MessageCatalog = {
   "nav.runtimes": "런타임",
   "nav.skills": "Skills",
   "nav.mcp": "MCP",
+  "nav.channels": "통합",
   "nav.settings": "설정",
   "nav.preview": "미리보기",
   "nav.themeLight": "라이트로 전환",

@@ -9,6 +9,8 @@ import { t } from "../../i18n";
 
 const props = defineProps<{
   workspaceIds: string[];
+  /** 只列出这个会话拍过快照的文件。 */
+  sessionId?: string;
   /** 在当前页打开文件，而不是跳到工作台编辑器。 */
   reviewInPlace?: boolean;
 }>();
@@ -36,10 +38,12 @@ function fileLabel(workspaceId: string, filePath: string) {
 }
 
 const files = computed(() => {
+  if (!props.workspaceIds.length) return [];
   void diffStore.baselines;
+  void diffStore.snapshots;
   void diffStore.diskEpoch;
   void contents.value;
-  return diffStore.listPendingDiffFiles(props.workspaceIds, contents.value);
+  return diffStore.listPendingDiffFiles(props.workspaceIds, contents.value, props.sessionId);
 });
 
 const rows = computed(() =>
@@ -69,7 +73,11 @@ let readEpoch = -1;
 
 // diskEpoch 不变时只补读新出现的文件；变了才全部重读，并走 diff store 的共享缓存，和编辑卡共用同一次读盘。
 async function refreshContents() {
-  const listed = diffStore.listSnapshotFiles(props.workspaceIds);
+  if (!props.workspaceIds.length) {
+    if (contents.value.size) contents.value = new Map();
+    return;
+  }
+  const listed = diffStore.listSnapshotFiles(props.workspaceIds, props.sessionId);
   const epoch = diffStore.diskEpoch;
   const previous = epoch === readEpoch ? contents.value : new Map<string, string>();
   const next = new Map<string, string>();
@@ -85,7 +93,7 @@ async function refreshContents() {
 }
 
 watch(
-  () => [props.workspaceIds.join("\n"), diffStore.diskEpoch, diffStore.baselines] as const,
+  () => [props.sessionId ?? "", props.workspaceIds.join("\n"), diffStore.diskEpoch, diffStore.baselines, diffStore.snapshots] as const,
   () => {
     void refreshContents();
   },

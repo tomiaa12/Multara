@@ -315,7 +315,6 @@ const primary = computed(() => [
   { to: "/inbox", label: t("nav.inbox"), icon: Inbox },
   { to: "/tasks", label: t("nav.tasks"), icon: ListTodo },
   { to: "/automation", label: t("nav.automation"), icon: Workflow },
-  { to: "/channels", label: t("nav.channels"), icon: MessagesSquare },
   { to: "/agents", label: t("nav.agents"), icon: Bot },
   { to: "/squads", label: t("nav.squads"), icon: Users },
   { to: "/stats", label: t("nav.stats"), icon: BarChart3 },
@@ -365,6 +364,7 @@ const config = computed(() => [
   ...(import.meta.env.DEV
     ? [{ to: "/preview", label: t("nav.preview"), icon: Palette }]
     : []),
+  { to: "/channels", label: t("nav.channels"), icon: MessagesSquare },
   { to: "/settings", label: t("nav.settings"), icon: Settings },
 ]);
 

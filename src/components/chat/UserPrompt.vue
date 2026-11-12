@@ -214,6 +214,7 @@ watch(
 
 <template>
   <article ref="root" class="chat-turn user-turn">
+    <slot name="source" />
     <ChatComposer
       ref="composer"
       class="user-prompt"

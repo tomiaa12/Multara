@@ -75,6 +75,20 @@ impl FeishuApi {
         Ok(token)
     }
 
+    /// 通讯录基本信息。消息事件里没有姓名，用 open_id 再查一次。
+    /// 用户不在通讯录权限范围内时飞书不返回 name，这里得到 None，不打断收消息。
+    pub fn user_name(&self, open_id: &str) -> Option<String> {
+        if !is_contact_id(open_id) {
+            return None;
+        }
+        let value = self
+            .get(&format!(
+                "/open-apis/contact/v3/users/{open_id}?user_id_type=open_id"
+            ))
+            .ok()?;
+        contact_name(&value)
+    }
+
     pub fn bot_info(&self) -> Result<(String, String), String> {
         let value = self.get("/open-apis/bot/v3/info")?;
         let bot = value.get("bot").cloned().unwrap_or(Value::Null);
@@ -305,6 +319,25 @@ fn parse_response(body: &str) -> Result<Value, String> {
     })
 }
 
+fn is_contact_id(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn contact_name(value: &Value) -> Option<String> {
+    if value.get("code").and_then(Value::as_i64).unwrap_or(-1) != 0 {
+        return None;
+    }
+    value
+        .pointer("/data/user/name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
 fn message_id_of(value: &Value) -> String {
     value
         .get("data")
@@ -312,4 +345,27 @@ fn message_id_of(value: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_contact_name() {
+        let value = json!({
+            "code": 0,
+            "data": { "user": { "name": " 邝永鑫 ", "open_id": "ou_user" } }
+        });
+        assert_eq!(contact_name(&value).as_deref(), Some("邝永鑫"));
+    }
+
+    #[test]
+    fn skips_missing_contact_name() {
+        let value = json!({
+            "code": 0,
+            "data": { "user": { "open_id": "ou_user", "mobile_visible": true } }
+        });
+        assert_eq!(contact_name(&value), None);
+    }
 }

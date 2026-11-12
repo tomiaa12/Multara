@@ -14,7 +14,7 @@ import UiSelect from "../components/ui/UiSelect.vue";
 const store = useAppStore();
 const installations = ref<ChannelInstallation[]>([]);
 const users = reactive<Record<string, ChannelUser[]>>({});
-const expandedId = ref<string | null>(null);
+const usersTarget = ref<ChannelInstallation | null>(null);
 const showForm = ref(false);
 const busy = ref(false);
 const error = ref("");
@@ -136,7 +136,7 @@ async function remove(item: ChannelInstallation) {
   if (!(await confirmDialog(t("channels.deleteConfirm", { name: item.name }), { danger: true }))) return;
   try {
     await backend.deleteChannelInstallation(item.id);
-    if (expandedId.value === item.id) expandedId.value = null;
+    if (usersTarget.value?.id === item.id) usersTarget.value = null;
     await refresh();
   } catch (cause) {
     error.value = String(cause);
@@ -158,12 +158,13 @@ async function test(item: ChannelInstallation) {
   }
 }
 
-async function toggleUsers(item: ChannelInstallation) {
-  if (expandedId.value === item.id) {
-    expandedId.value = null;
-    return;
-  }
-  expandedId.value = item.id;
+function roleLabel(role: string) {
+  if (role === "owner") return t("channels.roleOwner");
+  return role;
+}
+
+async function openUsers(item: ChannelInstallation) {
+  usersTarget.value = item;
   try {
     users[item.id] = await backend.listChannelAllowedUsers(item.id);
   } catch (cause) {
@@ -171,7 +172,8 @@ async function toggleUsers(item: ChannelInstallation) {
   }
 }
 
-async function removeUser(item: ChannelInstallation, userId: string) {
+async function removeUser(item: ChannelInstallation | null, userId: string) {
+  if (!item) return;
   try {
     await backend.removeChannelAllowedUser(item.id, userId);
     users[item.id] = await backend.listChannelAllowedUsers(item.id);
@@ -256,28 +258,51 @@ function projectName(item: ChannelInstallation) {
               <UiButton variant="ghost" size="icon" :tip="t('channels.rotateCode')" @click="rotateCode(item)"><RefreshCw :size="13" /></UiButton>
             </p>
           </div>
-          <span class="ds-badge" :data-tone="item.enabled ? 'success' : undefined">
+          <span class="ds-badge channel-enabled" :data-tone="item.enabled ? 'success' : undefined">
             {{ item.enabled ? t("common.enabledOn") : t("common.enabledOff") }}
           </span>
           <div class="channel-actions">
             <UiButton variant="ghost" size="small" :disabled="busy" @click="test(item)"><Check :size="14" /> {{ t("channels.test") }}</UiButton>
             <UiButton variant="ghost" size="small" @click="toggle(item)">{{ item.enabled ? t("channels.disable") : t("channels.enable") }}</UiButton>
-            <UiButton variant="ghost" size="small" @click="toggleUsers(item)">{{ t("channels.users") }}</UiButton>
+            <UiButton variant="ghost" size="small" @click="openUsers(item)">{{ t("channels.users") }}</UiButton>
             <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
             <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
           </div>
         </div>
-        <div v-if="expandedId === item.id" class="channel-users">
-          <div v-if="!users[item.id]?.length" class="empty-inline">{{ t("channels.noUsers") }}</div>
-          <div v-for="user in users[item.id]" :key="user.channelUserId" class="history-row">
-            <strong>{{ user.displayName || user.channelUserId }}</strong>
-            <code>{{ user.channelUserId }}</code>
-            <span class="ds-badge">{{ user.role }}</span>
-            <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="removeUser(item, user.channelUserId)"><X :size="13" /></UiButton>
-          </div>
-        </div>
       </article>
     </div>
+
+    <UiModal v-if="usersTarget" @click.self="usersTarget = null">
+      <div class="modal channel-users-dialog">
+        <header class="channel-dialog-head">
+          <h2>{{ t("channels.users") }}</h2>
+          <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="usersTarget = null"><X :size="16" /></UiButton>
+        </header>
+        <p v-if="!users[usersTarget.id]?.length" class="empty-inline">{{ t("channels.noUsers") }}</p>
+        <div v-else class="ds-table-wrap">
+          <table class="ds-table">
+            <thead>
+              <tr>
+                <th>{{ t("common.name") }}</th>
+                <th>{{ t("channels.userId") }}</th>
+                <th>{{ t("channels.userRole") }}</th>
+                <th>{{ t("common.actions") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="user in users[usersTarget.id]" :key="user.channelUserId">
+                <td>{{ user.displayName || "—" }}</td>
+                <td class="channel-user-id">{{ user.channelUserId }}</td>
+                <td>{{ roleLabel(user.role) }}</td>
+                <td class="channel-user-actions">
+                  <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="removeUser(usersTarget, user.channelUserId)"><X :size="13" /></UiButton>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </UiModal>
 
     <UiModal v-if="showForm" @click.self="showForm = false">
       <form class="modal channel-dialog" @submit.prevent="save">
@@ -327,8 +352,11 @@ function projectName(item: ChannelInstallation) {
 .channel-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); margin: 6px 0; }
 .channel-code { display: flex; gap: 6px; align-items: center; color: var(--text-muted); }
 .channel-code code { font-size: 14px; letter-spacing: 2px; color: var(--text-primary); }
-.channel-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.channel-users { padding: 10px 16px; display: flex; flex-direction: column; gap: 6px; }
+.channel-enabled { height: var(--control-height-sm); align-self: center; }
+.channel-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; align-self: center; justify-content: flex-end; }
+.channel-users-dialog { width: min(720px, 92vw); }
+.channel-user-id { font-family: var(--font-family-mono); font-weight: var(--font-weight-regular); overflow-wrap: anywhere; }
+.channel-user-actions { width: 1%; text-align: right; white-space: nowrap; }
 .channel-dialog { width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
 .channel-dialog-head, .channel-dialog-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .channel-dialog-foot { justify-content: flex-end; }
