@@ -1069,6 +1069,7 @@ const catalog: MessageCatalog = {
   "automation.namePlaceholder": "Automation name",
   "automation.promptHint": "Goals, context, and steps — read on every run",
   "automation.promptPlaceholder": "# Goal",
+  "automation.promptRequired": "Add a goal, context, or steps",
   "automation.runbookTemplate": `# Goal
 What should the agent accomplish?
 

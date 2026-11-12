@@ -1069,6 +1069,7 @@ const catalog: MessageCatalog = {
   "automation.namePlaceholder": "自动化名称",
   "automation.promptHint": "目标、上下文与步骤——智能体每次运行都会读到",
   "automation.promptPlaceholder": "# 目标",
+  "automation.promptRequired": "请填写目标、上下文或步骤",
   "automation.runbookTemplate": `# 目标
 你希望智能体完成什么？
 
