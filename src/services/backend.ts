@@ -971,6 +971,16 @@ export async function saveDiagnosticFile(path: string, contents: string): Promis
   await invoke("save_diagnostic_file", { path, contents });
 }
 
+export async function exportRecentErrorLog(): Promise<string> {
+  if (!inTauri()) throw new Error("Log export requires the desktop app");
+  return invoke<string>("export_recent_error_log");
+}
+
+export async function saveLogFile(path: string, contents: string): Promise<void> {
+  if (!inTauri()) throw new Error("Log export requires the desktop app");
+  await invoke("save_log_file", { path, contents });
+}
+
 export async function loadAttachmentPreview(attachmentId: string): Promise<string | null> {
   if (!inTauri() || attachmentId.startsWith("pending:")) return null;
   try {

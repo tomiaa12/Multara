@@ -485,6 +485,8 @@ pub fn run() {
             list_chat_messages,
             session_export::export_session_diagnostics,
             session_export::save_diagnostic_file,
+            diag::export_recent_error_log,
+            diag::save_log_file,
             upsert_inbox_item,
             mark_inbox_read,
             mark_inbox_unread,
