@@ -1099,9 +1099,20 @@ export const useAppStore = defineStore("app", () => {
   }
 
   function isUntitledSession(title: string) {
-    const untitled = t("chat.newChatLabel");
-    const legacyUntitled = translate("chat.newChatLabel", "zh-CN");
-    return !title.trim() || title === untitled || title === legacyUntitled || /^与 .+ 对话$/.test(title);
+    const trimmed = title.trim();
+    if (!trimmed) return true;
+    // titleFromPrompt 曾硬编码「新对话」；各语言「新对话」文案都算未命名
+    if (trimmed === "新对话") return true;
+    if (trimmed === t("chat.newChatLabel")) return true;
+    if (trimmed === translate("chat.newChatLabel", "zh-CN")) return true;
+    if (trimmed === t("chat.newChat")) return true;
+    if (/^与 .+ 对话$/.test(trimmed)) return true;
+    return false;
+  }
+
+  /** 未命名，或仍是本次截断占位时，才允许自动改名（手改过不覆盖）。 */
+  function canAutoNameTitle(title: string, fallback: string) {
+    return isUntitledSession(title) || title === fallback;
   }
 
   async function updateSessionTitle(sessionId: string, title: string) {
@@ -1119,41 +1130,64 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
-  /** 首条提问：截断占位 → 异步 LLM 短标题；手改过则不覆盖。 */
-  async function nameSessionFromFirstPrompt(sessionId: string, content: string) {
-    const session = data.value?.sessions.find((item) => item.id === sessionId);
-    if (!session || !isUntitledSession(session.title)) return;
+  const namingFromFirstPrompt = new Set<string>();
+
+  /**
+   * 气泡 / 工作台 / 任务共用：先截取发送文本占位，再 LLM 短标题替换。
+   * 挂了任务时改任务标题（会话标题随 updateTask 同步）；否则只改会话 Tab。
+   */
+  async function nameFromFirstPrompt(sessionId: string, content: string) {
+    if (!data.value || namingFromFirstPrompt.has(sessionId)) return;
+    const session = data.value.sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    const task = data.value.tasks.find((item) => item.sessionId === sessionId) ?? null;
     const fallback = backend.titleFromPrompt(content);
+    if (!fallback) return;
+    const currentTitle = task?.title ?? session.title;
+    if (!canAutoNameTitle(currentTitle, fallback)) return;
+
+    namingFromFirstPrompt.add(sessionId);
     try {
-      await updateSessionTitle(sessionId, fallback);
-    } catch {
-      // Keep the untitled session name when rename fails.
-      return;
-    }
-    try {
-      const generated = (await backend.generateChatSessionTitle(content)).trim();
-      if (!generated) return;
-      const current = data.value?.sessions.find((item) => item.id === sessionId);
-      if (!current || current.title !== fallback) return;
-      await updateSessionTitle(sessionId, generated);
-    } catch {
-      // Keep truncated title when generation fails.
+      if (currentTitle !== fallback) {
+        if (task) {
+          try {
+            await updateTask({ taskId: task.id, title: fallback });
+          } catch {
+            return;
+          }
+        } else {
+          try {
+            await updateSessionTitle(sessionId, fallback);
+          } catch {
+            return;
+          }
+        }
+      }
+      try {
+        const generated = (await backend.generateChatSessionTitle(content)).trim();
+        if (!generated || generated === fallback) return;
+        if (task) {
+          const latest = data.value?.tasks.find((item) => item.id === task.id);
+          if (!latest || latest.title !== fallback) return;
+          await updateTask({ taskId: task.id, title: generated });
+          return;
+        }
+        const latest = data.value?.sessions.find((item) => item.id === sessionId);
+        if (!latest || latest.title !== fallback) return;
+        await updateSessionTitle(sessionId, generated);
+      } catch {
+        // 生成失败时保留截断标题
+      }
+    } finally {
+      namingFromFirstPrompt.delete(sessionId);
     }
   }
 
-  /** 任务：创建时已截断；再异步升级，标题仍为 expectedTitle 才写入。 */
-  async function nameTaskFromFirstPrompt(taskId: string, content: string, expectedTitle: string) {
-    const baseline = expectedTitle.trim();
-    if (!baseline) return;
-    try {
-      const generated = (await backend.generateChatSessionTitle(content)).trim();
-      if (!generated || generated === baseline) return;
-      const task = data.value?.tasks.find((item) => item.id === taskId);
-      if (!task || task.title !== baseline) return;
-      await updateTask({ taskId, title: generated });
-    } catch {
-      // Keep truncated title when generation fails.
-    }
+  /** 创建任务时：标题已是截断占位，再按会话走统一 LLM 命名。 */
+  async function nameTaskFromFirstPrompt(taskId: string, content: string, _expectedTitle: string) {
+    const task = data.value?.tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    await nameFromFirstPrompt(task.sessionId, content);
   }
 
   async function setSessionTarget(sessionId: string, targetValue: string) {
@@ -1623,7 +1657,7 @@ export const useAppStore = defineStore("app", () => {
         }
         const assistant = result.filter((message) => message.role === "assistant");
         messages.value[next.sessionId] = [...(messages.value[next.sessionId] ?? []), ...assistant];
-        if (isFirstPrompt) void nameSessionFromFirstPrompt(next.sessionId, next.content);
+        if (isFirstPrompt) void nameFromFirstPrompt(next.sessionId, next.content);
         if (assistant.length || Object.values(runStates.value).some((event) =>
           event.sessionId === next.sessionId && (event.status === "queued" || event.status === "running"),
         )) pendingRunSessions.value.delete(next.sessionId);

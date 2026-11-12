@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
+import { t } from "../i18n";
 import type {
   ActiveDiffData,
   SessionDiffData,
@@ -884,7 +885,8 @@ export function titleFromPrompt(content: string) {
     .replace(/\[(代码引用|文件|文件夹)\][\s\S]*?(```[\s\S]*?```|$)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return [...text].slice(0, 18).join("") || "新对话";
+  // 空内容占位与「新对话」一致；有正文时截断，随后由 LLM 标题替换
+  return [...text].slice(0, 18).join("") || t("chat.newChatLabel");
 }
 
 export async function updateChatSessionTarget(

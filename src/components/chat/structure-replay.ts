@@ -209,7 +209,7 @@ const frames: Frame[] = [
   },
   {
     title: "设置 Tab 标题 · 截断",
-    detail: "nameSessionFromFirstPrompt 先用 titleFromPrompt 截断原文，Tab 变成「看一下这个项目结构」。",
+    detail: "nameFromFirstPrompt 先用 titleFromPrompt 截断原文，Tab 变成「看一下这个项目结构」。",
     sessionTitle: structureFallbackTitle,
     composer: "",
     messages: [message("structure-user-1", "user", structureOriginalPrompt)],

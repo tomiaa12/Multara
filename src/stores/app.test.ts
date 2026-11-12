@@ -19,6 +19,19 @@ const backend = vi.hoisted(() => ({
   setSessionDefaultMode: vi.fn(async () => undefined),
   stopRun: vi.fn(),
   upsertInboxItem: vi.fn(async (input: Record<string, unknown>) => ({ id: "notice", ...input })),
+  titleFromPrompt: vi.fn((content: string) => content.trim().slice(0, 18) || "chat.newChatLabel"),
+  generateChatSessionTitle: vi.fn(async (prompt: string) => `AI:${prompt.trim().slice(0, 8)}`),
+  updateChatSessionTitle: vi.fn(async (_sessionId: string, title: string) => title),
+  updateTask: vi.fn(async (input: { taskId: string; title?: string }) => ({
+    id: input.taskId,
+    sessionId: "welcome",
+    title: input.title ?? "CLI task",
+    description: "",
+    agentId: "miku",
+    status: "in_progress" as const,
+    createdAt: "now",
+    updatedAt: "now",
+  })),
 }));
 
 vi.mock("../services/backend", () => backend);
