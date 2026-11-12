@@ -1734,7 +1734,7 @@ button.ds-stat.is-on {
   min-width: 0;
 }
 .runtime-directory {
-  --ui-directory-columns: minmax(0, 1.4fr) 88px minmax(0, 1.4fr) 96px 72px;
+  --ui-directory-columns: minmax(0, 1.4fr) 88px 120px minmax(0, 1.4fr) 96px 72px;
 }
 .runtime-directory-path {
   display: block;

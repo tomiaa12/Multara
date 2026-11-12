@@ -11249,9 +11249,6 @@ button.runtime-key-toggle:hover {
   gap: 6px;
   min-width: 0;
 }
-.skill-used-by .agent-avatar + .agent-avatar {
-  margin-left: -8px;
-}
 .skill-crumb {
   margin: 0 0 2px;
   font-size: var(--font-size-sm);
