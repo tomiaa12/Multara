@@ -1688,6 +1688,12 @@ button.ds-stat.is-on {
   gap: var(--spacing-0-5);
   min-width: 0;
 }
+/* 头像外包了 tooltip，不要跟标题一起被压扁，也不要撑出这一列 */
+.agent-directory-identity > .ds-tooltip-trigger {
+  display: inline-flex;
+  flex: none;
+  min-width: auto;
+}
 .agent-directory-identity strong {
   display: flex;
   align-items: center;
