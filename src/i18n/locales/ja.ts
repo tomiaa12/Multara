@@ -113,6 +113,7 @@ const catalog: MessageCatalog = {
   "nav.runtimes": "ランタイム",
   "nav.skills": "Skills",
   "nav.mcp": "MCP",
+  "nav.channels": "連携",
   "nav.settings": "設定",
   "nav.preview": "プレビュー",
   "nav.themeLight": "ライトに切り替え",

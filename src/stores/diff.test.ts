@@ -494,6 +494,22 @@ describe("diffStore", () => {
     expect(store.getChunksForFile("ws", "a.ts", "v1")).toEqual([]);
   });
 
+  test("session id keeps another conversation's pending files out of the list", async () => {
+    seedSession("s1", [{ messageId: "m1", files: { "a.ts": "v0" } }]);
+    seedSession("s2", [{ messageId: "m2", files: { "b.ts": "old" } }]);
+    const store = useDiffStore();
+    await store.loadSessions(["s1", "s2"]);
+    const contents = new Map([
+      [diskKey("ws", "a.ts"), "v1"],
+      [diskKey("ws", "b.ts"), "new"],
+    ]);
+    expect(store.listPendingDiffFiles(["ws"], contents).map((file) => file.filePath)).toEqual(["a.ts", "b.ts"]);
+    expect(store.listPendingDiffFiles(["ws"], contents, "s1").map((file) => file.filePath)).toEqual(["a.ts"]);
+    expect(store.listPendingDiffFiles(["ws"], contents, "s2").map((file) => file.filePath)).toEqual(["b.ts"]);
+    expect(store.listSnapshotFiles(["ws"], "s1").map((file) => file.filePath)).toEqual(["a.ts"]);
+    expect(store.listPendingDiffFiles(["ws"], contents, "missing")).toEqual([]);
+  });
+
   test("lists only files that still have Accept/Undo chunks", async () => {
     seedSession("s1", [
       { messageId: "m1", files: { "a.ts": "v0", "b.ts": "keep", "c.ts": "old" } },
