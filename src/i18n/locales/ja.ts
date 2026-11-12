@@ -2313,7 +2313,7 @@ const catalog: MessageCatalog = {
   "explorer.action.readPath": "ローカルパスを読み取る",
 
   "settings.section.experimental": "試験的機能",
-  "settings.section.experimentalDesc": "調整中の機能です。既定ではオフです。",
+  "settings.section.experimentalDesc": "調整中の機能です。既定ではオンです。",
   "settings.experimental.genui": "生成 UI",
   "settings.experimental.genuiHint": "エージェントが返答にカード、統計、表、グラフ、フォームを表示できます。オフの場合はコードブロックとして表示されます。",
   "genui.actionHeader": "UI 操作",

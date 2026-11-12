@@ -5,6 +5,7 @@ import { useAppStore } from "../../../../stores/app";
 import { useCanvasStore } from "../../../../stores/canvas";
 import type { GenUiSubmission } from "../../ui-outbound";
 import { t } from "../../../../i18n";
+import { isCanvasEnabled } from "../block";
 
 // GenUiBlock 给所有组件传同一组 props，没声明的不要落到根元素上（例如 title 会变成原生提示）
 defineOptions({ inheritAttrs: false });
@@ -20,9 +21,7 @@ const props = defineProps<{
 const emit = defineEmits<{ action: [action: string, values?: unknown] }>();
 const store = useAppStore();
 const canvas = useCanvasStore();
-const canvasOn = computed(
-  () => store.data?.settings.genuiEnabled === "true" && store.data?.settings.canvasesEnabled === "true",
-);
+const canvasOn = computed(() => isCanvasEnabled(store.data?.settings));
 /** openCanvas 按钮在 Canvas 关闭时隐藏（不是置灰） */
 const actions = computed(() => props.data.actions.filter((action) => !action.openCanvas || canvasOn.value));
 const submitActions = computed(() => actions.value.filter((action) => !action.openCanvas));

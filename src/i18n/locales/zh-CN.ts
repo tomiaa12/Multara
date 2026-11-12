@@ -2356,7 +2356,7 @@ const catalog: MessageCatalog = {
   "channels.deleteConfirm": "删除渠道 {name}？已有对话仍会保留在 Multara 中。",
   "chat.fromChannel": "来自{channel} · {sender}",
   "settings.section.experimental": "实验功能",
-  "settings.section.experimentalDesc": "还在打磨的功能，默认关闭。",
+  "settings.section.experimentalDesc": "还在打磨的功能，默认开启。",
   "settings.experimental.genui": "生成式界面",
   "settings.experimental.genuiHint": "智能体可以在回复里放卡片、统计、表格、图表和表单。关闭后这些内容显示为代码块。",
   "genui.actionHeader": "界面操作",

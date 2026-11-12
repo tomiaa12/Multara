@@ -4,9 +4,24 @@ export const GENUI_FENCE = "multara-ui";
 /** 一条回复里最多渲染这么多个界面块，多出来的按普通代码块显示 */
 export const GENUI_MAX_BLOCKS = 6;
 
+/** 没写入过的实验开关默认打开；只有明确存了 "false" 才关。设置还没加载时先当关。 */
+function experimentalOn(settings: Record<string, string> | null | undefined, key: string) {
+  return Boolean(settings) && settings?.[key] !== "false";
+}
+
 /** 实验功能「生成式界面」是否打开（app_settings.genuiEnabled） */
 export function isGenUiEnabled(settings?: Record<string, string> | null) {
-  return settings?.genuiEnabled === "true";
+  return experimentalOn(settings, "genuiEnabled");
+}
+
+/** Canvas：生成式界面打开，且 canvasesEnabled 不是 "false"。 */
+export function isCanvasEnabled(settings?: Record<string, string> | null) {
+  return isGenUiEnabled(settings) && settings?.canvasesEnabled !== "false";
+}
+
+/** MCP Apps：生成式界面打开，且 mcpAppsEnabled 不是 "false"。 */
+export function isMcpAppsEnabled(settings?: Record<string, string> | null) {
+  return isGenUiEnabled(settings) && settings?.mcpAppsEnabled !== "false";
 }
 
 export interface GenUiSpec {

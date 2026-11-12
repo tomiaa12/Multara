@@ -22,6 +22,7 @@ import WorkspaceFileTree from "../../components/workbench/WorkspaceFileTree.vue"
 import { fileNameOf, workspaceMode, workspaceModeHint, workspaceModeLabel, workspaceSubtitle } from "../../components/workbench/workspace-mode";
 import { loadScmDiff, scmDiffId, scmOpensAsFile } from "../../components/workbench/scm-diff";
 import type { ScmOpenChangesPayload, ScmOpenTarget } from "../../components/workbench/scm-groups";
+import { isCanvasEnabled } from "../../components/chat/genui/block";
 import { useAppStore } from "../../stores/app";
 import {
   activeTerminalSessionId,
@@ -243,7 +244,7 @@ const surfaceLabel: Record<InboxSurfaceId, string> = {
 
 function surfaceAllowed(id: InboxSurfaceId) {
   if (id === "canvas") {
-    return store.data?.settings.genuiEnabled === "true" && store.data?.settings.canvasesEnabled === "true";
+    return isCanvasEnabled(store.data?.settings);
   }
   if (id === "details") return props.kind === "task";
   if (id === "changes") return props.kind === "project";

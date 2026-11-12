@@ -898,7 +898,7 @@ fn requires_input(manifest: &Manifest) -> bool {
 
 pub fn canvases_enabled(db: &Connection) -> bool {
     crate::commands::genui_enabled(db)
-        && crate::commands::setting_value(db, "canvasesEnabled", "false") == "true"
+        && crate::commands::setting_value(db, "canvasesEnabled", "true") == "true"
 }
 
 #[cfg(test)]

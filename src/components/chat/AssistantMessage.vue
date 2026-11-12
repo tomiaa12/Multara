@@ -22,7 +22,7 @@ import { plansInMessage } from "./plan-state";
 import { useAppStore } from "../../stores/app";
 import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
 import { extractQuestions } from "./question-block";
-import { GENUI_MAX_BLOCKS, isGenUiEnabled, splitGenUi } from "./genui/block";
+import { GENUI_MAX_BLOCKS, isGenUiEnabled, isMcpAppsEnabled, splitGenUi } from "./genui/block";
 import GenUiBlock from "./genui/GenUiBlock.vue";
 import { genUiSendingIds, genUiSubmissions, sendGenUiAction } from "./ui-outbound";
 import { toolResultUis } from "./genui/tool-ui";
@@ -159,7 +159,7 @@ const genUiSubmitted = computed(() =>
 /** 生成式界面开关打开时，`multara ... --ui` 的工具结果在正文下方显示成界面块 */
 const toolUis = computed(() => (genUiEnabled.value ? toolResultUis(props.message.timeline) : []));
 /** MCP Apps：MCP 工具调用（mcp__<server>__<tool>）；有没有界面由 McpAppFrame 自己去问 */
-const mcpAppsOn = computed(() => genUiEnabled.value && store.data?.settings.mcpAppsEnabled === "true");
+const mcpAppsOn = computed(() => isMcpAppsEnabled(store.data?.settings));
 const mcpCalls = computed(() => {
   if (!mcpAppsOn.value) return [];
   const results = new Map<string, TimelineItem>();

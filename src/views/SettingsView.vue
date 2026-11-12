@@ -91,9 +91,9 @@ const form = reactive({
   permissionMode: "bypass",
   dictationEnabled: true,
   dictationLanguage: "auto",
-  genuiEnabled: false,
-  canvasesEnabled: false,
-  mcpAppsEnabled: false,
+  genuiEnabled: true,
+  canvasesEnabled: true,
+  mcpAppsEnabled: true,
   webhookPort: 43127,
   branchGenMode: GEN_MODE_AGENT,
   branchAgentId: "",
@@ -218,9 +218,9 @@ watch(
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
     form.dictationEnabled = settings.dictationEnabled !== "false";
     form.dictationLanguage = settings.dictationLanguage ?? "auto";
-    form.genuiEnabled = settings.genuiEnabled === "true";
-    form.canvasesEnabled = settings.canvasesEnabled === "true";
-    form.mcpAppsEnabled = settings.mcpAppsEnabled === "true";
+    form.genuiEnabled = settings.genuiEnabled !== "false";
+    form.canvasesEnabled = settings.canvasesEnabled !== "false";
+    form.mcpAppsEnabled = settings.mcpAppsEnabled !== "false";
     form.webhookPort = Number(settings.webhookPort ?? 43127);
     form.branchGenMode = normalizeGenMode(settings.branchGenMode);
     form.branchAgentId = settings.branchAgentId ?? "";

@@ -8,7 +8,7 @@ import { chatMessagesKey } from "./chat/context-usage";
 import ChatEditingBar from "./chat/ChatEditingBar.vue";
 import ChatQuestionCarousel from "./chat/ChatQuestionCarousel.vue";
 import { extractQuestions } from "./chat/question-block";
-import { isGenUiEnabled } from "./chat/genui/block";
+import { isCanvasEnabled, isGenUiEnabled } from "./chat/genui/block";
 import CanvasBar from "./chat/CanvasBar.vue";
 import UiFrame from "./UiFrame.vue";
 import { formatUiContexts, registerComposerFiller } from "./chat/ui-outbound";
@@ -125,9 +125,7 @@ const store = useAppStore();
 const diffStore = useDiffStore();
 const canvas = useCanvasStore();
 /** Canvas 是生成式界面下面的子开关 */
-const canvasOn = computed(() =>
-  isGenUiEnabled(store.data?.settings) && store.data?.settings.canvasesEnabled === "true",
-);
+const canvasOn = computed(() => isCanvasEnabled(store.data?.settings));
 const uiContexts = computed(() => (props.preview ? [] : canvas.contextsFor(session.value?.id)));
 /** 没有工作台可以显示 Canvas 时（浮动聊天），在聊天面板上弹窗显示 */
 const canvasModal = ref<{ sessionId: string; instanceId: string } | null>(null);
