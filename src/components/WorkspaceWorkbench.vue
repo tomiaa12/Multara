@@ -153,6 +153,7 @@ import {
 } from "./chat/workspace-file-drag";
 import { isOversizedInlineSelection } from "./chat/composer-content";
 import { OS_DROP_EVENT, onOsDropHover, type OsDropDetail } from "./chat/os-file-drop";
+import { isCanvasEnabled } from "./chat/genui/block";
 import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
@@ -2916,9 +2917,7 @@ function removeEditorTab(tab: EditorTab, options: { hideCanvas?: boolean } = {})
 // ---------- Canvas 标签（方案 §5.7）----------
 // Canvas 归属会话：切换会话时，该会话 visible 的实例整组换进来，上一个会话的整组换出（不改 visible），
 // 照 VS Code 的 ICanvasWorkingSets。
-const canvasOn = computed(() =>
-  store.data?.settings.genuiEnabled === "true" && store.data?.settings.canvasesEnabled === "true",
-);
+const canvasOn = computed(() => isCanvasEnabled(store.data?.settings));
 const canvasViewId = `workbench-${crypto.randomUUID()}`;
 const activeCanvas = computed(
   () => editorTabs.value.find((tab) => tabKey(tab) === activeEditorKey.value)?.canvas ?? null,

@@ -52,7 +52,7 @@ pub struct McpAppHost {
 
 pub fn mcp_apps_enabled(db: &rusqlite::Connection) -> bool {
     crate::commands::genui_enabled(db)
-        && crate::commands::setting_value(db, "mcpAppsEnabled", "false") == "true"
+        && crate::commands::setting_value(db, "mcpAppsEnabled", "true") == "true"
 }
 
 /// `mcp__<server>__<tool>`（claude 原生；codex 的在归一化时改成了同样格式，R27）。

@@ -2313,7 +2313,7 @@ const catalog: MessageCatalog = {
   "explorer.action.readPath": "로컬 경로 읽기",
 
   "settings.section.experimental": "실험 기능",
-  "settings.section.experimentalDesc": "아직 다듬는 중인 기능입니다. 기본값은 꺼짐입니다.",
+  "settings.section.experimentalDesc": "아직 다듬는 중인 기능입니다. 기본값은 켜짐입니다.",
   "settings.experimental.genui": "생성형 UI",
   "settings.experimental.genuiHint": "에이전트가 답변에 카드, 통계, 표, 차트, 폼을 넣을 수 있습니다. 끄면 코드 블록으로 표시됩니다.",
   "genui.actionHeader": "UI 동작",
