@@ -1069,6 +1069,7 @@ const catalog: MessageCatalog = {
   "automation.namePlaceholder": "自動化名稱",
   "automation.promptHint": "目標、脈絡與步驟——智能體每次執行都會讀到",
   "automation.promptPlaceholder": "# 目標",
+  "automation.promptRequired": "請填寫目標、脈絡或步驟",
   "automation.runbookTemplate": `# 目標
 你希望智能體完成什麼？
 
