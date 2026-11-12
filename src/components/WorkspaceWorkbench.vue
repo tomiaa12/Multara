@@ -97,7 +97,7 @@ import {
 } from "./workbench/workspace-file-location";
 import QuickOpen from "./workbench/QuickOpen.vue";
 import type { QuickOpenFile } from "./workbench/quick-open";
-import { loadScmDiff, scmDiffId } from "./workbench/scm-diff";
+import { loadScmDiff, scmDiffId, scmOpensAsFile } from "./workbench/scm-diff";
 import { localHistoryEntry, recordLocalHistory, renameLocalHistoryPath } from "./workbench/local-history";
 import { scmGroups, type ScmOpenChangesPayload, type ScmOpenTarget } from "./workbench/scm-groups";
 import { bindEditorZoom } from "./workbench/monaco-zoom";
@@ -4177,7 +4177,7 @@ async function loadLocalHistoryDiff(workspaceId: string, path: string, localId: 
 async function openSourceControlChange(target: ScmOpenTarget, opts?: { activate?: boolean }) {
   error.value = "";
   const activate = opts?.activate !== false;
-  if (target.group === "merge") {
+  if (scmOpensAsFile(target.group)) {
     await openEditorFile(target.workspaceId, target.path, { pin: true, force: true });
     return;
   }

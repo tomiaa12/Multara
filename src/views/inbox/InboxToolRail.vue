@@ -20,7 +20,7 @@ import SearchView from "../../components/workbench/SearchView.vue";
 import TerminalPanel from "../../components/workbench/TerminalPanel.vue";
 import WorkspaceFileTree from "../../components/workbench/WorkspaceFileTree.vue";
 import { fileNameOf, workspaceMode, workspaceModeHint, workspaceModeLabel, workspaceSubtitle } from "../../components/workbench/workspace-mode";
-import { loadScmDiff, scmDiffId } from "../../components/workbench/scm-diff";
+import { loadScmDiff, scmDiffId, scmOpensAsFile } from "../../components/workbench/scm-diff";
 import type { ScmOpenChangesPayload, ScmOpenTarget } from "../../components/workbench/scm-groups";
 import { useAppStore } from "../../stores/app";
 import {
@@ -456,6 +456,10 @@ function diffReaders(workspaceId: string) {
 }
 
 async function openChange(target: ScmOpenTarget) {
+  if (scmOpensAsFile(target.group)) {
+    await openFile(target.workspaceId, target.path, true);
+    return;
+  }
   try {
     const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
     const id = scmDiffId(target);

@@ -48,6 +48,15 @@ export function scmCommitDiffTabName(input: {
   return `${name} (${parentId}) \u2194 ${name} (${commitId})`;
 }
 
+/**
+ * VS Code `resolveChangeCommand`：leftUri 为空时 `vscode.open` 文件本身，有左侧才 `vscode.diff`。
+ * 未跟踪没有 HEAD/index；合并冲突打开带冲突标记的工作区文件。
+ * 修改（changes）是 index ↔ 工作区，暂存（staged）是 HEAD ↔ index。
+ */
+export function scmOpensAsFile(group: ScmOpenTarget["group"]): boolean {
+  return group === "untracked" || group === "merge";
+}
+
 export function scmDiffPlan(
   target: Pick<ScmOpenTarget, "group" | "commit" | "parent" | "status"> & { path?: string },
 ): ScmDiffPlan {
@@ -77,6 +86,7 @@ export function scmDiffPlan(
     };
   }
   if (target.group === "untracked") {
+    // 单击未跟踪项不会走到这里：VS Code 没有左侧版本，直接打开文件。保留计划给仍要做空 diff 的调用。
     return {
       original: "empty",
       modified: "worktree",

@@ -78,6 +78,12 @@ export function applyMonacoTheme(theme = currentDocumentTheme()) {
   monaco.editor.setTheme(monacoThemeName(theme));
 }
 
+/** 主题颜色表晚于编辑器注册时，已创建的编辑器会停在没有 token 色的状态。露出前再定义一次。 */
+export function refreshMonacoTheme(theme = currentDocumentTheme()) {
+  defineEditorThemes();
+  applyMonacoTheme(theme);
+}
+
 export function watchDocumentTheme(onChange?: (theme: "light" | "dark") => void) {
   const notify = () => {
     const theme = currentDocumentTheme();
