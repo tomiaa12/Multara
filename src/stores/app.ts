@@ -541,7 +541,23 @@ export const useAppStore = defineStore("app", () => {
 
   async function deleteAgent(agentId: string) {
     if (!data.value) return;
-    data.value.agents = await backend.deleteAgent(agentId);
+    const agents = await backend.deleteAgent(agentId);
+    if (!data.value) return;
+    // 预览模式没有后端，deleteAgent 返回空列表；桌面端至少还留着 Miku。
+    if (agents.length === 0) {
+      data.value.agents = data.value.agents.filter((agent) => agent.id !== agentId);
+      return;
+    }
+    data.value.agents = agents;
+    try {
+      const next = await backend.listAgentsAndSquads();
+      if (!data.value) return;
+      data.value.agents = next.agents;
+      data.value.squads = next.squads;
+      await refreshTaskInboxSurfaces();
+    } catch (cause) {
+      console.error("[app] refresh after agent delete failed", cause);
+    }
   }
 
   async function saveSquad(input: Omit<Squad, "id"> & { id?: string }) {

@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{BufWriter, Write},
+    io::{BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard, OnceLock, PoisonError, TryLockError},
     thread,
@@ -8,6 +8,7 @@ use std::{
 };
 
 use chrono::Local;
+use tauri::Manager;
 
 const WAIT_WARN: Duration = Duration::from_secs(2);
 const HEARTBEAT: Duration = Duration::from_secs(15);
@@ -186,6 +187,194 @@ fn file_name(path: &str) -> &str {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_report_keeps_failures_and_drops_heartbeats() {
+        let dir = std::env::temp_dir().join(format!(
+            "multara-error-log-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("multara.log"),
+            "\
+2026-11-12 09:00:00.000 [1] HEARTBEAT
+2026-11-12 09:00:01.000 [1] LEAVE list_runtimes 4.39s SLOW
+2026-11-12 09:00:02.000 [1] ENTER list_agents
+2026-11-12 09:00:03.000 [1] webhook delivery abc dispatch failed: timeout
+2026-11-12 09:00:04.000 [1] PANIC worker exploded
+2026-11-12 09:00:05.000 [1] 监听工作区 ws 失败：denied
+",
+        )
+        .unwrap();
+
+        let report = recent_error_report(&dir, "9.9.9");
+        assert!(report.starts_with("Multara error log\n"));
+        assert!(report.contains("version: 9.9.9\n"));
+        assert!(report.contains("SLOW"));
+        assert!(report.contains("dispatch failed"));
+        assert!(report.contains("PANIC worker exploded"));
+        assert!(report.contains("失败"));
+        assert!(!report.contains("HEARTBEAT"));
+        assert!(!report.contains("ENTER list_agents"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+pub fn flush() {
+    if let Some(mut logger) = logger() {
+        let _ = logger.file.flush();
+    }
+}
+
+const ERROR_TAIL_BYTES: u64 = 1024 * 1024;
+const MAX_ERROR_LINES: usize = 800;
+const MAX_ERROR_LINE_CHARS: usize = 1_000;
+const LOG_FILE_LIMIT: usize = 2 * 1024 * 1024;
+
+/// 从当前日志和上一份轮转日志的末尾抽出报错、卡顿、崩溃行。
+pub fn recent_error_report(data_dir: &Path, version: &str) -> String {
+    let current = data_dir.join("multara.log");
+    let previous = current.with_extension("log.old");
+    let mut matched = Vec::new();
+    let mut missing = Vec::new();
+    for path in [&previous, &current] {
+        match read_tail(path, ERROR_TAIL_BYTES) {
+            Ok(text) => {
+                for line in text.lines() {
+                    if is_error_line(line) {
+                        matched.push(clip_error_line(line));
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(path.display().to_string());
+            }
+            Err(error) => matched.push(format!("# 无法读取 {}: {error}", path.display())),
+        }
+    }
+    let dropped = matched.len().saturating_sub(MAX_ERROR_LINES);
+    if dropped > 0 {
+        matched.drain(0..dropped);
+    }
+    let mut report = String::new();
+    report.push_str("Multara error log\n");
+    report.push_str(&format!("version: {version}\n"));
+    report.push_str(&format!(
+        "exported: {}\n",
+        Local::now().format("%Y-%m-%d %H:%M:%S")
+    ));
+    report.push_str(&format!("matched: {}\n", matched.len()));
+    report.push_str(&format!("dropped: {dropped}\n"));
+    if !missing.is_empty() {
+        report.push_str(&format!("missing: {}\n", missing.join(", ")));
+    }
+    report.push_str(
+        "filter: panic, error, failed, failure, wait, slow, reap, poisoned, stuck, 失败, 出错\n",
+    );
+    report.push_str("---\n");
+    if matched.is_empty() {
+        report.push_str("(no matching lines in the recent log tail)\n");
+    } else {
+        for line in &matched {
+            report.push_str(line);
+            report.push('\n');
+        }
+    }
+    report
+}
+
+fn is_error_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("panic")
+        || lower.contains("error")
+        || lower.contains("failed")
+        || lower.contains("failure")
+        || lower.contains(" wait ")
+        || lower.contains(" slow")
+        || lower.contains("reap ")
+        || lower.contains("poisoned")
+        || lower.contains("stuck")
+        || line.contains("失败")
+        || line.contains("出错")
+}
+
+fn clip_error_line(line: &str) -> String {
+    let mut chars = line.chars();
+    let clipped: String = chars.by_ref().take(MAX_ERROR_LINE_CHARS).collect();
+    if chars.next().is_none() {
+        clipped
+    } else {
+        format!("{clipped}…")
+    }
+}
+
+fn read_tail(path: &Path, max_bytes: u64) -> std::io::Result<String> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let skipped = if len > max_bytes {
+        file.seek(SeekFrom::Start(len - max_bytes))?;
+        true
+    } else {
+        false
+    };
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    if skipped {
+        if let Some(index) = text.find('\n') {
+            text.drain(..=index);
+        }
+    }
+    Ok(text)
+}
+
+#[tauri::command]
+pub async fn export_recent_error_log(app: tauri::AppHandle) -> Result<String, String> {
+    let version = app.package_info().version.to_string();
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        flush();
+        recent_error_report(&data_dir, &version)
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_log_file(path: String, contents: String) -> Result<(), String> {
+    let path = PathBuf::from(&path);
+    if !path.is_absolute() {
+        return Err(tr!("日志文件必须保存到绝对路径"));
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    if !extension.eq_ignore_ascii_case("log") && !extension.eq_ignore_ascii_case("txt") {
+        return Err(tr!("日志文件必须是文本"));
+    }
+    if contents.len() > LOG_FILE_LIMIT {
+        return Err(tr!("日志文件过大"));
+    }
+    if !contents.starts_with("Multara error log\n") {
+        return Err(tr!("日志文件内容不正确"));
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+    }
+    fs::write(path, contents).map_err(|error| error.to_string())
 }
 
 fn rotate_if_needed(path: &Path) {

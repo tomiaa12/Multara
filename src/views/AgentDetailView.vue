@@ -41,6 +41,7 @@ const capabilityTab = ref<CapabilityTab>("instructions");
 const busy = ref(false);
 const saved = ref(false);
 const error = ref("");
+const removeError = ref("");
 const runs = ref<AgentActivityRecord[]>([]);
 const stats = ref<RunStatistics | null>(null);
 const statsRange = ref("30");
@@ -272,8 +273,13 @@ async function remove() {
   if (!agent.value || !(await confirmDialog(t("agent.deleteConfirm", { name: agent.value.name }), { danger: true }))) {
     return;
   }
-  await store.deleteAgent(agent.value.id);
-  await router.push("/agents");
+  removeError.value = "";
+  try {
+    await store.deleteAgent(agent.value.id);
+    await router.push("/agents");
+  } catch (cause) {
+    removeError.value = cause instanceof Error ? cause.message : String(cause);
+  }
 }
 
 function runStatusLabel(status: string) {
@@ -311,6 +317,7 @@ function openRun(run: AgentActivityRecord) {
       </div>
       <UiButton v-if="!isChief" variant="ghost" size="icon" class="agent-delete" :tip="t('agent.delete')" @click="remove"><Trash2 :size="15" /></UiButton>
     </header>
+    <p v-if="removeError" class="form-error agent-detail-error">{{ removeError }}</p>
 
     <nav class="ds-tabs agent-detail-tabs" role="tablist" :aria-label="t('agent.tabsAria')">
       <button

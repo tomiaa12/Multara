@@ -305,14 +305,93 @@ pub fn save(
     list(db)
 }
 
-pub fn delete(db: &Connection, agent_id: &str) -> Result<Vec<Agent>, String> {
+pub fn delete(db: &mut Connection, agent_id: &str) -> Result<Vec<Agent>, String> {
     let key = system_key(db, agent_id)?;
     if builtin_agents::is_miku_key(key.as_deref()) {
         return Err(tr!("Miku 是产品总管，不能删除"));
     }
-    db.execute("DELETE FROM agents WHERE id = ?1", [agent_id])
+    // 创建过程卡住时，智能体行已经落库，运行记录或队长引用还在。
+    // 这两处外键没有级联，直接 DELETE agents 会被拒绝，界面上看起来像没反应。
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    release_squads(&transaction, agent_id)?;
+    transaction
+        .execute(
+            "UPDATE agent_runs SET parent_run_id = NULL
+             WHERE parent_run_id IN (SELECT id FROM agent_runs WHERE agent_id = ?1)",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM run_events
+             WHERE run_id IN (SELECT id FROM agent_runs WHERE agent_id = ?1)",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM agent_runs WHERE agent_id = ?1", [agent_id])
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM session_runtime_chats WHERE agent_id = ?1",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+    transaction
+        .execute(
+            "UPDATE tasks SET status = 'cancelled', updated_at = ?1
+             WHERE agent_id = ?2
+               AND status IN ('todo', 'in_progress')
+               AND NOT EXISTS (
+                 SELECT 1 FROM agent_runs
+                 WHERE agent_runs.session_id = tasks.session_id
+                   AND agent_runs.status IN ('queued', 'running')
+               )",
+            params![now, agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM agents WHERE id = ?1", [agent_id])
         .map_err(|error| tr!("该智能体仍被小队或历史任务使用，无法删除：{error}", error = error))?;
+    transaction.commit().map_err(|error| error.to_string())?;
     list(db)
+}
+
+/// 队长外键没有级联。还有别的成员时把队长交给其中一人，否则整队删掉。
+fn release_squads(db: &Connection, agent_id: &str) -> Result<(), String> {
+    let mut statement = db
+        .prepare("SELECT id FROM squads WHERE leader_agent_id = ?1")
+        .map_err(|error| error.to_string())?;
+    let squad_ids = statement
+        .query_map([agent_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    for squad_id in squad_ids {
+        let replacement: Option<String> = db
+            .query_row(
+                "SELECT agent_id FROM squad_members
+                 WHERE squad_id = ?1 AND agent_id != ?2
+                 ORDER BY agent_id LIMIT 1",
+                params![squad_id, agent_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(replacement) = replacement {
+            db.execute(
+                "UPDATE squads SET leader_agent_id = ?1 WHERE id = ?2",
+                params![replacement, squad_id],
+            )
+            .map_err(|error| error.to_string())?;
+        } else {
+            db.execute("DELETE FROM squads WHERE id = ?1", [squad_id])
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 pub fn create(
@@ -370,8 +449,8 @@ mod tests {
 
     #[test]
     fn cannot_delete_miku() {
-        let db = db();
-        assert!(delete(&db, "miku").is_err());
+        let mut db = db();
+        assert!(delete(&mut db, "miku").is_err());
         let count: u32 = db
             .query_row("SELECT COUNT(*) FROM agents WHERE id='miku'", [], |row| {
                 row.get(0)
@@ -382,20 +461,141 @@ mod tests {
 
     #[test]
     fn can_delete_a_specialist() {
-        let db = db();
+        let mut db = db();
         db.execute(
             "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
              VALUES ('spec', '前端', '🤖', '', '', 'cursor', 'auto', 1)",
             [],
         )
         .unwrap();
-        delete(&db, "spec").unwrap();
+        delete(&mut db, "spec").unwrap();
         let count: u32 = db
             .query_row("SELECT COUNT(*) FROM agents WHERE id='spec'", [], |row| {
                 row.get(0)
             })
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn delete_clears_runs_and_cancels_open_tasks() {
+        let mut db = db();
+        db.execute(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('spec', '前端', '🤖', '', '', 'cursor', 'auto', 1),
+                    ('other', '文档', '📄', '', '', 'cursor', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('session', '建仓', 'agent', 'spec', 't', 't'),
+                    ('other-session', '后续', 'agent', 'other', 't', 't')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('run', 'session', 'spec', 'cursor', '创建智能体', 'queued', 't')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at)
+             VALUES ('child', 'other-session', 'other', 'cursor', 'run', '接着做', 'queued', 't')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO run_events (id, run_id, session_id, seq, event_type, created_at)
+             VALUES ('event', 'run', 'session', 1, 'text', 't')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO tasks (id, session_id, title, description, agent_id, status, created_at, updated_at)
+             VALUES ('task', 'session', '建仓', '', 'spec', 'in_progress', 't', 't')",
+            [],
+        )
+        .unwrap();
+
+        delete(&mut db, "spec").unwrap();
+
+        let agents: u32 = db
+            .query_row("SELECT COUNT(*) FROM agents WHERE id='spec'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(agents, 0);
+        let runs: u32 = db
+            .query_row(
+                "SELECT COUNT(*) FROM agent_runs WHERE id='run'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(runs, 0);
+        let events: u32 = db
+            .query_row(
+                "SELECT COUNT(*) FROM run_events WHERE id='event'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 0);
+        let parent: Option<String> = db
+            .query_row(
+                "SELECT parent_run_id FROM agent_runs WHERE id='child'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(parent.is_none());
+        let status: String = db
+            .query_row("SELECT status FROM tasks WHERE id='task'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status, "cancelled");
+    }
+
+    #[test]
+    fn delete_promotes_another_member_and_drops_a_solo_squad() {
+        let mut db = db();
+        db.execute(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('spec', '前端', '🤖', '', '', 'cursor', 'auto', 1),
+                    ('other', '文档', '📄', '', '', 'cursor', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO squads (id, name, description, instructions, leader_agent_id)
+             VALUES ('shared', '小队', '', '', 'spec'), ('solo', '单人', '', '', 'spec')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO squad_members (squad_id, agent_id)
+             VALUES ('shared', 'spec'), ('shared', 'other'), ('solo', 'spec')",
+            [],
+        )
+        .unwrap();
+
+        delete(&mut db, "spec").unwrap();
+
+        let leader: String = db
+            .query_row(
+                "SELECT leader_agent_id FROM squads WHERE id='shared'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(leader, "other");
+        let solo: u32 = db
+            .query_row("SELECT COUNT(*) FROM squads WHERE id='solo'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(solo, 0);
     }
 
     #[test]
