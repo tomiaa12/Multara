@@ -3307,8 +3307,8 @@ pub async fn save_agent(input: AgentInput, app: AppHandle) -> Result<Vec<Agent>,
 #[tauri::command]
 pub fn delete_agent(agent_id: String, state: State<'_, AppState>) -> Result<Vec<Agent>, String> {
     let _span = crate::diag::span("delete_agent");
-    let db = state.lock_db()?;
-    ops::agent::delete(&db, &agent_id)
+    let mut db = state.lock_db()?;
+    ops::agent::delete(&mut db, &agent_id)
 }
 
 #[tauri::command]

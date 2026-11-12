@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Download, FlaskConical, FolderTree, GitBranch, Info, MessageSquare, Mic, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
 import {
   DEFAULT_EXPLORER_SETTINGS,
@@ -10,7 +11,7 @@ import {
   serializeExplorerSettings,
   type ExplorerSettings,
 } from "../components/workbench/explorer/explorer-settings";
-import { appVersion, checkGitExecutable } from "../services/backend";
+import { appVersion, checkGitExecutable, exportRecentErrorLog, saveLogFile } from "../services/backend";
 import { setUpdateProxy } from "../services/update";
 import { useAppStore } from "../stores/app";
 import { useDictationStore } from "../stores/dictation";
@@ -109,6 +110,8 @@ const filesExcludeText = ref(filesExcludeToText(DEFAULT_EXPLORER_SETTINGS.filesE
 const watcherExcludeText = ref(filesExcludeToText(DEFAULT_EXPLORER_SETTINGS.watcherExclude));
 const message = ref("");
 const version = ref("");
+const logMessage = ref("");
+const exportingLog = ref(false);
 const gitTestMessage = ref("");
 const gitTesting = ref(false);
 let hydrating = true;
@@ -351,6 +354,29 @@ async function persist() {
     message.value = t("settings.saveError", {
       error: cause instanceof Error ? cause.message : String(cause),
     });
+  }
+}
+
+async function exportErrorLog() {
+  if (exportingLog.value) return;
+  exportingLog.value = true;
+  logMessage.value = "";
+  try {
+    const contents = await exportRecentErrorLog();
+    const path = await save({
+      title: t("settings.about.exportLog"),
+      defaultPath: "multara-errors.log",
+      filters: [{ name: "Log", extensions: ["log"] }],
+    });
+    if (!path) return;
+    await saveLogFile(path, contents);
+    logMessage.value = t("settings.about.exportLogSaved", { path });
+  } catch (cause) {
+    logMessage.value = t("settings.about.exportLogFailed", {
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+  } finally {
+    exportingLog.value = false;
   }
 }
 
@@ -762,6 +788,15 @@ onBeforeUnmount(() => {
           <div class="settings-row">
             <div><strong>{{ t("settings.about.version") }}</strong><p>{{ message || t("settings.about.versionHint") }}</p></div>
             <span class="settings-version">{{ version || "…" }}</span>
+          </div>
+          <div class="settings-row">
+            <div>
+              <strong>{{ t("settings.about.exportLog") }}</strong>
+              <p class="settings-log-result">{{ logMessage || t("settings.about.exportLogHint") }}</p>
+            </div>
+            <UiButton :disabled="exportingLog" @click="exportErrorLog">
+              <Download :size="15" />{{ t("settings.about.exportLogBtn") }}
+            </UiButton>
           </div>
         </section>
       </div>

@@ -8167,6 +8167,9 @@ body.is-dragging-workspace-file * {
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--letter-spacing-tight);
 }
+.agent-detail-error {
+  margin: 0 clamp(var(--spacing-4), 4vw, var(--spacing-12)) var(--spacing-3);
+}
 .agent-detail-header p {
   margin: var(--spacing-1) 0 0;
   overflow: hidden;
@@ -12446,6 +12449,9 @@ label.settings-row:hover {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-normal);
+}
+.settings-log-result {
+  overflow-wrap: anywhere;
 }
 .settings-row .ui-input:not(.ui-checkbox),
 .settings-row .ds-select {
