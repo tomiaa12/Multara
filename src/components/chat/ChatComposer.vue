@@ -24,6 +24,7 @@ import type { SelectOption } from "../ui/select-types";
 import type { ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
 import { useCanvasStore } from "../../stores/canvas";
+import { isCanvasEnabled } from "./genui/block";
 import { getCaretClientRect } from "./composer-caret";
 import { filterCommands } from "./composer-mentions";
 import { replaceSlashToken } from "./skill-slash";
@@ -423,7 +424,7 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     { id: "requirement", label: t("chat.context.requirements"), groups: [group("requirements", t("chat.context.requirements"))] },
   );
   // 「添加上下文 → Canvas...」（R15）：不产生附件，选中即打开或聚焦；页面内容只能经 __multara/context 进上下文
-  const canvasOn = data?.settings.genuiEnabled === "true" && data?.settings.canvasesEnabled === "true";
+  const canvasOn = isCanvasEnabled(data?.settings);
   // 懒加载：菜单打开时这个会话的列表还没拉过就去拉，拉回来菜单自动刷新
   if (canvasOn && currentSessionId && !canvas.isLoaded(currentSessionId)) void canvas.refresh(currentSessionId);
   if (canvasOn && currentSessionId) {

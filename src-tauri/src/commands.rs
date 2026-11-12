@@ -7185,7 +7185,7 @@ pub(crate) fn expand_user_path(value: &str) -> Option<PathBuf> {
 
 /// 实验功能「生成式界面」：决定简报里的 multara-ui 速查段和 multara-ui skill 是否出现。
 pub(crate) fn genui_enabled(db: &Connection) -> bool {
-    setting_value(db, "genuiEnabled", "false") == "true"
+    setting_value(db, "genuiEnabled", "true") == "true"
 }
 
 pub(crate) fn setting_value(db: &Connection, key: &str, default: &str) -> String {

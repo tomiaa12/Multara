@@ -2311,7 +2311,7 @@ const catalog: MessageCatalog = {
   "explorer.action.openExternal": "用系統程式開啟檔案",
   "explorer.action.readPath": "讀取本機路徑",
   "settings.section.experimental": "實驗功能",
-  "settings.section.experimentalDesc": "還在打磨的功能，預設關閉。",
+  "settings.section.experimentalDesc": "還在打磨的功能，預設開啟。",
   "settings.experimental.genui": "生成式介面",
   "settings.experimental.genuiHint": "智慧體可以在回覆裡放卡片、統計、表格、圖表和表單。關閉後這些內容顯示為程式碼區塊。",
   "genui.actionHeader": "介面操作",

@@ -2356,7 +2356,7 @@ Who is this for? Any constraints?
   "channels.deleteConfirm": "Delete channel {name}? Existing conversations stay in Multara.",
   "chat.fromChannel": "From {channel} · {sender}",
   "settings.section.experimental": "Experimental",
-  "settings.section.experimentalDesc": "Features still being polished. Off by default.",
+  "settings.section.experimentalDesc": "Features still being polished. On by default.",
   "settings.experimental.genui": "Generative UI",
   "settings.experimental.genuiHint": "Agents can put cards, stats, tables, charts and forms in their replies. When off, these show as code blocks.",
   "genui.actionHeader": "UI action",
