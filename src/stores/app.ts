@@ -856,7 +856,6 @@ export const useAppStore = defineStore("app", () => {
         ? "needs_permission"
         : payload.status;
     const path = currentAppPath();
-    const viewingInboxSession = path === "/inbox" && activeInboxSessionId.value === session.id;
     const shouldNotify = shouldNotifyInbox({
       status,
       previousStatus: "running",
@@ -865,9 +864,10 @@ export const useAppStore = defineStore("app", () => {
       taskId: task?.id ?? null,
       currentPath: path,
       activeInboxSessionId: activeInboxSessionId.value,
+      chatOpen: chatOpen.value,
+      activeSessionId: activeSessionId.value,
     });
-    // 正在看这条：仍刷新预览/状态，但立刻标已读，避免未读 +1。
-    if (!shouldNotify && !viewingInboxSession) return;
+    // 所有 AI 会话都进收件箱；当时就在对应界面里看的，写入后立刻标已读。
     const item = await backend.upsertInboxItem({
       sessionId: session.id,
       projectId: session.projectId,
@@ -884,7 +884,7 @@ export const useAppStore = defineStore("app", () => {
     const index = data.value.inbox.findIndex((entry) => entry.sessionId === item.sessionId);
     if (index >= 0) data.value.inbox.splice(index, 1);
     data.value.inbox.unshift(item);
-    if (viewingInboxSession) {
+    if (!shouldNotify) {
       await markInboxRead(item.id, transcript.at(-1)?.id ?? null);
       return;
     }
