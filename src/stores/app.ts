@@ -78,6 +78,8 @@ export const useAppStore = defineStore("app", () => {
   const optimisticMessages = new Map<string, string>();
   /** 尚未落库就被撤回的乐观 user 消息；sendMessage 返回后删掉服务端记录。 */
   const withdrawnOptimistic = new Set<string>();
+  // 撤回和结束事件都会重载消息。后发起的那次为准，避免把已经删掉的「运行已停止。」又画回来。
+  const messageLoadTicket = new Map<string, number>();
   const runStates = ref<Record<string, RunEvent>>({});
   const composerContexts = ref<EditorSelectionContext[]>([]);
   const composerFocusNonce = ref(0);
@@ -384,9 +386,21 @@ export const useAppStore = defineStore("app", () => {
     });
   }
 
+  function beginMessageLoad(sessionId: string) {
+    const ticket = (messageLoadTicket.get(sessionId) ?? 0) + 1;
+    messageLoadTicket.set(sessionId, ticket);
+    return ticket;
+  }
+
+  function messageLoadIsCurrent(sessionId: string, ticket: number) {
+    return messageLoadTicket.get(sessionId) === ticket;
+  }
+
   /** 从库里重载会话消息，保留还没落库的乐观消息和进行中的流式消息 */
   async function reloadPersistedMessages(sessionId: string) {
+    const ticket = beginMessageLoad(sessionId);
     const persisted = await backend.listChatMessages(sessionId);
+    if (!messageLoadIsCurrent(sessionId, ticket)) return;
     const persistedIds = new Set(persisted.map((message) => message.id));
     const live = (messages.value[sessionId] ?? []).filter((message) => {
       if (persistedIds.has(message.id)) return false;
@@ -1587,8 +1601,12 @@ export const useAppStore = defineStore("app", () => {
           withdrawnOptimistic.delete(optimisticId);
           const returnedUser = result.find((message) => message.role === "user");
           if (returnedUser) {
+            const ticket = beginMessageLoad(next.sessionId);
             await backend.truncateSessionFromMessage(next.sessionId, returnedUser.id, false).catch(() => undefined);
-            messages.value[next.sessionId] = await backend.listChatMessages(next.sessionId);
+            const listed = await backend.listChatMessages(next.sessionId);
+            if (messageLoadIsCurrent(next.sessionId, ticket)) {
+              messages.value[next.sessionId] = listed;
+            }
           } else {
             messages.value[next.sessionId] = (messages.value[next.sessionId] ?? []).filter(
               (item) => item.id !== optimisticId,
@@ -1675,9 +1693,11 @@ export const useAppStore = defineStore("app", () => {
       return draft;
     }
     try {
+      const ticket = beginMessageLoad(sessionId);
       await backend.truncateSessionFromMessage(sessionId, user.id, false);
       useDiffStore().clearChunkStatesFrom(user.id, sessionId);
-      messages.value[sessionId] = await backend.listChatMessages(sessionId);
+      const listed = await backend.listChatMessages(sessionId);
+      if (messageLoadIsCurrent(sessionId, ticket)) messages.value[sessionId] = listed;
     } catch {
       const list = messages.value[sessionId] ?? [];
       const index = list.findIndex((item) => item.id === user.id);

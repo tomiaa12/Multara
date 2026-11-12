@@ -567,7 +567,7 @@ function hasCopySelection(event: KeyboardEvent) {
 }
 
 function onChatKeydown(event: KeyboardEvent) {
-  // 侧边栏里 Ctrl+C 停止当前运行。有选中文字时仍交给复制。
+  // 工作台和气泡的侧边栏都走这里。有选中文字时仍交给复制。
   if (
     event.ctrlKey &&
     !event.metaKey &&
@@ -575,7 +575,7 @@ function onChatKeydown(event: KeyboardEvent) {
     !event.shiftKey &&
     event.key.toLowerCase() === "c" &&
     canStop.value &&
-    chatRoot.value?.closest(".project-chat") &&
+    chatRoot.value?.closest(".project-chat, .floating-chat") &&
     !hasCopySelection(event)
   ) {
     event.preventDefault();
