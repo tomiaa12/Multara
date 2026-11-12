@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, provide, ref, watch } from "vue";
+import { chatMessagesKey } from "../components/chat/context-usage";
 import { ArrowUp, LoaderCircle, Plus, Square } from "@lucide/vue";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
@@ -64,6 +65,7 @@ let liveTimer = 0;
 const pageActive = ref(true);
 
 const messages = computed(() => store.messages[props.sessionId] ?? []);
+provide(chatMessagesKey, messages);
 const session = computed(() => store.data?.sessions.find((item) => item.id === props.sessionId) ?? null);
 const agent = computed(() => store.data?.agents.find((item) => item.id === props.agentId));
 const projectId = computed(() =>
