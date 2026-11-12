@@ -3,8 +3,8 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ArrowDown, ArrowUp, Plus, Search, SearchX, Sparkles, Store } from "@lucide/vue";
 import type { CatalogItem, GlobalResource, PromptFile, ResourceSource } from "../domain/types";
-import AgentAvatar from "../components/AgentAvatar.vue";
 import CliSourceIcon from "../components/CliSourceIcon.vue";
+import AvatarStack from "../components/ui/AvatarStack.vue";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
 import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
@@ -342,6 +342,10 @@ const emptyHint = computed(() => {
           v-for="skill in visibleSkills"
           :key="skill.id"
           class="agent-directory-row"
+          role="link"
+          tabindex="0"
+          @click="openSkill(skill)"
+          @keydown.enter.prevent="openSkill(skill)"
           @contextmenu="openMenu($event, skill)"
         >
           <span class="skill-source">
@@ -359,28 +363,24 @@ const emptyHint = computed(() => {
               <span class="skill-desc-row">
                 <small class="skill-desc" :class="{ 'is-open': expanded.has(skill.id) }">{{ skill.description || t("common.noDescription") }}</small>
                 <span v-if="canExpand(skill)" class="skill-desc-actions">
-                  <button type="button" class="skill-desc-toggle" @click="toggleExpand(skill.id)">
+                  <button type="button" class="skill-desc-toggle" @click.stop="toggleExpand(skill.id)">
                     {{ expanded.has(skill.id) ? t("skills.collapse") : t("skills.expand") }}
                   </button>
                 </span>
               </span>
             </span>
           </span>
-          <span class="skill-used-by">
-            <template v-if="usersOf(skill).length">
-              <AgentAvatar
-                v-for="agent in usersOf(skill).slice(0, 4)"
-                :key="agent.id"
-                :value="agent.avatar"
-                :name="agent.name"
-                :size="22"
-              />
-              <small v-if="usersOf(skill).length > 4">+{{ usersOf(skill).length - 4 }}</small>
-            </template>
+          <span class="skill-used-by" @click.stop>
+            <AvatarStack
+              v-if="usersOf(skill).length"
+              :items="usersOf(skill).map((agent) => ({ key: agent.id, name: agent.name, image: agent.avatar }))"
+              :max="3"
+              :size="22"
+              :dialog-title="t('skills.col.users')"
+            />
           </span>
           <UiRelativeTime :value="skill.updatedAt" />
-          <span class="ui-directory-actions">
-            <UiButton variant="ghost" size="small" @click="openSkill(skill)">{{ t("skills.view") }}</UiButton>
+          <span class="ui-directory-actions" @click.stop>
             <UiSelect
               size="sm"
               variant="ghost"

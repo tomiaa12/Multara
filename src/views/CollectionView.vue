@@ -143,6 +143,10 @@ function agentRuntime(agent: Agent) {
   return runtimesById.value.get(agent.runtimeId) ?? null;
 }
 
+function usersOfRuntime(runtime: Runtime) {
+  return store.data?.agents.filter((agent) => agent.runtimeId === runtime.id) ?? [];
+}
+
 function agentTaskCount(agentId: string) {
   return taskCountByAgent.value.get(agentId) ?? 0;
 }
@@ -399,6 +403,7 @@ function runtimeSubtitle(runtime: Runtime) {
         <div class="agent-directory-head">
           <span>{{ t("runtime.col.runtime") }}</span>
           <span>{{ t("runtime.col.status") }}</span>
+          <span>{{ t("runtime.col.users") }}</span>
           <span>{{ t("runtime.col.path") }}</span>
           <span>{{ t("runtime.col.concurrent") }}</span>
           <span>{{ t("common.actions") }}</span>
@@ -417,6 +422,15 @@ function runtimeSubtitle(runtime: Runtime) {
           </span>
           <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'online' : 'offline'">
             {{ runtime.status === "online" ? t("runtime.online") : t("runtime.offline") }}
+          </span>
+          <span class="skill-used-by" @click.stop>
+            <AvatarStack
+              v-if="usersOfRuntime(runtime).length"
+              :items="usersOfRuntime(runtime).map((agent) => ({ key: agent.id, name: agent.name, image: agent.avatar }))"
+              :max="3"
+              :size="22"
+              :dialog-title="t('runtime.col.users')"
+            />
           </span>
           <UiTooltip :content="runtime.path ?? runtime.command ?? ''">
             <code class="runtime-directory-path">

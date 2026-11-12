@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { Network, Pencil, Plus, RefreshCw, Search, SearchX, Store, X } from "@lucide/vue";
 import type { CatalogItem, GlobalResource, McpInput, McpProbe, ResourceSource } from "../domain/types";
 import CliSourceIcon from "../components/CliSourceIcon.vue";
+import AvatarStack from "../components/ui/AvatarStack.vue";
 import SideNav, { type SideNavGroup, type SideNavItem } from "../components/SideNav.vue";
 import { SETTINGS_NAV_WIDTH_KEY } from "../components/side-nav";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
@@ -46,6 +47,11 @@ const menu = ref<{ x: number; y: number; item: GlobalResource } | null>(null);
 const snapshot = ref("");
 
 const servers = computed(() => store.data?.resources.filter((item) => item.kind === "mcp") ?? []);
+
+function usersOf(item: GlobalResource) {
+  return store.data?.agents.filter((agent) => agent.mcpIds.includes(item.id)) ?? [];
+}
+
 const visible = computed(() => {
   const text = query.value.trim().toLowerCase();
   const rows = servers.value.filter((item) => {
@@ -85,6 +91,7 @@ const directoryColumns = computed<DirectoryColumn[]>(() => [
   { key: "name", label: t("mcp.col.name"), size: "minmax(0, 1.2fr)" },
   { key: "type", label: t("mcp.col.type"), size: "80px" },
   { key: "status", label: t("mcp.col.status"), size: "96px" },
+  { key: "users", label: t("mcp.col.users"), size: "120px" },
   { key: "enabled", label: t("mcp.col.enabled"), size: "48px" },
   { key: "actions", label: t("mcp.col.actions"), size: "minmax(320px, 1.1fr)", actions: true },
 ]);
@@ -610,6 +617,15 @@ async function authorizeForm() {
           </span>
           <span><span class="ds-badge">{{ item.transport === "http" ? t("mcp.transport.http") : item.transport === "sse" ? t("mcp.transport.sse") : t("mcp.transport.stdio") }}</span></span>
           <span class="agent-directory-status" :data-status="statusLabel(item)">{{ statusLabel(item) }}</span>
+          <span class="skill-used-by" @click.stop>
+            <AvatarStack
+              v-if="usersOf(item).length"
+              :items="usersOf(item).map((agent) => ({ key: agent.id, name: agent.name, image: agent.avatar }))"
+              :max="3"
+              :size="22"
+              :dialog-title="t('mcp.col.users')"
+            />
+          </span>
           <span>
             <input class="ds-switch" type="checkbox" :checked="item.enabled" :aria-label="t('mcp.enable', { name: item.name })" @change="toggle(item, $event)" />
           </span>
