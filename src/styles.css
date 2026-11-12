@@ -7004,7 +7004,7 @@ body.is-dragging-workspace-file * {
   cursor: pointer;
 }
 .file-tree .tree-workspace-head:hover {
-  background: var(--color-surface-active);
+  background: var(--color-bg);
 }
 .file-tree .tree-workspace-head.selected {
   background: var(--color-surface-active);
