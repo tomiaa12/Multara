@@ -5,6 +5,7 @@
 import { registerDiffBreadcrumbs } from "../../editor/diff-breadcrumbs";
 import { monacoReadOnlyMessage } from "../../editor/monaco-nls";
 import { monacoOverflowWidgetsRoot } from "../../editor/monaco-overflow-widgets";
+import { settleDiffEditor } from "../../editor/monaco-settle";
 import { applyMonacoTheme } from "../../editor/monaco-workspace";
 import { languageFromFilePath } from "../../monaco-language";
 import { monaco, monacoLanguageId } from "../../monaco";
@@ -243,7 +244,18 @@ class Template {
     this.editor.setModel(viewModel);
     // hideUnchangedRegions 的 view zone 在 autorun 里应用，再等两帧再量高度/露脸
     await nextFrame();
+    if (token !== this.loadToken || !this.body) return;
+    await settleDiffEditor(this.editor, this.body, () => token === this.loadToken);
     if (token !== this.loadToken) return;
+    const languageNow = resolveLanguage(file.language, file.path);
+    const originalModel = this.originalModel;
+    const modifiedModel = this.modifiedModel;
+    if (originalModel && originalModel.getLanguageId() !== languageNow) {
+      monaco.editor.setModelLanguage(originalModel, languageNow);
+    }
+    if (modifiedModel && modifiedModel.getLanguageId() !== languageNow) {
+      monaco.editor.setModelLanguage(modifiedModel, languageNow);
+    }
 
     const sync = () => {
       if (!this.editor || !this.body || token !== this.loadToken || !this.heightReady) return;

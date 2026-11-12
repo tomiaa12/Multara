@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, shallowRef, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from "vue";
 import { loader, VueMonacoEditor } from "@guolao/vue-monaco-editor";
 import type * as MonacoNS from "monaco-editor";
 import { monaco, monacoLanguageId } from "../../monaco";
 import { monacoReadOnlyMessage } from "../../editor/monaco-nls";
-import { currentDocumentTheme, monacoThemeName } from "../../editor/monaco-workspace";
+import { settleMonacoEditor } from "../../editor/monaco-settle";
+import { applyMonacoTheme, currentDocumentTheme, monacoThemeName } from "../../editor/monaco-workspace";
 import { DiffOverlayManager, groupAnchorLine, groupConsecutiveChunks } from "./DiffOverlayManager";
 import { MergeConflictEditor } from "./merge-conflict-editor";
 import { GitBlame, type BlameWorkbenchAction } from "./git-blame-editor";
@@ -55,6 +56,8 @@ const gutterRef = shallowRef<GitGutter | null>(null);
 const blameRef = shallowRef<GitBlame | null>(null);
 const conflictRef = shallowRef<MergeConflictEditor | null>(null);
 const editorRef = shallowRef<MonacoNS.editor.IStandaloneCodeEditor | null>(null);
+const editorReady = ref(false);
+let settleGeneration = 0;
 const editorDisposables: Array<{ dispose: () => void }> = [];
 let applyingExternal = false;
 
@@ -146,12 +149,22 @@ function onEditorMount(editor: MonacoNS.editor.IStandaloneCodeEditor) {
 
   refreshDiff(props.content);
   emit("mount", editor);
-  // VueMonacoEditor 在容器 display:none 时创建编辑器，首次布局是 0×0，要等 ResizeObserver 才补；
-  // 这期间会先看到一行再展开。容器显示出来之后立刻手动布局一次。
-  void nextTick(() => {
+  const generation = ++settleGeneration;
+  const host = editor.getContainerDomNode();
+  void (async () => {
+    if (host) {
+      await settleMonacoEditor(editor, host, () => generation === settleGeneration);
+    }
+    if (generation !== settleGeneration) return;
+    const model = editor.getModel();
+    const languageId = monacoLanguageId(props.language ?? "plaintext");
+    if (model && languageId !== "plaintext" && model.getLanguageId() !== languageId) {
+      monaco.editor.setModelLanguage(model, languageId);
+    }
+    applyMonacoTheme();
     editor.layout();
-    requestAnimationFrame(() => editor.layout());
-  });
+    editorReady.value = true;
+  })();
 }
 
 watch(
@@ -284,6 +297,7 @@ watch(
 );
 
 onUnmounted(() => {
+  settleGeneration += 1;
   window.clearTimeout(diffTimer);
   editorDisposables.splice(0).forEach((item) => item.dispose());
   overlayRef.value?.dispose();
@@ -317,7 +331,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="monaco-host">
+  <div class="monaco-host" :class="{ 'is-editor-pending': !editorReady }">
     <VueMonacoEditor
       class="editor-with-diff"
       :value="content"

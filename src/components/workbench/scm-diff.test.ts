@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, test } from "vitest";
 import { applyLanguageSetting } from "../../i18n";
-import { loadScmDiff, scmCommitDiffTabName, scmDiffPlan } from "./scm-diff";
+import { loadScmDiff, scmCommitDiffTabName, scmDiffPlan, scmOpensAsFile } from "./scm-diff";
 
 beforeEach(() => {
   applyLanguageSetting("zh-CN");
@@ -26,6 +26,14 @@ describe("scmDiffPlan", () => {
       modified: "worktree",
       short: "合并",
     });
+  });
+
+  test("opens untracked files and merge conflicts as the file itself", () => {
+    expect(scmOpensAsFile("untracked")).toBe(true);
+    expect(scmOpensAsFile("merge")).toBe(true);
+    expect(scmOpensAsFile("changes")).toBe(false);
+    expect(scmOpensAsFile("staged")).toBe(false);
+    expect(scmOpensAsFile("commit")).toBe(false);
   });
 
   test("compares untracked files with an empty document", () => {
