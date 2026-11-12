@@ -5471,6 +5471,28 @@ pub(crate) fn truncate_messages_from(
         db.execute("DELETE FROM agent_runs WHERE turn_id=?1", [id])
             .map_err(|error| error.to_string())?;
     }
+    // 气泡会话经常没有 turn_id，按时间删不掉 run。进程稍后收尾还会插入「运行已停止。」
+    db.execute(
+        "UPDATE agent_runs SET parent_run_id = NULL
+         WHERE parent_run_id IN (
+           SELECT id FROM agent_runs WHERE session_id=?1 AND created_at>=?2
+         )",
+        params![session_id, created_at],
+    )
+    .map_err(|error| error.to_string())?;
+    db.execute(
+        "DELETE FROM run_events
+         WHERE run_id IN (
+           SELECT id FROM agent_runs WHERE session_id=?1 AND created_at>=?2
+         )",
+        params![session_id, created_at],
+    )
+    .map_err(|error| error.to_string())?;
+    db.execute(
+        "DELETE FROM agent_runs WHERE session_id=?1 AND created_at>=?2",
+        params![session_id, created_at],
+    )
+    .map_err(|error| error.to_string())?;
     for id in &message_ids {
         db.execute("DELETE FROM messages WHERE id=?1", [id])
             .map_err(|error| error.to_string())?;
@@ -7651,6 +7673,78 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].status, "in_progress");
         assert_eq!(tasks[0].title, "检查登录");
+    }
+
+    #[test]
+    fn truncate_drops_the_run_even_without_a_turn() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('spec', '前端', '🤖', '', '', 'cursor', 'auto', 1)",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('sess', '气泡', 'agent', 'spec', 't0', 't0'),
+                    ('other', '别处', 'agent', 'spec', 't0', 't0')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at)
+             VALUES ('older', 'sess', 'user', '上一轮', 't0'),
+                    ('turn', 'sess', 'user', '这一轮', 't1')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('old-run', 'sess', 'spec', 'cursor', '上一轮', 'completed', 't0'),
+                    ('run', 'sess', 'spec', 'cursor', '这一轮', 'running', 't1')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, parent_run_id, assignment, status, created_at)
+             VALUES ('child', 'other', 'spec', 'cursor', 'run', '接着做', 'queued', 't2')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO run_events (id, run_id, session_id, seq, event_type, content, created_at)
+             VALUES ('event', 'run', 'sess', 1, 'thinking', '想', 't1')",
+            [],
+        )
+        .unwrap();
+
+        truncate_messages_from(&db, "sess", "turn", false).unwrap();
+
+        let runs: Vec<String> = db
+            .prepare("SELECT id FROM agent_runs ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(runs, vec!["child".to_string(), "old-run".to_string()]);
+        let parent: Option<String> = db
+            .query_row("SELECT parent_run_id FROM agent_runs WHERE id='child'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(parent.is_none());
+        let events: i64 = db
+            .query_row("SELECT COUNT(*) FROM run_events WHERE run_id='run'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(events, 0);
+        let kept: String = db
+            .query_row("SELECT content FROM messages", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kept, "上一轮");
     }
 
     #[test]

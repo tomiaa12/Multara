@@ -2569,6 +2569,31 @@ fn persist_plan_artifact(
     })
 }
 
+/// 这一轮的用户消息已经随撤回删掉。没有 turn 的会话不在这里判断，避免把任务的停止说明吞掉。
+fn chat_prompt_withdrawn(db: &rusqlite::Connection, run: &QueuedRun) -> bool {
+    let Some(turn_id) = run.turn_id.as_deref().filter(|id| !id.is_empty()) else {
+        return false;
+    };
+    let linked: Option<String> = db
+        .query_row(
+            "SELECT user_message_id FROM agent_turns WHERE id=?1",
+            [turn_id],
+            |row| row.get(0),
+        )
+        .ok();
+    let Some(message_id) = linked else {
+        return true;
+    };
+    let exists: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1)",
+            [message_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(true);
+    !exists
+}
+
 fn changed_snapshot_files(db: &rusqlite::Connection, message_id: &str) -> Vec<String> {
     let Ok(mut statement) = db.prepare(
         "SELECT DISTINCT s.workspace_id, s.file_path, COALESCE(w.work_path, '')
@@ -2629,6 +2654,15 @@ fn save_terminal_message(
     } else {
         "message"
     };
+    // 提问已经撤回时，不要再补一条「运行已停止。」。有正文的停止说明仍保留。
+    if status == "stopped"
+        && final_text.is_empty()
+        && prior.is_none()
+        && chat_prompt_withdrawn(db, run)
+    {
+        let _ = db.execute("DELETE FROM messages WHERE id=?1", [&message_id]);
+        return;
+    }
     // 停止时保留已经流式出来的正文，不要用「运行已停止。」盖掉。
     let content = match status {
         "completed" if final_text.is_empty() => tr!("运行已完成，但运行时没有返回文本。"),
