@@ -2658,20 +2658,33 @@ textarea:not(.inputarea) {
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   z-index: 20;
-  transform: translateX(100%);
+  /* 停稳后不能留 transform：WebKit 会把它当成粘性提问的包含块，吸顶算到面板中间 */
   visibility: hidden;
   pointer-events: none;
-  transition:
-    transform 200ms ease,
-    visibility 0s linear 200ms;
 }
 .floating-chat.open {
-  transform: translateX(0);
   visibility: visible;
   pointer-events: auto;
-  transition:
-    transform 200ms ease,
-    visibility 0s;
+  animation: floating-chat-in 200ms ease;
+}
+.floating-chat.closing {
+  visibility: visible;
+  pointer-events: none;
+  animation: floating-chat-out 200ms ease forwards;
+}
+@keyframes floating-chat-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes floating-chat-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-chat.open,
+  .floating-chat.closing {
+    animation: none;
+  }
 }
 .floating-chat.expanded {
   width: min(720px, 100vw);

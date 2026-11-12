@@ -35,6 +35,29 @@ watch(
 );
 /** host 已在 hidden 时整体 v-show=false；此处只区分面板 / FAB */
 const panelOpen = computed(() => store.chatOpen);
+const panelEl = ref<HTMLElement | null>(null);
+/** 关掉时先播完滑出，再卸掉动画，避免停在带 transform 的状态上 */
+const closing = ref(false);
+let closeTimer = 0;
+
+watch(panelOpen, (open, wasOpen) => {
+  if (open) {
+    closing.value = false;
+    window.clearTimeout(closeTimer);
+    return;
+  }
+  if (!wasOpen) return;
+  closing.value = true;
+  window.clearTimeout(closeTimer);
+  closeTimer = window.setTimeout(() => {
+    if (!panelOpen.value) closing.value = false;
+  }, 250);
+});
+
+function onPanelAnimationEnd(event: AnimationEvent) {
+  if (event.target !== panelEl.value || event.animationName !== "floating-chat-out") return;
+  if (!panelOpen.value) closing.value = false;
+}
 const fabVisible = computed(() => !store.chatOpen);
 /** 收起时有待确认的计划就在气泡按钮上亮点，只看已加载过消息的会话 */
 const pendingPlan = computed(() =>
@@ -55,7 +78,10 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => document.addEventListener("keydown", onKeydown));
-onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeydown);
+  window.clearTimeout(closeTimer);
+});
 </script>
 
 <template>
@@ -68,7 +94,13 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
       @click="close"
     />
 
-    <section class="floating-chat" :class="{ open: panelOpen, expanded }" :aria-hidden="!panelOpen">
+    <section
+      ref="panelEl"
+      class="floating-chat"
+      :class="{ open: panelOpen, closing: closing && !panelOpen, expanded }"
+      :aria-hidden="!panelOpen"
+      @animationend="onPanelAnimationEnd"
+    >
       <ChatPanel
         v-if="retained"
         :key="projectId ?? 'global'"
