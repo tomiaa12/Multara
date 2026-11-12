@@ -194,5 +194,8 @@ describe("parseUserPromptNodes", () => {
     expect(content).not.toContain("[指派要求]");
     expect(parseUserPromptNodes(content)).toEqual(nodes);
     expect(formatAgentPrompt(nodes)).toContain("[指派要求]");
+    // 标题截取应走可见正文，不能以协议头开头
+    expect(visiblePromptText(content)).toBe("请让 @Miku 助手 处理");
+    expect(visiblePromptText(content).startsWith("[实体引用]")).toBe(false);
   });
 });
