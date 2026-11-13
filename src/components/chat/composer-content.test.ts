@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   carriedMentions,
+  feishuRecipients,
   formatAgentPrompt,
   locatedChipPath,
   isOversizedInlineSelection,
@@ -49,6 +50,30 @@ describe("carriedMentions", () => {
   test("carries nothing when the message only mentions the session target", () => {
     expect(carriedMentions([mention("agent", "miku"), { type: "text", value: "hi" }], "agent:miku")).toEqual([]);
     expect(carriedMentions([{ type: "text", value: "hi" }], "agent:miku")).toEqual([]);
+  });
+});
+
+describe("feishu chips", () => {
+  const person = (openId: string, label: string): ComposerNode => ({
+    type: "chip",
+    id: `feishu:inst:${openId}`,
+    feishu: true,
+    installationId: "inst",
+    openId,
+    label,
+  });
+
+  test("keeps the person out of entity citations and dedupes the same open id", () => {
+    const nodes: ComposerNode[] = [
+      person("ou_abcdef", "飞书用户 · abcdef"),
+      { type: "text", value: " 你好 " },
+      person("ou_abcdef", "飞书用户 · abcdef"),
+      person("ou_other", "李四"),
+    ];
+    const prompt = formatAgentPrompt(nodes, { directMentions: true });
+    expect(prompt).not.toContain("[实体引用]");
+    expect(prompt).toContain("@飞书用户 · abcdef");
+    expect(feishuRecipients(nodes).map((item) => item.openId)).toEqual(["ou_abcdef", "ou_other"]);
   });
 });
 

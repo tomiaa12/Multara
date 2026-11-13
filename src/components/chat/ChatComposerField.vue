@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
-import { Bot, FolderKanban, Hash, Network, Sparkles, X } from "@lucide/vue";
+import { Bot, FolderKanban, Hash, MessageSquare, Network, Sparkles, X } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import Codicon from "../ui/Codicon.vue";
 import { t } from "../../i18n";
@@ -11,6 +11,7 @@ import {
   fileName,
   isWholeFileChip,
   lineRange,
+  type ComposerFeishuChipNode,
   type ComposerFileChipNode,
   type ComposerNode,
   type ComposerReferenceChipNode,
@@ -63,9 +64,18 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
   chip.className = "composer-chip";
   chip.contentEditable = "false";
   chip.dataset.contextId = item.id;
-  const reference = "referenceKind" in item ? item as ComposerReferenceChipNode : null;
-  const file = reference ? null : item as ComposerFileChipNode | EditorSelectionContext;
-  if (reference) {
+  const feishu = "feishu" in item && item.feishu === true ? item : null;
+  const reference = feishu || !("referenceKind" in item) ? null : item as ComposerReferenceChipNode;
+  const file = feishu || reference ? null : item as ComposerFileChipNode | EditorSelectionContext;
+  if (feishu) {
+    chip.dataset.feishu = "1";
+    chip.dataset.installationId = feishu.installationId;
+    chip.dataset.openId = feishu.openId;
+    chip.dataset.referenceLabel = feishu.label;
+    chip.dataset.feishuDetail = feishu.detail ?? "";
+    chip.dataset.chipKind = "feishu";
+    chip.title = feishu.detail?.trim() || feishu.label;
+  } else if (reference) {
     chip.dataset.referenceId = reference.referenceId;
     chip.dataset.referenceKind = reference.referenceKind;
     chip.dataset.referenceLabel = reference.label;
@@ -88,7 +98,9 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
 
   const icon = document.createElement("span");
   icon.className = "composer-chip-icon";
-  if (reference) {
+  if (feishu) {
+    render(createVNode(MessageSquare, { size: 12 }), icon);
+  } else if (reference) {
     let component = Bot;
     if (reference.referenceKind === "skill") component = Sparkles;
     if (reference.referenceKind === "mcp") component = Network;
@@ -107,7 +119,7 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
 
   const label = document.createElement("span");
   label.className = "composer-chip-label";
-  label.textContent = chipLabel(reference ?? {
+  label.textContent = chipLabel(feishu ?? reference ?? {
     type: "chip",
     id: file?.id ?? "",
     path: file?.path ?? "",
@@ -143,6 +155,18 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
 
 function contextFromChip(chip: HTMLElement): ComposerNode & { type: "chip" } {
   const id = chip.dataset.contextId ?? "";
+  if (chip.dataset.feishu === "1") {
+    const feishuChip: ComposerFeishuChipNode = {
+      type: "chip",
+      id,
+      feishu: true,
+      installationId: chip.dataset.installationId ?? "",
+      openId: chip.dataset.openId ?? "",
+      label: chip.dataset.referenceLabel ?? "",
+      detail: chip.dataset.feishuDetail ?? "",
+    };
+    return feishuChip;
+  }
   const referenceKind = chip.dataset.referenceKind;
   if (referenceKind && ["agent", "squad", "skill", "mcp", "task", "requirement"].includes(referenceKind)) {
     return {

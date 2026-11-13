@@ -111,6 +111,28 @@ pub fn store(app: &AppHandle, id: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// CLI 子进程没有 AppHandle。macOS 读钥匙串，其它平台读 `MULTARA_APP_DATA/channel-secrets`。
+pub fn load_cli(id: &str) -> Option<String> {
+    if let Some(value) = cache().get(id) {
+        return Some(value.clone());
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(value) = keychain_get(id) {
+        cache().insert(id.to_string(), value.clone());
+        return Some(value);
+    }
+    let dir = std::env::var("MULTARA_APP_DATA").ok()?;
+    let path = PathBuf::from(dir)
+        .join("channel-secrets")
+        .join(format!("{id}.secret"));
+    let value = fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())?;
+    cache().insert(id.to_string(), value.clone());
+    Some(value)
+}
+
 pub fn load(app: &AppHandle, id: &str) -> Option<String> {
     if let Some(value) = cache().get(id) {
         return Some(value.clone());

@@ -8,7 +8,8 @@ export type ComposerSuggestCategoryId =
   | "file"
   | "canvas"
   | "issue"
-  | "pullRequest";
+  | "pullRequest"
+  | "feishu";
 
 export type ComposerEntityItem = {
   id: string;
@@ -59,10 +60,10 @@ export function referenceNode(item: ComposerEntityItem): ComposerReferenceChipNo
   };
 }
 
-export function replaceTriggerWithReference(
+export function replaceTriggerWithChip(
   nodes: ComposerNode[],
   trigger: ComposerTrigger,
-  item: ComposerEntityItem,
+  chip: ComposerNode,
 ): ComposerNode[] {
   const next = nodes.map((node) => (node.type === "text" ? { ...node } : node));
   const tokenPattern = new RegExp(`(^|\\s)\\${trigger.symbol}[^\\s]*$`);
@@ -73,11 +74,19 @@ export function replaceTriggerWithReference(
     if (!match) continue;
     const token = match[0].slice(match[1].length);
     node.value = node.value.slice(0, node.value.length - token.length);
-    next.splice(index + 1, 0, referenceNode(item), { type: "text", value: " " });
+    next.splice(index + 1, 0, chip, { type: "text", value: " " });
     return next;
   }
-  next.push(referenceNode(item), { type: "text", value: " " });
+  next.push(chip, { type: "text", value: " " });
   return next;
+}
+
+export function replaceTriggerWithReference(
+  nodes: ComposerNode[],
+  trigger: ComposerTrigger,
+  item: ComposerEntityItem,
+): ComposerNode[] {
+  return replaceTriggerWithChip(nodes, trigger, referenceNode(item));
 }
 
 /** 去掉末尾触发符（如 @query），不插入引用；+ 菜单选文件时用 */
