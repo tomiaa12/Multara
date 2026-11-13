@@ -500,6 +500,21 @@ pub struct MessageAttachmentInput {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FeishuSendView {
+    pub id: String,
+    pub actor_run_id: String,
+    pub label: String,
+    pub installation_name: String,
+    pub text: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub inbox_session_id: Option<String>,
+    pub revoked: bool,
+    pub resendable: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: String,
     pub session_id: String,
@@ -532,6 +547,8 @@ pub struct ChatMessage {
     pub requested_mode: Option<RunMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_mode: Option<RunMode>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feishu_sends: Vec<FeishuSendView>,
 }
 
 #[derive(Clone, Serialize)]

@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, getCurrentScope, ref, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
-import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
+import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
 import { visiblePromptText } from "../components/chat/composer-content";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
@@ -71,7 +71,7 @@ export const useAppStore = defineStore("app", () => {
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
   const activeInboxSessionId = ref<string | null>(null);
   /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它 */
-  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean; source?: MessageSourceInput };
+  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean; source?: MessageSourceInput; feishuRecipients?: FeishuRecipientInput[] };
   const queuedMessages = ref<QueuedMessage[]>([]);
   const dismissedQuestions = ref(new Set<string>(readDismissedQuestions()));
   const sendingSessions = ref(new Set<string>());
@@ -221,6 +221,11 @@ export const useAppStore = defineStore("app", () => {
     await listen<string>("session-messages-changed", async ({ payload }) => {
       if (!payload) return;
       await reloadPersistedMessages(payload);
+    });
+    await listen("inbox-changed", async () => {
+      await refreshTaskInboxSurfaces().catch((cause) => {
+        console.error("[app] inbox refresh failed", cause);
+      });
     });
     await listen<RunEvent>("run-event", async ({ payload }) => {
       if (payload.eventKind === "file_snapshot" && payload.messageId && payload.filePath != null) {
@@ -1286,7 +1291,7 @@ export const useAppStore = defineStore("app", () => {
     content: string,
     sessionId = activeSessionId.value,
     attachments: MessageAttachmentInput[] = [],
-    options: { priority?: boolean; mode?: RunMode; source?: MessageSourceInput } = {},
+    options: { priority?: boolean; mode?: RunMode; source?: MessageSourceInput; feishuRecipients?: FeishuRecipientInput[] } = {},
   ) {
     const text = content.trim();
     if (!text && !attachments.length) return;
@@ -1298,6 +1303,7 @@ export const useAppStore = defineStore("app", () => {
       requestedMode: options.mode ?? sessionMode(sessionId),
       priority: options.priority,
       ...(options.source ? { source: options.source } : {}),
+      ...(options.feishuRecipients?.length ? { feishuRecipients: options.feishuRecipients } : {}),
     };
     if (options.priority) queuedMessages.value.unshift(item);
     else queuedMessages.value.push(item);
@@ -1593,6 +1599,23 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
+  function sendQueued(next: QueuedMessage) {
+    if (next.feishuRecipients?.length) {
+      return backend.sendMessage(
+        next.sessionId,
+        next.content,
+        next.attachments,
+        next.requestedMode,
+        next.source,
+        next.feishuRecipients,
+      );
+    }
+    if (next.source) {
+      return backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode, next.source);
+    }
+    return backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode);
+  }
+
   async function sendQueuedMessage(next: QueuedMessage) {
     let failed = false;
     const optimisticId = crypto.randomUUID();
@@ -1633,9 +1656,7 @@ export const useAppStore = defineStore("app", () => {
       try {
         pendingRunSessions.value.add(next.sessionId);
         // 普通消息不带来源参数，调用形状和以前一致；只有界面块提交才传 source
-        const result = next.source
-          ? await backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode, next.source)
-          : await backend.sendMessage(next.sessionId, next.content, next.attachments, next.requestedMode);
+        const result = await sendQueued(next);
         if (withdrawnOptimistic.has(optimisticId)) {
           withdrawnOptimistic.delete(optimisticId);
           const returnedUser = result.find((message) => message.role === "user");

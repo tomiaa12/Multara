@@ -526,5 +526,101 @@
     "zh-TW": "（此處有一個介面區塊，請在 Multara 中查看）",
     "ja": "（ここに UI ブロックがあります。Multara で確認してください）",
     "ko": "(여기에 UI 블록이 있습니다. Multara에서 확인하세요)"
+  },
+  "不支持的接收人类型": {
+    "en": "Unsupported recipient type",
+    "zh-TW": "不支援的接收人類型",
+    "ja": "対応していない受信者の種類です",
+    "ko": "지원하지 않는 수신자 유형입니다"
+  },
+  "飞书没有返回消息 ID": {
+    "en": "Feishu did not return a message ID",
+    "zh-TW": "飛書沒有回傳訊息 ID",
+    "ja": "Feishu がメッセージ ID を返しませんでした",
+    "ko": "Feishu가 메시지 ID를 반환하지 않았습니다"
+  },
+  "这个飞书联系人现在不能发送": {
+    "en": "This Feishu contact cannot be messaged right now",
+    "zh-TW": "這個飛書聯絡人現在不能傳送",
+    "ja": "この Feishu の連絡先には今は送信できません",
+    "ko": "이 Feishu 연락처에는 지금 보낼 수 없습니다"
+  },
+  "飞书用户 · {tail}": {
+    "en": "Feishu user · {tail}",
+    "zh-TW": "飛書使用者 · {tail}",
+    "ja": "Feishu ユーザー · {tail}",
+    "ko": "Feishu 사용자 · {tail}"
+  },
+  "本条消息允许发给以下飞书联系人。按用户的话决定发给谁，没有点名的不要发：": {
+    "en": "This message may be sent to these Feishu contacts. Send only to the people the user named:",
+    "zh-TW": "本則訊息允許發給以下飛書聯絡人。按使用者的話決定發給誰，沒有點名的不要發：",
+    "ja": "このメッセージは次の Feishu 連絡先に送れます。ユーザーが名指しした人にだけ送ってください：",
+    "ko": "이 메시지는 다음 Feishu 연락처에게 보낼 수 있습니다. 사용자가 지목한 사람에게만 보내세요:"
+  },
+  "发送：multara feishu send --to <句柄> --text \"<正文>\"": {
+    "en": "Send: multara feishu send --to <handle> --text \"<text>\"",
+    "zh-TW": "傳送：multara feishu send --to <句柄> --text \"<正文>\"",
+    "ja": "送信：multara feishu send --to <ハンドル> --text \"<本文>\"",
+    "ko": "보내기: multara feishu send --to <핸들> --text \"<본문>\""
+  },
+  "发送由本次运行执行。": {
+    "en": "The send runs in this turn.",
+    "zh-TW": "傳送由本次執行完成。",
+    "ja": "送信はこの実行で行います。",
+    "ko": "보내기는 이번 실행에서 처리합니다."
+  },
+  "缺少 --text": {
+    "en": "Missing --text",
+    "zh-TW": "缺少 --text",
+    "ja": "--text がありません",
+    "ko": "--text가 없습니다"
+  },
+  "没有可发送的飞书收件人": {
+    "en": "No Feishu recipient is available to message",
+    "zh-TW": "沒有可傳送的飛書收件人",
+    "ja": "送信できる Feishu の宛先がありません",
+    "ko": "보낼 수 있는 Feishu 수신자가 없습니다"
+  },
+  "正文不能为空": {
+    "en": "The message cannot be empty",
+    "zh-TW": "正文不能為空",
+    "ja": "本文は空にできません",
+    "ko": "본문은 비워 둘 수 없습니다"
+  },
+  "正文超过单条飞书消息长度": {
+    "en": "The message is longer than one Feishu message",
+    "zh-TW": "正文超過單則飛書訊息長度",
+    "ja": "本文が Feishu の 1 通の上限を超えています",
+    "ko": "본문이 Feishu 메시지 한 통의 길이를 넘습니다"
+  },
+  "规划模式下不能发飞书消息": {
+    "en": "Feishu messages cannot be sent in plan mode",
+    "zh-TW": "規劃模式下不能發飛書訊息",
+    "ja": "プランモードでは Feishu に送信できません",
+    "ko": "계획 모드에서는 Feishu 메시지를 보낼 수 없습니다"
+  },
+  "这个收件人已经发过": {
+    "en": "This recipient was already messaged",
+    "zh-TW": "這個收件人已經發過",
+    "ja": "この宛先にはすでに送信済みです",
+    "ko": "이 수신자에게는 이미 보냈습니다"
+  },
+  "没有可重发的飞书消息": {
+    "en": "There is no Feishu message to send again",
+    "zh-TW": "沒有可重發的飛書訊息",
+    "ja": "再送できる Feishu メッセージがありません",
+    "ko": "다시 보낼 Feishu 메시지가 없습니다"
+  },
+  "已发给 {label}": {
+    "en": "Sent to {label}",
+    "zh-TW": "已發給 {label}",
+    "ja": "{label} に送信しました",
+    "ko": "{label}에게 보냈습니다"
+  },
+  "私聊 · {name}": {
+    "en": "Direct message · {name}",
+    "zh-TW": "私訊 · {name}",
+    "ja": "個別チャット · {name}",
+    "ko": "1:1 채팅 · {name}"
   }
 }

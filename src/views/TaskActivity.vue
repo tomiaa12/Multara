@@ -12,7 +12,7 @@ import UserPrompt from "../components/chat/UserPrompt.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { isGenUiEnabled } from "../components/chat/genui/block";
-import { carriedMentions, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { carriedMentions, feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
@@ -327,8 +327,13 @@ function submit() {
   if (!text && !pastes.value.length) return;
   const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));
   // 有未回答提问时用 priority，否则会被 awaitingAnswer 挡住、不进 run、也不出工作态。
+  const recipients = feishuRecipients(nodes).map((item) => ({
+    installationId: item.installationId,
+    openId: item.openId,
+  }));
   store.send(text, props.sessionId, attachments, {
     priority: store.awaitingAnswer(props.sessionId),
+    ...(recipients.length ? { feishuRecipients: recipients } : {}),
   });
   for (const image of pastes.value) URL.revokeObjectURL(image.previewUrl);
   pastes.value = [];
@@ -482,6 +487,7 @@ watch(
       ref="composer"
       dictation
       allow-file-picker
+      :allow-feishu="!thread && !historyViewOnly"
       recent-place="task"
       :project-id="projectId"
       :placeholder="t('tasks.activityReply')"

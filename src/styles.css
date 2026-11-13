@@ -999,6 +999,16 @@
   color: var(--color-text);
   font-weight: var(--font-weight-semibold);
 }
+.outbound-speaker {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.outbound-to {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
 .speaker-pill {
   display: inline-flex;
   align-items: center;

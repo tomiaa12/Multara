@@ -30,6 +30,7 @@ multara — Multara 内置 CLI
   workspace    list|add
   automation   list|get|create
   channel      list|get|enable|disable
+  feishu       send --to <句柄> --text <正文>
   skill        list|get|builtin|import
   runtime      list
   session      history|resume
@@ -72,6 +73,7 @@ pub fn should_run_as_cli(args: &[String]) -> bool {
             | "workspace"
             | "automation"
             | "channel"
+            | "feishu"
             | "skill"
             | "mcp"
             | "runtime"
@@ -469,6 +471,17 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             let installation = crate::channel::store::get_installation(db, &id)?
                 .ok_or_else(|| tr!("渠道不存在"))?;
             ops::json(&channel_json(&installation))
+        }
+        ("feishu", "send") => {
+            let handle = parsed
+                .flag(&["to"])
+                .ok_or_else(|| tr!("缺少 --to"))?;
+            let text = parsed
+                .flag(&["text"])
+                .ok_or_else(|| tr!("缺少 --text"))?;
+            let run_id = env::var("MULTARA_RUN_ID")
+                .map_err(|_| tr!("没有可发送的飞书收件人"))?;
+            crate::channel::feishu_send::send(db, &run_id, handle, text)
         }
         ("channel", "enable") | ("channel", "disable") => {
             let id = id.ok_or_else(|| tr!("缺少渠道 id"))?;

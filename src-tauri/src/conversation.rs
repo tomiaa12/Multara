@@ -336,7 +336,7 @@ fn history_entries(
              FROM messages m LEFT JOIN agents a ON a.id = m.agent_id
              WHERE m.session_id=?1
                AND m.role IN ('user', 'assistant')
-               AND COALESCE(m.message_kind, 'message') = 'message'
+               AND COALESCE(m.message_kind, 'message') IN ('message', 'channel_outbound')
                AND (?2 IS NULL OR m.created_at > ?2)
                AND m.id != COALESCE((
                  SELECT id FROM messages

@@ -18,6 +18,11 @@ fn tokens() -> &'static Mutex<HashMap<String, (String, Instant)>> {
     TOKENS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub struct SentMessage {
+    pub message_id: String,
+    pub chat_id: String,
+}
+
 pub struct FeishuApi {
     pub base: String,
     pub app_id: String,
@@ -119,21 +124,40 @@ impl FeishuApi {
         msg_type: &str,
         content: &str,
     ) -> Result<String, String> {
+        self.send_to("chat_id", chat_id, msg_type, content)
+            .map(|sent| sent.message_id)
+    }
+
+    /// `receive_id_type` 只接受 `chat_id` 或 `open_id`。返回飞书的 message_id 和 chat_id。
+    pub fn send_to(
+        &self,
+        receive_id_type: &str,
+        receive_id: &str,
+        msg_type: &str,
+        content: &str,
+    ) -> Result<SentMessage, String> {
+        if receive_id_type != "chat_id" && receive_id_type != "open_id" {
+            return Err(tr!("不支持的接收人类型"));
+        }
         let token = self.tenant_token()?;
         let value = post_json(
             &format!(
-                "{}/open-apis/im/v1/messages?receive_id_type=chat_id",
+                "{}/open-apis/im/v1/messages?receive_id_type={receive_id_type}",
                 self.base
             ),
             Some(&token),
             &json!({
-                "receive_id": chat_id,
+                "receive_id": receive_id,
                 "msg_type": msg_type,
                 "content": content,
             }),
             30,
         )?;
-        Ok(message_id_of(&value))
+        let sent = sent_message_of(&value);
+        if sent.message_id.is_empty() {
+            return Err(tr!("飞书没有返回消息 ID"));
+        }
+        Ok(sent)
     }
 
     pub fn reply(
@@ -339,12 +363,21 @@ fn contact_name(value: &Value) -> Option<String> {
 }
 
 fn message_id_of(value: &Value) -> String {
-    value
-        .get("data")
-        .and_then(|data| data.get("message_id"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
+    sent_message_of(value).message_id
+}
+
+fn sent_message_of(value: &Value) -> SentMessage {
+    let data = value.get("data");
+    let field = |name| {
+        data.and_then(|item| item.get(name))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    SentMessage {
+        message_id: field("message_id"),
+        chat_id: field("chat_id"),
+    }
 }
 
 #[cfg(test)]

@@ -320,6 +320,34 @@ export interface EditorSelectionContext {
   source?: "terminal";
 }
 
+export interface FeishuRecipientInput {
+  installationId: string;
+  openId: string;
+}
+
+export interface FeishuSendView {
+  id: string;
+  actorRunId: string;
+  label: string;
+  installationName: string;
+  text: string;
+  status: string;
+  error?: string | null;
+  inboxSessionId?: string | null;
+  revoked: boolean;
+  resendable: boolean;
+}
+
+export interface FeishuContact {
+  installationId: string;
+  installationName: string;
+  openId: string;
+  displayName?: string | null;
+  sessionTitle?: string | null;
+  pairedAt: string;
+  activeAt?: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   sessionId: string;
@@ -334,7 +362,8 @@ export interface ChatMessage {
   targetId?: string | null;
   failureReason: string | null;
   elapsedMs: number | null;
-  messageKind: "message" | "no_response" | "assignment";
+  messageKind: "message" | "no_response" | "assignment" | "channel_outbound";
+  feishuSends?: FeishuSendView[];
   quickActions: QuickAction[];
   timeline: TimelineItem[];
   truncatedBefore?: number;

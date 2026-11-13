@@ -64,6 +64,7 @@ mod macos_menu;
 #[cfg(windows)]
 pub mod win_shutdown;
 
+use channel::feishu_send::{list_feishu_contacts, resend_feishu_send};
 use commands::{
     add_workspace, agent_system_context, archive_inbox_item, authorize_mcp, bootstrap,
     check_git_executable, collect_source_files, collect_workspace_typings, compact_chat_session,
@@ -503,6 +504,8 @@ pub fn run() {
             open_message_attachment,
             save_pasted_attachment,
             send_message,
+            list_feishu_contacts,
+            resend_feishu_send,
             set_session_default_mode,
             plan_action,
             truncate_session_from_message,

@@ -1219,10 +1219,22 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                         .is_some_and(|db| crate::ops::canvas::canvases_enabled(&db)),
                 locale,
             });
+            let assignment = {
+                let extra = app
+                    .state::<AppState>()
+                    .lock_db()
+                    .ok()
+                    .and_then(|db| crate::channel::feishu_send::prompt_for_run(&db, &run.id).ok())
+                    .filter(|text| !text.is_empty());
+                match extra {
+                    Some(extra) => format!("{}\n\n{extra}", run.assignment),
+                    None => run.assignment.clone(),
+                }
+            };
             let prompt = conversation::build_prompt(
                 &brief,
                 &history,
-                &run.assignment,
+                &assignment,
                 resume_id.as_deref(),
                 &launch_provider,
             );
@@ -2497,6 +2509,7 @@ fn finish(
         }
     }
     crate::channel::outbound::on_run_finished(app, &run.session_id);
+    crate::channel::feishu_send::notify_sends(app, &run.id);
     dispatch(app.clone());
 }
 

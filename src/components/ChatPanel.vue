@@ -16,7 +16,7 @@ import { useCanvasStore } from "../stores/canvas";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
-import { carriedMentions, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
+import { carriedMentions, feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
 import ReshuffleModal from "./chat/ReshuffleModal.vue";
 import { countMessagesFrom, reaskTouchesFiles } from "../stores/reask";
 import { useDiffStore } from "../stores/diff";
@@ -934,6 +934,10 @@ function submit() {
       if (session.value?.id === sessionId) composerInput.value?.restore(carried);
     });
   }
+  const recipients = feishuRecipients(serialized.nodes).map((item) => ({
+    installationId: item.installationId,
+    openId: item.openId,
+  }));
   const command = content.trim();
   if (props.sessionCommands && command === "/compact") {
     void store.compactSession(session.value.id);
@@ -943,7 +947,10 @@ function submit() {
     void store.forkSession(session.value.id);
     return;
   }
-  store.send(content, session.value.id, selectedAttachments, replyPriority());
+  store.send(content, session.value.id, selectedAttachments, {
+    ...replyPriority(),
+    ...(recipients.length ? { feishuRecipients: recipients } : {}),
+  });
 }
 
 const continuedFailureIds = ref(new Set<string>());
@@ -2027,6 +2034,7 @@ defineExpose({
         ref="composerInput"
         dictation
         allow-file-picker
+        :allow-feishu="!embedded && !preview"
         :recent-place="resolvedPlaceholderPlace"
         :project-id="projectId"
         :placeholder="composerPlaceholder"

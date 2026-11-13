@@ -36,7 +36,7 @@ export type ComposerSuggestItem = {
   description?: string;
   /** 有头像时按智能体下拉选项渲染（AgentAvatar + ds-select-option） */
   avatar?: string | null;
-  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker" | "canvas" | "mcp";
+  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker" | "canvas" | "mcp" | "feishu";
   owner?: string;
   isDirectory?: boolean;
 };
@@ -303,6 +303,7 @@ onBeforeUnmount(() => {
           <CircleDot v-else-if="category.id === 'issue'" :size="14" />
           <GitPullRequest v-else-if="category.id === 'pullRequest'" :size="14" />
           <Bot v-else-if="category.id === 'agent'" :size="14" />
+          <MessageSquare v-else-if="category.id === 'feishu'" :size="14" />
           <Sparkles v-else-if="category.id === 'skill'" :size="14" />
           <Network v-else-if="category.id === 'mcp'" :size="14" />
           <Hash v-else-if="category.id === 'task'" :size="14" />
@@ -361,7 +362,7 @@ onBeforeUnmount(() => {
                   <Sparkles v-else-if="item.leading === 'sparkles'" :size="14" />
                   <Hash v-else-if="item.leading === 'hash'" :size="14" />
                   <FolderKanban v-else-if="item.leading === 'requirement'" :size="14" />
-                  <MessageSquare v-else-if="item.leading === 'session'" :size="14" />
+                  <MessageSquare v-else-if="item.leading === 'session' || item.leading === 'feishu'" :size="14" />
                   <FolderOpen v-else-if="item.leading === 'picker'" :size="14" />
                   <LayoutDashboard v-else-if="item.leading === 'canvas'" :size="14" />
                   <Bot v-else :size="14" />

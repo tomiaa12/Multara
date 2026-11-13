@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod commands;
 pub mod feishu;
+pub mod feishu_send;
 pub mod outbound;
 mod pairing;
 pub mod router;

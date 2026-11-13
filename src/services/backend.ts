@@ -16,6 +16,8 @@ import type {
   ChannelInstallation,
   ChannelInstallationInput,
   ChannelUser,
+  FeishuContact,
+  FeishuRecipientInput,
   MessageAttachmentInput,
   MessageSourceInput,
   CanvasDefinition,
@@ -2007,12 +2009,23 @@ export async function selectMessageAttachments(): Promise<MessageAttachmentInput
   });
 }
 
+export async function listFeishuContacts(): Promise<{ enabled: boolean; contacts: FeishuContact[] }> {
+  if (!inTauri()) return { enabled: false, contacts: [] };
+  return invoke("list_feishu_contacts");
+}
+
+export async function resendFeishuSend(id: string): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("resend_feishu_send", { id });
+}
+
 export async function sendMessage(
   sessionId: string,
   content: string,
   attachments: MessageAttachmentInput[] = [],
   requestedMode?: RunMode,
   source?: MessageSourceInput,
+  feishuRecipients?: FeishuRecipientInput[],
 ): Promise<ChatMessage[]> {
   if (!inTauri()) {
     const createdAt = new Date().toISOString();
@@ -2040,7 +2053,14 @@ export async function sendMessage(
       },
     ];
   }
-  return invoke<ChatMessage[]>("send_message", { sessionId, content, attachments, requestedMode, source: source ?? null });
+  return invoke<ChatMessage[]>("send_message", {
+    sessionId,
+    content,
+    attachments,
+    requestedMode,
+    source: source ?? null,
+    feishuRecipients: feishuRecipients ?? [],
+  });
 }
 
 export async function stopRun(runId: string): Promise<void> {

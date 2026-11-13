@@ -4064,6 +4064,7 @@ pub(crate) fn list_chat_messages_blocking(
                 message_kind: match row.get::<_, String>(8)?.as_str() {
                     "no_response" => "no_response",
                     "assignment" => "assignment",
+                    "channel_outbound" => "channel_outbound",
                     _ => "message",
                 },
                 quick_actions: parse_quick_actions(&row.get::<_, String>(9)?),
@@ -4082,6 +4083,7 @@ pub(crate) fn list_chat_messages_blocking(
                 run_mode: row
                     .get::<_, Option<String>>(20)?
                     .and_then(|value| value.parse().ok()),
+                feishu_sends: Vec::new(),
             })
         })
         .map_err(|error| error.to_string())?
@@ -4107,6 +4109,8 @@ pub(crate) fn list_chat_messages_blocking(
         }
         message.attachments = attachments.remove(&message.id).unwrap_or_default();
     }
+    crate::channel::feishu_send::attach_sends(&db, &mut messages)?;
+    crate::channel::feishu_send::fill_outbound_speakers(&db, &mut messages)?;
     Ok(messages)
 }
 
@@ -4202,6 +4206,7 @@ fn orphan_run_messages(
             source_meta: None,
             requested_mode: None,
             run_mode: mode.parse().ok(),
+            feishu_sends: Vec::new(),
         });
     }
     Ok(out)
@@ -4487,6 +4492,7 @@ pub async fn send_message(
     attachments: Option<Vec<MessageAttachmentInput>>,
     requested_mode: Option<RunMode>,
     source: Option<MessageSourceInput>,
+    feishu_recipients: Option<Vec<crate::channel::feishu_send::FeishuRecipientInput>>,
     app: AppHandle,
 ) -> Result<Vec<ChatMessage>, String> {
     let _span = crate::diag::span("send_message");
@@ -4500,6 +4506,7 @@ pub async fn send_message(
             app,
             source,
             None,
+            feishu_recipients.unwrap_or_default(),
         )?;
         Ok(messages)
     })
@@ -4594,6 +4601,7 @@ pub(crate) fn send_channel_message(
         app.clone(),
         Some(source),
         None,
+        Vec::new(),
     )?;
     Ok(ChannelSendOutcome { run_ids, steered })
 }
@@ -4606,6 +4614,7 @@ fn send_message_inner_ext(
     app: AppHandle,
     mut source: Option<MessageSource>,
     assignment_override: Option<String>,
+    feishu_recipients: Vec<crate::channel::feishu_send::FeishuRecipientInput>,
 ) -> Result<(Vec<ChatMessage>, Vec<String>, bool), String> {
     let state = app.state::<AppState>();
     let content = content.trim();
@@ -4685,6 +4694,7 @@ fn send_message_inner_ext(
     };
     let mut db = state.lock_db()?;
     let transaction = db.transaction().map_err(|error| error.to_string())?;
+    let feishu_recipients = crate::channel::feishu_send::resolve(&transaction, &feishu_recipients)?;
     let mut implicit_plan_event: Option<(String, String, TimelineItem)> = None;
     let now = Utc::now().to_rfc3339();
     let turn_id = (!project_ids.is_empty()).then(|| Uuid::new_v4().to_string());
@@ -4819,6 +4829,7 @@ fn send_message_inner_ext(
         source_meta: source.as_ref().map(|value| value.meta.clone()),
         requested_mode: Some(requested_mode),
         run_mode: None,
+        feishu_sends: Vec::new(),
     };
     if let Some(turn_id) = &turn_id {
         let seq: u32 = transaction
@@ -4858,6 +4869,11 @@ fn send_message_inner_ext(
             ],
         )
         .map_err(|error| error.to_string())?;
+    crate::channel::feishu_send::save_message_recipients(
+        &transaction,
+        &user.id,
+        &feishu_recipients,
+    )?;
 
     let mut user = user;
     for saved in attachments {
@@ -4910,7 +4926,21 @@ fn send_message_inner_ext(
             executor::emit_timeline_event(&app, &run_id, &session_id, &agent_id, item);
         }
         let steer_agent_id = steer_agent_id.as_deref().unwrap_or_default();
-        if executor::steer(&app, &session_id, steer_agent_id, assignment.trim())? {
+        let appendix = {
+            let db = state.lock_db()?;
+            crate::channel::feishu_send::merge_running(
+                &db,
+                &session_id,
+                steer_agent_id,
+                &feishu_recipients,
+            )?
+        };
+        let steer_text = if appendix.is_empty() {
+            assignment.trim().to_string()
+        } else {
+            format!("{}\n\n{appendix}", assignment.trim())
+        };
+        if executor::steer(&app, &session_id, steer_agent_id, steer_text.trim())? {
             return Ok((vec![user], Vec::new(), true));
         }
         // 运行刚好在这一刻结束：退回普通派发，别把已经落库的消息丢掉。
@@ -4924,6 +4954,8 @@ fn send_message_inner_ext(
             &explicit_targets,
             requested_mode,
         )?;
+        let run_ids = created.iter().map(|(run_id, _)| run_id.clone()).collect::<Vec<_>>();
+        crate::channel::feishu_send::grant(&db, &run_ids, &feishu_recipients)?;
         drop(db);
         for (run_id, agent_id) in &created {
             executor::notify_run(&app, run_id, &session_id, agent_id, "queued");
@@ -4941,6 +4973,8 @@ fn send_message_inner_ext(
         &explicit_targets,
         requested_mode,
     )?;
+    let run_ids = created.iter().map(|(run_id, _)| run_id.clone()).collect::<Vec<_>>();
+    crate::channel::feishu_send::grant(&transaction, &run_ids, &feishu_recipients)?;
     transaction.commit().map_err(|error| error.to_string())?;
     drop(db);
     if let Some((run_id, agent_id, item)) = implicit_plan_event {
@@ -5179,6 +5213,7 @@ pub(crate) fn plan_action_inner(
         app.clone(),
         source,
         Some(assignment),
+        Vec::new(),
     )?;
     Ok(PlanActionResult {
         messages,
