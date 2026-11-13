@@ -31,7 +31,7 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
-不要 `git tag` 不带 `-a`，不要自己 `gh release create`。`.github/workflows/release.yml` 在 `v*` tag 推上去之后会打包 Windows（nsis、msi）和 Apple Silicon Mac（app、dmg），先建 draft，成功后再取消 draft。`publish` 只在 tag 推送时运行。
+不要 `git tag` 不带 `-a`，不要自己 `gh release create`。`.github/workflows/release.yml` 在 `v*` tag 推上去之后会打包 Windows（nsis）和 Apple Silicon Mac（app、dmg），先建 draft，成功后再取消 draft。`publish` 只在 tag 推送时运行。
 
 ## 推送之后
 

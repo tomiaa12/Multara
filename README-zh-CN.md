@@ -130,7 +130,7 @@ Claude Code、Codex、OpenCode、Gemini CLI 和 Qwen Code 还可以使用你在�
 
 | 平台 | 下载 |
 | --- | --- |
-| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) · [MSI，en-US](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_en-US.msi) · [MSI，zh-CN](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_zh-CN.msi) |
+| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) |
 | macOS Apple Silicon | [`.dmg`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_aarch64.dmg) |
 
 `.exe` 安装包按当前用户安装。Windows 安装过程在缺少 WebView2 时会下载它。macOS 需要 10.15 或更高版本。把 `Multara.app` 拖进“应用程序”。
@@ -208,7 +208,7 @@ Multara 没有自己的账号。一次智能体运行就是一个本机 CLI 进�
 
 | 平台 | 已发布的安装包 |
 | --- | --- |
-| Windows x64 | `.exe` 和 MSI（`en-US`、`zh-CN`） |
+| Windows x64 | `.exe` |
 | macOS Apple Silicon | `.dmg`，macOS 10.15 或更高 |
 | macOS Intel | 未发布 |
 | Linux | 未发布 |

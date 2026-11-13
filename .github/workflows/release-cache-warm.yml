@@ -1,0 +1,49 @@
+# GitHub 的缓存按分支隔离，tag 之间互相读不到。
+# 发布流程只在 tag 上跑，所以依赖缓存在 main 上预热，发版时才能恢复。
+name: Warm Rust cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+      - .github/workflows/release-cache-warm.yml
+  schedule:
+    # 缓存 7 天未访问会被删掉。每周碰一次，避免连续几周不改依赖时下次发版又全量编译。
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: rust-cache-warm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            rust_targets: x86_64-pc-windows-msvc
+          - platform: macos-15
+            rust_targets: aarch64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: ${{ matrix.rust_targets }}
+          add-job-id-key: false
+      - name: Stub frontend dist
+        shell: bash
+        run: |
+          mkdir -p dist
+          printf ' ' > dist/index.html
+      - name: Compile release dependencies
+        working-directory: src-tauri
+        run: cargo build --release --target ${{ matrix.rust_targets }}
