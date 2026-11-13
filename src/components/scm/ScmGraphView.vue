@@ -24,6 +24,7 @@ import {
   type HistoryGraphRow,
 } from "../workbench/scm-history";
 import type { ScmOpenChangesPayload, ScmOpenTarget } from "../workbench/scm-groups";
+import GitStatusBadge from "../workbench/GitStatusBadge.vue";
 import { gitStatusClass } from "../workbench/tree-git-status";
 import { t } from "../../i18n";
 
@@ -402,7 +403,7 @@ defineExpose({ revealCommit });
                   <span class="scm-file-path">{{ file.path }}</span>
                 </UiTooltip>
               </span>
-              <span class="tree-git-badge" :class="gitStatusClass(letter(file.status))" />
+              <GitStatusBadge :letter="letter(file.status)" />
             </button>
           </div>
         </div>

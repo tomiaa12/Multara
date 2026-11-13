@@ -270,37 +270,39 @@ pub fn stage(root: &str, git_command: &str, paths: &[String], staged: bool) -> R
     for path in paths {
         validate_relative(path)?;
     }
-    let mut args = if staged {
-        vec![
+    // 与 VS Code `repository.add` / `repository.revert` 一致。
+    // `add -A` 才会把未跟踪文件写入索引；取消暂存用 `reset HEAD`，
+    // 之前未跟踪、后来暂存的文件一次就能回到未跟踪。没有提交时不能 reset，改用 `rm --cached`。
+    if staged {
+        let mut args = vec![
             LITERAL_PATHSPECS.to_string(),
             "add".to_string(),
+            "-A".to_string(),
             "--".to_string(),
-        ]
-    } else {
-        vec![
-            LITERAL_PATHSPECS.to_string(),
-            "restore".to_string(),
-            "--staged".to_string(),
-            "--".to_string(),
-        ]
-    };
-    args.extend(paths.iter().cloned());
-    let result = run(git_command, root, &args);
-    if !staged
-        && result.is_err()
-        && output(git_command, root, &["rev-parse", "--verify", "HEAD"]).is_err()
-    {
-        let mut fallback = vec![
+        ];
+        args.extend(paths.iter().cloned());
+        return run(git_command, root, &args);
+    }
+    if output(git_command, root, &["rev-parse", "--verify", "HEAD"]).is_err() {
+        let mut args = vec![
             LITERAL_PATHSPECS.to_string(),
             "rm".to_string(),
             "--cached".to_string(),
+            "-r".to_string(),
             "--".to_string(),
         ];
-        fallback.extend(paths.iter().cloned());
-        run(git_command, root, &fallback)
-    } else {
-        result
+        args.extend(paths.iter().cloned());
+        return run(git_command, root, &args);
     }
+    let mut args = vec![
+        LITERAL_PATHSPECS.to_string(),
+        "reset".to_string(),
+        "-q".to_string(),
+        "HEAD".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(paths.iter().cloned());
+    run(git_command, root, &args)
 }
 
 pub fn discard(root: &str, git_command: &str, paths: &[String]) -> Result<(), String> {
@@ -361,7 +363,7 @@ pub fn discard(root: &str, git_command: &str, paths: &[String]) -> Result<(), St
 }
 
 /// 用户给的路径按字面匹配：`*`、`[id].tsx`、`:/` 不能被当成 pathspec 通配或魔法。
-/// 只加在接受用户路径的调用上，`stage_all` 里的 `:/` 依赖 pathspec 魔法。
+/// 只加在接受用户路径的调用上。
 const LITERAL_PATHSPECS: &str = "--literal-pathspecs";
 
 fn discard_untracked(git_command: &str, root: &str, path: &str) -> Result<(), String> {
@@ -431,7 +433,7 @@ pub fn stage_all(root: &str, git_command: &str, staged: bool) -> Result<(), Stri
     } else if output(git_command, root, &["rev-parse", "--verify", "HEAD"]).is_err() {
         run_strings(git_command, root, &["rm", "--cached", "-r", "--", "."])
     } else {
-        run_strings(git_command, root, &["restore", "--staged", ":/"])
+        run_strings(git_command, root, &["reset", "-q", "HEAD", "--", "."])
     }
 }
 
@@ -1883,6 +1885,46 @@ mod tests {
         assert!(stage(root, "git", &["*.txt".to_string()], true).is_err());
         let repository = status("workspace", "repo", root, "git").unwrap();
         assert!(repository.changes.iter().all(|change| !change.staged));
+    }
+
+    #[test]
+    fn untracked_file_stages_with_tracked_and_unstages_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        command(root, &["init"]);
+        command(root, &["config", "user.email", "test@multara.local"]);
+        command(root, &["config", "user.name", "Multara Test"]);
+        fs::write(temp.path().join("tracked.txt"), "first\n").unwrap();
+        stage(root, "git", &["tracked.txt".to_string()], true).unwrap();
+        commit(root, "git", "feat: base", false).unwrap();
+
+        fs::write(temp.path().join("tracked.txt"), "second\n").unwrap();
+        fs::write(temp.path().join("new.txt"), "new\n").unwrap();
+        stage(
+            root,
+            "git",
+            &["tracked.txt".to_string(), "new.txt".to_string()],
+            true,
+        )
+        .unwrap();
+        let staged = status("workspace", "repo", root, "git").unwrap();
+        let tracked = staged.changes.iter().find(|item| item.path == "tracked.txt").unwrap();
+        let added = staged.changes.iter().find(|item| item.path == "new.txt").unwrap();
+        assert_eq!((tracked.index_status.as_str(), tracked.worktree_status.as_str()), ("M", " "));
+        assert_eq!((added.index_status.as_str(), added.worktree_status.as_str()), ("A", " "));
+
+        stage(
+            root,
+            "git",
+            &["tracked.txt".to_string(), "new.txt".to_string()],
+            false,
+        )
+        .unwrap();
+        let back = status("workspace", "repo", root, "git").unwrap();
+        let tracked = back.changes.iter().find(|item| item.path == "tracked.txt").unwrap();
+        let added = back.changes.iter().find(|item| item.path == "new.txt").unwrap();
+        assert_eq!((tracked.index_status.as_str(), tracked.worktree_status.as_str()), (" ", "M"));
+        assert_eq!((added.index_status.as_str(), added.worktree_status.as_str()), ("?", "?"));
     }
 
     #[test]
