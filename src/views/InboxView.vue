@@ -332,7 +332,6 @@ onUnmounted(() => {
         :key="selected.id"
         class="inbox-thread"
         thread
-        :history-view-only="selected.status !== 'needs_input' && selected.status !== 'needs_permission'"
         :session-id="selected.sessionId"
         :agent-id="selectedTask?.agentId ?? ''"
         :unread-message-id="dividerMessageId"
