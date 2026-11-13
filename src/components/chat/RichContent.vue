@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { hljs, PLAINTEXT_LANGUAGE } from "./highlight";
@@ -8,10 +9,13 @@ import * as backend from "../../services/backend";
 import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
 import { opensInFolder, parseCodeFenceInfo, splitWorkspacePaths } from "./workspace-path";
+import { isWorkbenchPath } from "../../router";
 
 const props = defineProps<{ content: string }>();
 const root = ref<HTMLElement | null>(null);
 const store = useAppStore();
+const route = useRoute();
+const canApplyToFile = computed(() => isWorkbenchPath(route.path));
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -129,11 +133,12 @@ function wrapCodeBlock(block: HTMLElement, fence: ReturnType<typeof parseCodeFen
   if (fence.path) {
     const apply = document.createElement("button");
     apply.type = "button";
-    apply.className = "code-copy";
+    apply.className = "code-copy code-apply-file";
     apply.textContent = "应用到文件";
     apply.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!canApplyToFile.value) return;
       const path = fence.path!;
       const content = block.textContent ?? "";
       store.revealWorkspaceFile(path);
@@ -324,5 +329,5 @@ watch(html, () => void enhanceBlocks(), { immediate: true, flush: "post" });
 </script>
 
 <template>
-  <div ref="root" class="rich-message" v-html="html" @click="onRichClick" />
+  <div ref="root" class="rich-message" :class="{ 'can-apply-file': canApplyToFile }" v-html="html" @click="onRichClick" />
 </template>
