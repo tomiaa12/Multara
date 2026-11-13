@@ -427,6 +427,7 @@ fn parse_status_line(line: &str) -> Option<GitFileStatus> {
     })
 }
 
+/// 全部取消暂存对齐 VS Code `git.unstageAll`：`git reset -q HEAD -- .`，不按列表路径。
 pub fn stage_all(root: &str, git_command: &str, staged: bool) -> Result<(), String> {
     if staged {
         run_strings(git_command, root, &["add", "-A"])
@@ -1695,7 +1696,7 @@ mod tests {
     use super::{
         blame_line, commit, commit_files, current_upstream, discard, graph_commit_action, history,
         index_file, parse_blame_porcelain, parse_branch_header, parse_status_records, pull, push,
-        revision_file, stage, stage_contents, status, strip_commit_message_comments, switch_branch,
+        revision_file, stage, stage_all, stage_contents, status, strip_commit_message_comments, switch_branch,
     };
 
     #[test]
@@ -1925,6 +1926,47 @@ mod tests {
         let added = back.changes.iter().find(|item| item.path == "new.txt").unwrap();
         assert_eq!((tracked.index_status.as_str(), tracked.worktree_status.as_str()), (" ", "M"));
         assert_eq!((added.index_status.as_str(), added.worktree_status.as_str()), ("?", "?"));
+    }
+
+    #[test]
+    fn unstaging_a_rename_clears_the_deleted_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        command(root, &["init"]);
+        command(root, &["config", "user.email", "test@multara.local"]);
+        command(root, &["config", "user.name", "Multara Test"]);
+        fs::write(temp.path().join("a.txt"), "same\n").unwrap();
+        fs::write(temp.path().join("b.txt"), "body\n").unwrap();
+        stage(root, "git", &["a.txt".to_string(), "b.txt".to_string()], true).unwrap();
+        commit(root, "git", "feat: base", false).unwrap();
+
+        fs::write(temp.path().join("a.txt"), "edited\n").unwrap();
+        fs::remove_file(temp.path().join("b.txt")).unwrap();
+        fs::write(temp.path().join("b-renamed.txt"), "body\n").unwrap();
+        stage(
+            root,
+            "git",
+            &["a.txt".to_string(), "b.txt".to_string(), "b-renamed.txt".to_string()],
+            true,
+        )
+        .unwrap();
+
+        let staged = status("workspace", "repo", root, "git").unwrap();
+        let visible: Vec<String> = staged
+            .changes
+            .iter()
+            .filter(|change| change.staged)
+            .map(|change| change.path.clone())
+            .collect();
+        assert!(visible.iter().any(|path| path == "b-renamed.txt"));
+        assert!(visible.iter().all(|path| path != "b.txt"));
+
+        // VS Code 的 Unstage All 是 `git reset -q HEAD -- .`，不按列表里看得见的路径。
+        stage_all(root, "git", false).unwrap();
+        let back = status("workspace", "repo", root, "git").unwrap();
+        assert!(back.changes.iter().all(|change| !change.staged));
+        let deleted = back.changes.iter().find(|change| change.path == "b.txt").unwrap();
+        assert_eq!((deleted.index_status.as_str(), deleted.worktree_status.as_str()), (" ", "D"));
     }
 
     #[test]

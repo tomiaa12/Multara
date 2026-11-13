@@ -75,8 +75,9 @@ export function scmGroups(changes: GitFileStatus[]): Record<ScmGroupId, GitFileS
       groups.merge.push(file);
       continue;
     }
+    // VS Code 默认 git.untrackedChanges = mixed：未跟踪和普通更改在同一组。
     if (file.indexStatus === "?" || file.worktreeStatus === "?") {
-      groups.untracked.push(file);
+      groups.changes.push(file);
       continue;
     }
     if (file.indexStatus !== " ") groups.staged.push(file);

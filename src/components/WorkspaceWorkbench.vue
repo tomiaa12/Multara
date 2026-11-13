@@ -2214,9 +2214,9 @@ function onTreeMenuSelect(id: string) {
 }
 
 function gitChangeGroup(change: GitFileStatus) {
+  if (change.indexStatus === "?" || change.worktreeStatus === "?") return "untracked" as const;
   const groups = scmGroups([change]);
   if (groups.merge.length) return "merge" as const;
-  if (groups.untracked.length) return "untracked" as const;
   if (groups.changes.length) return "changes" as const;
   return "staged" as const;
 }
