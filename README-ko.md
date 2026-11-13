@@ -130,7 +130,7 @@ Claude Code, Codex, OpenCode, Gemini CLI, Qwen Code는 런타임에 API 기본 U
 
 | 플랫폼 | 다운로드 |
 | --- | --- |
-| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) · [MSI, en-US](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_en-US.msi) · [MSI, zh-CN](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_zh-CN.msi) |
+| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) |
 | macOS Apple Silicon | [`.dmg`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_aarch64.dmg) |
 
 `.exe` 설치 프로그램은 현재 사용자용입니다. Windows 설치는 WebView2가 없으면 그것을 내려받습니다. macOS는 10.15 이상이 필요합니다. `Multara.app`을 응용 프로그램 폴더로 끌어 넣습니다.
@@ -208,7 +208,7 @@ Multara 계정은 없습니다. 에이전트 실행은 작업 디렉터리가 �
 
 | 플랫폼 | 공개된 설치 파일 |
 | --- | --- |
-| Windows x64 | `.exe`와 MSI (`en-US`, `zh-CN`) |
+| Windows x64 | `.exe` |
 | macOS Apple Silicon | `.dmg`, macOS 10.15 이상 |
 | macOS Intel | 공개되지 않음 |
 | Linux | 공개되지 않음 |

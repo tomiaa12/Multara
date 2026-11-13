@@ -20,12 +20,16 @@ mod packaging_tests {
         let targets = value["bundle"]["targets"]
             .as_array()
             .expect("bundle.targets");
-        for target in ["nsis", "msi", "dmg"] {
+        for target in ["nsis", "dmg"] {
             assert!(
                 targets.iter().any(|item| item == target),
                 "缺少 {target} 打包目标"
             );
         }
+        assert!(
+            !targets.iter().any(|item| item == "msi"),
+            "不再打包 msi"
+        );
         assert_eq!(value["bundle"]["createUpdaterArtifacts"], true);
         assert!(value["plugins"]["updater"]["endpoints"]
             .as_array()

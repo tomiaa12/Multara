@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            args: --target x86_64-pc-windows-msvc --bundles nsis,msi
+            args: --target x86_64-pc-windows-msvc --bundles nsis
             rust_targets: x86_64-pc-windows-msvc
           - platform: macos-15
             args: --target aarch64-apple-darwin --bundles app,dmg
@@ -36,6 +36,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_targets }}
+      # tag 之间的缓存互不可见，只恢复 main 上预热的依赖缓存，避免再写一份占配额。
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: ${{ matrix.rust_targets }}
+          add-job-id-key: false
+          save-if: false
       - name: Sync version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: node scripts/set-version.mjs ${{ github.ref_name }}

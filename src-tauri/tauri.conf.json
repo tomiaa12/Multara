@@ -47,7 +47,7 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": ["nsis", "msi", "dmg"],
+    "targets": ["nsis", "dmg"],
     "publisher": "Multara",
     "copyright": "Copyright © 2026 Multara",
     "category": "DeveloperTool",
@@ -71,10 +71,6 @@
         "languages": ["SimpChinese", "English"],
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico"
-      },
-      "wix": {
-        "language": ["zh-CN", "en-US"],
-        "upgradeCode": "0f0e395d-6c1c-5e8f-985b-3dca0b57fe4f"
       }
     },
     "macOS": {
