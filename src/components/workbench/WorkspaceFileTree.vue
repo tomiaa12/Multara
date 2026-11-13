@@ -8,11 +8,9 @@ import FileTypeIcon from "../FileTypeIcon.vue";
 import UiTooltip from "../ui/UiTooltip.vue";
 import ExplorerTreeList from "./ExplorerTreeList.vue";
 import { buildExplorerRows, type ExplorerRowNode } from "./explorer/explorer-rows";
+import { treeGuideLeft, treeRowPad } from "./tree-layout";
 import type { FileEntry } from "../../domain/types";
 
-const TREE_ROW_INSET = 18;
-const TREE_INDENT = 14;
-const TREE_CHEVRON = 16;
 const EXPANDED_PREFIX = "multara.fileTree.expanded.";
 
 const props = defineProps<{
@@ -53,14 +51,6 @@ const nodes = computed<ExplorerRowNode[]>(() => buildExplorerRows({
   breakCompactAt: () => false,
   missingFiles: [],
 }));
-
-function rowPad(depth: number) {
-  return TREE_ROW_INSET + depth * TREE_INDENT;
-}
-
-function guideLeft(level: number) {
-  return TREE_ROW_INSET + (level - 1) * TREE_INDENT + TREE_CHEVRON / 2;
-}
 
 function readExpanded() {
   try {
@@ -151,7 +141,7 @@ watch(() => props.workspace?.id ?? props.stateKey, () => {
           role="button"
           tabindex="0"
           :class="{ 'is-sticky': sticky, selected: props.selectedPath === entry.path }"
-          :style="{ paddingLeft: `${rowPad(entry.depth)}px`, '--tree-depth': entry.depth }"
+          :style="{ paddingLeft: `${treeRowPad(entry.depth)}px`, '--tree-depth': entry.depth }"
           @click="onRow(entry)"
           @dblclick.stop="onPin(entry)"
           @keydown.enter.prevent="onRow(entry)"
@@ -161,7 +151,7 @@ watch(() => props.workspace?.id ?? props.stateKey, () => {
             :key="level"
             class="tree-indent-guide"
             :class="{ innermost: level === entry.depth }"
-            :style="{ left: `${guideLeft(level)}px` }"
+            :style="{ left: `${treeGuideLeft(level)}px` }"
           />
           <Codicon
             v-if="entry.expandable"

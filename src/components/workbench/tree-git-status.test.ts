@@ -69,11 +69,13 @@ describe("gitStatusClass and title", () => {
 });
 
 describe("folderGitStatus", () => {
-  it("prefers conflict, then added, then deleted, then renamed", () => {
+  it("prefers conflict, then added, then renamed, and ignores deleted", () => {
     expect(folderGitStatus(["M", "U", "C"])).toBe("C");
     expect(folderGitStatus(["M", "U", "D"])).toBe("U");
     expect(folderGitStatus(["M", "A"])).toBe("U");
-    expect(folderGitStatus(["M", "D"])).toBe("D");
+    expect(folderGitStatus(["A", "D"])).toBe("U");
+    expect(folderGitStatus(["M", "D"])).toBe("M");
+    expect(folderGitStatus(["D"])).toBe("");
     expect(folderGitStatus(["M", "R"])).toBe("R");
   });
 

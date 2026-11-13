@@ -13,7 +13,8 @@ import {
   type ScmGroupId,
   type ScmTreeNode,
 } from "../workbench/scm-groups";
-import { gitStatusClass, gitStatusTitle } from "../workbench/tree-git-status";
+import { folderGitStatus, gitStatusClass, gitStatusTitle } from "../workbench/tree-git-status";
+import { treeGuideLeft, treeRowPad } from "../workbench/tree-layout";
 import { scmBusyTitle } from "../workbench/scm-commit-action";
 
 const props = defineProps<{
@@ -181,23 +182,60 @@ function onMenuSelect(id: string) {
   if (id === "discard") emit("discard", filesFor(current.group, current.paths));
 }
 
-const SCM_INDENT = 16;
-
-function visualDepth(row: Row) {
-  return props.viewMode === "list" ? 2 : 2 + row.depth;
+function rowDepth(row: Row) {
+  return props.viewMode === "list" ? 1 : row.depth + 1;
 }
 
 function rowPad(row: Row) {
-  return `${visualDepth(row) * SCM_INDENT}px`;
+  return `${treeRowPad(rowDepth(row))}px`;
 }
 
-function guideLeft(level: number) {
-  return level * SCM_INDENT + SCM_INDENT / 2;
+function rowName(row: Row) {
+  return row.kind === "dir" ? row.name : fileNameOf(row.file.path);
+}
+
+function rowTitle(row: Row) {
+  return row.kind === "dir" ? row.path : row.file.path;
+}
+
+function rowStatusClass(group: ScmGroupId, row: Row) {
+  if (row.kind === "file") return gitStatusClass(scmResourceLetter(row.file, group));
+  const prefix = `${row.path}/`;
+  const letters = (props.groups.find((item) => item.id === group)?.files ?? [])
+    .filter((file) => file.path === row.path || file.path.startsWith(prefix))
+    .map((file) => scmResourceLetter(file, group));
+  return gitStatusClass(folderGitStatus(letters));
+}
+
+function rowStatusTitle(group: ScmGroupId, row: Row) {
+  if (row.kind === "file") return gitStatusTitle(scmResourceLetter(row.file, group));
+  return row.count > 0 ? t("git.folderDirty", { count: row.count }) : "";
+}
+
+function onRowClick(group: ScmGroupId, row: Row, event: MouseEvent) {
+  if (row.kind === "dir") {
+    toggleDir(group, row.path);
+    return;
+  }
+  onFileClick(group, row.file, event);
+}
+
+function onRowEnter(group: ScmGroupId, row: Row) {
+  if (row.kind === "dir") {
+    toggleDir(group, row.path);
+    return;
+  }
+  emit("open", { group, path: row.file.path });
+}
+
+function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
+  if (row.kind !== "file") return;
+  openMenu(group, row.file.path, event);
 }
 </script>
 
 <template>
-  <div v-for="group in groups" :key="group.id" class="scm-group">
+  <div v-for="group in groups" :key="group.id" class="scm-group scm-file-tree">
     <header @click="toggleGroup(group.id)">
       <button type="button" class="scm-group-toggle">
         <Codicon name="chevron-down" class="tree-chevron" :class="{ 'is-open': isGroupOpen(group.id) }" :size="16" />
@@ -239,50 +277,52 @@ function guideLeft(level: number) {
     </header>
     <template v-if="isGroupOpen(group.id)">
       <template v-for="row in rowsByGroup.get(group.id) ?? []" :key="row.kind === 'dir' ? `d:${row.path}` : `f:${row.file.path}`">
-        <button
-          v-if="row.kind === 'dir'"
-          type="button"
-          class="scm-dir"
-          :style="{ paddingLeft: rowPad(row) }"
-          @click="toggleDir(group.id, row.path)"
-        >
-          <span
-            v-for="level in visualDepth(row) - 1"
-            :key="`guide:${level}`"
-            class="tree-indent-guide"
-            :class="{ innermost: level === visualDepth(row) - 1 }"
-            :style="{ left: `${guideLeft(level)}px` }"
-          />
-          <Codicon name="chevron-down" class="tree-chevron" :class="{ 'is-open': !closedDirs.has(groupKey(group.id, row.path)) }" :size="10" />
-          <FileTypeIcon :name="row.name" directory :open="!closedDirs.has(groupKey(group.id, row.path))" />
-          <span>{{ row.name }}</span>
-          <small>{{ row.count }}</small>
-        </button>
         <div
-          v-else
-          class="scm-file"
-          :class="[gitStatusClass(scmResourceLetter(row.file, group.id)), { 'is-selected': selected.has(groupKey(group.id, row.file.path)) }]"
-          :style="{ paddingLeft: rowPad(row) }"
+          :class="[
+            viewMode === 'tree' ? 'tree-entry' : 'scm-file',
+            rowStatusClass(group.id, row),
+            {
+              selected: row.kind === 'file' && selected.has(groupKey(group.id, row.file.path)),
+              'is-selected': row.kind === 'file' && selected.has(groupKey(group.id, row.file.path)),
+            },
+          ]"
+          :style="{ paddingLeft: rowPad(row), '--tree-depth': rowDepth(row) }"
           role="button"
           tabindex="0"
-          @click="onFileClick(group.id, row.file, $event)"
-          @keyup.enter="emit('open', { group: group.id, path: row.file.path })"
-          @contextmenu="openMenu(group.id, row.file.path, $event)"
+          @click="onRowClick(group.id, row, $event)"
+          @keyup.enter="onRowEnter(group.id, row)"
+          @contextmenu="onRowMenu(group.id, row, $event)"
         >
           <span
-            v-for="level in visualDepth(row) - 1"
+            v-for="level in rowDepth(row)"
             :key="`guide:${level}`"
             class="tree-indent-guide"
-            :class="{ innermost: level === visualDepth(row) - 1 }"
-            :style="{ left: `${guideLeft(level)}px` }"
+            :class="{ innermost: level === rowDepth(row) }"
+            :style="{ left: `${treeGuideLeft(level)}px` }"
           />
-          <FileTypeIcon :name="fileNameOf(row.file.path)" :size="16" />
-          <span class="scm-file-name">{{ fileNameOf(row.file.path) }}</span>
-          <UiTooltip v-if="viewMode === 'list'" :content="row.file.path">
-            <span class="scm-file-path">{{ dirNameOf(row.file.path) }}</span>
+          <Codicon
+            v-if="viewMode === 'tree' && row.kind === 'dir'"
+            name="chevron-down"
+            class="tree-chevron"
+            :class="{ 'is-open': !closedDirs.has(groupKey(group.id, row.path)) }"
+            :size="10"
+          />
+          <span v-else-if="viewMode === 'tree'" class="tree-chevron" />
+          <FileTypeIcon
+            :name="rowName(row)"
+            :directory="row.kind === 'dir'"
+            :open="row.kind === 'dir' && !closedDirs.has(groupKey(group.id, row.path))"
+          />
+          <UiTooltip v-if="viewMode === 'tree'" :content="rowTitle(row)">
+            <span class="tree-name">{{ rowName(row) }}</span>
           </UiTooltip>
-          <span v-else class="scm-file-path" />
-          <div class="scm-file-actions">
+          <span v-else-if="row.kind === 'file'" class="scm-file-label">
+            <span class="scm-file-name">{{ fileNameOf(row.file.path) }}</span>
+            <UiTooltip v-if="dirNameOf(row.file.path)" :content="row.file.path">
+              <span class="scm-file-path">{{ dirNameOf(row.file.path) }}</span>
+            </UiTooltip>
+          </span>
+          <div v-if="row.kind === 'file'" class="scm-file-actions">
             <UiButton
               v-if="row.file.worktreeStatus !== 'D' && row.file.indexStatus !== 'D'"
               variant="ghost"
@@ -311,8 +351,8 @@ function guideLeft(level: number) {
               <Codicon v-else name="add" :size="12" />
             </UiButton>
           </div>
-          <UiTooltip :content="gitStatusTitle(scmResourceLetter(row.file, group.id))">
-            <b>{{ scmResourceLetter(row.file, group.id) }}</b>
+          <UiTooltip v-if="rowStatusClass(group.id, row)" :content="rowStatusTitle(group.id, row)">
+            <span class="tree-git-badge" :class="rowStatusClass(group.id, row)" />
           </UiTooltip>
         </div>
       </template>
