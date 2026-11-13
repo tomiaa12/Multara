@@ -117,6 +117,7 @@ fn deliver_pending(app: &AppHandle, session_id: &str) -> bool {
             .query_row(
                 "SELECT content FROM messages
                  WHERE session_id=?1 AND role='assistant'
+                   AND COALESCE(message_kind, 'message') != 'channel_outbound'
                  ORDER BY created_at DESC, rowid DESC LIMIT 1",
                 [session_id],
                 |row| row.get(0),
@@ -158,7 +159,7 @@ fn send_one(
     let (body, questions) = split_questions(content);
     let body = strip_genui(&body, &tr!("（此处有一个界面块，请在 Multara 中查看）"));
     let text = format_outbound(&installation, delivery, &body);
-    let chunks = split_message(&text, 18_000);
+        let chunks = split_message(&text, OUTBOUND_CHUNK_CHARS);
     let mut first = true;
     for chunk in chunks {
         if chunk.trim().is_empty() {
@@ -390,6 +391,9 @@ pub fn format_outbound(
 }
 
 /// 按行拆分，单行超过上限时再按字符硬切；长度累计计数，整体 O(n)。
+/// 单条飞书消息的分段长度。主动发送超过这段就拒绝，不拆成多条。
+pub(crate) const OUTBOUND_CHUNK_CHARS: usize = 18_000;
+
 fn split_message(text: &str, limit: usize) -> Vec<String> {
     if text.chars().count() <= limit {
         return vec![text.to_string()];

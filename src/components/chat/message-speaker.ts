@@ -136,6 +136,7 @@ export function parseAssignmentSubtask(content: string): AssignmentSubtaskRef | 
 export function shouldHideAssistantSpeaker(previous: ChatMessage | undefined, current: ChatMessage) {
   if (!previous || previous.role !== "assistant" || current.role !== "assistant") return false;
   if (current.messageKind === "assignment" || previous.messageKind === "assignment") return false;
+  if (current.messageKind === "channel_outbound" || previous.messageKind === "channel_outbound") return false;
   if (previous.audienceType === "agent" || current.audienceType === "agent") return false;
   if (!previous.agentId || previous.agentId !== current.agentId) return false;
   return true;

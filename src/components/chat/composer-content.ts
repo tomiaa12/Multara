@@ -29,7 +29,18 @@ export type ComposerReferenceChipNode = {
   label: string;
 };
 
-export type ComposerChipNode = ComposerFileChipNode | ComposerReferenceChipNode;
+export type ComposerFeishuChipNode = {
+  type: "chip";
+  id: string;
+  feishu: true;
+  installationId: string;
+  openId: string;
+  label: string;
+  /** 悬停：集成名、完整 open_id、最近私聊标题。 */
+  detail?: string;
+};
+
+export type ComposerChipNode = ComposerFileChipNode | ComposerReferenceChipNode | ComposerFeishuChipNode;
 
 export type ComposerNode =
   | { type: "text"; value: string }
@@ -93,6 +104,24 @@ export function carriedMentions(nodes: ComposerNode[], sessionTarget: string): C
   return chips.length ? [...chips, { type: "text", value: " " }] : [];
 }
 
+export function isFeishuChip(node: ComposerNode): node is ComposerFeishuChipNode {
+  return node.type === "chip" && "feishu" in node && node.feishu === true;
+}
+
+/** 同一集成、同一个 open_id 只留第一次。 */
+export function feishuRecipients(nodes: ComposerNode[]): ComposerFeishuChipNode[] {
+  const seen = new Set<string>();
+  const recipients: ComposerFeishuChipNode[] = [];
+  for (const node of nodes) {
+    if (!isFeishuChip(node)) continue;
+    const key = `${node.installationId}\n${node.openId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    recipients.push(node);
+  }
+  return recipients;
+}
+
 export function isFileChip(node: ComposerNode): node is ComposerFileChipNode {
   return node.type === "chip" && "path" in node;
 }
@@ -124,6 +153,7 @@ const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
 };
 
 export function chipLabel(item: ComposerChipNode) {
+  if (isFeishuChip(item)) return `@${item.label}`;
   if (isReferenceChip(item)) {
     if (item.referenceKind === "requirement") return t("chat.chip.requirement", { name: item.label });
     if (item.referenceKind === "session") return t("chat.chip.session", { name: item.label });

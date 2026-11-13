@@ -13,6 +13,7 @@ import {
 } from "./message-speaker";
 import type { SpeakerInfo } from "./message-speaker";
 import FailureBubble from "./FailureBubble.vue";
+import FeishuSendCards from "./FeishuSendCards.vue";
 import MessageFooter from "./MessageFooter.vue";
 import ProcessFold from "./ProcessFold.vue";
 import RichContent from "./RichContent.vue";
@@ -192,6 +193,11 @@ function onGenUiAction(payload: { blockId: string; type: string; title?: string;
 const isInternal = computed(() =>
   Boolean(props.speaker?.internal) || hidesAssignment.value,
 );
+const isChannelOutbound = computed(() => props.message.messageKind === "channel_outbound");
+const outboundRecipient = computed(() => {
+  const label = props.message.sourceMeta?.recipientLabel;
+  return typeof label === "string" ? label.trim() : "";
+});
 </script>
 
 <template>
@@ -228,7 +234,20 @@ const isInternal = computed(() =>
       </article>
 
   <article v-else class="chat-turn assistant-turn" :class="{ internal: isInternal }">
-    <div v-if="showSpeaker" class="speaker-row">
+    <div v-if="showSpeaker && isChannelOutbound" class="speaker-row">
+      <AgentAvatar
+        class="assistant-avatar"
+        :class="speaker?.roleKind"
+        :value="speaker?.avatar"
+        :name="speaker?.name"
+        :size="22"
+      />
+      <div class="speaker-meta outbound-speaker">
+        <b>{{ speaker?.name }}</b>
+        <span v-if="outboundRecipient" class="outbound-to">{{ t("chat.feishu.sentTo", { name: outboundRecipient }) }}</span>
+      </div>
+    </div>
+    <div v-else-if="showSpeaker" class="speaker-row">
       <AgentAvatar
         class="assistant-avatar"
         :class="speaker?.roleKind"
@@ -294,6 +313,11 @@ const isInternal = computed(() =>
         :session-id="message.sessionId"
         :tool-use="call.use"
         :tool-result="call.result"
+      />
+      <FeishuSendCards
+        v-if="message.feishuSends?.length"
+        :sends="message.feishuSends"
+        :session-id="message.sessionId"
       />
       <SubtaskReplyEmbed v-if="embedSubtask" :subtask="embedSubtask" />
       <PlanArtifactCard

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { Archive, ArrowRight, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import ChatPanel from "../components/ChatPanel.vue";
@@ -17,6 +17,7 @@ import TaskActivity from "./TaskActivity.vue";
 import { relativeTime } from "./task-board";
 
 const store = useAppStore();
+const route = useRoute();
 const router = useRouter();
 const selectedId = ref<string | null>(null);
 const dividerMessageId = ref<string | null>(null);
@@ -206,6 +207,18 @@ function openDestination(item: InboxItem) {
   void store.markInboxRead(item.id);
   void router.push(target.to);
 }
+
+watch(
+  () => [route.query.session, items.value.map((item) => item.id).join("\n")] as const,
+  () => {
+    const sessionId = typeof route.query.session === "string" ? route.query.session : "";
+    if (!sessionId) return;
+    const item = items.value.find((entry) => entry.sessionId === sessionId);
+    if (!item || selectedId.value === item.id) return;
+    void select(item);
+  },
+  { immediate: true },
+);
 
 watch(items, (list) => {
   if (selectedId.value && !list.some((item) => item.id === selectedId.value)) {

@@ -19,9 +19,9 @@ import ComposerSuggestMenu, {
 import ContextUsageButton from "./ContextUsageButton.vue";
 import ChatModePicker from "./ChatModePicker.vue";
 import ComposerPlanHint from "./ComposerPlanHint.vue";
-import type { EditorSelectionContext } from "../../domain/types";
+import type { EditorSelectionContext, FeishuContact } from "../../domain/types";
 import type { SelectOption } from "../ui/select-types";
-import type { ComposerNode } from "./composer-content";
+import type { ComposerFeishuChipNode, ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
 import { useCanvasStore } from "../../stores/canvas";
 import { isCanvasEnabled } from "./genui/block";
@@ -32,6 +32,7 @@ import ProviderLogo from "../ProviderLogo.vue";
 import {
   activeComposerTrigger,
   removeComposerTrigger,
+  replaceTriggerWithChip,
   replaceTriggerWithReference,
   type ComposerEntityItem,
   type ComposerSuggestCategoryId,
@@ -89,6 +90,8 @@ const props = withDefaults(defineProps<{
   dictation?: boolean;
   /** false 时 Enter 插入换行，不触发提交（仅创建任务弹窗等）。 */
   enterToSubmit?: boolean;
+  /** 气泡、工作台、任务评论才展示飞书联系人。收件箱和任务描述不传。 */
+  allowFeishu?: boolean;
 }>(), {
   modeSessionId: "",
   targetValue: "",
@@ -106,6 +109,7 @@ const props = withDefaults(defineProps<{
   projectId: null,
   dictation: false,
   enterToSubmit: true,
+  allowFeishu: false,
 });
 
 const emit = defineEmits<{
@@ -130,6 +134,7 @@ const suggestTrigger = ref<ComposerTrigger | null>(null);
 const suggestMenu = ref<{ handleKeydown: (event: KeyboardEvent) => boolean } | null>(null);
 const suggestAnchor = ref<{ left: number; top: number; bottom: number; width?: number } | null>(null);
 const workspaceRootItems = ref<ComposerSuggestItem[]>([]);
+const feishuContacts = ref<{ enabled: boolean; contacts: FeishuContact[] }>({ enabled: false, contacts: [] });
 const injectedOpenEditors = inject(composerOpenEditorsKey, null);
 let treeDropOver = false;
 let osDropOver = false;
@@ -305,6 +310,38 @@ watch(
   },
 );
 
+async function loadFeishuContacts() {
+  try {
+    feishuContacts.value = await backend.listFeishuContacts();
+  } catch {
+    feishuContacts.value = { enabled: false, contacts: [] };
+  }
+}
+
+watch(
+  () => [suggestTrigger.value, props.allowFeishu] as const,
+  ([trigger, allowed]) => {
+    if (trigger && allowed) void loadFeishuContacts();
+  },
+);
+
+function feishuSuggestItems(): ComposerSuggestItem[] {
+  return feishuContacts.value.contacts.map((contact) => {
+    const name = contact.displayName?.trim();
+    const tail = contact.openId.slice(-6);
+    const recent = contact.sessionTitle?.trim()
+      ? t("chat.feishu.recent", { title: contact.sessionTitle.trim() })
+      : "";
+    return {
+      id: `feishu:${contact.installationId}:${contact.openId}`,
+      kind: "feishu",
+      label: name || t("chat.feishu.unnamed", { tail }),
+      description: [contact.installationName, contact.openId, recent].filter(Boolean).join(" · "),
+      leading: "feishu",
+    };
+  });
+}
+
 const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
   const data = store.data;
   const currentSessionId = props.modeSessionId;
@@ -424,6 +461,14 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
         { id: "canvas-available", label: t("canvas.menuAvailable"), items: available },
       ],
       emptyText: t("canvas.menuEmpty"),
+    });
+  }
+  if (props.allowFeishu && feishuContacts.value.enabled) {
+    categories.push({
+      id: "feishu",
+      label: t("chat.context.feishu"),
+      groups: [{ id: "feishu", label: t("chat.context.feishu"), items: feishuSuggestItems() }],
+      emptyText: t("chat.feishu.empty"),
     });
   }
   return categories;
@@ -553,6 +598,29 @@ async function onSuggestSelect(item: ComposerSuggestItem) {
     } catch (cause) {
       store.reportComposerNotice(cause instanceof Error ? cause.message : String(cause));
     }
+    await nextTick();
+    field.value?.focusEnd();
+    return;
+  }
+  if (item.kind === "feishu") {
+    const body = item.id.slice("feishu:".length);
+    const splitAt = body.indexOf(":");
+    const installationId = splitAt < 0 ? "" : body.slice(0, splitAt);
+    const openId = splitAt < 0 ? "" : body.slice(splitAt + 1);
+    if (!installationId || !openId) return;
+    const chip: ComposerFeishuChipNode = {
+      type: "chip",
+      id: item.id,
+      feishu: true,
+      installationId,
+      openId,
+      label: item.label,
+      detail: item.description ?? "",
+    };
+    const next = replaceTriggerWithChip(field.value?.snapshot() ?? [], trigger, chip);
+    field.value?.restore(next);
+    emit("change", next);
+    closeSuggest();
     await nextTick();
     field.value?.focusEnd();
     return;

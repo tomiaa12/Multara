@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -666,6 +666,42 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           read_message_id TEXT,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS message_feishu_recipients (
+          message_id TEXT NOT NULL,
+          position INTEGER NOT NULL,
+          installation_id TEXT NOT NULL,
+          open_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          PRIMARY KEY (message_id, position)
+        );
+        CREATE TABLE IF NOT EXISTS feishu_send_allowances (
+          root_run_id TEXT NOT NULL,
+          handle TEXT NOT NULL,
+          installation_id TEXT NOT NULL,
+          open_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          PRIMARY KEY (root_run_id, handle)
+        );
+        CREATE TABLE IF NOT EXISTS feishu_sends (
+          id TEXT PRIMARY KEY,
+          root_run_id TEXT NOT NULL,
+          actor_run_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          handle TEXT NOT NULL,
+          installation_id TEXT NOT NULL,
+          open_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          body TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('sent', 'failed')),
+          error TEXT,
+          feishu_message_id TEXT,
+          chat_id TEXT,
+          inbox_session_id TEXT,
+          created_at TEXT NOT NULL,
+          UNIQUE(root_run_id, seq)
+        );
+        CREATE INDEX IF NOT EXISTS idx_feishu_sends_actor ON feishu_sends(actor_run_id);
+        CREATE INDEX IF NOT EXISTS idx_feishu_sends_handle ON feishu_sends(root_run_id, handle, status);
         ",
     )?;
     ensure_column(&columns, "inbox_items", "read_message_id", "TEXT")?;
