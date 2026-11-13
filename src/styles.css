@@ -4115,6 +4115,9 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .code-block:has(.code-block-head) .code-block-actions {
   top: 4px;
 }
+.rich-message:not(.can-apply-file) .code-apply-file {
+  display: none;
+}
 .code-copy {
   position: static;
   min-height: 20px;
