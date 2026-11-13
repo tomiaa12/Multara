@@ -83,6 +83,7 @@ import {
   mergeFetchedRecordEntry,
   recordFromFetchedKeys,
 } from "./workbench/async-record";
+import GitStatusBadge from "./workbench/GitStatusBadge.vue";
 import { gitStatusClass, gitStatusTitle } from "./workbench/tree-git-status";
 import { buildTreeGitIndex } from "./workbench/tree-git-index";
 import {
@@ -6024,7 +6025,7 @@ defineExpose({
                     v-if="treeGitStatus(workspace.id, entry)"
                     :content="treeGitBadgeTitle(workspace.id, entry)"
                   >
-                    <span class="tree-git-badge" :class="treeGitClass(workspace.id, entry)" />
+                    <GitStatusBadge :letter="treeGitStatus(workspace.id, entry)" :bubble="entry.isDirectory" />
                   </UiTooltip>
                 </div>
                 </template>
