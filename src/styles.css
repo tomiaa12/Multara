@@ -7448,6 +7448,30 @@ body.is-dragging-workspace-file * {
 .monaco-host .monaco-editor {
   max-width: 100%;
 }
+/*
+ * WKWebView 生产包里点某一行，行内 span 是 absolute，原生选区会把它定位到滚动容器顶部，和上面的行叠在一起，并铺一层发白的选区。
+ * 开发时 Monaco 样式后注入，把这层盖住了。这里固定行盒，选区交给 Monaco 自己画。
+ */
+.monaco-host .monaco-editor .view-line {
+  position: absolute;
+}
+.monaco-host .monaco-editor .lines-content > .view-lines > .view-line > span {
+  position: relative;
+  top: auto;
+  bottom: auto;
+}
+.monaco-host .monaco-editor.mac .lines-content,
+.monaco-host .monaco-editor.mac .view-line,
+.monaco-host .monaco-editor.mac .view-lines,
+.monaco-host .monaco-editor.mac .lines-content:hover,
+.monaco-host .monaco-editor.mac .view-line:hover,
+.monaco-host .monaco-editor.mac .view-lines:hover {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.monaco-host .monaco-editor ::selection {
+  background: transparent;
+}
 .editor-main .monaco-editor .overlayWidgets {
   z-index: 2;
 }
