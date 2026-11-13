@@ -130,7 +130,7 @@ These buttons download [Multara v1.14.0](https://github.com/tomiaa12/Multara/rel
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) · [MSI, en-US](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_en-US.msi) · [MSI, zh-CN](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_zh-CN.msi) |
+| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) |
 | macOS Apple Silicon | [`.dmg`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_aarch64.dmg) |
 
 The `.exe` installer is per-user. Windows setup downloads the WebView2 runtime when it is missing. On macOS, the app requires macOS 10.15 or later. Drag `Multara.app` into Applications.
@@ -208,7 +208,7 @@ There is no Multara account. An agent run is a local CLI process with its workin
 
 | Platform | Published installer |
 | --- | --- |
-| Windows x64 | `.exe` and MSI (`en-US`, `zh-CN`) |
+| Windows x64 | `.exe` |
 | macOS Apple Silicon | `.dmg`, macOS 10.15 or later |
 | macOS Intel | Not published |
 | Linux | Not published |

@@ -130,7 +130,7 @@ Claude Code、Codex、OpenCode、Gemini CLI、Qwen Code では、ランタイム
 
 | プラットフォーム | ダウンロード |
 | --- | --- |
-| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) · [MSI、en-US](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_en-US.msi) · [MSI、zh-CN](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64_zh-CN.msi) |
+| Windows x64 | [NSIS `.exe`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_x64-setup.exe) |
 | macOS Apple Silicon | [`.dmg`](https://github.com/tomiaa12/Multara/releases/download/v1.14.0/Multara_1.14.0_aarch64.dmg) |
 
 `.exe` インストーラーは現在のユーザー向けです。Windows のセットアップは、WebView2 が無いときにそれをダウンロードします。macOS は 10.15 以降です。`Multara.app` を「アプリケーション」へドラッグします。
@@ -208,7 +208,7 @@ Multara のアカウントはありません。エージェントの実行は、
 
 | プラットフォーム | 公開されているインストーラー |
 | --- | --- |
-| Windows x64 | `.exe` と MSI（`en-US`、`zh-CN`） |
+| Windows x64 | `.exe` |
 | macOS Apple Silicon | `.dmg`、macOS 10.15 以降 |
 | macOS Intel | 未公開 |
 | Linux | 未公開 |
