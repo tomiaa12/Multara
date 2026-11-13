@@ -4476,6 +4476,9 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .file-tree {
   --tree-sticky-head: 38px;
   --tree-sticky-row: 25px;
+  --tree-entry-pad: 2px;
+  /* 树里单独抬高层级：滚动条最高，项目名称其次，粘住的目录按深度递减。外面的输入条不读这个值。 */
+  --z-overlay-scroll: 32;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -4572,7 +4575,9 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   .scm-file:hover,
   .scm-file:focus-visible,
   .scm-file.is-selected,
-  .scm-dir:hover
+  .scm-dir:hover,
+  .scm-file-tree .tree-entry:hover,
+  .scm-file-tree .tree-entry.selected
 ) {
   box-shadow: -18px 0 0 var(--color-surface-active);
 }
@@ -5510,45 +5515,46 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   background: var(--color-surface-active);
   outline: none;
 }
-.scm-file-name {
-  flex: 0 1 auto;
+/* 文件名和路径是同一行文字，省略号只出现在行尾，和 VS Code 的 icon label 一样。 */
+.scm-file-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.scm-file-label > .ds-tooltip-trigger {
+  display: inline;
+}
+.scm-file-name {
+  white-space: pre;
 }
 .scm-file-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  margin-left: 4px;
+  margin-left: 0.5em;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-md);
+  font-size: 0.9em;
   opacity: 0.7;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 路径在 UiTooltip 里，flex 要加在触发器上，操作图标和 M/A 才会贴在行右侧 */
-.scm-file > .ds-tooltip-trigger:has(.scm-file-path) {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-}
-.scm-file > .ds-tooltip-trigger:has(.scm-file-path) .scm-file-path {
-  flex: 1 1 auto;
-  min-width: 0;
+  white-space: pre;
 }
 .scm-file > .file-type-icon,
 .scm-file > .ds-tooltip-trigger:last-child,
 .scm-file-actions {
   flex: 0 0 auto;
 }
-/* 撤回 / 暂存按钮常驻显示，作为普通 flex 子项占位，路径在其左侧省略，不会被按钮盖住 */
+/* 打开 / 撤回 / 暂存平时不占位，悬停、焦点或选中这一行时才出现 */
 .scm-file-actions {
-  display: flex;
+  display: none;
   flex: 0 0 auto;
   align-items: center;
+  margin-left: auto;
+}
+.scm-file:hover > .scm-file-actions,
+.scm-file:focus-within > .scm-file-actions,
+.scm-file.is-selected > .scm-file-actions,
+.scm-file-tree .tree-entry:hover > .scm-file-actions,
+.scm-file-tree .tree-entry:focus-within > .scm-file-actions,
+.scm-file-tree .tree-entry.selected > .scm-file-actions {
+  display: flex;
 }
 .scm-file-actions .ui-button,
 .scm-file-actions .ui-button[data-size="icon"] {
@@ -5571,58 +5577,20 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-text-strong);
   background: var(--color-surface-emphasis);
 }
-.scm-file > b,
-.tree-git-badge:not(.is-folder) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1;
-  letter-spacing: 0;
-}
-.scm-file > b {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  opacity: 0.75;
-  text-align: center;
-  transform: translateY(-50%);
-}
-.scm-file.git-modified .scm-file-name,
-.scm-file.git-modified .scm-file-path,
-.scm-file.git-modified > b {
-  color: var(--color-git-modified);
-}
-.scm-file.git-added .scm-file-name,
-.scm-file.git-added .scm-file-path,
-.scm-file.git-added > b {
-  color: var(--color-git-added);
-}
-.scm-file.git-untracked .scm-file-name,
-.scm-file.git-untracked .scm-file-path,
-.scm-file.git-untracked > b {
-  color: var(--color-git-untracked);
-}
-.scm-file.git-deleted .scm-file-name,
-.scm-file.git-deleted .scm-file-path,
-.scm-file.git-deleted > b {
-  color: var(--color-git-deleted);
-}
 .scm-file.git-deleted .scm-file-name,
 .scm-file.git-deleted .scm-file-path {
   text-decoration: line-through;
 }
-.scm-file.git-renamed .scm-file-name,
-.scm-file.git-renamed .scm-file-path,
-.scm-file.git-renamed > b {
-  color: var(--color-git-untracked);
+.scm-file > .ds-tooltip-trigger:has(> .tree-git-badge) {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
 }
-.scm-file.git-conflict .scm-file-name,
-.scm-file.git-conflict .scm-file-path,
-.scm-file.git-conflict > b {
-  color: var(--color-error);
+.scm-file:hover > .scm-file-actions + .ds-tooltip-trigger,
+.scm-file:focus-within > .scm-file-actions + .ds-tooltip-trigger,
+.scm-file.is-selected > .scm-file-actions + .ds-tooltip-trigger {
+  margin-left: var(--spacing-2);
 }
 .scm-toolbar {
   position: sticky;
@@ -5728,6 +5696,60 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 .scm-dir:hover {
   background: var(--color-surface-active);
+}
+.scm-file-tree .tree-entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 25px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.scm-file-tree .tree-entry:hover,
+.scm-file-tree .tree-entry.selected {
+  background: var(--color-surface-active);
+  color: var(--color-text);
+}
+.scm-file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-name) {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.scm-file-tree .tree-entry .tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scm-file-tree .tree-entry > .scm-file-actions {
+  margin-left: auto;
+}
+.scm-file-tree .tree-entry > .scm-file-actions + .ds-tooltip-trigger,
+.scm-file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-git-badge) {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.scm-file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-git-badge) {
+  margin-left: auto;
+  margin-right: 10px;
+}
+.scm-file-tree .tree-entry:hover > .scm-file-actions + .ds-tooltip-trigger,
+.scm-file-tree .tree-entry:focus-within > .scm-file-actions + .ds-tooltip-trigger,
+.scm-file-tree .tree-entry.selected > .scm-file-actions + .ds-tooltip-trigger {
+  margin-left: var(--spacing-2);
+}
+.scm-file-tree .tree-entry.git-deleted .tree-name {
+  text-decoration: line-through;
 }
 .scm-dir small,
 .scm-history-copy small {
@@ -6343,30 +6365,10 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .scm-history-file .scm-file > .file-type-icon {
   flex: 0 0 auto;
 }
-.scm-history-file .scm-file-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 45%;
-}
-.scm-history-file .scm-file > .ds-tooltip-trigger {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: none;
-  overflow: hidden;
-}
-.scm-history-file .scm-file-path {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-}
-.scm-history-file .scm-file > b {
-  position: static;
-  top: auto;
-  right: auto;
-  flex: 0 0 12px;
+.scm-history-file .scm-file > .tree-git-badge,
+.scm-history-file .scm-file > .ds-tooltip-trigger:has(> .tree-git-badge) {
+  flex: 0 0 auto;
   margin-left: auto;
-  transform: none;
 }
 .scm-history-file .scm-file:hover,
 .scm-history-file .scm-file:focus-visible {
@@ -6597,8 +6599,8 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   gap: 3px;
   width: 100%;
   min-height: 25px;
-  padding-top: 2px;
-  padding-bottom: 2px;
+  padding-top: var(--tree-entry-pad);
+  padding-bottom: var(--tree-entry-pad);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -6626,7 +6628,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .file-tree .tree-entry {
   position: relative;
   scroll-margin-top: calc(
-    var(--tree-sticky-head) + var(--tree-depth, 0) * var(--tree-sticky-row)
+    var(--tree-sticky-head) + var(--tree-entry-pad) + var(--tree-depth, 0) * var(--tree-sticky-row)
   );
   cursor: pointer;
   user-select: none;
@@ -6903,47 +6905,38 @@ body.is-dragging-workspace-file * {
 .ds-tooltip-trigger:has(> .tree-symlink) + .tree-git-badge {
   margin-left: 0;
 }
-.file-tree button.git-modified,
-.file-tree .tree-entry.git-modified {
-  color: var(--color-git-modified);
-}
-.file-tree button.git-added,
-.file-tree .tree-entry.git-added {
-  color: var(--color-git-added);
-}
-.file-tree button.git-untracked,
-.file-tree .tree-entry.git-untracked {
-  color: var(--color-git-untracked);
-}
-.file-tree button.git-deleted,
-.file-tree .tree-entry.git-deleted {
-  color: var(--color-git-deleted);
-}
-.file-tree button.git-deleted .tree-name,
-.file-tree .tree-entry.git-deleted .tree-name {
+.file-tree .tree-entry.git-deleted .tree-name,
+.scm-file-tree .tree-entry.git-deleted .tree-name {
   text-decoration: line-through;
 }
-.file-tree button.git-renamed,
-.file-tree .tree-entry.git-renamed {
-  color: var(--color-git-untracked);
-}
-.file-tree button.git-conflict,
-.file-tree .tree-entry.git-conflict {
-  color: var(--color-error);
-}
 .tree-git-badge {
+  display: block;
   flex: 0 0 auto;
-  margin-left: auto;
-  margin-right: 10px;
-  padding-left: 6px;
-  color: currentColor;
-}
-.tree-git-badge.is-folder {
   width: 6px;
   height: 6px;
+  margin-right: 10px;
   padding: 0;
   border-radius: 50%;
   background: currentColor;
+  color: var(--color-text-secondary);
+}
+.tree-git-badge.git-modified { color: var(--color-git-modified); }
+.tree-git-badge.git-added { color: var(--color-git-added); }
+.tree-git-badge.git-untracked { color: var(--color-git-untracked); }
+.tree-git-badge.git-deleted { color: var(--color-git-deleted); }
+.tree-git-badge.git-renamed { color: var(--color-git-untracked); }
+.tree-git-badge.git-conflict { color: var(--color-error); }
+.file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-git-badge) {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 10px;
+}
+.file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-git-badge) .tree-git-badge,
+.scm-file-tree .tree-entry .tree-git-badge,
+.scm-file .tree-git-badge {
+  margin-right: 0;
 }
 .tree-chevron {
   flex: 0 0 16px;
@@ -6985,9 +6978,9 @@ body.is-dragging-workspace-file * {
 }
 .file-tree .tree-entry.is-sticky {
   position: sticky;
-  top: calc(var(--tree-sticky-head) + var(--tree-depth, 0) * var(--tree-sticky-row));
-  /* 低于悬浮滚动条（--z-overlay-scroll），粘住时不盖住滑块 */
-  z-index: calc(var(--z-overlay-scroll) - 1 - (var(--tree-depth, 0) + 1) * 0.001);
+  top: calc(var(--tree-sticky-head) + var(--tree-entry-pad) + var(--tree-depth, 0) * var(--tree-sticky-row));
+  /* 整数层，且低于项目名称。小数会四舍五入后和项目名称挤在同一层，后出现的目录会盖住项目名。 */
+  z-index: calc(var(--z-overlay-scroll) - 2 - var(--tree-depth, 0));
   background: var(--color-bg);
 }
 .file-tree .tree-entry.is-sticky:hover {

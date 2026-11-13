@@ -205,11 +205,13 @@ async function openChanges(row: HistoryGraphRow) {
             @click="openFile(row, file)"
           >
             <FileTypeIcon :name="fileNameOf(file.path)" />
-            <span class="scm-file-name">{{ fileNameOf(file.path) }}</span>
-            <UiTooltip :content="file.path">
-              <span class="scm-file-path">{{ file.path }}</span>
-            </UiTooltip>
-            <b>{{ letter(file.status) }}</b>
+            <span class="scm-file-label">
+              <span class="scm-file-name">{{ fileNameOf(file.path) }}</span>
+              <UiTooltip :content="file.path">
+                <span class="scm-file-path">{{ file.path }}</span>
+              </UiTooltip>
+            </span>
+            <span class="tree-git-badge" :class="gitStatusClass(letter(file.status))" />
           </button>
         </div>
       </div>

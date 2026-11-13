@@ -61,6 +61,7 @@ import { renameSelection, validateFileName, wellFormedFileName } from "./workben
 import { isCopyDrag } from "./workbench/explorer/explorer-dnd";
 import { collectDroppedItems, type DroppedItem } from "./workbench/explorer/explorer-import";
 import { explorerItemKey, useExplorer, type ExplorerItem } from "./workbench/explorer/use-explorer";
+import { treeGuideLeft, treeRowPad } from "./workbench/tree-layout";
 import * as explorerBackend from "../services/explorer-backend";
 import {
   activateUnsavedEditor,
@@ -931,18 +932,6 @@ const treeGitIndexByWorkspace = computed(
 
 function treeKey(workspaceId: string, path: string) {
   return `${workspaceId}:${path}`;
-}
-
-const TREE_ROW_INSET = 18;
-const TREE_INDENT = 14;
-const TREE_CHEVRON = 16;
-
-function treeRowPad(depth: number) {
-  return TREE_ROW_INSET + depth * TREE_INDENT;
-}
-
-function treeGuideLeft(level: number) {
-  return TREE_ROW_INSET + (level - 1) * TREE_INDENT + TREE_CHEVRON / 2;
 }
 
 let stopResizing: (() => void) | null = null;
@@ -6035,10 +6024,7 @@ defineExpose({
                     v-if="treeGitStatus(workspace.id, entry)"
                     :content="treeGitBadgeTitle(workspace.id, entry)"
                   >
-                    <span
-                      class="tree-git-badge"
-                      :class="{ 'is-folder': entry.isDirectory }"
-                    >{{ entry.isDirectory ? "" : treeGitStatus(workspace.id, entry) }}</span>
+                    <span class="tree-git-badge" :class="treeGitClass(workspace.id, entry)" />
                   </UiTooltip>
                 </div>
                 </template>
