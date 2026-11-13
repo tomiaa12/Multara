@@ -6247,30 +6247,23 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .scm-lane-5 { color: #59a4f9; } /* historyItemRefColor / charts.blue */
 .scm-lane-6 { color: #B180D7; } /* historyItemRemoteRefColor */
 .scm-lane-7 { color: #EA5C00; } /* historyItemBaseRefColor */
+/* 信息和作者是同一行文本，只在块末尾省略一次，避免两段各自出现 … */
 .scm-history-copy {
-  display: flex;
   flex: 1;
-  align-items: center;
-  gap: var(--spacing-1);
   min-width: 0;
   overflow: hidden;
-}
-.scm-history-subject {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: var(--font-weight-regular);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.scm-history-author {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-secondary);
+  color: var(--color-text);
   font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.scm-history-subject {
+  font-weight: var(--font-weight-regular);
+}
+.scm-history-author {
+  margin-left: var(--spacing-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
 }
 .scm-history-refs {
   display: flex;
