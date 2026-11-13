@@ -18,8 +18,30 @@ export function osDropClientPoint(position: { x: number; y: number }, scale: num
   return { x: position.x / factor, y: position.y / factor };
 }
 
-export function osDropZoneAt(x: number, y: number) {
-  const hit = document.elementFromPoint(x, y);
+/**
+ * wry 在 macOS 把 AppKit 的逻辑点标成了 PhysicalPosition。再除 devicePixelRatio
+ * 会把落点缩到左上角，右下角聊天和居中弹层都对不上。Windows 的客户区坐标才是物理像素。
+ */
+export function osDropScale(platform: string, devicePixelRatio: number) {
+  if (platform === "macos") return 1;
+  return devicePixelRatio > 0 ? devicePixelRatio : 1;
+}
+
+function hostPlatform() {
+  const platform = navigator.platform || "";
+  const ua = navigator.userAgent || "";
+  if (/Mac/.test(platform) || /Macintosh/.test(ua)) return "macos";
+  if (/Win/.test(platform)) return "windows";
+  return "other";
+}
+
+export function osDropZoneAt(x: number, y: number, doc: Document = document) {
+  const stack = typeof doc.elementsFromPoint === "function" ? doc.elementsFromPoint(x, y) : [];
+  for (const element of stack) {
+    const zone = element.closest("[data-workspace-drop]");
+    if (zone) return zone;
+  }
+  const hit = doc.elementFromPoint(x, y);
   return hit?.closest("[data-workspace-drop]") ?? null;
 }
 
@@ -44,7 +66,7 @@ export function startOsFileDrop() {
         notifyHover(null, null);
         return;
       }
-      const point = osDropClientPoint(payload.position, window.devicePixelRatio || 1);
+      const point = osDropClientPoint(payload.position, osDropScale(hostPlatform(), window.devicePixelRatio || 1));
       const zone = osDropZoneAt(point.x, point.y);
       if (payload.type !== "drop") {
         notifyHover(zone, point);
