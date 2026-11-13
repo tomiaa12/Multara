@@ -17,7 +17,6 @@ import { externalPathChip, workspacePathChip } from "../components/chat/composer
 import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
 import {
-  sentFromChannel,
   shouldHideAssistantSpeaker,
   speakerForMessage,
   subtaskEmbedForMessage,
@@ -418,7 +417,7 @@ watch(
           :target-value="agent ? `agent:${agent.id}` : ''"
           :allow-target-change="false"
           :enable-replay="false"
-          :view-only="historyViewOnly || (thread && sentFromChannel(message))"
+          :view-only="true"
           :running="!historyViewOnly && sessionProcessing"
           @stop="stop"
         />
