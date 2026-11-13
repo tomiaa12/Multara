@@ -28,7 +28,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [payload: { group: ScmGroupId; path: string }];
   openFile: [path: string];
-  stage: [payload: { paths: string[]; staged: boolean }];
+  stage: [payload: { paths: string[]; staged: boolean; all?: boolean }];
   discard: [files: Array<{ path: string; worktreeStatus: string }>];
 }>();
 
@@ -147,7 +147,12 @@ function onFileClick(group: ScmGroupId, file: GitFileStatus, event: MouseEvent) 
   }
   selected.value = new Set([id]);
   anchor.value = id;
-  emit("open", { group, path: file.path });
+  emit("open", { group: openGroup(group, file), path: file.path });
+}
+
+function openGroup(group: ScmGroupId, file: GitFileStatus): ScmGroupId {
+  if (file.indexStatus === "?" || file.worktreeStatus === "?") return "untracked";
+  return group;
 }
 
 function selectedPaths(group: ScmGroupId, path: string) {
@@ -173,7 +178,8 @@ function onMenuSelect(id: string) {
   menu.value = null;
   if (!current) return;
   if (id === "open" && current.paths.length === 1) {
-    emit("open", { group: current.group, path: current.paths[0] });
+    const file = filesByGroup.value.get(current.group)?.get(current.paths[0]);
+    emit("open", { group: file ? openGroup(current.group, file) : current.group, path: current.paths[0] });
   }
   if (id === "openFile" && current.paths.length === 1) {
     emit("openFile", current.paths[0]);
@@ -230,7 +236,7 @@ function onRowEnter(group: ScmGroupId, row: Row) {
     toggleDir(group, row.path);
     return;
   }
-  emit("open", { group, path: row.file.path });
+  emit("open", { group: openGroup(group, row.file), path: row.file.path });
 }
 
 function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
@@ -238,12 +244,6 @@ function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
   openMenu(group, row.file.path, event);
 }
 
-function stageAllPaths(group: { id: ScmGroupId; files: GitFileStatus[] }) {
-  const paths = group.files.map((file) => file.path);
-  if (group.id !== "changes") return paths;
-  const untracked = props.groups.find((item) => item.id === "untracked");
-  return paths.concat(untracked?.files.map((file) => file.path) ?? []);
-}
 </script>
 
 <template>
@@ -271,7 +271,7 @@ function stageAllPaths(group: { id: ScmGroupId; files: GitFileStatus[] }) {
           size="icon"
           :tip="scmBusyTitle(busy, `stage:${workspaceId}`, t('scm.resource.unstageAll'))"
           :disabled="Boolean(busy)"
-          @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: false })"
+          @click.stop="emit('stage', { paths: [], staged: false, all: true })"
         >
           <Codicon name="remove" :size="12" />
         </UiButton>
@@ -281,7 +281,7 @@ function stageAllPaths(group: { id: ScmGroupId; files: GitFileStatus[] }) {
           size="icon"
           :tip="scmBusyTitle(busy, `stage:${workspaceId}`, group.id === 'merge' ? t('scm.resource.markAllResolved') : t('scm.resource.stageAll'))"
           :disabled="Boolean(busy)"
-          @click.stop="emit('stage', { paths: stageAllPaths(group), staged: true })"
+          @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: true })"
         >
           <Codicon name="add" :size="12" />
         </UiButton>

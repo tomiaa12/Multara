@@ -31,8 +31,8 @@ describe("scmGroups", () => {
     ]);
     expect(groups.merge.map((item) => item.path)).toEqual(["src/app.ts", "src/both.ts"]);
     expect(groups.staged.map((item) => item.path)).toEqual(["src/new.ts"]);
-    expect(groups.changes.map((item) => item.path)).toEqual(["src/edit.ts"]);
-    expect(groups.untracked.map((item) => item.path)).toEqual(["notes.md"]);
+    expect(groups.changes.map((item) => item.path)).toEqual(["notes.md", "src/edit.ts"]);
+    expect(groups.untracked).toHaveLength(0);
   });
 
   test("letters follow the group side", () => {
