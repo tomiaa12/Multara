@@ -48,11 +48,11 @@ export function gitStatusTitle(letter: string) {
   return t(`git.status.${letter}`);
 }
 
+/** 文件夹只汇总会冒泡的状态。删除不向父目录冒泡，删除线只留在文件自己身上。 */
 export function folderGitStatus(letters: string[]): GitStatusLetter {
-  const present = letters.filter(Boolean);
+  const present = letters.filter((letter) => letter && letter !== "D");
   if (present.some((letter) => letter === "C")) return "C";
   if (present.some((letter) => letter === "A" || letter === "U")) return "U";
-  if (present.some((letter) => letter === "D")) return "D";
   if (present.some((letter) => letter === "R")) return "R";
   return present.length ? "M" : "";
 }
