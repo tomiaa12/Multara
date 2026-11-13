@@ -70,7 +70,7 @@ const emit = defineEmits<{
   setUpstream: [upstream: string];
   open: [payload: { group: ScmGroupId; path: string }];
   openFile: [path: string];
-  stage: [payload: { paths: string[]; staged: boolean }];
+  stage: [payload: { paths: string[]; staged: boolean; all?: boolean }];
   discard: [files: Array<{ path: string; worktreeStatus: string }>];
   error: [message: string];
 }>();

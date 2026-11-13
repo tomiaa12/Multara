@@ -6995,12 +6995,10 @@ body.is-dragging-workspace-file * {
   background: var(--color-surface-hover);
   color: var(--color-text-strong);
 }
-.file-tree .tree-entry.is-sticky.selected {
-  background: color-mix(in srgb, var(--color-selection) 62%, transparent);
-  color: var(--color-text-strong);
-}
+.file-tree .tree-entry.is-sticky.selected,
 .file-tree .tree-entry.is-sticky.selected:hover {
-  background: color-mix(in srgb, var(--color-selection) 72%, transparent);
+  background: linear-gradient(var(--color-selection), var(--color-selection)), var(--color-bg);
+  color: var(--color-text-strong);
 }
 .file-tree .tree-workspace-head {
   position: sticky;

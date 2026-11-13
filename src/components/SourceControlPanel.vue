@@ -277,7 +277,10 @@ async function confirmDirect(workspace: Workspace, repository: GitRepositoryStat
   );
 }
 
-function stage(workspaceId: string, paths: string[], staged: boolean) {
+function stage(workspaceId: string, paths: string[], staged: boolean, all = false) {
+  if (all) {
+    return run(`stage:${workspaceId}`, () => backend.gitStageRepository(workspaceId, staged));
+  }
   if (!paths.length) return;
   return run(`stage:${workspaceId}`, () => backend.gitStageFiles(workspaceId, paths, staged));
 }
@@ -616,7 +619,7 @@ defineExpose({ refresh, revealCommit });
       @set-upstream="(upstream) => setUpstream(item.workspace, upstream)"
       @open="openChange(item.workspace.id, $event)"
       @open-file="openFile(item.workspace.id, $event)"
-      @stage="stage(item.workspace.id, $event.paths, $event.staged)"
+      @stage="stage(item.workspace.id, $event.paths, $event.staged, $event.all)"
       @discard="discard(item.workspace.id, $event)"
       @error="error = $event"
     />
