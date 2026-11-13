@@ -13,6 +13,7 @@ import {
   type ScmGroupId,
   type ScmTreeNode,
 } from "../workbench/scm-groups";
+import GitStatusBadge from "../workbench/GitStatusBadge.vue";
 import { folderGitStatus, gitStatusClass, gitStatusTitle } from "../workbench/tree-git-status";
 import { treeGuideLeft, treeRowPad } from "../workbench/tree-layout";
 import { scmBusyTitle } from "../workbench/scm-commit-action";
@@ -198,13 +199,17 @@ function rowTitle(row: Row) {
   return row.kind === "dir" ? row.path : row.file.path;
 }
 
-function rowStatusClass(group: ScmGroupId, row: Row) {
-  if (row.kind === "file") return gitStatusClass(scmResourceLetter(row.file, group));
+function rowStatusLetter(group: ScmGroupId, row: Row) {
+  if (row.kind === "file") return scmResourceLetter(row.file, group);
   const prefix = `${row.path}/`;
   const letters = (props.groups.find((item) => item.id === group)?.files ?? [])
     .filter((file) => file.path === row.path || file.path.startsWith(prefix))
     .map((file) => scmResourceLetter(file, group));
-  return gitStatusClass(folderGitStatus(letters));
+  return folderGitStatus(letters);
+}
+
+function rowStatusClass(group: ScmGroupId, row: Row) {
+  return gitStatusClass(rowStatusLetter(group, row));
 }
 
 function rowStatusTitle(group: ScmGroupId, row: Row) {
@@ -231,6 +236,13 @@ function onRowEnter(group: ScmGroupId, row: Row) {
 function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
   if (row.kind !== "file") return;
   openMenu(group, row.file.path, event);
+}
+
+function stageAllPaths(group: { id: ScmGroupId; files: GitFileStatus[] }) {
+  const paths = group.files.map((file) => file.path);
+  if (group.id !== "changes") return paths;
+  const untracked = props.groups.find((item) => item.id === "untracked");
+  return paths.concat(untracked?.files.map((file) => file.path) ?? []);
 }
 </script>
 
@@ -269,7 +281,7 @@ function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
           size="icon"
           :tip="scmBusyTitle(busy, `stage:${workspaceId}`, group.id === 'merge' ? t('scm.resource.markAllResolved') : t('scm.resource.stageAll'))"
           :disabled="Boolean(busy)"
-          @click.stop="emit('stage', { paths: group.files.map((file) => file.path), staged: true })"
+          @click.stop="emit('stage', { paths: stageAllPaths(group), staged: true })"
         >
           <Codicon name="add" :size="12" />
         </UiButton>
@@ -351,8 +363,8 @@ function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
               <Codicon v-else name="add" :size="12" />
             </UiButton>
           </div>
-          <UiTooltip v-if="rowStatusClass(group.id, row)" :content="rowStatusTitle(group.id, row)">
-            <span class="tree-git-badge" :class="rowStatusClass(group.id, row)" />
+          <UiTooltip v-if="rowStatusLetter(group.id, row)" :content="rowStatusTitle(group.id, row)">
+            <GitStatusBadge :letter="rowStatusLetter(group.id, row)" :bubble="row.kind === 'dir'" />
           </UiTooltip>
         </div>
       </template>
