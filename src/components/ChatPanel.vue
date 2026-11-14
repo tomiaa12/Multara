@@ -48,7 +48,7 @@ import {
 } from "./chat/chat-scroll";
 import { scrollListToMessage } from "./chat/scroll-to-message";
 import { lastUnansweredUser } from "./chat/unanswered-turn";
-import { sentFromChannel, shouldHideAssistantSpeaker, subtaskEmbedForMessage } from "./chat/message-speaker";
+import { shouldHideAssistantSpeaker, subtaskEmbedForMessage } from "./chat/message-speaker";
 const emit = defineEmits<{
   "review-file": [file: { workspaceId: string; filePath: string }];
 }>();
@@ -444,12 +444,10 @@ const composerDraft = computed(() => session.value ? drafts.value[session.value.
 const composerLocked = computed(() =>
   reshuffleOpen.value || dirtyRollbackOpen.value || rollbackFailureOpen.value,
 );
-const channelInbox = computed(() =>
-  props.embedded && sessionMessages.value.some(sentFromChannel),
-);
-const channelComposerLocked = computed(() => channelInbox.value && props.historyViewOnly);
+/** 收件箱里不能回复时锁住底部输入框。任务线程不走这里，回复框保持可编辑。 */
+const composerReadOnly = computed(() => props.historyViewOnly);
 const canSend = computed(() =>
-  composerHasContent() && Boolean(session.value) && !composerLocked.value && !channelComposerLocked.value,
+  composerHasContent() && Boolean(session.value) && !composerLocked.value && !composerReadOnly.value,
 );
 const canStop = computed(() => sessionProcessing.value);
 // 运行中停止按钮一直在；没有草稿时只显示停止，有草稿时再并排显示「加入队列」。
@@ -2044,10 +2042,10 @@ defineExpose({
         :target-avatar="targetAvatar"
         :target-value="targetValue"
         :target-options="targetOptions"
-        :allow-target-change="allowTargetChange"
+        :allow-target-change="allowTargetChange && !historyViewOnly"
         :can-send="canSend"
         :disabled="composerLocked"
-        :readonly="channelComposerLocked"
+        :readonly="composerReadOnly"
         :mode-session-id="preview || historyViewOnly ? '' : session?.id"
         @change="onComposerChange"
         @submit="submit"
@@ -2104,7 +2102,7 @@ defineExpose({
               variant="ghost"
               data-composer-attach
               :tip="t('chat.addContext')"
-              :disabled="composerLocked || channelComposerLocked"
+              :disabled="composerLocked || composerReadOnly"
               @click="composerInput?.openAttachMenu('file')"
             >
               <Plus :size="16" />
