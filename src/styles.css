@@ -10632,6 +10632,7 @@ body.is-dragging-inbox-float * {
   min-height: 0;
   height: 100%;
   gap: 0;
+  overflow: hidden;
 }
 .task-activity.is-thread .task-activity-log {
   flex: 1;
@@ -10643,8 +10644,15 @@ body.is-dragging-inbox-float * {
 }
 .task-activity.is-thread > .chat-composer,
 .task-activity.is-thread > .task-create-error {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
   width: min(720px, calc(100% - 32px));
   margin: 0 auto 14px;
+}
+.task-activity.is-thread > .chat-composer .composer-field {
+  -webkit-user-select: text;
+  user-select: text;
 }
 .chat-new-divider {
   display: flex;
