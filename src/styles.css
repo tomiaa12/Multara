@@ -6356,6 +6356,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  text-align: left;
 }
 /* 图标固定；文件名/路径可挤成 …；M/A 永远贴最右 */
 .scm-history-file .scm-file > .file-type-icon {
