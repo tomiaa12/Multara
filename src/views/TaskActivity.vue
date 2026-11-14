@@ -6,6 +6,7 @@ import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
+import ReshuffleModal from "../components/chat/ReshuffleModal.vue";
 import ChatQuestionCarousel from "../components/chat/ChatQuestionCarousel.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import UserPrompt from "../components/chat/UserPrompt.vue";
@@ -30,6 +31,9 @@ import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { useAppStore } from "../stores/app";
+import { useDiffStore } from "../stores/diff";
+import { countMessagesFrom, reaskTouchesFiles } from "../stores/reask";
+import { confirmRollbackIfDirty, listDirtyEditorPaths } from "../components/workbench/unsaved-editor";
 import { t } from "../i18n";
 
 const props = withDefaults(defineProps<{
@@ -45,6 +49,14 @@ const props = withDefaults(defineProps<{
 });
 
 const store = useAppStore();
+const diffStore = useDiffStore();
+const reaskTarget = ref<{ messageId: string; content: string; attachments: MessageAttachmentInput[] } | null>(null);
+const reshuffleOpen = ref(false);
+const dirtyRollbackOpen = ref(false);
+const dirtyRollbackMessage = ref("");
+const restoreNonce = ref(0);
+const restoreMessageId = ref("");
+let dirtyRollbackResolve: ((allowed: boolean) => void) | null = null;
 const logEl = ref<HTMLElement | null>(null);
 const composer = ref<{
   clear: () => void;
@@ -317,6 +329,56 @@ function removePaste(path: string) {
   pastes.value = pastes.value.filter((item) => item.path !== path);
 }
 
+const reaskAfterCount = computed(() =>
+  reaskTarget.value ? countMessagesFrom(messages.value, reaskTarget.value.messageId) : 0,
+);
+
+function startReask(messageId: string, content: string, attachments: MessageAttachmentInput[]) {
+  if (props.historyViewOnly) return;
+  reaskTarget.value = { messageId, content, attachments };
+  const filesByMessage = diffStore.snapshots.get(props.sessionId) ?? new Map();
+  if (!reaskTouchesFiles(messages.value, messageId, filesByMessage)) {
+    void confirmReask(false);
+    return;
+  }
+  reshuffleOpen.value = true;
+}
+
+function cancelReask() {
+  const messageId = reaskTarget.value?.messageId ?? "";
+  reaskTarget.value = null;
+  reshuffleOpen.value = false;
+  if (!messageId) return;
+  restoreMessageId.value = messageId;
+  restoreNonce.value += 1;
+}
+
+function askDirtyRollback(message: string) {
+  dirtyRollbackMessage.value = message;
+  dirtyRollbackOpen.value = true;
+  return new Promise<boolean>((resolve) => {
+    dirtyRollbackResolve = resolve;
+  });
+}
+
+function finishDirtyRollback(allowed: boolean) {
+  dirtyRollbackOpen.value = false;
+  dirtyRollbackResolve?.(allowed);
+  dirtyRollbackResolve = null;
+}
+
+async function confirmReask(rollback: boolean) {
+  const target = reaskTarget.value;
+  if (!target) return;
+  if (rollback) {
+    const allowed = await confirmRollbackIfDirty(listDirtyEditorPaths(), askDirtyRollback);
+    if (!allowed) return;
+  }
+  reshuffleOpen.value = false;
+  reaskTarget.value = null;
+  await store.reaskFrom(target.messageId, target.content, target.attachments, rollback);
+}
+
 function submit() {
   const nodes = composer.value?.serialize().nodes ?? [];
   const text = formatAgentPrompt(
@@ -416,9 +478,12 @@ watch(
           :target-avatar="agent?.avatar ?? 'M'"
           :target-value="agent ? `agent:${agent.id}` : ''"
           :allow-target-change="false"
-          :enable-replay="false"
-          :view-only="true"
+          :enable-replay="!historyViewOnly"
+          :view-only="historyViewOnly"
+          :restore-nonce="restoreNonce"
+          :restore-message-id="restoreMessageId"
           :running="!historyViewOnly && sessionProcessing"
+          @start-reask="startReask"
           @stop="stop"
         />
         <AssistantMessage
@@ -497,7 +562,7 @@ watch(
       :target-label="targetLabel"
       :target-avatar="targetAvatar"
       :allow-target-change="!historyViewOnly"
-      :disabled="historyViewOnly"
+      :disabled="historyViewOnly || reshuffleOpen || dirtyRollbackOpen"
       :can-send="canSend"
       :mode-session-id="historyViewOnly ? '' : sessionId"
       @change="onChange"
@@ -521,7 +586,7 @@ watch(
           variant="ghost"
           data-composer-attach
           :tip="t('chat.addContext')"
-          :disabled="historyViewOnly"
+          :disabled="historyViewOnly || reshuffleOpen || dirtyRollbackOpen"
           @click="composer?.openAttachMenu('file')"
         >
           <Plus :size="16" />
@@ -534,5 +599,21 @@ watch(
         </UiButton>
       </template>
     </ChatComposer>
+    <ReshuffleModal
+      v-if="reshuffleOpen"
+      :after-count="reaskAfterCount"
+      @confirm="confirmReask"
+      @cancel="cancelReask"
+    />
+    <UiModal v-if="dirtyRollbackOpen" @click.self="finishDirtyRollback(false)">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h2>{{ t("dialog.unsavedTitle") }}</h2>
+        <p>{{ dirtyRollbackMessage }}</p>
+        <div class="modal-actions">
+          <UiButton @click="finishDirtyRollback(false)">{{ t("common.cancel") }}</UiButton>
+          <UiButton variant="danger" @click="finishDirtyRollback(true)">{{ t("chat.dirtyRollbackContinue") }}</UiButton>
+        </div>
+      </div>
+    </UiModal>
   </div>
 </template>
