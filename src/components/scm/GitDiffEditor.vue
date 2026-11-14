@@ -25,7 +25,7 @@ const props = withDefaults(
 );
 
 const host = ref<HTMLElement | null>(null);
-/** 字宽和 diff 算完再露出，避免先看到叠成一行、没有着色的文字 */
+/** 字宽和折叠区都算完再露出，避免先叠成一行，或先看到全文再收起 */
 const ready = ref(false);
 let editor: monaco.editor.IStandaloneDiffEditor | null = null;
 let originalModel: monaco.editor.ITextModel | null = null;
@@ -179,24 +179,36 @@ async function mount() {
     };
     await nextTick();
     if (generation !== mountGeneration || !host.value) return;
-    await settleDiffEditor(editor, host.value, () => generation === mountGeneration);
+  } else {
+    // 和多文件 diff 一样：diff 和折叠区算完再挂上，避免先看到全文再收起
+    const viewModel = editor.createViewModel({
+      original: originalModel,
+      modified: modifiedModel,
+    });
+    try {
+      await viewModel.waitForDiff();
+    } catch {
+      viewModel.dispose();
+      return;
+    }
+    if (generation !== mountGeneration) {
+      viewModel.dispose();
+      return;
+    }
+    editor.setModel(viewModel);
+    await nextFrame();
     if (generation !== mountGeneration || !host.value) return;
-    applyModelLanguage(language);
-    monaco.editor.setTheme(props.theme);
-    syncAutoHeight();
-    ready.value = true;
-    host.value.style.visibility = "";
+  }
+  await settleDiffEditor(editor, host.value, () => generation === mountGeneration);
+  if (generation !== mountGeneration || !host.value) return;
+  applyModelLanguage(language);
+  monaco.editor.setTheme(props.theme);
+  if (props.autoHeight) syncAutoHeight();
+  ready.value = true;
+  host.value.style.visibility = "";
+  if (props.autoHeight) {
     await nextTick();
     syncAutoHeight();
-  } else {
-    editor.setModel({ original: originalModel, modified: modifiedModel });
-    if (generation !== mountGeneration || !host.value) return;
-    await settleDiffEditor(editor, host.value, () => generation === mountGeneration);
-    if (generation !== mountGeneration || !host.value) return;
-    applyModelLanguage(language);
-    monaco.editor.setTheme(props.theme);
-    ready.value = true;
-    host.value.style.visibility = "";
   }
 }
 
