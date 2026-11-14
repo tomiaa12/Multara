@@ -34,6 +34,17 @@ const hasDescription = computed(() =>
     node.type === "chip" || (node.type === "text" && node.value.replace(/\u00a0/g, " ").trim()),
   ),
 );
+/** 创建任务时描述会原样变成第一条用户消息，动态里已经有，标题下不再画一遍。 */
+const showDescription = computed(() => {
+  if (!hasDescription.value || !task.value) return false;
+  const list = store.messages[task.value.sessionId];
+  if (!list) return false;
+  const opening = list.find((message) => message.role === "user");
+  if (!opening) return true;
+  const description = task.value.description.replace(/\u00a0/g, " ").trim();
+  const content = opening.content.replace(/\u00a0/g, " ").trim();
+  return description !== content;
+});
 
 let pinningIssue = false;
 
@@ -172,7 +183,7 @@ async function removeTask() {
               @blur="saveTitle"
             />
             <ChatComposer
-              v-if="hasDescription"
+              v-if="showDescription"
               :key="descriptionKey"
               class="task-issue-description is-view-only"
               embedded
