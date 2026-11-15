@@ -73,8 +73,18 @@ import { CLI_CATALOG } from "../domain/cli-catalog";
 const now = new Date().toISOString();
 
 const previewData: BootstrapData = {
-  projects: [],
-  workspaces: [],
+  projects: [
+    { id: "req-login", name: "登录改造", note: "会话过期后重新登录", workspaceCount: 1, createdAt: now, openedAt: now },
+    { id: "req-theme", name: "深色主题", note: "设置页跟随系统切换主题", workspaceCount: 1, createdAt: now, openedAt: now },
+    { id: "req-chat", name: "聊天记录导出", note: "把一次任务的工具调用整理出来", workspaceCount: 1, createdAt: now, openedAt: now },
+    { id: "req-git", name: "Git 审查", note: "提交前先看 diff", workspaceCount: 1, createdAt: now, openedAt: now },
+  ],
+  workspaces: [
+    { id: "ws-login", projectId: "req-login", name: "multara", kind: "git", sourcePath: "~/work/multara", workPath: "~/work/multara/.worktrees/login", branch: "feat/login", isolationMode: "worktree", createdAt: now },
+    { id: "ws-theme", projectId: "req-theme", name: "multara", kind: "git", sourcePath: "~/work/multara", workPath: "~/work/multara/.worktrees/theme", branch: "feat/theme", isolationMode: "worktree", createdAt: now },
+    { id: "ws-chat", projectId: "req-chat", name: "multara", kind: "git", sourcePath: "~/work/multara", workPath: "~/work/multara", branch: "main", isolationMode: "direct", createdAt: now },
+    { id: "ws-git", projectId: "req-git", name: "multara", kind: "folder", sourcePath: "~/work/multara", workPath: "~/work/multara", branch: null, isolationMode: "copy", createdAt: now },
+  ],
   runtimes: [
     { id: "cursor", name: "Cursor", provider: "cursor", command: "cursor-agent", args: [], path: "/usr/local/bin/cursor-agent", version: "latest", status: "online", maxConcurrent: 3 },
     { id: "claude", name: "Claude Code", provider: "claude", command: "claude", args: [], path: null, version: null, status: "not_found", maxConcurrent: 2 },

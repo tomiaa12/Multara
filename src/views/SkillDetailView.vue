@@ -39,6 +39,12 @@ const sourceName = computed(() => {
   if (!owner || owner === "multara") return "Multara";
   return store.data?.runtimes.find((runtime) => runtime.id === owner)?.name ?? owner;
 });
+/** catalog 里 skillsHome 带 `/`，Windows 上会拼出混用分隔符；展示/复制时统一。 */
+const pathLabel = computed(() => {
+  const path = skill.value?.sourcePath ?? "";
+  if (/^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\")) return path.replace(/\//g, "\\");
+  return path;
+});
 
 function listSkillDirectory(path: string) {
   const id = skill.value?.id;

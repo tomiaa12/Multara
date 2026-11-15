@@ -536,20 +536,55 @@ pub(crate) fn create_parents_inside(
     Ok(current)
 }
 
+/// Windows `canonicalize` 会加上 `\\?\`；explorer 不认，会默默打开「文档」。
+#[cfg(target_os = "windows")]
+fn path_for_explorer(path: &Path) -> Result<PathBuf, String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|error| tr!("文件不存在：{error}", error = error))?;
+    let text = canonical.to_string_lossy();
+    let stripped = text.strip_prefix(r"\\?\").unwrap_or(text.as_ref());
+    if let Some(unc) = stripped.strip_prefix("UNC\\") {
+        Ok(PathBuf::from(format!(r"\\{unc}")))
+    } else {
+        Ok(PathBuf::from(stripped))
+    }
+}
+
 pub(crate) fn reveal_path(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
-            .arg(format!("/select,{}", path.display()))
-            .spawn()
-            .map_err(|error| error.to_string())?;
+        let path = path_for_explorer(path)?;
+        if path.is_dir() {
+            // CreateProcess 直接起 explorer 时，路径经常被已有 explorer 进程丢掉，落到「文档」。
+            // `cmd /C start "" <dir>` 走 ShellExecute；CREATE_NO_WINDOW 避免闪一下黑框。
+            crate::process::command("cmd")
+                .arg("/C")
+                .arg("start")
+                .arg("")
+                .arg(path.as_os_str())
+                .spawn()
+                .map_err(|error| error.to_string())?;
+        } else {
+            crate::process::command("explorer")
+                .arg(format!("/select,{}", path.display()))
+                .spawn()
+                .map_err(|error| error.to_string())?;
+        }
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .args(["-R", &path.to_string_lossy()])
-            .spawn()
-            .map_err(|error| error.to_string())?;
+        if path.is_dir() {
+            std::process::Command::new("open")
+                .arg(path)
+                .spawn()
+                .map_err(|error| error.to_string())?;
+        } else {
+            std::process::Command::new("open")
+                .args(["-R", &path.to_string_lossy()])
+                .spawn()
+                .map_err(|error| error.to_string())?;
+        }
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {

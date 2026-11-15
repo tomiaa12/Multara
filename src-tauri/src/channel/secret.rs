@@ -7,6 +7,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "macos")]
 const KEYCHAIN_SERVICE: &str = "multara.channel";
 
 fn file_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {

@@ -2305,7 +2305,10 @@ pub async fn list_resource_sources(
 #[tauri::command]
 pub fn reveal_resource(resource_id: String) -> Result<(), String> {
     let _span = crate::diag::span("reveal_resource");
-    files::reveal_path(&resource_manager::resource_path(&resource_id)?)
+    // 技能详情「打开目录」应对准技能文件夹；其它资源仍揭示 source_path（文件则 /select）
+    let path = resource_manager::skill_directory(&resource_id)
+        .or_else(|_| resource_manager::resource_path(&resource_id))?;
+    files::reveal_path(&path)
 }
 
 #[tauri::command]
@@ -2956,6 +2959,7 @@ pub async fn save_settings(
     let _span = crate::diag::span("save_settings");
     validate_settings(&settings)?;
     let reload_webhook = settings.contains_key("webhookPort");
+    #[cfg(target_os = "macos")]
     let word_wrap = settings.get("wordWrap").cloned();
     let skill_root = app
         .path()
