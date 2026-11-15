@@ -1736,6 +1736,29 @@ button.ds-stat.is-on {
 .runtime-directory {
   --ui-directory-columns: minmax(0, 1.4fr) 88px 120px minmax(0, 1.4fr) 96px 72px;
 }
+/* 用量条叠在名称下面，行高跟内容走 */
+.runtime-directory .agent-directory-row {
+  align-items: start;
+  padding-block: var(--spacing-2);
+}
+.runtime-directory .agent-directory-identity {
+  align-items: flex-start;
+}
+.runtime-directory .agent-directory-identity > .runtime-logo {
+  margin-top: 2px;
+}
+.runtime-directory .agent-directory-status,
+.runtime-directory .skill-used-by,
+.runtime-directory .agent-directory-field,
+.runtime-directory .runtime-directory-actions,
+.runtime-directory .agent-directory-row > .ds-tooltip-trigger {
+  align-self: center;
+}
+.runtime-directory .runtime-usage {
+  margin-top: var(--spacing-1);
+  overflow: visible;
+  white-space: normal;
+}
 .runtime-directory-path {
   display: block;
   overflow: hidden;

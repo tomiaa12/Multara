@@ -45,6 +45,7 @@ pub mod protocol;
 pub mod resources;
 pub mod runtime;
 pub mod runtime_accounts;
+pub mod runtime_usage;
 pub mod runtime_brief;
 pub mod runtime_models;
 pub mod session;
@@ -482,6 +483,8 @@ pub fn run() {
             runtime_accounts::commands::runtime_account_remove,
             runtime_accounts::commands::runtime_account_rename,
             runtime_accounts::commands::runtime_account_login,
+            runtime_usage::commands::probe_runtime_usage,
+            runtime_usage::commands::probe_runtime_usages,
             list_task_runs,
             list_chat_messages,
             session_export::export_session_diagnostics,
