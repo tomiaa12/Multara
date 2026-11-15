@@ -1,13 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { t } from "../i18n";
+import { hasBackend, inTauri, invoke } from "./dev-backend";
 
-function inTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function requireTauri(actionKey: string): void {
-  if (!inTauri()) {
+function requireBackend(actionKey: string): void {
+  if (!hasBackend()) {
     throw new Error(t("explorer.browserPreviewBlocked", { action: t(actionKey) }));
   }
 }
@@ -76,12 +72,12 @@ export const TRASH_FAILED_PREFIX = "TRASH_FAILED:";
 export const TARGET_EXISTS_PREFIX = "EXISTS:";
 
 export async function listDirectory(workspaceId: string, path?: string): Promise<ExplorerEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<ExplorerEntry[]>("explorer_list_directory", { workspaceId, path: path || null });
 }
 
 export async function statEntry(workspaceId: string, path: string): Promise<ExplorerStat> {
-  requireTauri("explorer.action.readStat");
+  requireBackend("explorer.action.readStat");
   return invoke<ExplorerStat>("explorer_stat", { workspaceId, path });
 }
 
@@ -90,12 +86,12 @@ export async function deleteEntries(
   paths: string[],
   useTrash: boolean,
 ): Promise<ExplorerDeleteResult[]> {
-  requireTauri("explorer.action.deleteEntries");
+  requireBackend("explorer.action.deleteEntries");
   return invoke<ExplorerDeleteResult[]>("explorer_delete_entries", { workspaceId, paths, useTrash });
 }
 
 export async function restoreEntry(workspaceId: string, path: string, backupId: string): Promise<void> {
-  requireTauri("explorer.action.restoreEntry");
+  requireBackend("explorer.action.restoreEntry");
   await invoke("explorer_restore_entry", { workspaceId, path, backupId });
 }
 
@@ -104,12 +100,12 @@ export async function transferEntries(
   copy: boolean,
   overwrite = false,
 ): Promise<ExplorerTransferResult[]> {
-  requireTauri(copy ? "explorer.action.copyEntries" : "explorer.action.moveEntries");
+  requireBackend(copy ? "explorer.action.copyEntries" : "explorer.action.moveEntries");
   return invoke<ExplorerTransferResult[]>("explorer_transfer_entries", { operations, copy, overwrite });
 }
 
 export async function createEntry(workspaceId: string, path: string, isDirectory: boolean): Promise<void> {
-  requireTauri("explorer.action.createEntry");
+  requireBackend("explorer.action.createEntry");
   await invoke("explorer_create_entry", { workspaceId, path, isDirectory });
 }
 
@@ -119,46 +115,47 @@ export async function writeFileBytes(
   bytes: Uint8Array,
   overwrite = false,
 ): Promise<void> {
-  requireTauri("explorer.action.writeFile");
+  requireBackend("explorer.action.writeFile");
   await invoke("explorer_write_file", { workspaceId, path, base64: bytesToBase64(bytes), overwrite });
 }
 
 export async function gitIgnoredPaths(workspaceId: string, paths: string[]): Promise<string[]> {
-  if (!inTauri() || paths.length === 0) return [];
+  if (!hasBackend() || paths.length === 0) return [];
   return invoke<string[]>("explorer_git_ignored", { workspaceId, paths });
 }
 
 export async function gitRemote(workspaceId: string): Promise<ExplorerGitRemote | null> {
-  if (!inTauri()) return null;
+  if (!hasBackend()) return null;
   return invoke<ExplorerGitRemote | null>("explorer_git_remote", { workspaceId });
 }
 
 export async function openExternal(workspaceId: string, path: string): Promise<void> {
-  requireTauri("explorer.action.openExternal");
+  requireBackend("explorer.action.openExternal");
   await invoke("explorer_open_external", { workspaceId, path });
 }
 
 export async function absolutePath(workspaceId: string, path: string): Promise<string> {
-  requireTauri("explorer.action.readPath");
+  requireBackend("explorer.action.readPath");
   return invoke<string>("explorer_absolute_path", { workspaceId, path });
 }
 
 export async function writeClipboardFiles(entries: Array<{ workspaceId: string; path: string }>): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("explorer_clipboard_write_files", { entries });
 }
 
 export async function readClipboardFiles(): Promise<ExplorerClipboardFile[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<ExplorerClipboardFile[]>("explorer_clipboard_read_files");
 }
 
 export async function watchWorkspaces(owner: string, workspaceIds: string[], excludes: string[]): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("explorer_watch_workspaces", { owner, workspaceIds, excludes });
 }
 
 export async function onFsChanged(handler: (change: ExplorerFsChange) => void): Promise<UnlistenFn> {
+  // 事件监听只能在 WebView；浏览器桥只转发 invoke。
   if (!inTauri()) return () => undefined;
   return listen<ExplorerFsChange>("explorer-fs-changed", (event) => handler(event.payload));
 }

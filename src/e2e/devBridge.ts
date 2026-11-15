@@ -228,7 +228,7 @@ async function execute(payload: Record<string, unknown>) {
   const action = String(payload.action ?? "");
   if (action === "assertInTauri") {
     if (!inTauri()) {
-      throw new Error("请用 pnpm tauri:dev 运行，不要用 pnpm dev（浏览器 mock 无 Tauri IPC）");
+      throw new Error("请用 pnpm tauri:dev（桌面）或 pnpm dev（浏览器桥）；纯 pnpm dev:web 无 Tauri IPC");
     }
     return { inTauri: true };
   }
