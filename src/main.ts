@@ -94,6 +94,7 @@ try {
 
 if (import.meta.env.DEV) {
   void import("./e2e/devBridge");
+  void import("./dev/invokeWorker");
 }
 
 createApp(App)

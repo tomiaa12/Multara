@@ -5,7 +5,9 @@
   "type": "module",
   "packageManager": "pnpm@10.15.1",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:vite": "vite",
+    "dev:web": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "node scripts/with-cargo.mjs",

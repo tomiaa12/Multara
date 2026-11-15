@@ -172,6 +172,13 @@ fn startup_window_color(resolved: &str) -> tauri::window::Color {
     }
 }
 
+fn browser_dev_mode() -> bool {
+    matches!(
+        std::env::var("MULTARA_BROWSER_DEV").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE")
+    )
+}
+
 fn reveal_main_window(
     app: &tauri::App,
     theme_setting: Option<&str>,
@@ -198,6 +205,14 @@ fn reveal_main_window(
     {
         window.set_decorations(false)?;
         let _ = window.set_shadow(true);
+    }
+
+    // 浏览器 DEV：隐藏窗口，只当 invoke worker；UI 在 Chrome 里用。
+    if browser_dev_mode() {
+        let _ = window.set_skip_taskbar(true);
+        let _ = window.hide();
+        eprintln!("Multara browser-dev: 主窗口已隐藏，请打开 http://localhost:1420/");
+        return Ok(());
     }
 
     // 只在这里恢复一次。插件 on_window_ready 若再 restore，会在 macOS
@@ -244,6 +259,10 @@ pub fn run() {
     let builder = tauri::Builder::default()
         // 第二个实例会打开同一个数据库并重复跑轮询、自动化和 webhook，必须最先注册。
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 浏览器 DEV 的隐藏 worker 不要被二次启动亮出来。
+            if browser_dev_mode() {
+                return;
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();

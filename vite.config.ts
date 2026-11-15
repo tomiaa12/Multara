@@ -2,6 +2,7 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { e2eVitePlugin } from "./scripts/e2e-vite-plugin";
+import { devInvokeVitePlugin } from "./scripts/dev-invoke-vite-plugin";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -25,10 +26,15 @@ function vendorChunk(id: string) {
   )?.[0];
 }
 
+const browserDev = process.env.MULTARA_BROWSER_DEV === "1";
+
 export default defineConfig({
   // 生产包里 Monaco worker 若写成 /assets/*.js，自定义协议的 WebView 会加载失败，语法颜色和 diff 都不会出来。
   base: "./",
-  plugins: [vue(), e2eVitePlugin()],
+  plugins: [vue(), e2eVitePlugin(), devInvokeVitePlugin()],
+  define: {
+    "import.meta.env.MULTARA_BROWSER_DEV": JSON.stringify(browserDev),
+  },
   clearScreen: false,
   server: {
     port: 1420,

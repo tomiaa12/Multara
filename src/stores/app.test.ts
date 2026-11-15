@@ -8,6 +8,7 @@ const events = vi.hoisted(() => ({
   handler: undefined as undefined | ((event: { payload: RunEvent }) => Promise<void>),
 }));
 const backend = vi.hoisted(() => ({
+  connectDevBackend: vi.fn(async () => true),
   bootstrap: vi.fn(),
   listRuntimes: vi.fn(async () => []),
   listTaskInboxSurfaces: vi.fn(),

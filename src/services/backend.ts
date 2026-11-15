@@ -1,6 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
+import { connectDevBackend, hasBackend, inTauri, invoke } from "./dev-backend";
+
+export { connectDevBackend, hasBackend, inTauri };
 import { visiblePromptText } from "../components/chat/composer-content";
 import { t } from "../i18n";
 import type {
@@ -156,19 +158,15 @@ const previewData: BootstrapData = {
   },
 };
 
-function inTauri(): boolean {
-  return "__TAURI_INTERNALS__" in window;
-}
-
 export async function bootstrap(): Promise<BootstrapData> {
-  if (!inTauri()) return structuredClone(previewData);
+  if (!hasBackend()) return structuredClone(previewData);
   return invoke<BootstrapData>("bootstrap");
 }
 
 export type TaskInboxSurfaces = Pick<BootstrapData, "tasks" | "sessions" | "inbox">;
 
 export async function listTaskInboxSurfaces(): Promise<TaskInboxSurfaces> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return structuredClone({ tasks: previewData.tasks, sessions: previewData.sessions, inbox: previewData.inbox });
   }
   return invoke<TaskInboxSurfaces>("list_task_inbox_surfaces");
@@ -179,7 +177,7 @@ export async function listProjectsAndWorkspaces(): Promise<{
   projects: BootstrapData["projects"];
   workspaces: BootstrapData["workspaces"];
 }> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       projects: structuredClone(previewData.projects),
       workspaces: structuredClone(previewData.workspaces),
@@ -195,7 +193,7 @@ export async function listAgentsAndSquads(): Promise<{
   agents: BootstrapData["agents"];
   squads: BootstrapData["squads"];
 }> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       agents: structuredClone(previewData.agents),
       squads: structuredClone(previewData.squads),
@@ -209,12 +207,12 @@ export async function listAgentsAndSquads(): Promise<{
 
 /** 启动后台加载运行时（走后端缓存）；用户点「重新检测」用 detectRuntimes。 */
 export async function listRuntimes(): Promise<BootstrapData["runtimes"]> {
-  if (!inTauri()) return structuredClone(previewData.runtimes);
+  if (!hasBackend()) return structuredClone(previewData.runtimes);
   return invoke<BootstrapData["runtimes"]>("list_runtimes");
 }
 
 export async function detectRuntimes(): Promise<BootstrapData["runtimes"]> {
-  if (!inTauri()) return structuredClone(previewData.runtimes);
+  if (!hasBackend()) return structuredClone(previewData.runtimes);
   return invoke<BootstrapData["runtimes"]>("detect_runtimes");
 }
 
@@ -222,7 +220,7 @@ export async function configureRuntime(
   runtimeId: string,
   maxConcurrent: number,
 ): Promise<BootstrapData["runtimes"]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const runtime = previewData.runtimes.find((item) => item.id === runtimeId);
     if (runtime) runtime.maxConcurrent = maxConcurrent;
     return structuredClone(previewData.runtimes);
@@ -231,12 +229,12 @@ export async function configureRuntime(
 }
 
 export async function saveCustomRuntime(input: CustomRuntimeInput): Promise<BootstrapData["runtimes"]> {
-  if (!inTauri()) throw new Error("请在桌面应用中配置自定义运行时");
+  if (!hasBackend()) throw new Error("请在桌面应用中配置自定义运行时");
   return invoke<BootstrapData["runtimes"]>("save_custom_runtime", { input });
 }
 
 export async function getCustomRuntime(runtimeId: string): Promise<CustomRuntimeForm> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       id: runtimeId,
       name: "Custom",
@@ -269,7 +267,7 @@ export async function getCustomRuntime(runtimeId: string): Promise<CustomRuntime
 }
 
 export async function probeRuntimeCommand(command: string, provider: string): Promise<string | null> {
-  if (!inTauri()) return command ? `/usr/local/bin/${command}` : null;
+  if (!hasBackend()) return command ? `/usr/local/bin/${command}` : null;
   return invoke<string | null>("probe_runtime_command", { command, provider });
 }
 
@@ -287,17 +285,17 @@ export async function testRuntimeConnection(input: {
   gatewayOptions: import("../domain/types").GatewayOptions;
   env: Record<string, string>;
 }): Promise<string> {
-  if (!inTauri()) throw new Error("请在桌面应用中测试连接");
+  if (!hasBackend()) throw new Error("请在桌面应用中测试连接");
   return invoke<string>("test_runtime_connection", { input });
 }
 
 export async function deleteCustomRuntime(runtimeId: string): Promise<BootstrapData["runtimes"]> {
-  if (!inTauri()) return structuredClone(previewData.runtimes);
+  if (!hasBackend()) return structuredClone(previewData.runtimes);
   return invoke<BootstrapData["runtimes"]>("delete_custom_runtime", { runtimeId });
 }
 
 export async function scanResources(): Promise<GlobalResource[]> {
-  if (!inTauri()) return structuredClone(previewData.resources);
+  if (!hasBackend()) return structuredClone(previewData.resources);
   return invoke<GlobalResource[]>("scan_resources");
 }
 
@@ -321,7 +319,7 @@ function previewSkill(name: string, description: string, owner = "multara"): Glo
 }
 
 export async function listResourceSources(kind: ResourceKind): Promise<ResourceSource[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return CLI_CATALOG
       .filter((item) => (kind === "skill" ? item.skillsHome : item.mcpHome || item.mcpSpecial))
       .map((item) => ({
@@ -337,17 +335,17 @@ export async function listResourceSources(kind: ResourceKind): Promise<ResourceS
 }
 
 export async function searchCatalog(kind: ResourceKind, query: string): Promise<CatalogItem[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<CatalogItem[]>("search_catalog", { kind, query });
 }
 
 export async function revealResource(resourceId: string): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能打开本机路径");
+  if (!hasBackend()) throw new Error("浏览器预览不能打开本机路径");
   await invoke("reveal_resource", { resourceId });
 }
 
 export async function createSkill(name: string, description: string, body: string, owner = "multara"): Promise<GlobalResource> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const folder = name.trim().replace(/\s+/g, "-") || "skill";
     const created = previewSkill(folder, description.trim(), owner);
     previewData.resources.push(created);
@@ -357,7 +355,7 @@ export async function createSkill(name: string, description: string, body: strin
 }
 
 export async function generateSkill(requirement: string, owner = "multara"): Promise<GlobalResource> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const created = previewSkill("generated-skill", requirement.trim(), owner);
     previewData.resources.push(created);
     return created;
@@ -366,17 +364,17 @@ export async function generateSkill(requirement: string, owner = "multara"): Pro
 }
 
 export async function importSkillFromFolder(path: string, owner = "multara"): Promise<GlobalResource> {
-  if (!inTauri()) throw new Error("浏览器预览不能导入本机文件夹");
+  if (!hasBackend()) throw new Error("浏览器预览不能导入本机文件夹");
   return invoke<GlobalResource>("import_skill_from_folder", { path, owner });
 }
 
 export async function importSkillFromUrl(url: string, owner = "multara"): Promise<GlobalResource> {
-  if (!inTauri()) throw new Error("浏览器预览不能从 URL 安装 Skill");
+  if (!hasBackend()) throw new Error("浏览器预览不能从 URL 安装 Skill");
   return invoke<GlobalResource>("import_skill_from_url", { url, owner });
 }
 
 export async function deleteSkill(resourceId: string): Promise<GlobalResource[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     previewData.resources = previewData.resources.filter((item) => item.id !== resourceId);
     return [...previewData.resources];
   }
@@ -384,7 +382,7 @@ export async function deleteSkill(resourceId: string): Promise<GlobalResource[]>
 }
 
 export async function setSkillEnabled(resourceId: string, enabled: boolean): Promise<GlobalResource[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const item = previewData.resources.find((entry) => entry.id === resourceId);
     if (item) item.enabled = enabled;
     return [...previewData.resources];
@@ -393,12 +391,12 @@ export async function setSkillEnabled(resourceId: string, enabled: boolean): Pro
 }
 
 export async function listPromptFiles(): Promise<PromptFile[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<PromptFile[]>("list_prompt_files");
 }
 
 export async function convertPromptToSkill(path: string, owner = "multara"): Promise<GlobalResource> {
-  if (!inTauri()) throw new Error("浏览器预览不能转换提示文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能转换提示文件");
   return invoke<GlobalResource>("convert_prompt_to_skill", { path, owner });
 }
 
@@ -408,12 +406,12 @@ const previewSkillFiles: FileEntry[] = [
 ];
 
 export async function listSkillDirectory(resourceId: string, path?: string): Promise<FileEntry[]> {
-  if (!inTauri()) return path ? [{ name: "checklist.md", path: "references/checklist.md", isDirectory: false, depth: 0 }] : previewSkillFiles;
+  if (!hasBackend()) return path ? [{ name: "checklist.md", path: "references/checklist.md", isDirectory: false, depth: 0 }] : previewSkillFiles;
   return invoke<FileEntry[]>("list_skill_directory", { resourceId, path: path || null });
 }
 
 export async function readSkillFile(resourceId: string, path: string): Promise<FileContent> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       workspaceId: resourceId,
       path,
@@ -427,12 +425,12 @@ export async function readSkillFile(resourceId: string, path: string): Promise<F
 }
 
 export async function writeSkillFile(resourceId: string, path: string, content: string): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能写入本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能写入本机文件");
   await invoke("write_skill_file", { resourceId, path, content });
 }
 
 export async function skillFileCount(resourceId: string): Promise<number> {
-  if (!inTauri()) return resourceId ? 2 : 0;
+  if (!hasBackend()) return resourceId ? 2 : 0;
   return invoke<number>("skill_file_count", { resourceId });
 }
 
@@ -444,7 +442,7 @@ function previewMcpStatus(item: GlobalResource): GlobalResource["configStatus"] 
 }
 
 export async function saveMcp(input: McpInput): Promise<GlobalResource[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const owner = input.owner || "multara";
     const summary = input.transport === "stdio" ? [input.command.trim(), ...input.args].filter(Boolean).join(" ") : input.url.trim();
     const existing = previewData.resources.find((item) => item.kind === "mcp" && item.owner === owner && item.name === (input.previousName || input.name));
@@ -473,12 +471,12 @@ export async function saveMcp(input: McpInput): Promise<GlobalResource[]> {
 }
 
 export async function installMcp(name: string, entryJson: string, owner = "multara"): Promise<GlobalResource[]> {
-  if (!inTauri()) throw new Error("浏览器预览不能安装 MCP");
+  if (!hasBackend()) throw new Error("浏览器预览不能安装 MCP");
   return invoke<GlobalResource[]>("install_mcp", { name, entryJson, owner });
 }
 
 export async function deleteMcp(name: string, owner = "multara"): Promise<GlobalResource[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     previewData.resources = previewData.resources.filter((item) => !(item.kind === "mcp" && item.owner === owner && item.name === name));
     return [...previewData.resources];
   }
@@ -486,7 +484,7 @@ export async function deleteMcp(name: string, owner = "multara"): Promise<Global
 }
 
 export async function setMcpEnabled(name: string, enabled: boolean, owner = "multara"): Promise<GlobalResource[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const item = previewData.resources.find((entry) => entry.kind === "mcp" && entry.owner === owner && entry.name === name);
     if (item) {
       item.enabled = enabled;
@@ -498,17 +496,17 @@ export async function setMcpEnabled(name: string, enabled: boolean, owner = "mul
 }
 
 export async function authorizeMcp(name: string, owner = "multara"): Promise<GlobalResource[]> {
-  if (!inTauri()) throw new Error("浏览器预览不能授权 MCP");
+  if (!hasBackend()) throw new Error("浏览器预览不能授权 MCP");
   return invoke<GlobalResource[]>("authorize_mcp", { name, owner });
 }
 
 export async function signOutMcp(name: string): Promise<GlobalResource[]> {
-  if (!inTauri()) return [...previewData.resources];
+  if (!hasBackend()) return [...previewData.resources];
   return invoke<GlobalResource[]>("sign_out_mcp", { name });
 }
 
 export async function getMcp(name: string, owner = "multara"): Promise<McpForm> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       name,
       owner,
@@ -528,22 +526,22 @@ export async function getMcp(name: string, owner = "multara"): Promise<McpForm> 
 }
 
 export async function getMcpJson(name: string, owner = "multara"): Promise<string> {
-  if (!inTauri()) return "{}";
+  if (!hasBackend()) return "{}";
   return invoke<string>("get_mcp_json", { name, owner });
 }
 
 export async function getMcpInputs(name: string, owner = "multara"): Promise<McpInputs> {
-  if (!inTauri()) return { ids: [], values: {} };
+  if (!hasBackend()) return { ids: [], values: {} };
   return invoke<McpInputs>("get_mcp_inputs", { name, owner });
 }
 
 export async function saveMcpInputs(name: string, values: Record<string, string>): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("save_mcp_inputs", { name, values });
 }
 
 export async function probeMcp(name: string, owner = "multara"): Promise<McpProbe> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       ok: true,
       status: "running",
@@ -564,13 +562,13 @@ export async function probeMcp(name: string, owner = "multara"): Promise<McpProb
 }
 
 export async function listMcpToolCache(): Promise<McpToolsCacheEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<McpToolsCacheEntry[]>("list_mcp_tool_cache");
 }
 
 /** 后台串行刷新工具缓存，立即返回，不阻塞 UI。 */
 export async function scheduleMcpToolsRefresh(resourceIds: string[], force = false): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("schedule_mcp_tools_refresh", { resourceIds, force });
 }
 
@@ -579,32 +577,32 @@ export async function transferResource(
   targetOwner: string,
   copy: boolean,
 ): Promise<GlobalResource[]> {
-  if (!inTauri()) throw new Error("浏览器预览不能迁移本机资源");
+  if (!hasBackend()) throw new Error("浏览器预览不能迁移本机资源");
   return invoke<GlobalResource[]>("transfer_resource", { resourceId, targetOwner, copy });
 }
 
 export async function saveAgent(input: Omit<Agent, "id"> & { id?: string }): Promise<Agent[]> {
-  if (!inTauri()) throw new Error("请在桌面应用中配置智能体");
+  if (!hasBackend()) throw new Error("请在桌面应用中配置智能体");
   return invoke<Agent[]>("save_agent", { input });
 }
 
 export async function deleteAgent(agentId: string): Promise<Agent[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<Agent[]>("delete_agent", { agentId });
 }
 
 export async function saveSquad(input: Omit<Squad, "id"> & { id?: string }): Promise<Squad[]> {
-  if (!inTauri()) throw new Error("请在桌面应用中配置小队");
+  if (!hasBackend()) throw new Error("请在桌面应用中配置小队");
   return invoke<Squad[]>("save_squad", { input });
 }
 
 export async function deleteSquad(squadId: string): Promise<Squad[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<Squad[]>("delete_squad", { squadId });
 }
 
 export async function createTask(input: TaskInput): Promise<Task> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const created: Task = {
       id: crypto.randomUUID(),
       sessionId: crypto.randomUUID(),
@@ -642,7 +640,7 @@ export async function updateTaskMeta(input: {
   prUrl?: string;
   parentTaskId?: string | null;
 }): Promise<Task> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const task = previewData.tasks.find((item) => item.id === input.taskId);
     if (!task) throw new Error("任务不存在");
     if (input.priority) task.priority = input.priority;
@@ -672,7 +670,7 @@ export async function updateTask(input: {
   status?: TaskStatus;
   agentId?: string;
 }): Promise<Task> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const task = previewData.tasks.find((item) => item.id === input.taskId);
     if (!task) throw new Error("任务不存在");
     if (input.title?.trim()) task.title = input.title.trim();
@@ -698,7 +696,7 @@ export async function updateTask(input: {
 }
 
 export async function listAgentRuns(agentId: string): Promise<AgentActivityRecord[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<AgentActivityRecord[]>("list_agent_runs", { agentId });
 }
 
@@ -726,12 +724,12 @@ export interface RuntimeAccountStatus {
 }
 
 export async function listRuntimeAccountSummaries(runtimeIds: string[]): Promise<RuntimeAccountStatus[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<RuntimeAccountStatus[]>("runtime_account_summaries", { runtimeIds });
 }
 
 export async function getRuntimeAccountStatus(runtimeId: string): Promise<RuntimeAccountStatus> {
-  if (!inTauri()) throw new Error("请在桌面应用中管理 CLI 账号");
+  if (!hasBackend()) throw new Error("请在桌面应用中管理 CLI 账号");
   return invoke<RuntimeAccountStatus>("runtime_account_status", { runtimeId });
 }
 
@@ -753,7 +751,7 @@ export async function renameRuntimeAccount(
 
 /** 内嵌终端里要输入的登录命令；调用时会先把当前登录收进账号库 */
 export async function getRuntimeLoginCommand(runtimeId: string): Promise<{ cwd: string; command: string }> {
-  if (!inTauri()) throw new Error("请在桌面应用中登录 CLI");
+  if (!hasBackend()) throw new Error("请在桌面应用中登录 CLI");
   return invoke<{ cwd: string; command: string }>("runtime_account_login", { runtimeId });
 }
 
@@ -785,7 +783,7 @@ export interface RuntimeUsage {
 }
 
 export async function probeRuntimeUsage(runtimeId: string): Promise<RuntimeUsage> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       runtimeId,
       supported: false,
@@ -798,7 +796,7 @@ export async function probeRuntimeUsage(runtimeId: string): Promise<RuntimeUsage
 }
 
 export async function probeRuntimeUsages(runtimeIds: string[]): Promise<RuntimeUsage[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<RuntimeUsage[]>("probe_runtime_usages", { runtimeIds });
 }
 
@@ -812,7 +810,7 @@ export interface RuntimeModels {
 }
 
 export async function listRuntimeModels(runtimeId: string, refresh = false): Promise<RuntimeModels> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     // 浏览器预览没有 CLI，给一份示例数据便于看界面
     if (runtimeId === "cursor") {
       return {
@@ -842,7 +840,7 @@ export interface AgentSystemContext {
 }
 
 export async function agentSystemContext(agentId: string): Promise<AgentSystemContext> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return {
       runtimeBrief: `# Multara Agent Runtime\n你是 Multara 里的 coding agent。平台对象只能通过 \`multara\` CLI 操作…\n\n## Agent Identity\n**You are: ${agentId}**\n\n（浏览器预览：完整内容在桌面端生成）`,
       builtinSkills: [
@@ -856,12 +854,12 @@ export async function agentSystemContext(agentId: string): Promise<AgentSystemCo
 }
 
 export async function listTaskRuns(taskId: string): Promise<TaskRunRecord[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke("list_task_runs", { taskId });
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus): Promise<Task[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const task = previewData.tasks.find((item) => item.id === taskId);
     if (task) {
       task.status = status;
@@ -875,7 +873,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus): Prom
 export const TASK_RUNNING_PREFIX = "TASK_RUNNING:";
 
 export async function deleteTask(taskId: string, force = false): Promise<Task[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const task = previewData.tasks.find((item) => item.id === taskId);
     previewData.tasks = previewData.tasks.filter((item) => item.id !== taskId);
     if (task) previewData.sessions = previewData.sessions.filter((item) => item.id !== task.sessionId);
@@ -885,17 +883,17 @@ export async function deleteTask(taskId: string, force = false): Promise<Task[]>
 }
 
 export async function saveAutomation(input: AutomationInput): Promise<Automation[]> {
-  if (!inTauri()) throw new Error("请在桌面应用中配置自动化");
+  if (!hasBackend()) throw new Error("请在桌面应用中配置自动化");
   return invoke<Automation[]>("save_automation", { input });
 }
 
 export async function deleteAutomation(automationId: string): Promise<Automation[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<Automation[]>("delete_automation", { automationId });
 }
 
 export async function runAutomation(automationId: string): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能运行自动化");
+  if (!hasBackend()) throw new Error("浏览器预览不能运行自动化");
   await invoke("run_automation", { automationId });
 }
 
@@ -905,7 +903,7 @@ export async function createChatSession(input: {
   targetId: string;
   title?: string;
 }): Promise<BootstrapData["sessions"][number]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const created = {
       id: crypto.randomUUID(),
       projectId: input.projectId,
@@ -922,7 +920,7 @@ export async function createChatSession(input: {
 }
 
 export async function updateChatSessionTitle(sessionId: string, title: string): Promise<string> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const session = previewData.sessions.find((item) => item.id === sessionId);
     if (!session) throw new Error("聊天不存在");
     session.title = title.trim().slice(0, 24) || "新对话";
@@ -932,7 +930,7 @@ export async function updateChatSessionTitle(sessionId: string, title: string): 
 }
 
 export async function generateChatSessionTitle(prompt: string): Promise<string> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return titleFromPrompt(prompt);
   }
   return invoke<string>("generate_chat_session_title", { prompt });
@@ -949,12 +947,12 @@ export async function updateChatSessionTarget(
   targetType: "agent" | "squad",
   targetId: string,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("update_chat_session_target", { sessionId, targetType, targetId });
 }
 
 export async function setSessionDefaultMode(sessionId: string, mode: RunMode): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const session = previewData.sessions.find((item) => item.id === sessionId);
     if (session) session.defaultMode = mode;
     return;
@@ -963,12 +961,12 @@ export async function setSessionDefaultMode(sessionId: string, mode: RunMode): P
 }
 
 export async function planAction(input: PlanActionInput): Promise<PlanActionResult> {
-  if (!inTauri()) throw new Error("浏览器预览不能操作计划");
+  if (!hasBackend()) throw new Error("浏览器预览不能操作计划");
   return invoke<PlanActionResult>("plan_action", { input });
 }
 
 export async function listChatMessages(sessionId: string): Promise<ChatMessage[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     if (sessionId !== "welcome") return [];
     return [
       {
@@ -1019,27 +1017,27 @@ export interface SessionDiagnostic {
 }
 
 export async function exportSessionDiagnostics(sessionId: string): Promise<SessionDiagnostic> {
-  if (!inTauri()) throw new Error("Diagnostics export requires the desktop app");
+  if (!hasBackend()) throw new Error("Diagnostics export requires the desktop app");
   return invoke<SessionDiagnostic>("export_session_diagnostics", { sessionId });
 }
 
 export async function saveDiagnosticFile(path: string, contents: string): Promise<void> {
-  if (!inTauri()) throw new Error("Diagnostics export requires the desktop app");
+  if (!hasBackend()) throw new Error("Diagnostics export requires the desktop app");
   await invoke("save_diagnostic_file", { path, contents });
 }
 
 export async function exportRecentErrorLog(): Promise<string> {
-  if (!inTauri()) throw new Error("Log export requires the desktop app");
+  if (!hasBackend()) throw new Error("Log export requires the desktop app");
   return invoke<string>("export_recent_error_log");
 }
 
 export async function saveLogFile(path: string, contents: string): Promise<void> {
-  if (!inTauri()) throw new Error("Log export requires the desktop app");
+  if (!hasBackend()) throw new Error("Log export requires the desktop app");
   await invoke("save_log_file", { path, contents });
 }
 
 export async function loadAttachmentPreview(attachmentId: string): Promise<string | null> {
-  if (!inTauri() || attachmentId.startsWith("pending:")) return null;
+  if (!hasBackend() || attachmentId.startsWith("pending:")) return null;
   try {
     return await invoke<string>("load_attachment_preview", { attachmentId });
   } catch {
@@ -1048,7 +1046,7 @@ export async function loadAttachmentPreview(attachmentId: string): Promise<strin
 }
 
 export async function openMessageAttachment(attachmentId: string): Promise<void> {
-  if (!inTauri() || attachmentId.startsWith("pending:")) return;
+  if (!hasBackend() || attachmentId.startsWith("pending:")) return;
   await invoke("open_message_attachment", { attachmentId });
 }
 
@@ -1059,7 +1057,7 @@ export type DictationEnvironment = { supported: boolean; reason: string | null }
 
 /** macOS 上从终端 / 编辑器启动的开发构建一点麦克风就会被系统（TCC）杀掉，先问后端能不能用。 */
 export async function dictationEnvironment(): Promise<DictationEnvironment> {
-  if (!inTauri()) return { supported: true, reason: null };
+  if (!hasBackend()) return { supported: true, reason: null };
   try {
     return await invoke<DictationEnvironment>("dictation_environment");
   } catch {
@@ -1069,7 +1067,7 @@ export async function dictationEnvironment(): Promise<DictationEnvironment> {
 
 export async function openExternalUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url) || UNSAFE_URL_CHARS.test(url)) return;
-  if (!inTauri()) {
+  if (!hasBackend()) {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
@@ -1079,24 +1077,24 @@ export async function openExternalUrl(url: string): Promise<void> {
 // ---------- Canvas（生成式界面 L2） ----------
 
 export async function listCanvasInstances(sessionId: string): Promise<CanvasListing> {
-  if (!inTauri()) return { enabled: false, instances: [], available: [] };
+  if (!hasBackend()) return { enabled: false, instances: [], available: [] };
   return invoke<CanvasListing>("list_canvas_instances", { sessionId });
 }
 
 /** 懒托管：首次显示时才起服务，返回 `http://127.0.0.1:<port>/<token>/` */
 export async function ensureCanvasHosted(sessionId: string, instanceId: string): Promise<string> {
-  if (!inTauri()) throw new Error("Canvas requires the desktop app");
+  if (!hasBackend()) throw new Error("Canvas requires the desktop app");
   return invoke<string>("ensure_canvas_hosted", { sessionId, instanceId });
 }
 
 /** 服务当前的地址；没在跑返回 null（不会起服务，用来探测断开） */
 export async function canvasHostedUrl(sessionId: string, instanceId: string): Promise<string | null> {
-  if (!inTauri()) return null;
+  if (!hasBackend()) return null;
   return invoke<string | null>("canvas_hosted_url", { sessionId, instanceId });
 }
 
 export async function setCanvasVisible(sessionId: string, instanceId: string, visible: boolean): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("set_canvas_visible", { sessionId, instanceId, visible });
 }
 
@@ -1106,24 +1104,24 @@ export async function openRegisteredCanvas(sessionId: string, canvasId: string):
 
 /** 固定到所有会话（五期） */
 export async function setCanvasPinned(sessionId: string, instanceId: string, pinned: boolean): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("set_canvas_pinned", { sessionId, instanceId, pinned });
 }
 
 /** 需求工作区里 .multara/canvases/ 下可直接打开的定义（新建聊天菜单用） */
 export async function listProjectCanvases(projectId: string): Promise<CanvasDefinition[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<CanvasDefinition[]>("list_project_canvases", { projectId });
 }
 
 export async function closeCanvas(sessionId: string, instanceId: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("close_canvas", { sessionId, instanceId });
 }
 
 /** 前端处理完 `ui-outbound` 事件（页面要填输入框）后的应答 */
 export async function resolveUiOutbound(requestId: string, result: { ok: boolean; reason?: string }): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("resolve_ui_outbound", { requestId, result });
 }
 
@@ -1143,7 +1141,7 @@ export interface McpAppInfo {
 
 /** 这个工具有没有界面；有就托管，返回页面地址（没开 MCP Apps 或工具没界面时 null） */
 export async function mcpAppResolve(tool: string): Promise<McpAppInfo | null> {
-  if (!inTauri()) return null;
+  if (!hasBackend()) return null;
   return invoke<McpAppInfo | null>("mcp_app_resolve", { tool });
 }
 
@@ -1153,7 +1151,7 @@ export async function mcpAppCall(serverKey: string, method: string, params: unkn
 }
 
 export async function upsertInboxItem(input: InboxInput): Promise<InboxItem> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const now = new Date().toISOString();
     const existing = previewData.inbox.find((item) => item.sessionId === input.sessionId);
     const next: InboxItem = {
@@ -1179,7 +1177,7 @@ export async function upsertInboxItem(input: InboxInput): Promise<InboxItem> {
 }
 
 export async function markInboxRead(id: string, messageId?: string | null): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const item = previewData.inbox.find((entry) => entry.id === id);
     if (item) {
       item.read = true;
@@ -1192,7 +1190,7 @@ export async function markInboxRead(id: string, messageId?: string | null): Prom
 }
 
 export async function markInboxUnread(id: string): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const item = previewData.inbox.find((entry) => entry.id === id);
     if (item) {
       item.read = false;
@@ -1204,7 +1202,7 @@ export async function markInboxUnread(id: string): Promise<void> {
 }
 
 export async function markInboxAllRead(): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     for (const item of previewData.inbox) {
       item.read = true;
       item.unreadCount = 0;
@@ -1215,7 +1213,7 @@ export async function markInboxAllRead(): Promise<void> {
 }
 
 export async function archiveInboxItem(id: string): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     previewData.inbox = previewData.inbox.filter((item) => item.id !== id);
     return;
   }
@@ -1223,7 +1221,7 @@ export async function archiveInboxItem(id: string): Promise<void> {
 }
 
 export async function deleteInboxItem(id: string): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     previewData.inbox = previewData.inbox.filter((item) => item.id !== id);
     return;
   }
@@ -1234,7 +1232,7 @@ export async function forkChatSession(
   sessionId: string,
   untilMessageId?: string | null,
 ): Promise<ChatSession> {
-  if (!inTauri()) throw new Error("请在桌面应用中复制会话");
+  if (!hasBackend()) throw new Error("请在桌面应用中复制会话");
   return invoke<ChatSession>("fork_chat_session", {
     sessionId,
     untilMessageId: untilMessageId ?? null,
@@ -1242,7 +1240,7 @@ export async function forkChatSession(
 }
 
 export async function compactChatSession(sessionId: string): Promise<string> {
-  if (!inTauri()) return "本地预览不会压缩对话。";
+  if (!hasBackend()) return "本地预览不会压缩对话。";
   return invoke<string>("compact_chat_session", { sessionId });
 }
 
@@ -1251,22 +1249,22 @@ export async function resolvePermission(
   optionId: string,
   runId?: string | null,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("resolve_permission", { requestId, optionId, runId: runId || null });
 }
 
 export async function listAutomationRuns(automationId: string): Promise<AutomationRun[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<AutomationRun[]>("list_automation_runs", { automationId });
 }
 
 export async function listWebhookDeliveries(automationId: string): Promise<WebhookDelivery[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<WebhookDelivery[]>("list_webhook_deliveries", { automationId });
 }
 
 export async function getRunStatistics(days = 30, projectId = "", agentId = ""): Promise<RunStatistics> {
-  if (!inTauri()) return previewStatistics(days, projectId, agentId);
+  if (!hasBackend()) return previewStatistics(days, projectId, agentId);
   return invoke<RunStatistics>("get_run_statistics", {
     days,
     projectId: projectId || null,
@@ -1343,7 +1341,7 @@ function previewStatistics(days: number, projectId: string, agentId = ""): RunSt
 }
 
 export async function saveSettings(settings: Record<string, string>): Promise<Record<string, string>> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     previewData.settings = { ...previewData.settings, ...settings };
     return structuredClone(previewData.settings);
   }
@@ -1351,16 +1349,18 @@ export async function saveSettings(settings: Record<string, string>): Promise<Re
 }
 
 export async function appVersion(): Promise<string> {
-  return inTauri() ? getVersion() : "0.1.0";
+  if (inTauri()) return getVersion();
+  if (hasBackend()) return "dev";
+  return "0.1.0";
 }
 
 export async function checkGitExecutable(path: string): Promise<string> {
-  if (!inTauri()) return "git version preview";
+  if (!hasBackend()) return "git version preview";
   return invoke<string>("check_git_executable", { path });
 }
 
 export async function generateBranchName(requirementName: string): Promise<string> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     await new Promise((resolve) => setTimeout(resolve, 480));
     const prefix = previewData.settings.branchPrefix || "feat";
     return `${prefix}/short-branch`;
@@ -1369,7 +1369,7 @@ export async function generateBranchName(requirementName: string): Promise<strin
 }
 
 export async function createProject(name: string, note: string): Promise<Project> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const now = new Date().toISOString();
     const project: Project = {
       id: crypto.randomUUID(),
@@ -1386,7 +1386,7 @@ export async function createProject(name: string, note: string): Promise<Project
 }
 
 export async function updateProject(id: string, name: string, note: string): Promise<Project> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const project = previewData.projects.find((item) => item.id === id);
     if (!project) throw new Error("需求不存在");
     project.name = name;
@@ -1407,7 +1407,7 @@ export async function detachWorkspace(
   workspaceId: string,
   options?: DeleteProjectWorkspaceOptions,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("detach_workspace", {
     workspaceId,
     options: options
@@ -1422,7 +1422,7 @@ export async function detachWorkspace(
 }
 
 export async function setProjectArchived(projectId: string, archived: boolean): Promise<string | null> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const archivedAt = archived ? new Date().toISOString() : null;
     const project = previewData.projects.find((item) => item.id === projectId);
     if (project) project.archivedAt = archivedAt;
@@ -1435,7 +1435,7 @@ export async function deleteProject(
   projectId: string,
   workspaceOptions: DeleteProjectWorkspaceOptions[] = [],
 ): Promise<void> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     previewData.projects = previewData.projects.filter((project) => project.id !== projectId);
     previewData.workspaces = previewData.workspaces.filter((workspace) => workspace.projectId !== projectId);
     return;
@@ -1449,6 +1449,7 @@ export async function selectFolder(): Promise<string | null> {
 }
 
 export async function selectPaths(directory: boolean): Promise<string[]> {
+  // 系统文件对话框只在 WebView 里可用，浏览器桥不能调 plugin-dialog。
   if (!inTauri()) return [];
   const selected = await open({ directory, multiple: true });
   if (!selected) return [];
@@ -1459,7 +1460,7 @@ export type PickedPath = { path: string; isDirectory: boolean };
 
 /** 系统选择器：一次可多选文件和/或文件夹（macOS 支持混选）。 */
 export async function selectFilesOrFolders(): Promise<PickedPath[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<PickedPath[]>("select_files_or_folders");
 }
 
@@ -1478,7 +1479,7 @@ export async function addWorkspace(
   checkoutName?: string | null,
   createBranch?: boolean,
 ): Promise<Workspace> {
-  if (!inTauri()) throw new Error("请在 Tauri 应用中选择并添加本机目录");
+  if (!hasBackend()) throw new Error("请在 Tauri 应用中选择并添加本机目录");
   return invoke<Workspace>("add_workspace", {
     projectId,
     sourcePath,
@@ -1490,7 +1491,7 @@ export async function addWorkspace(
 }
 
 export async function scanWorkspaceCandidates(sourcePath: string): Promise<WorkspaceCandidate[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<WorkspaceCandidate[]>("scan_workspace_candidates", { sourcePath });
 }
 
@@ -1518,7 +1519,7 @@ export async function searchWorkspace(
   truncated: boolean;
   error: string;
 }> {
-  if (!inTauri()) return { matches: [], truncated: false, error: "" };
+  if (!hasBackend()) return { matches: [], truncated: false, error: "" };
   return invoke("search_workspace", {
     workspaceId,
     query: options.query,
@@ -1553,12 +1554,12 @@ export interface OpenedTerminal {
 }
 
 export async function terminalOpen(cwd: string, profile?: string): Promise<OpenedTerminal> {
-  if (!inTauri()) throw new Error("浏览器预览不能启动终端");
+  if (!hasBackend()) throw new Error("浏览器预览不能启动终端");
   return invoke<OpenedTerminal>("terminal_open", { cwd, profile: profile || null });
 }
 
 export async function terminalProfiles(): Promise<TerminalProfile[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<TerminalProfile[]>("terminal_profiles");
 }
 
@@ -1568,37 +1569,37 @@ export interface ResolvedTerminalPath {
 }
 
 export async function terminalResolvePaths(cwd: string, candidates: string[]): Promise<Array<ResolvedTerminalPath | null>> {
-  if (!inTauri() || !candidates.length) return candidates.map(() => null);
+  if (!hasBackend() || !candidates.length) return candidates.map(() => null);
   return invoke<Array<ResolvedTerminalPath | null>>("terminal_resolve_paths", { cwd, candidates });
 }
 
 export async function terminalClipboardText(): Promise<string> {
-  if (!inTauri()) return navigator.clipboard.readText();
+  if (!hasBackend()) return navigator.clipboard.readText();
   return invoke<string>("terminal_clipboard_text");
 }
 
 export async function terminalFreePort(port: number): Promise<number> {
-  if (!inTauri()) return 0;
+  if (!hasBackend()) return 0;
   return invoke<number>("terminal_free_port", { port });
 }
 
 export async function terminalCommandNames(): Promise<string[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<string[]>("terminal_command_names");
 }
 
 export async function terminalWrite(id: string, data: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("terminal_write", { id, data });
 }
 
 export async function terminalResize(id: string, cols: number, rows: number): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("terminal_resize", { id, cols, rows });
 }
 
 export async function terminalClose(id: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("terminal_close", { id });
 }
 
@@ -1610,7 +1611,7 @@ export async function terminalPublish(input: {
   text: string;
   active: boolean;
 }): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("terminal_publish", input);
 }
 
@@ -1620,12 +1621,12 @@ export interface TerminalService {
 }
 
 export async function terminalServices(): Promise<TerminalService[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<TerminalService[]>("terminal_services");
 }
 
 export async function listQuickOpenFiles(workspaceId: string): Promise<FileEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<FileEntry[]>("list_quick_open_files", { workspaceId });
 }
 
@@ -1640,7 +1641,7 @@ export async function collectSourceFiles(
   extensions: string[],
   known: Record<string, number>,
 ): Promise<{ files: SourceFileRecord[]; truncated: boolean }> {
-  if (!inTauri()) return { files: [], truncated: false };
+  if (!hasBackend()) return { files: [], truncated: false };
   return invoke("collect_source_files", { workspaceId, extensions, known });
 }
 
@@ -1651,7 +1652,7 @@ export interface TypingFileRecord {
 }
 
 export async function collectWorkspaceTypings(workspaceId: string): Promise<TypingFileRecord[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<TypingFileRecord[]>("collect_workspace_typings", { workspaceId });
 }
 
@@ -1663,17 +1664,17 @@ export interface LspServerInfo {
 }
 
 export async function lspStart(workspaceId: string, language: string): Promise<LspServerInfo | null> {
-  if (!inTauri()) return null;
+  if (!hasBackend()) return null;
   return invoke<LspServerInfo | null>("lsp_start", { workspaceId, language });
 }
 
 export async function lspSend(id: string, message: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("lsp_send", { id, message });
 }
 
 export async function lspStop(id: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("lsp_stop", { id });
 }
 
@@ -1682,7 +1683,7 @@ export function isTauriRuntime(): boolean {
 }
 
 export async function listWorkspaceTree(workspaceId: string): Promise<FileEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<FileEntry[]>("list_workspace_tree", { workspaceId });
 }
 
@@ -1690,7 +1691,7 @@ export async function listWorkspaceDirectory(
   workspaceId: string,
   path?: string,
 ): Promise<FileEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<FileEntry[]>("list_workspace_directory", { workspaceId, path: path || null });
 }
 
@@ -1700,7 +1701,7 @@ const FILE_MISSING_PREFIX = "NOT_FOUND:";
 export class FileMissingError extends Error {}
 
 export async function readWorkspaceFile(workspaceId: string, path: string): Promise<FileContent> {
-  if (!inTauri()) throw new Error("浏览器预览不能读取本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能读取本机文件");
   return invoke<FileContent>("read_workspace_file", { workspaceId, path }).catch((cause) => {
     const message = cause instanceof Error ? cause.message : String(cause);
     if (!message.startsWith(FILE_MISSING_PREFIX)) throw cause;
@@ -1709,12 +1710,12 @@ export async function readWorkspaceFile(workspaceId: string, path: string): Prom
 }
 
 export async function readExternalFile(path: string): Promise<FileContent> {
-  if (!inTauri()) throw new Error("浏览器预览不能读取本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能读取本机文件");
   return invoke<FileContent>("read_external_file", { path });
 }
 
 export async function listExternalDirectory(path: string): Promise<FileEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<FileEntry[]>("list_external_directory", { path });
 }
 
@@ -1723,7 +1724,7 @@ export async function writeWorkspaceFile(
   path: string,
   content: string,
 ): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能写入本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能写入本机文件");
   await invoke("write_workspace_file", { workspaceId, path, content });
 }
 
@@ -1732,12 +1733,12 @@ export async function createWorkspaceFile(
   path: string,
   content = "",
 ): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能创建本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能创建本机文件");
   await invoke("create_workspace_file", { workspaceId, path, content });
 }
 
 export async function createWorkspaceDirectory(workspaceId: string, path: string): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能创建本机文件夹");
+  if (!hasBackend()) throw new Error("浏览器预览不能创建本机文件夹");
   await invoke("create_workspace_directory", { workspaceId, path });
 }
 
@@ -1746,32 +1747,32 @@ export async function renameWorkspaceEntry(
   from: string,
   to: string,
 ): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能重命名本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能重命名本机文件");
   await invoke("rename_workspace_entry", { workspaceId, from, to });
 }
 
 export async function deleteWorkspaceEntry(workspaceId: string, path: string): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能删除本机文件");
+  if (!hasBackend()) throw new Error("浏览器预览不能删除本机文件");
   await invoke("delete_workspace_entry", { workspaceId, path });
 }
 
 export async function revealWorkspacePath(workspaceId: string, path?: string): Promise<void> {
-  if (!inTauri()) throw new Error("浏览器预览不能打开本机资源管理器");
+  if (!hasBackend()) throw new Error("浏览器预览不能打开本机资源管理器");
   await invoke("reveal_workspace_path", { workspaceId, path: path || null });
 }
 
 export async function listProjectGitStatus(projectId: string): Promise<GitRepositoryStatus[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<GitRepositoryStatus[]>("list_project_git_status", { projectId });
 }
 
 export async function gitIndexFile(workspaceId: string, path: string): Promise<GitIndexFile> {
-  if (!inTauri()) return { inRepo: false, tracked: false, binary: false, content: "" };
+  if (!hasBackend()) return { inRepo: false, tracked: false, binary: false, content: "" };
   return invoke<GitIndexFile>("git_index_file", { workspaceId, path });
 }
 
 export async function gitHeadFile(workspaceId: string, path: string): Promise<GitIndexFile> {
-  if (!inTauri()) return { inRepo: false, tracked: false, binary: false, content: "" };
+  if (!hasBackend()) return { inRepo: false, tracked: false, binary: false, content: "" };
   return invoke<GitIndexFile>("git_head_file", { workspaceId, path });
 }
 
@@ -1781,7 +1782,7 @@ export async function gitBlameLine(
   line: number,
   revision?: string,
 ): Promise<GitLineBlame | null> {
-  if (!inTauri()) return null;
+  if (!hasBackend()) return null;
   return invoke<GitLineBlame | null>("git_blame_line", {
     workspaceId,
     path,
@@ -1792,7 +1793,7 @@ export async function gitBlameLine(
 
 /** 整文件 blame：`null` 表示不在仓库里；空数组表示整个文件都没有历史（尚未提交）。 */
 export async function gitBlameFile(workspaceId: string, path: string): Promise<GitLineBlame[] | null> {
-  if (!inTauri()) return null;
+  if (!hasBackend()) return null;
   return invoke<GitLineBlame[] | null>("git_blame_file", { workspaceId, path });
 }
 
@@ -1801,7 +1802,7 @@ export async function gitRevisionFile(
   revision: string,
   path: string,
 ): Promise<GitIndexFile> {
-  if (!inTauri()) return { inRepo: false, tracked: false, binary: false, content: "" };
+  if (!hasBackend()) return { inRepo: false, tracked: false, binary: false, content: "" };
   return invoke<GitIndexFile>("git_revision_file", { workspaceId, revision, path });
 }
 
@@ -1812,7 +1813,7 @@ export async function gitLog(
   path?: string,
   options?: { range?: string; grep?: string },
 ): Promise<GitHistoryPage> {
-  if (!inTauri()) return { items: [], hasMore: false };
+  if (!hasBackend()) return { items: [], hasMore: false };
   return invoke<GitHistoryPage>("git_log_workspace", {
     workspaceId,
     skip,
@@ -1828,12 +1829,12 @@ export async function gitCompareRefs(
   base: string,
   head: string,
 ): Promise<GitCompareRefs> {
-  if (!inTauri()) return { ahead: 0, behind: 0, files: 0 };
+  if (!hasBackend()) return { ahead: 0, behind: 0, files: 0 };
   return invoke<GitCompareRefs>("git_compare_refs_workspace", { workspaceId, base, head });
 }
 
 export async function gitCommitFiles(workspaceId: string, hash: string): Promise<GitCommitFile[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<GitCommitFile[]>("git_commit_files", { workspaceId, hash });
 }
 
@@ -1842,7 +1843,7 @@ export async function gitStageFiles(
   paths: string[],
   staged: boolean,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("git_stage_files", { workspaceId, paths, staged });
 }
 
@@ -1851,22 +1852,22 @@ export async function gitStageContents(
   path: string,
   contents: string,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("git_stage_contents", { workspaceId, path, contents });
 }
 
 export async function gitDiscardFiles(workspaceId: string, paths: string[]): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("git_discard_files", { workspaceId, paths });
 }
 
 export async function gitStageRepository(workspaceId: string, staged: boolean): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("git_stage_repository", { workspaceId, staged });
 }
 
 export async function generateGitCommitMessage(workspaceId: string): Promise<string> {
-  if (!inTauri()) return "feat: update workspace changes";
+  if (!hasBackend()) return "feat: update workspace changes";
   return invoke<string>("generate_git_commit_message", { workspaceId });
 }
 
@@ -1974,7 +1975,7 @@ function previewMergeTarget(target: string): NonNullable<MergePreview["target"]>
 }
 
 export async function gitMergePreview(workspaceId: string, target: string | null): Promise<MergePreview> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     // 浏览器预览：给出一份固定数据，便于调样式
     return {
       sourceLabel: "feature/login",
@@ -1995,12 +1996,12 @@ export async function gitMergeIntoBranch(input: {
   chatTargetType: "agent" | "squad";
   chatTargetId: string;
 }): Promise<MergeIntoResult> {
-  if (!inTauri()) throw new Error("浏览器预览不能执行合并");
+  if (!hasBackend()) throw new Error("浏览器预览不能执行合并");
   return invoke<MergeIntoResult>("git_merge_into_branch", { input });
 }
 
 export async function gitPullMergeSession(mergeId: string): Promise<MergePullResult> {
-  if (!inTauri()) throw new Error("浏览器预览不能拉取远程");
+  if (!hasBackend()) throw new Error("浏览器预览不能拉取远程");
   return invoke<MergePullResult>("git_pull_merge_session", { mergeId });
 }
 
@@ -2013,27 +2014,27 @@ export async function gitAbortMergeSession(mergeId: string): Promise<void> {
 }
 
 export async function gitFetchWorkspace(workspaceId: string): Promise<GitRepositoryStatus> {
-  if (!inTauri()) throw new Error("浏览器预览不能刷新远程");
+  if (!hasBackend()) throw new Error("浏览器预览不能刷新远程");
   return invoke<GitRepositoryStatus>("git_fetch_workspace", { workspaceId });
 }
 
 export async function gitPullWorkspace(workspaceId: string, skipVerify = false): Promise<GitRepositoryStatus> {
-  if (!inTauri()) throw new Error("浏览器预览不能拉取远程");
+  if (!hasBackend()) throw new Error("浏览器预览不能拉取远程");
   return invoke<GitRepositoryStatus>("git_pull_workspace", { workspaceId, skipVerify });
 }
 
 export async function gitPushWorkspace(workspaceId: string, skipVerify = false): Promise<GitRepositoryStatus> {
-  if (!inTauri()) throw new Error("浏览器预览不能推送远程");
+  if (!hasBackend()) throw new Error("浏览器预览不能推送远程");
   return invoke<GitRepositoryStatus>("git_push_workspace", { workspaceId, skipVerify });
 }
 
 export async function gitSyncWorkspace(workspaceId: string, skipVerify = false): Promise<GitRepositoryStatus> {
-  if (!inTauri()) throw new Error("浏览器预览不能同步远程");
+  if (!hasBackend()) throw new Error("浏览器预览不能同步远程");
   return invoke<GitRepositoryStatus>("git_sync_workspace", { workspaceId, skipVerify });
 }
 
 export async function gitRepairWorktreeRuntime(workspaceId: string): Promise<string> {
-  if (!inTauri()) throw new Error("浏览器预览不能补钩子运行时");
+  if (!hasBackend()) throw new Error("浏览器预览不能补钩子运行时");
   return invoke<string>("git_repair_worktree_runtime", { workspaceId });
 }
 
@@ -2042,7 +2043,7 @@ export async function savePastedAttachment(
   mimeType: string,
   name?: string,
 ): Promise<MessageAttachmentInput> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     throw new Error("当前环境不支持粘贴图片");
   }
   return invoke<MessageAttachmentInput>("save_pasted_attachment", { bytesBase64, mimeType, name });
@@ -2065,12 +2066,12 @@ export async function selectMessageAttachments(): Promise<MessageAttachmentInput
 }
 
 export async function listFeishuContacts(): Promise<{ enabled: boolean; contacts: FeishuContact[] }> {
-  if (!inTauri()) return { enabled: false, contacts: [] };
+  if (!hasBackend()) return { enabled: false, contacts: [] };
   return invoke("list_feishu_contacts");
 }
 
 export async function resendFeishuSend(id: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("resend_feishu_send", { id });
 }
 
@@ -2082,7 +2083,7 @@ export async function sendMessage(
   source?: MessageSourceInput,
   feishuRecipients?: FeishuRecipientInput[],
 ): Promise<ChatMessage[]> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     const createdAt = new Date().toISOString();
     const details = {
       runId: null,
@@ -2119,17 +2120,17 @@ export async function sendMessage(
 }
 
 export async function stopRun(runId: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("stop_run", { runId });
 }
 
 export async function loadSessionDiffData(sessionId: string): Promise<SessionDiffData> {
-  if (!inTauri()) return { snapshots: [], chunkStates: [], messageIds: [] };
+  if (!hasBackend()) return { snapshots: [], chunkStates: [], messageIds: [] };
   return invoke<SessionDiffData>("load_session_diff_data", { sessionId });
 }
 
 export async function loadActiveDiffData(): Promise<ActiveDiffData> {
-  if (!inTauri()) return { snapshots: [], chunkStates: [], baselines: [] };
+  if (!hasBackend()) return { snapshots: [], chunkStates: [], baselines: [] };
   return invoke<ActiveDiffData>("load_active_diff_data");
 }
 
@@ -2138,12 +2139,12 @@ export async function saveFileBaseline(
   filePath: string,
   content: string,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("save_file_baseline", { workspaceId, filePath, content });
 }
 
 export async function deleteFileBaseline(workspaceId: string, filePath: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("delete_file_baseline", { workspaceId, filePath });
 }
 
@@ -2152,7 +2153,7 @@ export async function getSnapshotContent(
   workspaceId: string,
   filePath: string,
 ): Promise<string> {
-  if (!inTauri()) return "";
+  if (!hasBackend()) return "";
   return invoke<string>("get_snapshot_content", { messageId, workspaceId, filePath });
 }
 
@@ -2160,7 +2161,7 @@ export async function getTurnSnapshots(
   messageId: string,
   workspaceId: string,
 ): Promise<SnapshotEntry[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<SnapshotEntry[]>("get_turn_snapshots", { messageId, workspaceId });
 }
 
@@ -2171,7 +2172,7 @@ export async function updateChunkState(input: {
   chunkKey: string;
   status: "accepted" | "undone" | "pending";
 }): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("update_chunk_state", input);
 }
 
@@ -2180,7 +2181,7 @@ export async function deleteSnapshotsFrom(
   workspaceId: string,
   sessionId: string,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("delete_snapshots_from", { messageId, workspaceId, sessionId });
 }
 
@@ -2189,7 +2190,7 @@ export async function truncateSessionFromMessage(
   messageId: string,
   alsoClearSnapshots = true,
 ): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("truncate_session_from_message", {
     sessionId,
     messageId,
@@ -2198,47 +2199,47 @@ export async function truncateSessionFromMessage(
 }
 
 export async function listChannelInstallations(): Promise<ChannelInstallation[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<ChannelInstallation[]>("list_channel_installations");
 }
 
 export async function saveChannelInstallation(
   input: ChannelInstallationInput,
 ): Promise<ChannelInstallation> {
-  if (!inTauri()) {
+  if (!hasBackend()) {
     return { ...input, id: input.id ?? "preview", botName: null, botOpenId: null, pairingCode: "000000", status: "disconnected", lastError: null, hasSecret: true } as ChannelInstallation;
   }
   return invoke<ChannelInstallation>("save_channel_installation", { input });
 }
 
 export async function deleteChannelInstallation(id: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("delete_channel_installation", { id });
 }
 
 export async function setChannelEnabled(id: string, enabled: boolean): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("set_channel_enabled", { id, enabled });
 }
 
 export async function testChannelInstallation(
   id: string,
 ): Promise<Record<string, string>> {
-  if (!inTauri()) return { name: "预览机器人", openId: "ou_preview" };
+  if (!hasBackend()) return { name: "预览机器人", openId: "ou_preview" };
   return invoke<Record<string, string>>("test_channel_installation", { id });
 }
 
 export async function listChannelAllowedUsers(id: string): Promise<ChannelUser[]> {
-  if (!inTauri()) return [];
+  if (!hasBackend()) return [];
   return invoke<ChannelUser[]>("list_channel_allowed_users", { id });
 }
 
 export async function removeChannelAllowedUser(id: string, userId: string): Promise<void> {
-  if (!inTauri()) return;
+  if (!hasBackend()) return;
   await invoke("remove_channel_allowed_user", { id, userId });
 }
 
 export async function rotateChannelPairingCode(id: string): Promise<string> {
-  if (!inTauri()) return "000000";
+  if (!hasBackend()) return "000000";
   return invoke<string>("rotate_channel_pairing_code", { id });
 }

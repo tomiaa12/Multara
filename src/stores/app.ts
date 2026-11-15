@@ -173,6 +173,8 @@ export const useAppStore = defineStore("app", () => {
     loading.value = true;
     error.value = "";
     try {
+      // 浏览器 DEV：等 Tauri WebView worker，否则仍走 preview mock。
+      await backend.connectDevBackend();
       const previousRuntimes = data.value?.runtimes ?? [];
       data.value = await backend.bootstrap();
       if (runtimesReady.value) data.value.runtimes = previousRuntimes;
