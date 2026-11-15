@@ -1,10 +1,15 @@
 //! 通过系统 curl 发 HTTP 请求，供 MCP 探测和资源商店使用。允许 http（本机 MCP 常见）和 https。
+//!
+//! Windows 上若已开「系统代理」且进程环境没有 `HTTP(S)_PROXY`，会把代理写入 curl 子进程，
+//! 否则 curl 不走 WinHTTP，Clash 等场景会连不上外网。
 
 use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
-    process::{Child, ChildStdout, Stdio},
+    process::{Child, ChildStdout, Command, Stdio},
 };
+#[cfg(windows)]
+use std::sync::OnceLock;
 
 const MAX_BODY_BYTES: usize = 8_000_000;
 const MAX_BODY_BYTES_ARG: &str = "8000000";
@@ -149,6 +154,7 @@ fn request_once(
     let body_file = tempfile::NamedTempFile::new().map_err(|error| error.to_string())?;
     let request_headers = curl_header_file(headers)?;
     let mut command = crate::process::command("curl");
+    apply_system_proxy_env(&mut command);
     command.args([
         "--silent",
         "--show-error",
@@ -239,6 +245,7 @@ pub fn request_stream(
     }
     let request_headers = curl_header_file(headers)?;
     let mut command = crate::process::command("curl");
+    apply_system_proxy_env(&mut command);
     command.args([
         "--silent",
         "--show-error",
@@ -319,3 +326,119 @@ fn read_stream_head(
     }
     Ok((status, response_headers))
 }
+
+fn env_has_proxy() -> bool {
+    ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+}
+
+/// 进程没设代理环境变量时，把 Windows 系统代理传给 curl 子进程。
+fn apply_system_proxy_env(command: &mut Command) {
+    if env_has_proxy() {
+        return;
+    }
+    let Some(proxy) = windows_system_proxy() else {
+        return;
+    };
+    command.env("HTTP_PROXY", &proxy);
+    command.env("HTTPS_PROXY", &proxy);
+    command.env("ALL_PROXY", &proxy);
+}
+
+fn windows_system_proxy() -> Option<String> {
+    #[cfg(windows)]
+    {
+        static PROXY: OnceLock<Option<String>> = OnceLock::new();
+        PROXY.get_or_init(read_windows_internet_proxy).clone()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+#[cfg(windows)]
+fn read_windows_internet_proxy() -> Option<String> {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+    let enabled = reg_query_value(KEY, "ProxyEnable", CREATE_NO_WINDOW)?;
+    if !enabled.contains("0x1") && enabled.trim() != "1" {
+        return None;
+    }
+    let server = reg_query_value(KEY, "ProxyServer", CREATE_NO_WINDOW)?;
+    normalize_proxy_server(&server)
+}
+
+#[cfg(windows)]
+fn reg_query_value(key: &str, name: &str, creation_flags: u32) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let output = Command::new("reg")
+        .creation_flags(creation_flags)
+        .args(["query", key, "/v", name])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    // REG_SZ / REG_DWORD 行形如：`    ProxyServer    REG_SZ    127.0.0.1:7890`
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| {
+            let mut parts = line.split_whitespace();
+            let key = parts.next()?;
+            if !key.eq_ignore_ascii_case(name) {
+                return None;
+            }
+            let _kind = parts.next()?;
+            let value = parts.collect::<Vec<_>>().join(" ");
+            (!value.is_empty()).then_some(value)
+        })
+}
+
+fn normalize_proxy_server(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    // `host:port` 或 `http=host:port;https=host:port`
+    let candidate = raw
+        .split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            part.strip_prefix("https=")
+                .or_else(|| part.strip_prefix("http="))
+                .or_else(|| (!part.contains('=')).then_some(part))
+        })?
+        .trim();
+    if candidate.is_empty() {
+        return None;
+    }
+    if candidate.contains("://") {
+        Some(candidate.to_string())
+    } else {
+        Some(format!("http://{candidate}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_proxy_server;
+
+    #[test]
+    fn normalizes_simple_and_per_scheme_proxy() {
+        assert_eq!(
+            normalize_proxy_server("127.0.0.1:7890").as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert_eq!(
+            normalize_proxy_server("http=127.0.0.1:7890;https=127.0.0.1:7890").as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert_eq!(
+            normalize_proxy_server("http://127.0.0.1:7890").as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+    }
+}
+

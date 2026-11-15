@@ -757,6 +757,51 @@ export async function getRuntimeLoginCommand(runtimeId: string): Promise<{ cwd: 
   return invoke<{ cwd: string; command: string }>("runtime_account_login", { runtimeId });
 }
 
+/** session | weekly | monthly | other */
+export type RuntimeUsageWindowKind = "session" | "weekly" | "monthly" | "other";
+
+export interface RuntimeUsageWindow {
+  id: string;
+  kind: RuntimeUsageWindowKind | string;
+  label: string;
+  usedPercent: number;
+  resetsAt?: string;
+  windowDurationMins?: number;
+}
+
+export interface RuntimeUsageUnavailable {
+  reason: "unsupported" | "probeFailed" | "noCredentials" | string;
+  message?: string;
+}
+
+export interface RuntimeUsage {
+  runtimeId: string;
+  supported: boolean;
+  email?: string;
+  plan?: string;
+  checkedAt: string;
+  windows: RuntimeUsageWindow[];
+  unavailable?: RuntimeUsageUnavailable;
+}
+
+export async function probeRuntimeUsage(runtimeId: string): Promise<RuntimeUsage> {
+  if (!inTauri()) {
+    return {
+      runtimeId,
+      supported: false,
+      checkedAt: new Date().toISOString(),
+      windows: [],
+      unavailable: { reason: "unsupported" },
+    };
+  }
+  return invoke<RuntimeUsage>("probe_runtime_usage", { runtimeId });
+}
+
+export async function probeRuntimeUsages(runtimeIds: string[]): Promise<RuntimeUsage[]> {
+  if (!inTauri()) return [];
+  return invoke<RuntimeUsage[]>("probe_runtime_usages", { runtimeIds });
+}
+
 export interface RuntimeModels {
   /** false：该运行时不接收 --model，填了也会被忽略 */
   supported: boolean;

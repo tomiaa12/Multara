@@ -25,7 +25,9 @@ import { readStorage, writeStorage } from "../utils/safe-storage";
 import CreateRuntimeDialog from "./CreateRuntimeDialog.vue";
 import RuntimeAccountsDialog from "./RuntimeAccountsDialog.vue";
 import RuntimeLoginTerminal from "./RuntimeLoginTerminal.vue";
+import RuntimeUsageBars from "./RuntimeUsageBars.vue";
 import { hasAccounts, useRuntimeAccountSummaries } from "./runtime-account-summaries";
+import { supportsRuntimeUsage, useRuntimeUsages } from "./runtime-usages";
 import type { RuntimeAccountStatus } from "../services/backend";
 
 const RUNTIME_VIEW_KEY = "multara.runtimes.view";
@@ -83,9 +85,9 @@ const editor = ref<"" | "agent" | "squad">("");
 const runtimeModal = ref<null | Runtime | "new">(null);
 const accountRuntime = ref<Runtime | null>(null);
 const loginRuntime = ref<Runtime | null>(null);
-const { summaries: accountSummaries, setStatus: setAccountStatus } = useRuntimeAccountSummaries(
-  computed(() => (kind.value === "runtimes" ? store.data?.runtimes ?? [] : [])),
-);
+const runtimeList = computed(() => (kind.value === "runtimes" ? store.data?.runtimes ?? [] : []));
+const { summaries: accountSummaries, setStatus: setAccountStatus } = useRuntimeAccountSummaries(runtimeList);
+const { usages: runtimeUsages, loading: usageLoading, refresh: refreshUsages } = useRuntimeUsages(runtimeList);
 
 function onLoginDone(status: RuntimeAccountStatus) {
   setAccountStatus(status);
@@ -344,6 +346,9 @@ function runtimeSubtitle(runtime: Runtime) {
           </button>
         </div>
         <UiButton @click="store.refreshRuntimes"><RefreshCw :size="15" /> {{ t("runtime.redetect") }}</UiButton>
+        <UiButton :disabled="usageLoading" @click="refreshUsages">
+          <RefreshCw :size="15" :class="{ spin: usageLoading }" /> {{ t("runtimeUsage.refresh") }}
+        </UiButton>
         <UiButton variant="primary" @click="editRuntime()"><Plus :size="15" /> {{ t("runtime.add") }}</UiButton>
       </div>
       <div v-else-if="kind === 'agents'" class="header-actions">
@@ -418,6 +423,12 @@ function runtimeSubtitle(runtime: Runtime) {
                 <template v-if="accountSummaries[runtime.id]?.live.label"> · {{ accountSummaries[runtime.id]?.live.label }}</template>
                 <span v-if="runtime.kind === 'gateway'" class="tag">{{ t("runtime.gatewayBadge") }}</span>
               </small>
+              <RuntimeUsageBars
+                v-if="supportsRuntimeUsage(runtime)"
+                compact
+                :usage="runtimeUsages[runtime.id]"
+                :loading="usageLoading"
+              />
             </span>
           </span>
           <span class="agent-directory-status" :data-status="runtime.status === 'online' ? 'online' : 'offline'">
@@ -483,6 +494,12 @@ function runtimeSubtitle(runtime: Runtime) {
           <UiTooltip :content="runtime.path ?? runtime.command ?? ''">
             <code class="runtime-path">{{ runtime.path ?? t("runtime.notFound", { command: runtime.command }) }}</code>
           </UiTooltip>
+          <RuntimeUsageBars
+            v-if="supportsRuntimeUsage(runtime)"
+            compact
+            :usage="runtimeUsages[runtime.id]"
+            :loading="usageLoading"
+          />
           <footer class="runtime-card-foot">
             <label class="runtime-concurrency">
               {{ t("collection.maxConcurrent") }}
