@@ -283,7 +283,7 @@ fn scan_mcp(owner: &str, output: &mut Vec<GlobalResource>) {
             owner: owner.to_string(),
             name: name.clone(),
             description: profile.summary.clone(),
-            source_path: path.to_string_lossy().to_string(),
+            source_path: display_path(&path),
             enabled: profile.enabled,
             updated_at: modified_at(&path),
             transport: profile.transport,
@@ -1010,7 +1010,7 @@ fn skill_resource_with_state(
         source_label: owner_label(owner, "skill"),
         name: name.to_string(),
         description: skill_description(&path.join("SKILL.md")),
-        source_path: path.to_string_lossy().to_string(),
+        source_path: display_path(path),
         updated_at: modified_at(&path.join("SKILL.md")),
         transport: String::new(),
         summary: String::new(),
@@ -1645,6 +1645,11 @@ pub fn skill_directory(resource_id: &str) -> Result<PathBuf, String> {
         return Err(tr!("技能目录不存在"));
     }
     Ok(path)
+}
+
+/// 把路径组件按本机分隔符重拼，避免 UI 出现 `C:\Users\...\.agents/skills\...` 这种混用。
+fn display_path(path: &Path) -> String {
+    path.components().collect::<PathBuf>().to_string_lossy().into_owned()
 }
 
 fn modified_at(path: &Path) -> String {

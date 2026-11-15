@@ -16,6 +16,7 @@
     "tauri:build:macos-intel": "node scripts/with-cargo.mjs build --target x86_64-apple-darwin --bundles app,dmg",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e:smoke": "node scripts/e2e-smoke.mjs",
     "reset": "node scripts/reset-app.mjs",
     "screenshots": "node scripts/capture-readme-screenshots.mjs"
   },
