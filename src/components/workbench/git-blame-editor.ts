@@ -31,6 +31,10 @@ export type BlameWorkbenchAction =
 /** Monaco 行尾装饰列上限（同 GitLens / VS Code maxSmallIntegerV8）。 */
 const LINE_END_COLUMN = 2 ** 30 - 1;
 const REFRESH_MS = 50;
+/** 同 VS Code editor.hover.delay：鼠标停在行尾注解上才弹出。 */
+const HOVER_SHOW_DELAY_MS = 300;
+/** 同 VS Code editor.hover.hidingDelay：离开注解后，粘滞窗口。 */
+const HOVER_HIDE_DELAY_MS = 300;
 
 export class GitBlame {
   private current: GitBlameInfo | null = null;
@@ -44,6 +48,10 @@ export class GitBlame {
   private collection: Monaco.editor.IEditorDecorationsCollection | null = null;
   private styleEl: HTMLStyleElement | null = null;
   private timer = 0;
+  private showTimer = 0;
+  private hideTimer = 0;
+  private pendingShowLine = 0;
+  private lastMove: Monaco.editor.IEditorMouseEvent | null = null;
   private generation = 0;
   private cacheToken = 0;
   private shown: { line: number; content: string } | null = null;
@@ -65,13 +73,22 @@ export class GitBlame {
     private readonly cacheKey: () => string = () => "",
     private readonly onAction: (action: BlameWorkbenchAction) => void = () => {},
   ) {
-    this.card = new GitBlameCard(editor, (action, model) => this.handleCardAction(action, model));
+    this.card = new GitBlameCard(
+      editor,
+      (action, model) => this.handleCardAction(action, model),
+      (inside) => {
+        if (!inside) return;
+        this.cancelShow();
+        this.cancelHide();
+      },
+    );
     this.listeners.push(
       editor.onDidChangeCursorPosition((event) => {
         const lineChanged = event.position.lineNumber !== this.currentLine;
         if (!lineChanged) return;
-        // 同 VS Code ContentHover：选区换行立刻收起 hover，避免卡在旧位置。
-        this.card.hide();
+        // 同 VS Code：光标换行本身不收起已打开的 hover。按键和点击会另外收起。
+        // 还没弹出的悬停作废，避免注解已经清掉后仍弹在旧行。
+        this.cancelShow();
         // 同 GitLens pending：先清旧行尾，blame 就绪后再画。
         this.clearAnnotation();
         this.current = null;
@@ -79,12 +96,13 @@ export class GitBlame {
         this.schedule();
       }),
       editor.onDidChangeModelContent(() => {
-        this.card.hide();
+        // 同 VS Code：内容变化只取消还没出现的悬停，已打开的卡片留着。
+        this.cancelShow();
         this.schedule();
       }),
       editor.onDidChangeModel(() => {
         this.invalidateCache();
-        this.card.hide();
+        this.dismissHover();
         this.clearAnnotation();
         this.current = null;
         this.currentLine = 0;
@@ -96,18 +114,35 @@ export class GitBlame {
         this.schedule();
       }),
       editor.onMouseDown((event) => {
-        // 同 VS Code：mousedown 收起 content hover；点在卡片上保留。
-        if (event.target.element?.closest?.(".git-blame-card")) return;
-        this.card.hide();
+        // 同 VS Code：在卡片外按下鼠标立刻收起。
+        if (this.isPointerOnCard(event)) return;
+        this.dismissHover();
       }),
       editor.onMouseMove((event) => this.onMouseMove(event)),
-      editor.onMouseLeave(() => this.card.scheduleHide()),
+      editor.onMouseLeave((event) => {
+        this.cancelShow();
+        const related = event.event.browserEvent.relatedTarget;
+        if (related instanceof Node && this.card.containsNode(related)) return;
+        this.dismissHover();
+      }),
+      editor.onKeyDown((event) => {
+        const key = event.browserEvent.key;
+        if (key === "Shift" || key === "Control" || key === "Alt" || key === "Meta") return;
+        if (key === "Tab" && this.card.ownsFocus()) return;
+        this.dismissHover();
+      }),
+      editor.onDidScrollChange((event) => {
+        if (!event.scrollTopChanged && !event.scrollLeftChanged) return;
+        this.dismissHover();
+      }),
     );
     this.schedule();
   }
 
   dispose() {
     window.clearTimeout(this.timer);
+    this.cancelShow();
+    this.cancelHide();
     this.generation += 1;
     this.cacheToken += 1;
     this.detailsToken += 1;
@@ -268,30 +303,87 @@ export class GitBlame {
   }
 
   private onMouseMove(event: Monaco.editor.IEditorMouseEvent) {
-    if (event.target.element?.closest?.(".git-blame-card")) {
-      this.card.cancelHide();
+    this.lastMove = event;
+    if (this.isPointerOnCard(event)) {
+      this.cancelShow();
+      this.cancelHide();
       return;
     }
-    if (!this.current || !this.currentLine) {
-      this.card.scheduleHide();
+    const line = this.hoverLine(event);
+    if (line && this.isAtLineEndAnnotation(event, line)) {
+      this.cancelHide();
+      if (!this.card.visible()) this.armShow(line);
       return;
     }
+    this.cancelShow();
+    this.armHideIfVisible(event);
+  }
+
+  private hoverLine(event: Monaco.editor.IEditorMouseEvent): number {
+    if (!this.current || !this.currentLine) return 0;
     // 有文字行上悬停 ::after 时，Monaco 有时不给 position（空行反而稳定给 EOL）。
-    // 同 VS Code：用坐标落入当前行 + 行尾以右（注解撑开区）判定，不依赖 DOM class。
     const line = event.target.position?.lineNumber
       ?? event.target.range?.startLineNumber
       ?? this.lineAtMouseY(event)
       ?? 0;
-    if (!line || line !== this.currentLine) {
-      this.card.scheduleHide();
+    return line === this.currentLine ? line : 0;
+  }
+
+  /** 鼠标停在行尾注解上满 hover delay 才弹出；同一行内移动不重新计时。 */
+  private armShow(line: number) {
+    if (this.showTimer && this.pendingShowLine === line) return;
+    this.cancelShow();
+    this.pendingShowLine = line;
+    this.showTimer = window.setTimeout(() => {
+      this.showTimer = 0;
+      const pending = this.pendingShowLine;
+      this.pendingShowLine = 0;
+      const event = this.lastMove;
+      if (!event || pending !== line || !this.isAtLineEndAnnotation(event, line)) return;
+      if (this.hoverLine(event) !== line) return;
+      void this.openCard(line);
+    }, HOVER_SHOW_DELAY_MS);
+  }
+
+  private cancelShow() {
+    window.clearTimeout(this.showTimer);
+    this.showTimer = 0;
+    this.pendingShowLine = 0;
+  }
+
+  /**
+   * 同 VS Code sticky + hidingDelay：离开注解后只排一次。
+   * 随后若鼠标在靠近卡片，取消这次关闭；停住不再靠近，到点就关。
+   */
+  private armHideIfVisible(event: Monaco.editor.IEditorMouseEvent) {
+    if (!this.card.visible()) return;
+    const point = clientPoint(event);
+    if (point && this.card.trackApproach(point.x, point.y)) {
+      this.cancelHide();
       return;
     }
-    if (!this.isAtLineEndAnnotation(event, line)) {
-      this.card.scheduleHide();
-      return;
-    }
-    this.card.cancelHide();
-    void this.openCard(line);
+    if (this.hideTimer) return;
+    this.hideTimer = window.setTimeout(() => {
+      this.hideTimer = 0;
+      this.card.hide();
+    }, HOVER_HIDE_DELAY_MS);
+  }
+
+  private cancelHide() {
+    window.clearTimeout(this.hideTimer);
+    this.hideTimer = 0;
+  }
+
+  private dismissHover() {
+    this.cancelShow();
+    this.cancelHide();
+    this.card.hide();
+  }
+
+  private isPointerOnCard(event: Monaco.editor.IEditorMouseEvent): boolean {
+    const element = event.target.element;
+    if (element?.closest?.(".git-blame-card")) return true;
+    return this.card.containsNode(element);
   }
 
   private lineAtMouseY(event: Monaco.editor.IEditorMouseEvent): number | null {
@@ -356,6 +448,8 @@ export class GitBlame {
       diff: this.currentDiff,
       remoteUrl: this.remoteUrl,
     }, anchor);
+    const point = this.lastMove && clientPoint(this.lastMove);
+    if (point) this.card.seedApproach(point.x, point.y);
     await this.ensureDetails(this.current, this.blameLine, line);
     if (!this.current || this.currentLine !== line || !this.card.visible()) return;
     this.card.show({
@@ -422,7 +516,7 @@ export class GitBlame {
   private handleCardAction(action: BlameCardAction, model: BlameCardModel) {
     const { workspaceId, filePath } = this.locate();
     const blame = model.blame;
-    this.card.hide();
+    this.dismissHover();
     if (action === "copy") {
       if (blame.committed) void navigator.clipboard?.writeText(blame.hash);
       return;
@@ -468,9 +562,15 @@ export class GitBlame {
     this.remoteUrl = null;
     this.detailsLoadedFor = "";
     this.clearAnnotation();
-    this.card.hide();
+    this.dismissHover();
     this.publish("", "");
   }
+}
+
+function clientPoint(event: Monaco.editor.IEditorMouseEvent): { x: number; y: number } | null {
+  const mouse = event.event.browserEvent;
+  if (typeof mouse.clientX !== "number" || typeof mouse.clientY !== "number") return null;
+  return { x: mouse.clientX, y: mouse.clientY };
 }
 
 function emptyUncommitted(): GitBlameInfo {
