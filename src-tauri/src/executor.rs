@@ -3108,6 +3108,7 @@ fn run_event(run_id: &str, session_id: &str, agent_id: &str, status: &'static st
         message_id: None,
         file_path: None,
         snapshot_content: None,
+        snapshot_absent: None,
         affected_file: None,
         workspace_id: None,
     }
@@ -3192,6 +3193,7 @@ fn maybe_capture_file_snapshot(
         outgoing.message_id = Some(message_id.to_string());
         outgoing.file_path = Some(snap.file_path);
         outgoing.snapshot_content = Some(snap.content);
+        outgoing.snapshot_absent = Some(snap.absent);
         outgoing.workspace_id = Some(snap.workspace_id);
         let _ = app.emit("run-event", outgoing);
     }

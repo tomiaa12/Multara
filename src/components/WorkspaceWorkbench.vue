@@ -1110,7 +1110,7 @@ const explorerRowsByWorkspace = computed(() => {
       isHidden: (entry, siblings) => treeEntryHidden(workspace.id, entry, siblings),
       forceVisible: (path) => openEditorTreeKeys.value.has(treeKey(workspace.id, path)),
       breakCompactAt: (path) => breakCompactAt(workspace.id, path),
-      missingFiles: diffStore.listMissingFiles([workspace.id]).map((file) => file.filePath),
+      missingFiles: [],
     });
     result[workspace.id] = query ? applyFind(nodes, query, explorer.findMode.value) : nodes;
   }
@@ -1676,9 +1676,6 @@ async function refreshGitStatuses() {
 }
 
 function treeGitStatus(workspaceId: string, entry: FileEntry) {
-  if (!entry.isDirectory && diffStore.missingFiles.has(`${workspaceId}\n${entry.path}`)) {
-    return "D";
-  }
   if (workspaceById(workspaceId)?.kind !== "git") return "";
   const index = treeGitIndexByWorkspace.value.get(workspaceId);
   if (entry.isDirectory) return index?.folders.get(entry.path)?.letter ?? "";
@@ -1708,7 +1705,6 @@ function editorTabTitle(tab: EditorTab) {
 }
 
 function treeGitClass(workspaceId: string, entry: FileEntry) {
-  if (diffStore.missingFiles.has(`${workspaceId}\n${entry.path}`)) return "git-deleted";
   return gitStatusClass(treeGitStatus(workspaceId, entry));
 }
 

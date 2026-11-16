@@ -464,6 +464,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           file_path TEXT NOT NULL,
           content BLOB NOT NULL,
           updated_at INTEGER NOT NULL,
+          absent INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY (workspace_id, file_path)
         );
         ",
@@ -518,6 +519,12 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
     ensure_column(&columns, "run_events", "call_id", "TEXT")?;
+    ensure_column(
+        &columns,
+        "file_review_baselines",
+        "absent",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     // 归档时间；NULL 表示未归档。
     ensure_column(&columns, "projects", "archived_at", "TEXT")?;
     crate::merge_flow::migrate(db)?;

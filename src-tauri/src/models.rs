@@ -572,6 +572,9 @@ pub struct RunEvent {
     pub file_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot_content: Option<String>,
+    /// 快照时文件不存在。空文件为 false，撤销写回空内容。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_absent: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub affected_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
