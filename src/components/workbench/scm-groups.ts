@@ -92,6 +92,16 @@ export function scmResourceLetter(file: GitFileStatus, group: ScmGroupId) {
   return gitStatusLetterFor(file, "worktree") || "M";
 }
 
+/** 树里拖文件夹只放文件夹本身；拖已选中的文件则带上同组多选。 */
+export function gitComposerTargets(
+  row: { kind: "dir"; path: string } | { kind: "file"; path: string },
+  selectedFilePaths: readonly string[],
+): Array<{ path: string; isDirectory: boolean }> {
+  if (row.kind === "dir") return [{ path: row.path, isDirectory: true }];
+  const picked = selectedFilePaths.includes(row.path) ? selectedFilePaths : [row.path];
+  return picked.filter(Boolean).map((path) => ({ path, isDirectory: false }));
+}
+
 export function scmFileTree(files: GitFileStatus[]): ScmTreeNode[] {
   const root: Extract<ScmTreeNode, { kind: "dir" }> = {
     kind: "dir",

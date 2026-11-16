@@ -60,6 +60,7 @@ import { isExcluded } from "./workbench/explorer/explorer-glob";
 import { explorerHoverTitle, highlightName } from "./workbench/explorer/explorer-format";
 import { renameSelection, validateFileName, wellFormedFileName } from "./workbench/explorer/explorer-names";
 import { isCopyDrag } from "./workbench/explorer/explorer-dnd";
+import { distinctParents } from "./workbench/explorer/explorer-selection";
 import { collectDroppedItems, type DroppedItem } from "./workbench/explorer/explorer-import";
 import { explorerItemKey, useExplorer, type ExplorerItem } from "./workbench/explorer/use-explorer";
 import { treeGuideLeft, treeRowPad } from "./workbench/tree-layout";
@@ -4657,7 +4658,9 @@ async function finishTreeDrag(
 ) {
   const copy = event ? isCopyDrag(event, explorer.isMac) : false;
   if (zone === "composer") {
-    const sources = explorer.dragSources.value.length ? explorer.dragSources.value : [treeItem(payload.workspaceId, payload.path, Boolean(payload.isDirectory))];
+    const sources = distinctParents(explorer.dragSources.value.length
+      ? explorer.dragSources.value
+      : [treeItem(payload.workspaceId, payload.path, Boolean(payload.isDirectory))]);
     explorer.endDrag();
     for (const item of sources) attachWorkspacePath(item);
     return;

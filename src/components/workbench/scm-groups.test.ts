@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
 import type { GitFileStatus } from "../../domain/types";
-import { scmFileTree, scmGroups, scmResourceLetter } from "./scm-groups";
+import { gitComposerTargets, scmFileTree, scmGroups, scmResourceLetter } from "./scm-groups";
 
 function file(path: string, indexStatus: string, worktreeStatus: string): GitFileStatus {
   return {
@@ -60,5 +60,24 @@ describe("scmFileTree", () => {
         "src/a.ts",
       ]);
     }
+  });
+});
+
+describe("gitComposerTargets", () => {
+  test("a tree folder stays a folder even when its files are selected", () => {
+    expect(gitComposerTargets(
+      { kind: "dir", path: "src" },
+      ["src/a.ts", "src/nested/b.ts"],
+    )).toEqual([{ path: "src", isDirectory: true }]);
+  });
+
+  test("dragging one selected file brings the rest of the selection", () => {
+    expect(gitComposerTargets(
+      { kind: "file", path: "src/a.ts" },
+      ["src/a.ts", "README.md"],
+    )).toEqual([
+      { path: "src/a.ts", isDirectory: false },
+      { path: "README.md", isDirectory: false },
+    ]);
   });
 });

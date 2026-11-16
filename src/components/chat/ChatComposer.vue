@@ -51,6 +51,7 @@ import { t } from "../../i18n";
 import {
   isWorkspaceFileDrag,
   listOsDroppedEntries,
+  osPathEntries,
   onWorkspaceFileDragChange,
   readWorkspaceFileDragData,
   type OsDroppedEntry,
@@ -166,10 +167,7 @@ function onNativeOsDrop(event: Event) {
   osDropOver = false;
   syncDropOver();
   if (!paths.length || props.disabled || props.readonly) return;
-  const entries = paths.map((path) => ({
-    path,
-    name: path.split(/[\\/]/).pop() || path,
-  }));
+  const entries = osPathEntries(paths);
   field.value?.beginExternalDrop();
   requestAnimationFrame(() => {
     emit("drop-os-files", entries);
@@ -733,6 +731,7 @@ defineExpose({
   focusEnd: () => field.value?.focusEnd(),
   clear: () => field.value?.clear(),
   insertChip: (item: EditorSelectionContext) => field.value?.insertChip(item),
+  insertMissing: (items: EditorSelectionContext[]) => field.value?.insertMissing(items),
   insertText: (value: string) => field.value?.insertText(value),
   restore: (nodes: ComposerNode[]) => field.value?.restore(nodes),
   snapshot: () => field.value?.snapshot() ?? [],

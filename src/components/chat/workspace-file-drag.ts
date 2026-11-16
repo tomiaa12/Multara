@@ -346,7 +346,30 @@ export function listOsDroppedEntries(data: DataTransfer | null): OsDroppedEntry[
     }
     byKey.set(path, { path, name });
   }
-  return preferDroppedFolders([...byKey.values()]);
+  return preferDroppedFolders(markContainingDirectories([...byKey.values()]));
+}
+
+/**
+ * 系统拖放在各环境里形状不同：macOS 常同时给出文件夹和其中的文件，
+ * Windows 用反斜杠，WKWebView 经常不标 isDirectory。
+ * 只要一个路径是另一个路径的父级，它就是文件夹，子文件不再单独放入。
+ */
+export function markContainingDirectories(entries: OsDroppedEntry[]): OsDroppedEntry[] {
+  const paths = entries.map((entry) => normalizeFsPath(entry.path)).filter(Boolean);
+  return entries.map((entry) => {
+    const path = normalizeFsPath(entry.path);
+    const containsAnother = Boolean(path) && paths.some((other) => other !== path && other.startsWith(`${path}/`));
+    if (!entry.isDirectory && !containsAnother) return entry;
+    return { ...entry, path: path || entry.path, isDirectory: true };
+  });
+}
+
+export function osPathEntries(paths: readonly string[]): OsDroppedEntry[] {
+  const entries = paths.filter(Boolean).map((raw) => {
+    const path = normalizeFsPath(raw);
+    return { path, name: path.split("/").pop() || path };
+  });
+  return preferDroppedFolders(markContainingDirectories(entries));
 }
 
 export function preferDroppedFolders(entries: OsDroppedEntry[]): OsDroppedEntry[] {

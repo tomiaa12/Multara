@@ -855,6 +855,7 @@ const composerInput = ref<{
   focusEnd: () => void;
   clear: () => void;
   insertChip: (item: EditorSelectionContext) => void;
+  insertMissing: (items: EditorSelectionContext[]) => void;
   insertText: (value: string) => void;
   restore: (nodes: ComposerNode[]) => void;
   snapshot: () => ComposerNode[];
@@ -1794,8 +1795,7 @@ watch(
   async () => {
     if (props.preview) return;
     await nextTick();
-    const latest = store.composerContexts.at(-1);
-    if (latest) composerInput.value?.insertChip(latest);
+    composerInput.value?.insertMissing(store.composerContexts);
     composerInput.value?.focus();
   },
 );
