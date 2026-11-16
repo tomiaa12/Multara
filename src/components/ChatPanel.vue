@@ -542,14 +542,30 @@ async function ensureSession() {
   }
 }
 
-async function createSession() {
+function currentComposerNodes(): ComposerNode[] {
+  const live = composerInput.value?.snapshot();
+  if (live) return live.map((node) => ({ ...node }));
+  const id = session.value?.id;
+  return (id ? drafts.value[id] ?? [] : []).map((node) => ({ ...node }));
+}
+
+function keepComposerDraft(sessionId: string, nodes: ComposerNode[]) {
+  drafts.value[sessionId] = nodes.map((node) => ({ ...node }));
+}
+
+async function createSession(options?: { copyDraft?: boolean }) {
+  const copyDraft = options?.copyDraft === true;
   if (props.preview) {
+    const sourceId = session.value?.id ?? "";
+    const nodes = copyDraft ? currentComposerNodes() : [];
+    if (copyDraft && sourceId) keepComposerDraft(sourceId, nodes);
     const id = crypto.randomUUID();
+    if (copyDraft) keepComposerDraft(id, nodes);
     previewTabs.value = [...previewTabs.value, { id, title: t("chat.newChat") }];
     previewActiveId.value = id;
     await nextTick();
     scrollActiveTabIntoView();
-    composerInput.value?.focus();
+    composerInput.value?.focusEnd();
     return;
   }
   if (!targetOptions.value.length) return;
@@ -558,10 +574,18 @@ async function createSession() {
     || targetOptions.value.find((item) => item.value.startsWith("agent:"))?.value
     || targetValue.value
     || targetOptions.value[0].value;
-  await store.createChatSession(props.projectId, preferred);
+  const created = await store.createChatSession(props.projectId, preferred, { activate: false });
+  if (!created) return;
+  if (copyDraft) {
+    const sourceId = session.value?.id ?? "";
+    const nodes = currentComposerNodes();
+    if (sourceId) keepComposerDraft(sourceId, nodes);
+    keepComposerDraft(created.id, nodes);
+  }
+  await store.selectSession(created.id);
   await nextTick();
   scrollActiveTabIntoView();
-  composerInput.value?.focus();
+  composerInput.value?.focusEnd();
 }
 
 function hasCopySelection(event: KeyboardEvent) {
@@ -593,9 +617,9 @@ function onChatKeydown(event: KeyboardEvent) {
     return;
   }
   if (props.sessionId || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
-  if (event.key.toLowerCase() !== "t") return;
+  if (event.code !== "KeyT" && event.key.toLowerCase() !== "t") return;
   event.preventDefault();
-  void createSession();
+  void createSession({ copyDraft: true });
 }
 
 function onTabsWheel(event: WheelEvent) {
@@ -832,6 +856,7 @@ const composerInput = ref<{
   insertChip: (item: EditorSelectionContext) => void;
   insertText: (value: string) => void;
   restore: (nodes: ComposerNode[]) => void;
+  snapshot: () => ComposerNode[];
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
   openAttachMenu: (defaultCategory?: string) => void;
 } | null>(null);
