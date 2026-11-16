@@ -45,7 +45,16 @@ impl Keychain for SystemKeychain {
 
     fn write(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
         let output = std::process::Command::new(SECURITY)
-            .args(["add-generic-password", "-U", "-s", service, "-a", account, "-w", value])
+            .args([
+                "add-generic-password",
+                "-U",
+                "-s",
+                service,
+                "-a",
+                account,
+                "-w",
+                value,
+            ])
             .output()
             .map_err(|error| error.to_string())?;
         if output.status.success() {
@@ -91,10 +100,10 @@ pub mod memory {
         }
 
         fn write(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
-            self.items
-                .lock()
-                .unwrap()
-                .insert((service.to_string(), account.to_string()), value.to_string());
+            self.items.lock().unwrap().insert(
+                (service.to_string(), account.to_string()),
+                value.to_string(),
+            );
             Ok(())
         }
     }

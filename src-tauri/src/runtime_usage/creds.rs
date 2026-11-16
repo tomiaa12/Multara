@@ -24,7 +24,10 @@ pub fn read_json(path: &Path) -> Option<Value> {
 }
 
 pub fn env_nonempty(name: &str) -> Option<String> {
-    env::var(name).ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn jwt_claims(token: &str) -> Option<Value> {
@@ -153,7 +156,9 @@ pub fn claude_auth(home: &Path) -> Option<ClaudeAuth> {
 }
 
 fn claude_email(home: &Path) -> Option<String> {
-    let account = read_json(&home.join(".claude.json"))?.get("oauthAccount")?.clone();
+    let account = read_json(&home.join(".claude.json"))?
+        .get("oauthAccount")?
+        .clone();
     account
         .get("emailAddress")
         .or_else(|| account.get("email"))
@@ -210,14 +215,13 @@ pub struct CursorAuth {
 }
 
 pub fn cursor_auth(home: &Path) -> Option<CursorAuth> {
-    let email = read_json(&home.join(".cursor").join("cli-config.json"))
-        .and_then(|root| {
-            root.pointer("/authInfo/email")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        });
+    let email = read_json(&home.join(".cursor").join("cli-config.json")).and_then(|root| {
+        root.pointer("/authInfo/email")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    });
     if let Some(token) = env_nonempty("CURSOR_AUTH_TOKEN") {
         return Some(CursorAuth { token, email });
     }
@@ -323,7 +327,9 @@ pub fn antigravity_oauth(home: &Path) -> Option<GoogleOAuth> {
         }
     }
     for path in [
-        home.join(".gemini").join("antigravity-acp").join("acp_token.json"),
+        home.join(".gemini")
+            .join("antigravity-acp")
+            .join("acp_token.json"),
         home.join(".gemini")
             .join("antigravity")
             .join("antigravity-acp")
@@ -377,14 +383,11 @@ fn google_access_token(root: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
-    let expiry_ms = root
-        .get("expiry_date")
-        .and_then(Value::as_f64)
-        .or_else(|| {
-            root.get("expires_at")
-                .and_then(Value::as_f64)
-                .map(|secs| secs * 1000.0)
-        });
+    let expiry_ms = root.get("expiry_date").and_then(Value::as_f64).or_else(|| {
+        root.get("expires_at")
+            .and_then(Value::as_f64)
+            .map(|secs| secs * 1000.0)
+    });
     let fresh = match (access.as_ref(), expiry_ms) {
         (Some(token), Some(expiry)) => {
             let now = chrono::Utc::now().timestamp_millis() as f64;
@@ -431,7 +434,10 @@ fn refresh_google_token(root: &Value) -> Result<String, String> {
     let response = crate::http_client::request(
         "POST",
         "https://oauth2.googleapis.com/token",
-        &[("Content-Type".into(), "application/x-www-form-urlencoded".into())],
+        &[(
+            "Content-Type".into(),
+            "application/x-www-form-urlencoded".into(),
+        )],
         Some(&body),
         super::PROBE_TIMEOUT_SECS,
     )?;
@@ -453,13 +459,7 @@ fn refresh_google_token(root: &Value) -> Result<String, String> {
 fn form_urlencoded(pairs: &[(&str, &str)]) -> String {
     pairs
         .iter()
-        .map(|(key, value)| {
-            format!(
-                "{}={}",
-                urlencoding_encode(key),
-                urlencoding_encode(value)
-            )
-        })
+        .map(|(key, value)| format!("{}={}", urlencoding_encode(key), urlencoding_encode(value)))
         .collect::<Vec<_>>()
         .join("&")
 }

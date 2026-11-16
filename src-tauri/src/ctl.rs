@@ -22,7 +22,7 @@ use crate::{
     canvas::{self, CanvasHost},
     canvas_bridge,
     database::AppState,
-    ops::canvas::{self as ops, CanvasError, Caller, OpenRequest},
+    ops::canvas::{self as ops, Caller, CanvasError, OpenRequest},
 };
 
 const MAX_BODY: usize = 1024 * 1024;
@@ -58,15 +58,17 @@ pub fn start(app: AppHandle) {
     {
         return;
     }
-    let _ = thread::Builder::new().name("multara-ctl".into()).spawn(move || {
-        for request in server.incoming_requests() {
-            let app = app.clone();
-            // action 要等页面回结果，一个请求一个线程
-            let _ = thread::Builder::new()
-                .name("multara-ctl-req".into())
-                .spawn(move || handle_request(&app, request, port));
-        }
-    });
+    let _ = thread::Builder::new()
+        .name("multara-ctl".into())
+        .spawn(move || {
+            for request in server.incoming_requests() {
+                let app = app.clone();
+                // action 要等页面回结果，一个请求一个线程
+                let _ = thread::Builder::new()
+                    .name("multara-ctl-req".into())
+                    .spawn(move || handle_request(&app, request, port));
+            }
+        });
 }
 
 /// 为一次运行登记 token，返回注入给 CLI 的 URL；控制通道没起来时返回 None
@@ -104,8 +106,11 @@ fn respond(request: tiny_http::Request, code: u16, body: Value) {
         .with_chunked_threshold(usize::MAX)
         .with_status_code(StatusCode(code))
         .with_header(
-            Header::from_bytes(&b"Content-Type"[..], &b"application/json; charset=utf-8"[..])
-                .expect("header"),
+            Header::from_bytes(
+                &b"Content-Type"[..],
+                &b"application/json; charset=utf-8"[..],
+            )
+            .expect("header"),
         );
     let _ = request.respond(response);
 }
@@ -117,20 +122,36 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
         .find(|header| header.field.equiv("Host"))
         .is_some_and(|header| header.value.as_str() == format!("127.0.0.1:{port}"));
     if !host_ok {
-        return respond(request, 421, json!({ "ok": false, "code": "canvas.forbidden" }));
+        return respond(
+            request,
+            421,
+            json!({ "ok": false, "code": "canvas.forbidden" }),
+        );
     }
     if request.method() != &Method::Post {
-        return respond(request, 405, json!({ "ok": false, "code": "canvas.forbidden" }));
+        return respond(
+            request,
+            405,
+            json!({ "ok": false, "code": "canvas.forbidden" }),
+        );
     }
     let url = request.url().to_string();
     let mut parts = url.trim_start_matches('/').splitn(2, '/');
     let token = parts.next().unwrap_or("").to_string();
     let method = parts.next().unwrap_or("").to_string();
     let Some(ctx) = lookup(&token) else {
-        return respond(request, 403, json!({ "ok": false, "code": "canvas.forbidden", "message": tr!("控制通道 token 无效或运行已结束") }));
+        return respond(
+            request,
+            403,
+            json!({ "ok": false, "code": "canvas.forbidden", "message": tr!("控制通道 token 无效或运行已结束") }),
+        );
     };
     let Some(method) = method.strip_prefix("canvas.").map(str::to_string) else {
-        return respond(request, 404, json!({ "ok": false, "code": "canvas.unknown_method" }));
+        return respond(
+            request,
+            404,
+            json!({ "ok": false, "code": "canvas.unknown_method" }),
+        );
     };
     let mut body = Vec::new();
     if request
@@ -140,7 +161,11 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
         .is_err()
         || body.len() > MAX_BODY
     {
-        return respond(request, 413, json!({ "ok": false, "code": "canvas.too_large" }));
+        return respond(
+            request,
+            413,
+            json!({ "ok": false, "code": "canvas.too_large" }),
+        );
     }
     let args: Value = if body.is_empty() {
         json!({})
@@ -148,7 +173,11 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
         match serde_json::from_slice(&body) {
             Ok(args) => args,
             Err(error) => {
-                return respond(request, 400, CanvasError::new("canvas.invalid_args", error.to_string()).to_json())
+                return respond(
+                    request,
+                    400,
+                    CanvasError::new("canvas.invalid_args", error.to_string()).to_json(),
+                )
             }
         }
     };
@@ -169,15 +198,22 @@ fn text(args: &Value, key: &str) -> Option<String> {
 }
 
 fn required(args: &Value, key: &str) -> Result<String, CanvasError> {
-    text(args, key).ok_or_else(|| CanvasError::new("canvas.invalid_args", tr!("缺少 {key}", key = key)))
+    text(args, key)
+        .ok_or_else(|| CanvasError::new("canvas.invalid_args", tr!("缺少 {key}", key = key)))
 }
 
 fn app_data(app: &AppHandle) -> Result<PathBuf, CanvasError> {
-    canvas::app_data(app).ok_or_else(|| CanvasError::new("canvas.internal", tr!("无法读取应用数据目录")))
+    canvas::app_data(app)
+        .ok_or_else(|| CanvasError::new("canvas.internal", tr!("无法读取应用数据目录")))
 }
 
 /// 在应用进程里执行一个 canvas 方法。会话一律取自 token。
-pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Result<Value, CanvasError> {
+pub fn dispatch(
+    app: &AppHandle,
+    ctx: &RunCtx,
+    method: &str,
+    args: &Value,
+) -> Result<Value, CanvasError> {
     let state = app.state::<AppState>();
     let caller = Caller {
         session_id: ctx.session_id.clone(),
@@ -189,13 +225,18 @@ pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Re
             .lock_db()
             .map_err(|error| CanvasError::new("canvas.internal", error))?;
         if !ops::canvases_enabled(&db) {
-            return Err(CanvasError::new("canvas.disabled", tr!("Canvas 未启用（设置 → 实验功能）")));
+            return Err(CanvasError::new(
+                "canvas.disabled",
+                tr!("Canvas 未启用（设置 → 实验功能）"),
+            ));
         }
     }
     let session = ctx.session_id.as_str();
     match method {
         "list" => {
-            let db = state.lock_db().map_err(|error| CanvasError::new("canvas.internal", error))?;
+            let db = state
+                .lock_db()
+                .map_err(|error| CanvasError::new("canvas.internal", error))?;
             let mut list = ops::list(&db, session, false)?;
             for item in list.as_array_mut().into_iter().flatten() {
                 let instance = item["instanceId"].as_str().unwrap_or("").to_string();
@@ -213,7 +254,9 @@ pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Re
             };
             let app_data = app_data(app)?;
             let opened = {
-                let db = state.lock_db().map_err(|error| CanvasError::new("canvas.internal", error))?;
+                let db = state
+                    .lock_db()
+                    .map_err(|error| CanvasError::new("canvas.internal", error))?;
                 ops::open(&db, &app_data, &caller, &request)?
             };
             if opened.reopened {
@@ -226,7 +269,9 @@ pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Re
         "close" => {
             let instance = required(args, "instance")?;
             {
-                let db = state.lock_db().map_err(|error| CanvasError::new("canvas.internal", error))?;
+                let db = state
+                    .lock_db()
+                    .map_err(|error| CanvasError::new("canvas.internal", error))?;
                 ops::close(&db, session, &instance)?;
             }
             app.state::<CanvasHost>().stop(session, &instance);
@@ -238,7 +283,9 @@ pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Re
             let instance = required(args, "instance")?;
             let status = text(args, "text").unwrap_or_default();
             let value = {
-                let db = state.lock_db().map_err(|error| CanvasError::new("canvas.internal", error))?;
+                let db = state
+                    .lock_db()
+                    .map_err(|error| CanvasError::new("canvas.internal", error))?;
                 ops::set_status(&db, session, &instance, &status)?
             };
             canvas::emit_changed(app, session);
@@ -246,7 +293,9 @@ pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Re
         }
         "context" => {
             let instance = required(args, "instance")?;
-            let db = state.lock_db().map_err(|error| CanvasError::new("canvas.internal", error))?;
+            let db = state
+                .lock_db()
+                .map_err(|error| CanvasError::new("canvas.internal", error))?;
             Ok(json!({ "ok": true, "value": ops::get_context(&db, session, &instance)? }))
         }
         "action" => {
@@ -260,14 +309,25 @@ pub fn dispatch(app: &AppHandle, ctx: &RunCtx, method: &str, args: &Value) -> Re
                 .clamp(1, MAX_ACTION_TIMEOUT_SECS);
             {
                 // 宿主侧先按 canvas.json 校验，再投递；等结果时不持有数据库锁
-                let db = state.lock_db().map_err(|error| CanvasError::new("canvas.internal", error))?;
+                let db = state
+                    .lock_db()
+                    .map_err(|error| CanvasError::new("canvas.internal", error))?;
                 let view = ops::hosting_view(&db, session, &instance)?;
                 ops::check_action(&view.manifest, &name, &input)?;
             }
-            let value = canvas_bridge::deliver_action(session, &instance, &name, &input, Duration::from_secs(timeout))?;
+            let value = canvas_bridge::deliver_action(
+                session,
+                &instance,
+                &name,
+                &input,
+                Duration::from_secs(timeout),
+            )?;
             Ok(json!({ "ok": true, "value": value }))
         }
-        _ => Err(CanvasError::new("canvas.unknown_method", tr!("不支持的方法：{method}", method = method))),
+        _ => Err(CanvasError::new(
+            "canvas.unknown_method",
+            tr!("不支持的方法：{method}", method = method),
+        )),
     }
 }
 

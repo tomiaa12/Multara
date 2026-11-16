@@ -18,7 +18,7 @@ use std::{
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
-use crate::ops::canvas::{self as ops, CanvasError, Caller, OpenRequest};
+use crate::ops::canvas::{self as ops, Caller, CanvasError, OpenRequest};
 
 pub struct CliOutput {
     pub stdout: String,
@@ -83,8 +83,12 @@ fn input_flag(args: &Args) -> Result<Option<Value>, CanvasError> {
     args.flags
         .get("input-json")
         .map(|raw| {
-            serde_json::from_str(raw)
-                .map_err(|error| CanvasError::new("canvas.invalid_args", tr!("--input-json 不是合法 JSON：{error}", error = error)))
+            serde_json::from_str(raw).map_err(|error| {
+                CanvasError::new(
+                    "canvas.invalid_args",
+                    tr!("--input-json 不是合法 JSON：{error}", error = error),
+                )
+            })
         })
         .transpose()
 }
@@ -103,7 +107,10 @@ fn request_body(verb: &str, args: &Args) -> Result<Value, CanvasError> {
             let dir = args.flags.get("dir").map(|dir| absolute(Path::new(dir)));
             let id = args.flags.get("id").cloned();
             if dir.is_none() && id.is_none() {
-                return Err(CanvasError::new("canvas.invalid_args", tr!("需要 --dir 或 --id")));
+                return Err(CanvasError::new(
+                    "canvas.invalid_args",
+                    tr!("需要 --dir 或 --id"),
+                ));
             }
             json!({
                 "dir": dir.map(|dir| dir.to_string_lossy().to_string()),
@@ -128,9 +135,9 @@ fn request_body(verb: &str, args: &Args) -> Result<Value, CanvasError> {
                 .flags
                 .get("timeout")
                 .map(|value| {
-                    value
-                        .parse::<u64>()
-                        .map_err(|_| CanvasError::new("canvas.invalid_args", tr!("--timeout 要是秒数")))
+                    value.parse::<u64>().map_err(|_| {
+                        CanvasError::new("canvas.invalid_args", tr!("--timeout 要是秒数"))
+                    })
                 })
                 .transpose()?;
             json!({
@@ -153,7 +160,9 @@ fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
     } else {
-        env::current_dir().map(|cwd| cwd.join(path)).unwrap_or_else(|_| path.to_path_buf())
+        env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
     }
 }
 
@@ -190,7 +199,10 @@ fn finish(value: Value) -> CliOutput {
     let code = if ok {
         0
     } else {
-        let code = value.get("code").and_then(Value::as_str).unwrap_or("canvas.internal");
+        let code = value
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("canvas.internal");
         if let Some(message) = value.get("message").and_then(Value::as_str) {
             stderr.push(message.to_string());
         }
@@ -216,7 +228,11 @@ fn static_code(code: &str) -> &'static str {
         "canvas.app_not_running",
         "canvas.no_session",
     ];
-    KNOWN.iter().copied().find(|known| *known == code).unwrap_or("canvas.error")
+    KNOWN
+        .iter()
+        .copied()
+        .find(|known| *known == code)
+        .unwrap_or("canvas.error")
 }
 
 fn via_ctl(url: &str, verb: &str, body: &Value) -> CliOutput {
@@ -225,7 +241,12 @@ fn via_ctl(url: &str, verb: &str, body: &Value) -> CliOutput {
         .and_then(Value::as_u64)
         .unwrap_or(ops::DEFAULT_ACTION_TIMEOUT_SECS)
         + 10;
-    match post(url, &format!("canvas.{verb}"), body, Duration::from_secs(timeout)) {
+    match post(
+        url,
+        &format!("canvas.{verb}"),
+        body,
+        Duration::from_secs(timeout),
+    ) {
         Ok(value) => finish(value),
         Err(message) => fail(CanvasError::new(
             "canvas.app_not_running",
@@ -239,7 +260,9 @@ pub fn post(url: &str, method: &str, body: &Value, timeout: Duration) -> Result<
     let rest = url
         .strip_prefix("http://")
         .ok_or_else(|| "MULTARA_CTL".to_string())?;
-    let (host, token) = rest.split_once('/').ok_or_else(|| "MULTARA_CTL".to_string())?;
+    let (host, token) = rest
+        .split_once('/')
+        .ok_or_else(|| "MULTARA_CTL".to_string())?;
     if !host.starts_with("127.0.0.1:") {
         return Err("MULTARA_CTL".to_string());
     }
@@ -250,12 +273,21 @@ pub fn post(url: &str, method: &str, body: &Value, timeout: Duration) -> Result<
         "POST /{token}/{method} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
-    stream.write_all(request.as_bytes()).map_err(|error| error.to_string())?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| error.to_string())?;
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).map_err(|error| error.to_string())?;
+    stream
+        .read_to_end(&mut raw)
+        .map_err(|error| error.to_string())?;
     let text = String::from_utf8_lossy(&raw);
-    let (head, body) = text.split_once("\r\n\r\n").ok_or_else(|| "bad response".to_string())?;
-    let body = if head.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+    let (head, body) = text
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "bad response".to_string())?;
+    let body = if head
+        .to_ascii_lowercase()
+        .contains("transfer-encoding: chunked")
+    {
         dechunk(body)
     } else {
         body.to_string()
@@ -267,7 +299,9 @@ fn dechunk(body: &str) -> String {
     let mut out = String::new();
     let mut rest = body;
     while let Some((size, after)) = rest.split_once("\r\n") {
-        let Ok(size) = usize::from_str_radix(size.trim(), 16) else { break };
+        let Ok(size) = usize::from_str_radix(size.trim(), 16) else {
+            break;
+        };
         if size == 0 || after.len() < size {
             break;
         }
@@ -279,25 +313,38 @@ fn dechunk(body: &str) -> String {
 
 fn direct(db: &mut Connection, verb: &str, body: &Value) -> CliOutput {
     if !ops::canvases_enabled(db) {
-        return fail(CanvasError::new("canvas.disabled", tr!("Canvas 未启用（设置 → 实验功能）")));
+        return fail(CanvasError::new(
+            "canvas.disabled",
+            tr!("Canvas 未启用（设置 → 实验功能）"),
+        ));
     }
     let session_id = env::var("MULTARA_SESSION_ID").unwrap_or_default();
     if session_id.is_empty() {
-        return fail(CanvasError::new("canvas.no_session", tr!("不知道当前是哪个会话（没有 MULTARA_SESSION_ID）")));
+        return fail(CanvasError::new(
+            "canvas.no_session",
+            tr!("不知道当前是哪个会话（没有 MULTARA_SESSION_ID）"),
+        ));
     }
     let caller = Caller {
         session_id: session_id.clone(),
         run_id: env::var("MULTARA_RUN_ID").ok(),
         agent_id: env::var("MULTARA_AGENT_ID").ok(),
     };
-    let instance = body.get("instance").and_then(Value::as_str).unwrap_or("").to_string();
+    let instance = body
+        .get("instance")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let not_running = tr!("应用未运行，下次显示时生效");
     let result: Result<(Value, Vec<String>), CanvasError> = match verb {
         "list" => ops::list(db, &session_id, false).map(|value| (value, Vec::new())),
         "open" => {
             let app_data = app_data_dir();
             match app_data {
-                None => Err(CanvasError::new("canvas.app_not_running", tr!("无法确定应用数据目录"))),
+                None => Err(CanvasError::new(
+                    "canvas.app_not_running",
+                    tr!("无法确定应用数据目录"),
+                )),
                 Some(app_data) => ops::open(
                     db,
                     &app_data,
@@ -305,8 +352,14 @@ fn direct(db: &mut Connection, verb: &str, body: &Value) -> CliOutput {
                     &OpenRequest {
                         dir: body.get("dir").and_then(Value::as_str).map(str::to_string),
                         id: body.get("id").and_then(Value::as_str).map(str::to_string),
-                        instance: body.get("instance").and_then(Value::as_str).map(str::to_string),
-                        title: body.get("title").and_then(Value::as_str).map(str::to_string),
+                        instance: body
+                            .get("instance")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                        title: body
+                            .get("title")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
                         input: body.get("input").cloned().filter(|value| !value.is_null()),
                     },
                 )
@@ -317,7 +370,8 @@ fn direct(db: &mut Connection, verb: &str, body: &Value) -> CliOutput {
                 }),
             }
         }
-        "close" => ops::close(db, &session_id, &instance).map(|()| (Value::Null, vec![not_running.clone()])),
+        "close" => ops::close(db, &session_id, &instance)
+            .map(|()| (Value::Null, vec![not_running.clone()])),
         "status" => ops::set_status(
             db,
             &session_id,
@@ -364,7 +418,16 @@ mod tests {
 
     #[test]
     fn builds_request_bodies() {
-        let parsed = parse(&args(&["canvas", "action", "board", "set", "--input-json", r#"{"ok":true}"#, "--timeout", "5"]));
+        let parsed = parse(&args(&[
+            "canvas",
+            "action",
+            "board",
+            "set",
+            "--input-json",
+            r#"{"ok":true}"#,
+            "--timeout",
+            "5",
+        ]));
         let body = request_body("action", &parsed).unwrap();
         assert_eq!(body["instance"], "board");
         assert_eq!(body["name"], "set");
@@ -373,18 +436,44 @@ mod tests {
         let parsed = parse(&args(&["canvas", "open", "--dir", "rel/board"]));
         let body = request_body("open", &parsed).unwrap();
         assert!(Path::new(body["dir"].as_str().unwrap()).is_absolute());
-        assert_eq!(request_body("open", &parse(&args(&["canvas", "open"]))).unwrap_err().code, "canvas.invalid_args");
-        let bad = parse(&args(&["canvas", "open", "--id", "x", "--input-json", "{oops"]));
+        assert_eq!(
+            request_body("open", &parse(&args(&["canvas", "open"])))
+                .unwrap_err()
+                .code,
+            "canvas.invalid_args"
+        );
+        let bad = parse(&args(&[
+            "canvas",
+            "open",
+            "--id",
+            "x",
+            "--input-json",
+            "{oops",
+        ]));
         assert_eq!(request_body("open", &bad).unwrap_err().exit_code(), 1);
-        assert_eq!(request_body("close", &parse(&args(&["canvas", "close"]))).unwrap_err().code, "canvas.invalid_args");
+        assert_eq!(
+            request_body("close", &parse(&args(&["canvas", "close"])))
+                .unwrap_err()
+                .code,
+            "canvas.invalid_args"
+        );
     }
 
     #[test]
     fn maps_ctl_errors_to_exit_codes() {
         assert_eq!(finish(json!({ "ok": true, "value": 1 })).code, 0);
-        assert_eq!(finish(json!({ "ok": false, "code": "canvas.disabled", "message": "x" })).code, 2);
-        assert_eq!(finish(json!({ "ok": false, "code": "canvas.timeout", "message": "x" })).code, 3);
-        assert_eq!(finish(json!({ "ok": false, "code": "canvas.invalid_input", "message": "x" })).code, 1);
+        assert_eq!(
+            finish(json!({ "ok": false, "code": "canvas.disabled", "message": "x" })).code,
+            2
+        );
+        assert_eq!(
+            finish(json!({ "ok": false, "code": "canvas.timeout", "message": "x" })).code,
+            3
+        );
+        assert_eq!(
+            finish(json!({ "ok": false, "code": "canvas.invalid_input", "message": "x" })).code,
+            1
+        );
         let out = finish(json!({ "ok": true, "value": 1, "warnings": ["w"] }));
         assert_eq!(out.stderr, vec!["w".to_string()]);
     }

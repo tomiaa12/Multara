@@ -88,9 +88,16 @@ fn protocol_servers(servers: &Map<String, Value>) -> Vec<Value> {
 
 fn acp_server(name: &str, entry: &Value) -> Option<Value> {
     let object = entry.as_object()?;
-    let command = object.get("command").and_then(Value::as_str).unwrap_or("").trim();
+    let command = object
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if !command.is_empty() {
-        let args = object.get("args").cloned().unwrap_or_else(|| Value::Array(Vec::new()));
+        let args = object
+            .get("args")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new()));
         let env = env_pairs(object.get("env"));
         return Some(serde_json::json!({
             "name": name,
@@ -99,12 +106,20 @@ fn acp_server(name: &str, entry: &Value) -> Option<Value> {
             "env": env,
         }));
     }
-    let url = object.get("url").and_then(Value::as_str).unwrap_or("").trim();
+    let url = object
+        .get("url")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if url.is_empty() {
         return None;
     }
     let kind = object.get("type").and_then(Value::as_str).unwrap_or("");
-    let kind = if kind.eq_ignore_ascii_case("sse") { "sse" } else { "http" };
+    let kind = if kind.eq_ignore_ascii_case("sse") {
+        "sse"
+    } else {
+        "http"
+    };
     Some(serde_json::json!({
         "type": kind,
         "name": name,
@@ -127,7 +142,11 @@ fn env_pairs(value: Option<&Value>) -> Vec<Value> {
         .collect()
 }
 
-fn prepare_cursor(launch: &mut McpLaunch, cwd: &Path, servers: &Map<String, Value>) -> Result<(), String> {
+fn prepare_cursor(
+    launch: &mut McpLaunch,
+    cwd: &Path,
+    servers: &Map<String, Value>,
+) -> Result<(), String> {
     // cursor-agent 只从各个 workspace root 的 .cursor/mcp.json 和 ~/.cursor/mcp.json 读配置。
     // 把配置放在临时目录，用 --add-dir 挂进去，避免写进用户仓库。
     let root = mcp_root(servers)?;
@@ -156,10 +175,9 @@ fn prepare_cursor(launch: &mut McpLaunch, cwd: &Path, servers: &Map<String, Valu
         &project_data.join(".workspace-trusted"),
         &serde_json::to_vec_pretty(&trust).map_err(|error| error.to_string())?,
     )?;
-    launch.env.push((
-        "CURSOR_DATA_DIR".into(),
-        cursor_data.display().to_string(),
-    ));
+    launch
+        .env
+        .push(("CURSOR_DATA_DIR".into(), cursor_data.display().to_string()));
     launch.temps.push(data_dir.keep());
     Ok(())
 }
@@ -202,7 +220,9 @@ fn prepare_codex(launch: &mut McpLaunch, servers: &Map<String, Value>) -> Result
     config = strip_mcp_tables(&config);
     config.push_str(&codex_mcp_block(servers)?);
     write_private(&home.path().join("config.toml"), config.as_bytes())?;
-    launch.env.push(("CODEX_HOME".into(), home.path().display().to_string()));
+    launch
+        .env
+        .push(("CODEX_HOME".into(), home.path().display().to_string()));
     launch.temps.push(home.keep());
     Ok(())
 }
@@ -238,8 +258,14 @@ fn prepare_pi(launch: &mut McpLaunch, servers: &Map<String, Value>) -> Result<()
 fn opencode_config(servers: &Map<String, Value>) -> Result<String, String> {
     let mut mcp = Map::new();
     for (name, entry) in servers {
-        let object = entry.as_object().ok_or_else(|| format!("MCP {name} 配置无效"))?;
-        let url = object.get("url").and_then(Value::as_str).unwrap_or("").trim();
+        let object = entry
+            .as_object()
+            .ok_or_else(|| format!("MCP {name} 配置无效"))?;
+        let url = object
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
         if !url.is_empty() {
             let mut remote = Map::new();
             remote.insert("type".into(), Value::String("remote".into()));
@@ -250,7 +276,11 @@ fn opencode_config(servers: &Map<String, Value>) -> Result<String, String> {
             mcp.insert(name.clone(), Value::Object(remote));
             continue;
         }
-        let command = object.get("command").and_then(Value::as_str).unwrap_or("").trim();
+        let command = object
+            .get("command")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
         if command.is_empty() {
             return Err(format!("MCP {name} 缺少 command 或 url"));
         }
@@ -274,7 +304,10 @@ fn codex_mcp_block(servers: &Map<String, Value>) -> Result<String, String> {
     names.sort();
     let mut block = String::from("\n# BEGIN multara-managed mcp_servers\n");
     for name in names {
-        if !name.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-') {
+        if !name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        {
             return Err(format!("MCP 名称 {name} 不能写入 Codex 配置"));
         }
         let entry = servers.get(name).and_then(Value::as_object);
@@ -282,11 +315,21 @@ fn codex_mcp_block(servers: &Map<String, Value>) -> Result<String, String> {
             return Err(format!("MCP {name} 配置无效"));
         };
         block.push_str(&format!("[mcp_servers.{name}]\n"));
-        let remote = entry.get("url").and_then(Value::as_str).is_some_and(|url| !url.is_empty())
-            && entry.get("command").and_then(Value::as_str).unwrap_or("").is_empty();
+        let remote = entry
+            .get("url")
+            .and_then(Value::as_str)
+            .is_some_and(|url| !url.is_empty())
+            && entry
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .is_empty();
         let mut fields = BTreeMap::new();
         for (key, value) in entry {
-            if matches!(key.as_str(), "tools" | "prompts" | "resources" | "type" | "enabled" | "disabled") {
+            if matches!(
+                key.as_str(),
+                "tools" | "prompts" | "resources" | "type" | "enabled" | "disabled"
+            ) {
                 continue;
             }
             if remote && key == "headers" {
@@ -359,7 +402,10 @@ fn approval_keys(project: &Path, servers: &Map<String, Value>) -> Result<Vec<Str
         .map(|name| {
             let server = approval_server(servers.get(name).unwrap_or(&Value::Null))?;
             let mut payload = br#"{"path":"#.to_vec();
-            payload.extend(serde_json::to_vec(&project.display().to_string()).map_err(|error| error.to_string())?);
+            payload.extend(
+                serde_json::to_vec(&project.display().to_string())
+                    .map_err(|error| error.to_string())?,
+            );
             payload.extend(br#","server":"#);
             payload.extend(server);
             payload.push(b'}');
@@ -371,7 +417,9 @@ fn approval_keys(project: &Path, servers: &Map<String, Value>) -> Result<Vec<Str
 }
 
 fn approval_server(entry: &Value) -> Result<Vec<u8>, String> {
-    let object = entry.as_object().ok_or_else(|| "MCP 配置无效".to_string())?;
+    let object = entry
+        .as_object()
+        .ok_or_else(|| "MCP 配置无效".to_string())?;
     let keys: &[&str] = if object.contains_key("command") {
         &["type", "command", "args", "env", "cwd"]
     } else if object.contains_key("url") {
@@ -462,7 +510,10 @@ mod tests {
 
     #[test]
     fn cursor_approval_matches_stdio() {
-        let got = keys("/tmp/work", json!({"command":"uvx","args":["mcp-server-fetch"]}));
+        let got = keys(
+            "/tmp/work",
+            json!({"command":"uvx","args":["mcp-server-fetch"]}),
+        );
         assert_eq!(got, vec!["fetch-b3a6127d3cbd8e52".to_string()]);
     }
 

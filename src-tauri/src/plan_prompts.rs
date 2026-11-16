@@ -145,9 +145,21 @@ mod tests {
         for locale in crate::app_locale::LOCALES {
             if *locale != "zh-CN" {
                 assert_ne!(reply_rules(locale), reply_rules("zh-CN"), "{locale}");
-                assert_ne!(auto_plan_rules(locale), auto_plan_rules("zh-CN"), "{locale}");
-                assert_ne!(exit_plan_denied(locale), exit_plan_denied("zh-CN"), "{locale}");
-                assert_ne!(plan_card_text(locale).heading, plan_card_text("zh-CN").heading, "{locale}");
+                assert_ne!(
+                    auto_plan_rules(locale),
+                    auto_plan_rules("zh-CN"),
+                    "{locale}"
+                );
+                assert_ne!(
+                    exit_plan_denied(locale),
+                    exit_plan_denied("zh-CN"),
+                    "{locale}"
+                );
+                assert_ne!(
+                    plan_card_text(locale).heading,
+                    plan_card_text("zh-CN").heading,
+                    "{locale}"
+                );
             }
             assert!(auto_plan_rules(locale).contains("select:EnterPlanMode,ExitPlanMode"));
             assert!(approved_assignment(locale, "# P").ends_with("# P"));

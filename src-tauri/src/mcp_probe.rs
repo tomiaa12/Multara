@@ -318,7 +318,10 @@ impl McpSession {
     pub fn open(server: &str, entry: &Value) -> Result<Self, String> {
         let prepared = crate::mcp_vars::prepare(server, entry);
         if !prepared.missing.is_empty() {
-            return Err(tr!("缺少输入：{inputs}", inputs = prepared.missing.join(", ")));
+            return Err(tr!(
+                "缺少输入：{inputs}",
+                inputs = prepared.missing.join(", ")
+            ));
         }
         let log = Arc::new(Mutex::new(String::new()));
         let connection = connect(&prepared.entry, log.clone()).map_err(probe_message)?;
@@ -350,12 +353,19 @@ impl McpSession {
         Ok(session)
     }
 
-    pub fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+    pub fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
         let mut client = Client {
             connection: self.connection.as_mut(),
             next_id: self.next_id,
         };
-        let result = client.request(method, params, timeout).map_err(probe_message);
+        let result = client
+            .request(method, params, timeout)
+            .map_err(probe_message);
         self.next_id = client.next_id;
         result
     }
@@ -864,7 +874,10 @@ mod tests {
     #[test]
     fn reads_tool_ui_metadata() {
         use serde_json::json;
-        let ui = super::tool_ui(&json!({ "name": "chart", "_meta": { "ui": { "resourceUri": "ui://chart" } } })).unwrap();
+        let ui = super::tool_ui(
+            &json!({ "name": "chart", "_meta": { "ui": { "resourceUri": "ui://chart" } } }),
+        )
+        .unwrap();
         assert_eq!(ui.resource_uri, "ui://chart");
         // 缺省可见性 = model + app：页面也能调（R18）
         assert_eq!(ui.visibility, vec!["model", "app"]);
@@ -875,18 +888,22 @@ mod tests {
         .unwrap();
         assert!(!model_only.app_visible());
         // 只声明可见性、没有界面资源：也要能读出来（页面调它时据此拒绝）
-        let no_ui = super::tool_ui(&json!({ "_meta": { "ui": { "visibility": ["model"] } } })).unwrap();
+        let no_ui =
+            super::tool_ui(&json!({ "_meta": { "ui": { "visibility": ["model"] } } })).unwrap();
         assert!(no_ui.resource_uri.is_empty());
         assert!(!no_ui.app_visible());
         let legacy = super::tool_ui(&json!({ "_meta": { "ui/resourceUri": "ui://old" } })).unwrap();
         assert_eq!(legacy.resource_uri, "ui://old");
         assert!(super::tool_ui(&json!({ "name": "plain" })).is_none());
         // 旧缓存没有 ui 字段也能读
-        let old: super::McpCapability =
-            serde_json::from_value(json!({ "name": "a", "title": "", "description": "", "uri": "" })).unwrap();
+        let old: super::McpCapability = serde_json::from_value(
+            json!({ "name": "a", "title": "", "description": "", "uri": "" }),
+        )
+        .unwrap();
         assert!(old.ui.is_none());
         assert_eq!(
-            super::client_capabilities()["extensions"]["io.modelcontextprotocol/ui"]["mimeTypes"][0],
+            super::client_capabilities()["extensions"]["io.modelcontextprotocol/ui"]["mimeTypes"]
+                [0],
             "text/html;profile=mcp-app"
         );
     }

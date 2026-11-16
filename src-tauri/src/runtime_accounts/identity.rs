@@ -43,15 +43,15 @@ pub fn identify(values: &[Option<Vec<u8>>]) -> Option<Identity> {
             scan_lines(&String::from_utf8_lossy(bytes), &mut found);
         }
     }
-    let label = found
-        .email
-        .clone()
-        .or(found.name)
-        .or(found.hint);
+    let label = found.email.clone().or(found.name).or(found.hint);
     let key = found
         .id
         .map(|id| format!("id:{id}"))
-        .or_else(|| found.email.map(|email| format!("email:{}", email.to_lowercase())))
+        .or_else(|| {
+            found
+                .email
+                .map(|email| format!("email:{}", email.to_lowercase()))
+        })
         .unwrap_or_else(|| format!("sha:{}", digest(values)));
     Some(Identity { key, label })
 }
@@ -217,7 +217,10 @@ mod tests {
 
     #[test]
     fn decodes_go_keyring_values() {
-        let inner = format!(r#"{{"id_token":"{}"}}"#, jwt(r#"{"sub":"g-1","email":"g@x.com"}"#));
+        let inner = format!(
+            r#"{{"id_token":"{}"}}"#,
+            jwt(r#"{"sub":"g-1","email":"g@x.com"}"#)
+        );
         let raw = format!("{GO_KEYRING_PREFIX}{}", STANDARD.encode(inner));
         let identity = identify(&[Some(raw.into_bytes())]).unwrap();
         assert_eq!(identity.key, "id:g-1");
@@ -233,9 +236,11 @@ mod tests {
         assert_eq!(cursor.key, "id:42");
         assert_eq!(cursor.label.as_deref(), Some("c@x.com"));
 
-        let claude =
-            identify(&[None, Some(br#"{"emailAddress":"d@x.com","accountUuid":"u-9"}"#.to_vec())])
-                .unwrap();
+        let claude = identify(&[
+            None,
+            Some(br#"{"emailAddress":"d@x.com","accountUuid":"u-9"}"#.to_vec()),
+        ])
+        .unwrap();
         assert_eq!(claude.key, "id:u-9");
         assert_eq!(claude.label.as_deref(), Some("d@x.com"));
     }
@@ -256,7 +261,8 @@ mod tests {
 
     #[test]
     fn gh_hosts_yml_user_is_login() {
-        let hosts = b"github.com:\n    git_protocol: https\n    users:\n        alice:\n    user: alice\n";
+        let hosts =
+            b"github.com:\n    git_protocol: https\n    users:\n        alice:\n    user: alice\n";
         let identity = identify(&[Some(hosts.to_vec()), Some(b"opaque-token".to_vec())]).unwrap();
         assert_eq!(identity.key, "id:alice");
         assert_eq!(identity.label.as_deref(), Some("alice"));

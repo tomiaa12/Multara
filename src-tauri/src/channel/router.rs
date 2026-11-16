@@ -115,13 +115,21 @@ fn saved_sender_name(user: Option<&store::AllowedUser>) -> Option<String> {
         .filter(|name| !name.trim().is_empty())
 }
 
-fn lookup_sender_name(app: &AppHandle, installation: &Installation, sender_id: &str) -> Option<String> {
+fn lookup_sender_name(
+    app: &AppHandle,
+    installation: &Installation,
+    sender_id: &str,
+) -> Option<String> {
     api_for(app, &installation.id)
         .ok()
         .and_then(|(_, api)| api.user_name(sender_id))
 }
 
-fn remember_sender_name(app: &AppHandle, installation: &Installation, sender_id: &str) -> Option<String> {
+fn remember_sender_name(
+    app: &AppHandle,
+    installation: &Installation,
+    sender_id: &str,
+) -> Option<String> {
     let name = lookup_sender_name(app, installation, sender_id)?;
     let state = app.state::<AppState>();
     let Ok(db) = state.lock_db() else {
@@ -834,7 +842,10 @@ fn handle_plan_action(app: &AppHandle, installation: &Installation, action: &Car
         let Ok(db) = state.lock_db() else {
             return;
         };
-        (store::delivery_by_run(&db, run_id), crate::app_locale::from_db(&db))
+        (
+            store::delivery_by_run(&db, run_id),
+            crate::app_locale::from_db(&db),
+        )
     };
     let Some(delivery) = delivery else {
         return;

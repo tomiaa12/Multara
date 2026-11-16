@@ -3,13 +3,13 @@
 //! Windows 上若已开「系统代理」且进程环境没有 `HTTP(S)_PROXY`，会把代理写入 curl 子进程，
 //! 否则 curl 不走 WinHTTP，Clash 等场景会连不上外网。
 
+#[cfg(windows)]
+use std::sync::OnceLock;
 use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
     process::{Child, ChildStdout, Command, Stdio},
 };
-#[cfg(windows)]
-use std::sync::OnceLock;
 
 const MAX_BODY_BYTES: usize = 8_000_000;
 const MAX_BODY_BYTES_ARG: &str = "8000000";
@@ -328,9 +328,16 @@ fn read_stream_head(
 }
 
 fn env_has_proxy() -> bool {
-    ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
-        .iter()
-        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+    [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
 }
 
 /// 进程没设代理环境变量时，把 Windows 系统代理传给 curl 子进程。
@@ -442,4 +449,3 @@ mod tests {
         );
     }
 }
-

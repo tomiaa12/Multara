@@ -15,8 +15,14 @@ const CATALOGS: &[(&str, &str)] = &[
     ("git", include_str!("../locales/git.json")),
     ("files", include_str!("../locales/files.json")),
     ("channel", include_str!("../locales/channel.json")),
-    ("runtime_accounts", include_str!("../locales/runtime_accounts.json")),
-    ("runtime_usage", include_str!("../locales/runtime_usage.json")),
+    (
+        "runtime_accounts",
+        include_str!("../locales/runtime_accounts.json"),
+    ),
+    (
+        "runtime_usage",
+        include_str!("../locales/runtime_usage.json"),
+    ),
     ("canvas", include_str!("../locales/canvas.json")),
 ];
 
@@ -138,7 +144,10 @@ mod tests {
                     let text = entry
                         .get(*locale)
                         .unwrap_or_else(|| panic!("{name}: 「{source}」缺少 {locale}"));
-                    assert!(!text.trim().is_empty(), "{name}: 「{source}」的 {locale} 为空");
+                    assert!(
+                        !text.trim().is_empty(),
+                        "{name}: 「{source}」的 {locale} 为空"
+                    );
                     assert_eq!(
                         placeholders(text),
                         placeholders(&source),
@@ -151,7 +160,8 @@ mod tests {
 
     #[test]
     fn every_tr_call_is_in_a_catalog() {
-        let pattern = regex::Regex::new(r#"(?s)(?:^|[^A-Za-z0-9_])tr!\(\s*"((?:[^"\\]|\\.)*)""#).unwrap();
+        let pattern =
+            regex::Regex::new(r#"(?s)(?:^|[^A-Za-z0-9_])tr!\(\s*"((?:[^"\\]|\\.)*)""#).unwrap();
         let mut files = Vec::new();
         rust_files(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
@@ -167,7 +177,11 @@ mod tests {
                 }
             }
         }
-        assert!(missing.is_empty(), "以下 tr! 文案没有翻译：\n{}", missing.join("\n"));
+        assert!(
+            missing.is_empty(),
+            "以下 tr! 文案没有翻译：\n{}",
+            missing.join("\n")
+        );
     }
 
     #[test]

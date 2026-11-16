@@ -459,9 +459,13 @@ fn generate_text(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|error| tr!("启动{label}生成器失败：{error}", label = label, error = error))?;
+    let mut child = command.spawn().map_err(|error| {
+        tr!(
+            "启动{label}生成器失败：{error}",
+            label = label,
+            error = error
+        )
+    })?;
     // 先起读线程再写 stdin：大提示词时子进程边读边写，先写后读会互相卡死。
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -511,7 +515,11 @@ fn generate_text(
         .and_then(|writer| writer.join().ok())
         .and_then(Result::err);
     if let Some(error) = stdin_error {
-        return Err(tr!("发送{label}提示失败：{error}", label = label, error = error));
+        return Err(tr!(
+            "发送{label}提示失败：{error}",
+            label = label,
+            error = error
+        ));
     }
     if !status.success() {
         return Err(tr!(
@@ -596,7 +604,11 @@ type StdinSlot = Arc<Mutex<Option<ChildStdin>>>;
 
 /// 只在 `active_runs` 锁里拿出 stdin 槽位，写入和判断都在锁外做，慢 stdin 不会卡住整个执行器。
 /// 只取 `agent_id` 自己的运行：会话里同时跑着别的智能体时，追加消息不能写进它们的进程。
-fn session_stdin_slots(app: &AppHandle, session_id: &str, agent_id: &str) -> Vec<(StdinSlot, String)> {
+fn session_stdin_slots(
+    app: &AppHandle,
+    session_id: &str,
+    agent_id: &str,
+) -> Vec<(StdinSlot, String)> {
     let state = app.state::<AppState>();
     let Ok(active) = state.active_runs.lock() else {
         return Vec::new();
@@ -619,13 +631,19 @@ pub fn can_steer(app: &AppHandle, session_id: &str, agent_id: &str) -> bool {
         })
 }
 
-pub fn steer(app: &AppHandle, session_id: &str, agent_id: &str, text: &str) -> Result<bool, String> {
-    let Some((slot, provider)) = session_stdin_slots(app, session_id, agent_id).into_iter().next() else {
+pub fn steer(
+    app: &AppHandle,
+    session_id: &str,
+    agent_id: &str,
+    text: &str,
+) -> Result<bool, String> {
+    let Some((slot, provider)) = session_stdin_slots(app, session_id, agent_id)
+        .into_iter()
+        .next()
+    else {
         return Ok(false);
     };
-    let mut stdin = slot
-        .lock()
-        .map_err(|_| tr!("无法写入运行中的任务"))?;
+    let mut stdin = slot.lock().map_err(|_| tr!("无法写入运行中的任务"))?;
     let Some(stdin) = stdin.as_mut() else {
         return Ok(false);
     };
@@ -690,7 +708,13 @@ pub fn compact_session(app: &AppHandle, session_id: &str) -> Result<String, Stri
         let db = state.lock_db()?;
         crate::ops::chat::compact_history_text(&db, session_id)?
     };
-    let summary = generate_text(app, &prompt, &tr!("对话摘要"), Duration::from_secs(90), None)?;
+    let summary = generate_text(
+        app,
+        &prompt,
+        &tr!("对话摘要"),
+        Duration::from_secs(90),
+        None,
+    )?;
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
     let last = crate::ops::chat::last_message_id(&db, session_id)?;
@@ -807,7 +831,10 @@ impl ToolErrorActor {
         match self {
             Self::Root => tr!("根代理"),
             Self::SubAgent(parent_call_id) => {
-                tr!("子代理（parent_call_id: {parent_call_id}）", parent_call_id = parent_call_id)
+                tr!(
+                    "子代理（parent_call_id: {parent_call_id}）",
+                    parent_call_id = parent_call_id
+                )
             }
         }
     }
@@ -1238,12 +1265,24 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 resume_id.as_deref(),
                 &launch_provider,
             );
-            let scanned = if prompt.contains("[实体引用] skill") || prompt.contains("[实体引用] mcp") {
+            let scanned = if prompt.contains("[实体引用] skill")
+                || prompt.contains("[实体引用] mcp")
+            {
                 resources::scan()
             } else {
                 Vec::new()
             };
             let prompt = describe_references(&prompt, &scanned);
+            // 续接会话时 build_prompt 丢掉开头的 brief，项目技能要跟着每一轮走。
+            let project_skills = crate::project_skills::prompt_section(
+                &crate::project_skills::discover(&workspace_context.1),
+                locale,
+            );
+            let prompt = if project_skills.is_empty() {
+                prompt
+            } else {
+                format!("{prompt}\n\n{project_skills}")
+            };
             // 续接会话时 build_prompt 只回传本轮任务，规则要跟着每一轮走
             let auto_plan = run.mode == RunMode::Auto
                 && runtime::capabilities(&run.runtime_id, &launch_provider).auto_plan;
@@ -1476,9 +1515,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 }
                 let slot = stdin_slot.clone();
                 thread::spawn(move || {
-                    let mut slot = slot
-                        .lock()
-                        .map_err(|_| tr!("运行时标准输入不可用"))?;
+                    let mut slot = slot.lock().map_err(|_| tr!("运行时标准输入不可用"))?;
                     slot.as_mut()
                         .ok_or_else(|| tr!("运行时标准输入不可用"))?
                         .write_all(&payload)
@@ -1642,7 +1679,10 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 &run,
                 "failed",
                 &text,
-                Some(tr!("任务超过 {minutes} 分钟，已自动停止", minutes = minutes)),
+                Some(tr!(
+                    "任务超过 {minutes} 分钟，已自动停止",
+                    minutes = minutes
+                )),
             );
         } else if stopped {
             finish(&app, &run, "stopped", &text, None);
@@ -2947,7 +2987,15 @@ fn dispatch_mentions(
             "SELECT session_id, turn_id, agent_id, parent_run_id, mode
              FROM agent_runs WHERE id = ?1",
             [leader_run_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .map_err(|error| error.to_string())?;
     // 成员也能继续 @ 别人；沿派活链往上最多三层，且不会 @ 回链上已有的人。
@@ -2993,7 +3041,8 @@ fn dispatch_mentions(
     agents.retain(|(id, _)| !ancestors.contains(id));
     // 名字长的优先，避免「前端」吃掉「前端队长」。
     agents.sort_by_key(|(_, name)| std::cmp::Reverse(name.chars().count()));
-    let link = Regex::new(r"^\s*\[@?[^\]]+\]\(mention://agent/([^)\s]+)\)").map_err(|e| e.to_string())?;
+    let link =
+        Regex::new(r"^\s*\[@?[^\]]+\]\(mention://agent/([^)\s]+)\)").map_err(|e| e.to_string())?;
 
     let mut kept: Vec<&str> = Vec::new();
     let mut jobs: Vec<(String, String)> = Vec::new();
@@ -3006,7 +3055,10 @@ fn dispatch_mentions(
             }
         } else if let Some(rest) = paragraph.trim_start().strip_prefix('@') {
             let offset = paragraph.len() - rest.len();
-            if let Some((id, name)) = agents.iter().find(|(_, name)| rest.starts_with(name.as_str())) {
+            if let Some((id, name)) = agents
+                .iter()
+                .find(|(_, name)| rest.starts_with(name.as_str()))
+            {
                 hit = Some((id.clone(), offset + name.len()));
             }
         }
@@ -3054,7 +3106,11 @@ fn dispatch_mentions(
         )
         .map_err(|error| error.to_string())?;
         let runtime_id: String = db
-            .query_row("SELECT runtime_id FROM agents WHERE id = ?1", [member_id], |row| row.get(0))
+            .query_row(
+                "SELECT runtime_id FROM agents WHERE id = ?1",
+                [member_id],
+                |row| row.get(0),
+            )
             .map_err(|error| error.to_string())?;
         let id = uuid::Uuid::new_v4().to_string();
         let prompt = format!(
@@ -3312,7 +3368,8 @@ fn scratch_workdir(app: &AppHandle, session_id: &str) -> Result<String, String> 
         .map_err(|error| error.to_string())?
         .join("task-workspaces")
         .join(session_id);
-    std::fs::create_dir_all(&dir).map_err(|error| tr!("无法准备工作目录：{error}", error = error))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| tr!("无法准备工作目录：{error}", error = error))?;
     Ok(dir.to_string_lossy().to_string())
 }
 
@@ -3520,9 +3577,9 @@ fn resource_context(
         if mcp_ids.contains(&id) {
             continue;
         }
-        let enabled = scanned.iter().any(|resource| {
-            resource.id == id && resource.kind == "mcp" && resource.enabled
-        });
+        let enabled = scanned
+            .iter()
+            .any(|resource| resource.id == id && resource.kind == "mcp" && resource.enabled);
         if enabled {
             mcp_ids.push(id);
         }
@@ -3640,10 +3697,12 @@ fn execution_for(
         launch.kind.clone(),
         String::new(),
     );
-    let path = detected
-        .path
-        .map(std::path::PathBuf::from)
-        .ok_or_else(|| tr!("未找到自定义运行时命令：{command}", command = detected.command))?;
+    let path = detected.path.map(std::path::PathBuf::from).ok_or_else(|| {
+        tr!(
+            "未找到自定义运行时命令：{command}",
+            command = detected.command
+        )
+    })?;
     let args = runtime::compose_args(
         &launch.provider,
         &launch.args,
@@ -4419,7 +4478,10 @@ fn normalize_codex_file_change(item: &Value, event_type: &str) -> Vec<Normalized
                 event_type: "tool_result",
                 call_id: Some(call_id),
                 tool: Some("apply_patch".into()),
-                content: change.get("diff").and_then(Value::as_str).map(str::to_string),
+                content: change
+                    .get("diff")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 input: None,
                 output: None,
                 replaces_final_text: false,
@@ -5125,8 +5187,8 @@ mod tests {
         claude_control_response, merge_timeline_item, normalize_runtime_line, push_tail,
         remember_claude_block, replace_assignment, runtime_stdin_payload, sanitize_value,
         should_merge_timeline, stamp_claude_tool_delta, timeline_item, tool_use_event,
-        truncate_and_redact, NormalizedEvent, PendingStream,
-        ToolErrorActor, ToolErrorTracker, MAX_CONSECUTIVE_TOOL_ERRORS,
+        truncate_and_redact, NormalizedEvent, PendingStream, ToolErrorActor, ToolErrorTracker,
+        MAX_CONSECUTIVE_TOOL_ERRORS,
     };
     use serde_json::{json, Value};
 
@@ -5183,7 +5245,10 @@ mod tests {
     #[test]
     fn skill_chips_are_parsed_by_id_and_by_marked_slash_name() {
         let message = "[实体引用] skill skill%3Amultara%3Arepo repo\n\n修改这个skill \u{2060}/repo\u{2060} ，加一条";
-        assert_eq!(super::referenced_resource_ids(message, "skill"), ["skill:multara:repo"]);
+        assert_eq!(
+            super::referenced_resource_ids(message, "skill"),
+            ["skill:multara:repo"]
+        );
         assert_eq!(super::invoked_skill_names(message), ["repo"]);
     }
 
@@ -5243,7 +5308,9 @@ mod tests {
         assert_eq!(created.len(), 1);
         assert_eq!(created[0].1, "doc");
         let content: String = db
-            .query_row("SELECT content FROM messages WHERE id='run:r'", [], |r| r.get(0))
+            .query_row("SELECT content FROM messages WHERE id='run:r'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(content, "好的，我来安排。\n\n稍等。");
         let instruction: String = db
@@ -5255,9 +5322,11 @@ mod tests {
             .unwrap();
         assert_eq!(instruction, "写一段简介");
         // 重复收口不会再派一次
-        assert!(super::dispatch_mentions(&db, "r", output, "2026-01-01T00:00:01+00:00")
-            .unwrap()
-            .is_empty());
+        assert!(
+            super::dispatch_mentions(&db, "r", output, "2026-01-01T00:00:01+00:00")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -5321,11 +5390,7 @@ mod tests {
         let delta = r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"src/a.ts\""}}"#;
         let mut blocks = std::collections::HashMap::new();
         let started = normalize_runtime_line("claude", start, false);
-        remember_claude_block(
-            &serde_json::from_str(start).unwrap(),
-            &started,
-            &mut blocks,
-        );
+        remember_claude_block(&serde_json::from_str(start).unwrap(), &started, &mut blocks);
         let mut streamed = normalize_runtime_line("claude", delta, false);
         stamp_claude_tool_delta(
             &serde_json::from_str(delta).unwrap(),
@@ -5676,7 +5741,10 @@ mod tests {
         .unwrap();
         assert_eq!(claude["isError"], true);
         // 纯文本结果不存
-        assert!(super::mcp_result_json(&serde_json::json!({ "tool_use_id": "t2", "content": "plain" })).is_none());
+        assert!(super::mcp_result_json(
+            &serde_json::json!({ "tool_use_id": "t2", "content": "plain" })
+        )
+        .is_none());
     }
 
     #[test]

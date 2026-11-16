@@ -5,7 +5,10 @@ use tauri::AppHandle;
 use super::{probe, RuntimeUsage};
 
 #[tauri::command]
-pub async fn probe_runtime_usage(runtime_id: String, _app: AppHandle) -> Result<RuntimeUsage, String> {
+pub async fn probe_runtime_usage(
+    runtime_id: String,
+    _app: AppHandle,
+) -> Result<RuntimeUsage, String> {
     let _span = crate::diag::span("probe_runtime_usage");
     tauri::async_runtime::spawn_blocking(move || probe(&runtime_id))
         .await

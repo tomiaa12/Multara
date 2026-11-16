@@ -40,7 +40,9 @@ pub struct HostRequest {
 
 impl HostRequest {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(&name.to_ascii_lowercase()).map(String::as_str)
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
     }
 }
 
@@ -49,7 +51,10 @@ pub enum HostResponse {
     File(PathBuf),
     Html(String),
     /// 用自己的 CSP 代替站点默认的（MCP App：CSP 由资源声明）
-    HtmlWithCsp { html: String, csp: String },
+    HtmlWithCsp {
+        html: String,
+        csp: String,
+    },
     Status(u16),
     /// 流式响应（SSE）：每读到一段立即写出并 flush，读到 EOF 结束
     Stream {
@@ -115,13 +120,20 @@ pub fn frame_ancestors() -> &'static str {
 }
 
 /// 起一个站点。`preferred_port` 被占用时回落到随机端口。
-pub fn start(csp: String, preferred_port: Option<u16>, handler: Handler) -> Result<HostedSite, String> {
+pub fn start(
+    csp: String,
+    preferred_port: Option<u16>,
+    handler: Handler,
+) -> Result<HostedSite, String> {
     let listener = preferred_port
         .and_then(|port| TcpListener::bind(("127.0.0.1", port)).ok())
         .map(Ok)
         .unwrap_or_else(|| TcpListener::bind("127.0.0.1:0"))
         .map_err(|error| error.to_string())?;
-    let port = listener.local_addr().map_err(|error| error.to_string())?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|error| error.to_string())?
+        .port();
     let token = random_token();
     let stopped = Arc::new(AtomicBool::new(false));
     let site = HostedSite {
@@ -341,10 +353,22 @@ fn respond(mut stream: TcpStream, response: HostResponse, csp: &str, head: bool)
             value.to_string().as_bytes(),
             head,
         ),
-        HostResponse::Html(html) => write_body(stream, 200, csp, "text/html; charset=utf-8", html.as_bytes(), head),
-        HostResponse::HtmlWithCsp { html, csp: own } => {
-            write_body(stream, 200, &own, "text/html; charset=utf-8", html.as_bytes(), head)
-        }
+        HostResponse::Html(html) => write_body(
+            stream,
+            200,
+            csp,
+            "text/html; charset=utf-8",
+            html.as_bytes(),
+            head,
+        ),
+        HostResponse::HtmlWithCsp { html, csp: own } => write_body(
+            stream,
+            200,
+            &own,
+            "text/html; charset=utf-8",
+            html.as_bytes(),
+            head,
+        ),
         HostResponse::File(path) => {
             let size = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
             if size > MAX_FILE_BYTES {
@@ -355,9 +379,15 @@ fn respond(mut stream: TcpStream, response: HostResponse, csp: &str, head: bool)
                 Err(_) => write_status(stream, 404, csp),
             }
         }
-        HostResponse::Stream { content_type, mut body } => {
+        HostResponse::Stream {
+            content_type,
+            mut body,
+        } => {
             let _ = stream.set_read_timeout(None);
-            if stream.write_all(&head_bytes(200, csp, Some(content_type), None)).is_err() {
+            if stream
+                .write_all(&head_bytes(200, csp, Some(content_type), None))
+                .is_err()
+            {
                 return;
             }
             let _ = stream.flush();
@@ -387,7 +417,11 @@ pub fn resolve_path(root: &Path, request_path: &str, index: &str) -> Option<Path
         if segment.is_empty() || segment == "." {
             continue;
         }
-        if segment == ".." || segment.contains('\0') || segment.contains('\\') || segment.contains(':') {
+        if segment == ".."
+            || segment.contains('\0')
+            || segment.contains('\\')
+            || segment.contains(':')
+        {
             return None;
         }
         relative.push(segment);
@@ -492,7 +526,10 @@ mod tests {
     }
 
     fn get(site: &HostedSite, path: &str, host: &str) -> String {
-        raw(site, &format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"))
+        raw(
+            site,
+            &format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+        )
     }
 
     #[test]
@@ -553,7 +590,8 @@ mod tests {
         assert!(resolve_path(&root, "/missing.html", "index.html").is_none());
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(outer.path().join("secret.txt"), root.join("link.txt")).unwrap();
+            std::os::unix::fs::symlink(outer.path().join("secret.txt"), root.join("link.txt"))
+                .unwrap();
             assert!(resolve_path(&root, "/link.txt", "index.html").is_none());
             std::os::unix::fs::symlink(root.join("index.html"), root.join("inside.html")).unwrap();
             assert!(resolve_path(&root, "/inside.html", "index.html").is_some());

@@ -312,8 +312,11 @@ mod tests {
         let keychain = MemoryKeychain::default();
         let ctx = ctx(home.path(), &keychain);
         let path = home.path().join(".cursor/cli-config.json");
-        write_private(&path, br#"{"editor":{"vimMode":true},"authInfo":{"email":"a@x.com"}}"#)
-            .unwrap();
+        write_private(
+            &path,
+            br#"{"editor":{"vimMode":true},"authInfo":{"email":"a@x.com"}}"#,
+        )
+        .unwrap();
         let item = Item::JsonField {
             file: "~/.cursor/cli-config.json",
             pointer: "/authInfo",
@@ -333,8 +336,12 @@ mod tests {
     #[test]
     fn nested_pointer_creates_parents() {
         let mut root = Value::Object(Map::new());
-        set_pointer(&mut root, "/security/auth", serde_json::json!({"selectedType":"oauth"}))
-            .unwrap();
+        set_pointer(
+            &mut root,
+            "/security/auth",
+            serde_json::json!({"selectedType":"oauth"}),
+        )
+        .unwrap();
         assert_eq!(root["security"]["auth"]["selectedType"], "oauth");
         remove_pointer(&mut root, "/security/auth");
         assert!(root["security"].get("auth").is_none());
@@ -373,9 +380,7 @@ mod tests {
             b"github.com:\n    users:\n        alice:\n    user: alice\n",
         )
         .unwrap();
-        keychain
-            .write("gh:github.com", "alice", "token-a")
-            .unwrap();
+        keychain.write("gh:github.com", "alice", "token-a").unwrap();
         let item = Item::Keychain {
             service: "gh:github.com",
             account: KeyAccount::GhHostsUser,

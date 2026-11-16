@@ -101,7 +101,11 @@ impl Drop for SseBody {
     fn drop(&mut self) {
         self.connections.fetch_sub(1, Ordering::Relaxed);
         if let Ok(mut bridge) = bridge().lock() {
-            if bridge.streams.get(&self.key).is_some_and(|stream| stream.id == self.id) {
+            if bridge
+                .streams
+                .get(&self.key)
+                .is_some_and(|stream| stream.id == self.id)
+            {
                 bridge.streams.remove(&self.key);
             }
         }
@@ -117,7 +121,9 @@ fn open_stream(session_id: &str, instance_id: &str, connections: &Arc<AtomicU64>
     bridge.next_id += 1;
     let id = bridge.next_id;
     // 新连接顶掉旧的：旧 sender 被丢弃，旧连接读到 EOF 后关闭
-    bridge.streams.insert(key(session_id, instance_id), Stream { id, sender });
+    bridge
+        .streams
+        .insert(key(session_id, instance_id), Stream { id, sender });
     connections.fetch_add(1, Ordering::Relaxed);
     HostResponse::Stream {
         content_type: "text/event-stream; charset=utf-8",
@@ -169,7 +175,10 @@ pub fn deliver_action(
                 tr!("Canvas 未显示，请让用户打开后重试"),
             ));
         };
-        let event = sse("action", &json!({ "callId": call_id, "name": name, "input": input }));
+        let event = sse(
+            "action",
+            &json!({ "callId": call_id, "name": name, "input": input }),
+        );
         if stream.sender.send(event).is_err() {
             return Err(CanvasError::new(
                 "canvas.not_connected",
@@ -244,7 +253,10 @@ fn wait_outbound(app: &AppHandle, payload: Value) -> Value {
 }
 
 fn bad(message: impl Into<String>) -> HostResponse {
-    HostResponse::Json(400, json!({ "ok": false, "code": "canvas.invalid_input", "message": message.into() }))
+    HostResponse::Json(
+        400,
+        json!({ "ok": false, "code": "canvas.invalid_input", "message": message.into() }),
+    )
 }
 
 fn body_json(request: &HostRequest) -> Result<Value, HostResponse> {
@@ -296,7 +308,9 @@ pub fn handle(
                     let _ = sender.send(body);
                     HostResponse::Json(200, json!({ "ok": true }))
                 }
-                None => HostResponse::Json(404, json!({ "ok": false, "code": "canvas.unknown_call" })),
+                None => {
+                    HostResponse::Json(404, json!({ "ok": false, "code": "canvas.unknown_call" }))
+                }
             }
         }
         ("POST", "message") => {
@@ -304,7 +318,11 @@ pub fn handle(
                 Ok(body) => body,
                 Err(response) => return response,
             };
-            let text = body.get("text").and_then(Value::as_str).unwrap_or("").trim();
+            let text = body
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
             if text.is_empty() || text.len() > MAX_CONTEXT_BYTES {
                 return bad("text");
             }
@@ -429,7 +447,9 @@ pub fn storage(dir: &Path, key: &str, request: &HostRequest) -> HostResponse {
         return bad("key");
     }
     let path: PathBuf = dir.join(format!("{key}.json"));
-    let expected = request.header("if-match").map(|value| value.trim_matches('"').to_string());
+    let expected = request
+        .header("if-match")
+        .map(|value| value.trim_matches('"').to_string());
     let check_version = || -> Option<HostResponse> {
         let expected = expected.as_ref()?;
         (expected != &version_of(&path)).then(|| {
@@ -441,7 +461,10 @@ pub fn storage(dir: &Path, key: &str, request: &HostRequest) -> HostResponse {
     };
     match request.method.as_str() {
         "GET" => match read_wrapped(&path) {
-            Ok(value) => HostResponse::Json(200, json!({ "ok": true, "value": value, "version": version_of(&path) })),
+            Ok(value) => HostResponse::Json(
+                200,
+                json!({ "ok": true, "value": value, "version": version_of(&path) }),
+            ),
             Err(response) => response,
         },
         "PUT" => {
@@ -462,7 +485,8 @@ pub fn storage(dir: &Path, key: &str, request: &HostRequest) -> HostResponse {
             if let Some(conflict) = check_version() {
                 return conflict;
             }
-            let wrapped = json!({ "format": STORAGE_FORMAT, "version": 1, "value": value }).to_string();
+            let wrapped =
+                json!({ "format": STORAGE_FORMAT, "version": 1, "value": value }).to_string();
             if wrapped.len() > MAX_STORAGE_VALUE + 64 {
                 return HostResponse::Json(413, json!({ "ok": false, "code": "canvas.too_large" }));
             }
@@ -480,7 +504,9 @@ pub fn storage(dir: &Path, key: &str, request: &HostRequest) -> HostResponse {
                 Ok(())
             });
             match written {
-                Ok(()) => HostResponse::Json(200, json!({ "ok": true, "version": version_of(&path) })),
+                Ok(()) => {
+                    HostResponse::Json(200, json!({ "ok": true, "version": version_of(&path) }))
+                }
                 Err(_) => HostResponse::Status(503),
             }
         }
@@ -490,7 +516,9 @@ pub fn storage(dir: &Path, key: &str, request: &HostRequest) -> HostResponse {
             }
             match fs::remove_file(&path) {
                 Ok(()) => HostResponse::Json(200, json!({ "ok": true })),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => HostResponse::Json(200, json!({ "ok": true })),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    HostResponse::Json(200, json!({ "ok": true }))
+                }
                 Err(_) => HostResponse::Status(503),
             }
         }
@@ -540,18 +568,31 @@ mod tests {
         assert_eq!(code, 200);
         assert!(empty["value"].is_null());
         assert_eq!(empty["version"], "0");
-        let (code, saved) = json_of(storage(&root, "items", &request("PUT", r#"{"value":[1,2]}"#, Some("0"))));
+        let (code, saved) = json_of(storage(
+            &root,
+            "items",
+            &request("PUT", r#"{"value":[1,2]}"#, Some("0")),
+        ));
         assert_eq!(code, 200, "{saved}");
         let version = saved["version"].as_str().unwrap().to_string();
         let (_, read) = json_of(storage(&root, "items", &request("GET", "", None)));
         assert_eq!(read["value"], json!([1, 2]));
         // 版本不对：412
-        let (code, _) = json_of(storage(&root, "items", &request("PUT", r#"{"value":3}"#, Some("1"))));
+        let (code, _) = json_of(storage(
+            &root,
+            "items",
+            &request("PUT", r#"{"value":3}"#, Some("1")),
+        ));
         assert_eq!(code, 412);
-        let (code, _) = json_of(storage(&root, "items", &request("PUT", r#"{"value":3}"#, Some(&version))));
+        let (code, _) = json_of(storage(
+            &root,
+            "items",
+            &request("PUT", r#"{"value":3}"#, Some(&version)),
+        ));
         assert_eq!(code, 200);
         // 文件外包格式标记
-        let raw: Value = serde_json::from_str(&fs::read_to_string(root.join("items.json")).unwrap()).unwrap();
+        let raw: Value =
+            serde_json::from_str(&fs::read_to_string(root.join("items.json")).unwrap()).unwrap();
         assert_eq!(raw["format"], STORAGE_FORMAT);
         assert_eq!(raw["version"], 1);
         let (code, _) = json_of(storage(&root, "items", &request("DELETE", "", None)));
@@ -566,25 +607,49 @@ mod tests {
         let (code, body) = json_of(storage(dir.path(), "items", &request("GET", "", None)));
         assert_eq!(code, 409);
         assert_eq!(body["code"], "canvas.storage_corrupt");
-        let (code, _) = json_of(storage(dir.path(), "items", &request("PUT", r#"{"value":1}"#, None)));
+        let (code, _) = json_of(storage(
+            dir.path(),
+            "items",
+            &request("PUT", r#"{"value":1}"#, None),
+        ));
         assert_eq!(code, 409);
-        assert_eq!(fs::read_to_string(dir.path().join("items.json")).unwrap(), "{oops");
-        fs::write(dir.path().join("other.json"), r#"{"format":"x","version":1,"value":1}"#).unwrap();
-        assert_eq!(json_of(storage(dir.path(), "other", &request("GET", "", None))).0, 409);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("items.json")).unwrap(),
+            "{oops"
+        );
+        fs::write(
+            dir.path().join("other.json"),
+            r#"{"format":"x","version":1,"value":1}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            json_of(storage(dir.path(), "other", &request("GET", "", None))).0,
+            409
+        );
     }
 
     #[test]
     fn storage_rejects_bad_keys_and_quota() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(json_of(storage(dir.path(), "../x", &request("GET", "", None))).0, 400);
-        assert_eq!(json_of(storage(dir.path(), "a.b", &request("GET", "", None))).0, 400);
+        assert_eq!(
+            json_of(storage(dir.path(), "../x", &request("GET", "", None))).0,
+            400
+        );
+        assert_eq!(
+            json_of(storage(dir.path(), "a.b", &request("GET", "", None))).0,
+            400
+        );
         let big = format!(r#"{{"value":"{}"}}"#, "x".repeat(MAX_STORAGE_VALUE + 10));
-        assert_eq!(json_of(storage(dir.path(), "big", &request("PUT", &big, None))).0, 413);
+        assert_eq!(
+            json_of(storage(dir.path(), "big", &request("PUT", &big, None))).0,
+            413
+        );
     }
 
     #[test]
     fn actions_need_a_live_page() {
-        let error = deliver_action("s-none", "i", "go", &Value::Null, Duration::from_millis(50)).unwrap_err();
+        let error = deliver_action("s-none", "i", "go", &Value::Null, Duration::from_millis(50))
+            .unwrap_err();
         assert_eq!(error.code, "canvas.not_connected");
     }
 
@@ -597,7 +662,13 @@ mod tests {
         assert!(is_connected("s-rt", "i"));
         assert_eq!(connections.load(Ordering::Relaxed), 1);
         let worker = std::thread::spawn(|| {
-            deliver_action("s-rt", "i", "go", &json!({ "n": 1 }), Duration::from_secs(5))
+            deliver_action(
+                "s-rt",
+                "i",
+                "go",
+                &json!({ "n": 1 }),
+                Duration::from_secs(5),
+            )
         });
         // 读出 connected 注释和 action 事件
         let mut seen = String::new();
@@ -606,12 +677,17 @@ mod tests {
             let read = body.read(&mut buffer).unwrap();
             seen.push_str(&String::from_utf8_lossy(&buffer[..read]));
         }
-        let data_line = seen.lines().find(|line| line.starts_with("data: ")).unwrap();
+        let data_line = seen
+            .lines()
+            .find(|line| line.starts_with("data: "))
+            .unwrap();
         let event: Value = serde_json::from_str(&data_line["data: ".len()..]).unwrap();
         assert_eq!(event["name"], "go");
         let call_id = event["callId"].as_str().unwrap().to_string();
         let sender = bridge().lock().unwrap().pending.remove(&call_id).unwrap().1;
-        sender.send(json!({ "callId": call_id, "ok": true, "value": 42 })).unwrap();
+        sender
+            .send(json!({ "callId": call_id, "ok": true, "value": 42 }))
+            .unwrap();
         assert_eq!(worker.join().unwrap().unwrap(), json!(42));
         drop(body);
         assert!(!is_connected("s-rt", "i"));
@@ -621,10 +697,14 @@ mod tests {
     #[test]
     fn a_new_stream_replaces_the_old_one() {
         let connections = Arc::new(AtomicU64::new(0));
-        let HostResponse::Stream { body: mut first, .. } = open_stream("s-re", "i", &connections) else {
+        let HostResponse::Stream {
+            body: mut first, ..
+        } = open_stream("s-re", "i", &connections)
+        else {
             panic!();
         };
-        let HostResponse::Stream { body: _second, .. } = open_stream("s-re", "i", &connections) else {
+        let HostResponse::Stream { body: _second, .. } = open_stream("s-re", "i", &connections)
+        else {
             panic!();
         };
         // 旧连接的发送端被丢弃：读完缓冲后 EOF
@@ -632,7 +712,10 @@ mod tests {
         first.read_to_end(&mut all).unwrap();
         assert!(String::from_utf8_lossy(&all).contains("connected"));
         drop(first);
-        assert!(is_connected("s-re", "i"), "dropping the replaced stream must not unregister the new one");
+        assert!(
+            is_connected("s-re", "i"),
+            "dropping the replaced stream must not unregister the new one"
+        );
     }
 
     #[test]
@@ -641,17 +724,27 @@ mod tests {
         let HostResponse::Stream { mut body, .. } = open_stream("s-err", "i", &connections) else {
             panic!();
         };
-        let worker = std::thread::spawn(|| deliver_action("s-err", "i", "go", &Value::Null, Duration::from_secs(5)));
+        let worker = std::thread::spawn(|| {
+            deliver_action("s-err", "i", "go", &Value::Null, Duration::from_secs(5))
+        });
         let mut seen = String::new();
         let mut buffer = [0u8; 1024];
         while !seen.contains("event: action") {
             let read = body.read(&mut buffer).unwrap();
             seen.push_str(&String::from_utf8_lossy(&buffer[..read]));
         }
-        let data_line = seen.lines().find(|line| line.starts_with("data: ")).unwrap();
-        let call_id = serde_json::from_str::<Value>(&data_line[6..]).unwrap()["callId"].as_str().unwrap().to_string();
+        let data_line = seen
+            .lines()
+            .find(|line| line.starts_with("data: "))
+            .unwrap();
+        let call_id = serde_json::from_str::<Value>(&data_line[6..]).unwrap()["callId"]
+            .as_str()
+            .unwrap()
+            .to_string();
         let sender = bridge().lock().unwrap().pending.remove(&call_id).unwrap().1;
-        sender.send(json!({ "ok": false, "code": "bad_item", "message": "no such item" })).unwrap();
+        sender
+            .send(json!({ "ok": false, "code": "bad_item", "message": "no such item" }))
+            .unwrap();
         let error = worker.join().unwrap().unwrap_err();
         assert_eq!(error.code, "canvas.action_failed");
         assert!(error.message.contains("bad_item"));
@@ -660,10 +753,12 @@ mod tests {
     #[test]
     fn timeouts_are_reported() {
         let connections = Arc::new(AtomicU64::new(0));
-        let HostResponse::Stream { body: _body, .. } = open_stream("s-to", "i", &connections) else {
+        let HostResponse::Stream { body: _body, .. } = open_stream("s-to", "i", &connections)
+        else {
             panic!();
         };
-        let error = deliver_action("s-to", "i", "go", &Value::Null, Duration::from_millis(100)).unwrap_err();
+        let error = deliver_action("s-to", "i", "go", &Value::Null, Duration::from_millis(100))
+            .unwrap_err();
         assert_eq!(error.code, "canvas.timeout");
     }
 }

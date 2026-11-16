@@ -3,9 +3,9 @@
 use serde_json::Value;
 
 use super::{
-    clamp_percent, creds, iso_from_epoch_ms, iso_from_epoch_secs, kind_for_duration, label_for_kind,
-    ProbeError, ProbeOk, RuntimeUsageWindow, MONTH_MINS, PROBE_TIMEOUT_SECS, SESSION_MINS,
-    WEEK_MINS,
+    clamp_percent, creds, iso_from_epoch_ms, iso_from_epoch_secs, kind_for_duration,
+    label_for_kind, ProbeError, ProbeOk, RuntimeUsageWindow, MONTH_MINS, PROBE_TIMEOUT_SECS,
+    SESSION_MINS, WEEK_MINS,
 };
 use std::path::Path;
 
@@ -42,8 +42,9 @@ fn get_json(url: &str, headers: &[(String, String)]) -> Result<Value, ProbeError
 }
 
 fn post_json(url: &str, headers: &[(String, String)], body: &str) -> Result<Value, ProbeError> {
-    let response = crate::http_client::request("POST", url, headers, Some(body), PROBE_TIMEOUT_SECS)
-        .map_err(ProbeError::Failed)?;
+    let response =
+        crate::http_client::request("POST", url, headers, Some(body), PROBE_TIMEOUT_SECS)
+            .map_err(ProbeError::Failed)?;
     if response.status == 401 || response.status == 403 {
         return Err(ProbeError::Failed(tr!(
             "用量接口拒绝访问（HTTP {status}），请重新登录该 CLI",
@@ -85,10 +86,16 @@ pub fn codex(home: &Path) -> Result<ProbeOk, ProbeError> {
     let rate = usage.get("rate_limit");
     let mut windows = Vec::new();
     for (id, key, fallback_mins) in [
-        ("primary", "primary_window", if is_monthly { MONTH_MINS } else { SESSION_MINS }),
+        (
+            "primary",
+            "primary_window",
+            if is_monthly { MONTH_MINS } else { SESSION_MINS },
+        ),
         ("secondary", "secondary_window", WEEK_MINS),
     ] {
-        let Some(window) = rate.and_then(|value| value.get(key)).filter(|value| !value.is_null())
+        let Some(window) = rate
+            .and_then(|value| value.get(key))
+            .filter(|value| !value.is_null())
         else {
             continue;
         };
@@ -146,8 +153,22 @@ pub fn claude(home: &Path) -> Result<ProbeOk, ProbeError> {
     ];
     let usage = get_json(CLAUDE_USAGE_URL, &headers)?;
     let mut windows = Vec::new();
-    push_claude_window(&mut windows, "five_hour", "session", tr!("会话"), SESSION_MINS, usage.get("five_hour"));
-    push_claude_window(&mut windows, "seven_day", "weekly", tr!("每周"), WEEK_MINS, usage.get("seven_day"));
+    push_claude_window(
+        &mut windows,
+        "five_hour",
+        "session",
+        tr!("会话"),
+        SESSION_MINS,
+        usage.get("five_hour"),
+    );
+    push_claude_window(
+        &mut windows,
+        "seven_day",
+        "weekly",
+        tr!("每周"),
+        WEEK_MINS,
+        usage.get("seven_day"),
+    );
     if let Some(limits) = usage.get("limits").and_then(Value::as_array) {
         for limit in limits {
             if limit.get("kind").and_then(Value::as_str) != Some("weekly_scoped") {
@@ -289,7 +310,10 @@ pub fn grok(home: &Path) -> Result<ProbeOk, ProbeError> {
             kind: kind.to_string(),
             label: label_for_kind(kind),
             used_percent: clamp_percent(used_percent),
-            resets_at: end.map(|dt| dt.to_utc().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+            resets_at: end.map(|dt| {
+                dt.to_utc()
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            }),
             window_duration_mins,
         }],
     })
@@ -435,7 +459,9 @@ fn cloudcode_quota_windows(
     user_agent: &str,
 ) -> Result<Vec<RuntimeUsageWindow>, ProbeError> {
     let body = match &auth.project_id {
-        Some(project) if !project.is_empty() => format!(r#"{{"project":{}}}"#, json_string(project)),
+        Some(project) if !project.is_empty() => {
+            format!(r#"{{"project":{}}}"#, json_string(project))
+        }
         _ => "{}".to_string(),
     };
     let headers = vec![
@@ -550,9 +576,13 @@ fn parse_cloudcode_models(models: &Value) -> Vec<RuntimeUsageWindow> {
             continue;
         };
         if let Some(quota) = model.get("quotaInfo") {
-            if let Some(window) =
-                cloudcode_quota_fields(quota, &format!("{family}-quota"), &tr!("{name} · 配额", name = family), "other", None)
-            {
+            if let Some(window) = cloudcode_quota_fields(
+                quota,
+                &format!("{family}-quota"),
+                &tr!("{name} · 配额", name = family),
+                "other",
+                None,
+            ) {
                 windows.push(window);
             }
         }

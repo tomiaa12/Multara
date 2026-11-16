@@ -243,7 +243,10 @@ impl FeishuApi {
         let mut response =
             http_client::request_stream("GET", &url, &bearer_headers(&token), None, 120)?;
         if response.status != 200 {
-            return Err(tr!("下载飞书资源失败：HTTP {status}", status = response.status));
+            return Err(tr!(
+                "下载飞书资源失败：HTTP {status}",
+                status = response.status
+            ));
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -331,7 +334,11 @@ fn post_json(url: &str, token: Option<&str>, body: &Value, timeout: u32) -> Resu
             .and_then(Value::as_str)
             .map(str::to_string)
             .unwrap_or_else(|| tr!("飞书接口返回错误"));
-        return Err(tr!("飞书接口错误 {code}：{message}", code = code, message = message));
+        return Err(tr!(
+            "飞书接口错误 {code}：{message}",
+            code = code,
+            message = message
+        ));
     }
     Ok(value)
 }
@@ -339,7 +346,11 @@ fn post_json(url: &str, token: Option<&str>, body: &Value, timeout: u32) -> Resu
 fn parse_response(body: &str) -> Result<Value, String> {
     serde_json::from_str(body).map_err(|error| {
         let clipped: String = body.chars().take(200).collect();
-        tr!("无法解析飞书响应（{error}）：{body}", error = error, body = clipped)
+        tr!(
+            "无法解析飞书响应（{error}）：{body}",
+            error = error,
+            body = clipped
+        )
     })
 }
 

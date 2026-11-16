@@ -37,8 +37,11 @@ impl CanvasError {
     /// CLI 退出码：1 参数错误，2 运行环境问题，3 Canvas 错误（方案 §5.6）
     pub fn exit_code(&self) -> i32 {
         match self.code {
-            "canvas.invalid_args" | "canvas.invalid_manifest" | "canvas.invalid_input"
-            | "canvas.dir_not_allowed" | "canvas.unknown_action" => 1,
+            "canvas.invalid_args"
+            | "canvas.invalid_manifest"
+            | "canvas.invalid_input"
+            | "canvas.dir_not_allowed"
+            | "canvas.unknown_action" => 1,
             "canvas.disabled" | "canvas.app_not_running" | "canvas.no_session" => 2,
             _ => 3,
         }
@@ -123,7 +126,10 @@ pub fn read_manifest(dir: &Path) -> Result<(Manifest, String, Vec<String>), Canv
         .map_err(|_| CanvasError::new("canvas.invalid_manifest", tr!("目录下没有 canvas.json")))?
         .len();
     if size > MAX_MANIFEST_BYTES {
-        return Err(CanvasError::new("canvas.invalid_manifest", tr!("canvas.json 太大")));
+        return Err(CanvasError::new(
+            "canvas.invalid_manifest",
+            tr!("canvas.json 太大"),
+        ));
     }
     let raw = fs::read_to_string(&path)
         .map_err(|error| CanvasError::new("canvas.invalid_manifest", error.to_string()))?;
@@ -143,7 +149,13 @@ pub fn parse_manifest(raw: &str) -> Result<(Manifest, Vec<String>), CanvasError>
     let object = value
         .as_object()
         .ok_or_else(|| invalid(tr!("canvas.json 必须是对象")))?;
-    let text = |key: &str| object.get(key).and_then(Value::as_str).map(str::trim).unwrap_or("");
+    let text = |key: &str| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("")
+    };
     let id = text("id").to_string();
     if !valid_canvas_id(&id) {
         return Err(invalid(tr!("id 只能是 3–64 位小写字母、数字和连字符")));
@@ -157,7 +169,10 @@ pub fn parse_manifest(raw: &str) -> Result<(Manifest, Vec<String>), CanvasError>
         entry => entry.trim_start_matches('/').to_string(),
     };
     let mut warnings = Vec::new();
-    let input_schema = object.get("inputSchema").filter(|value| !value.is_null()).cloned();
+    let input_schema = object
+        .get("inputSchema")
+        .filter(|value| !value.is_null())
+        .cloned();
     if let Some(schema) = &input_schema {
         check_schema(schema, "inputSchema", &mut warnings).map_err(invalid)?;
     }
@@ -170,20 +185,35 @@ pub fn parse_manifest(raw: &str) -> Result<(Manifest, Vec<String>), CanvasError>
         .into_iter()
         .enumerate()
     {
-        let name = item.get("name").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if name.is_empty() || !valid_instance_id(&name) {
             return Err(invalid(tr!("第 {index} 个动作名无效", index = index + 1)));
         }
         if name.starts_with("canvas.") {
-            return Err(invalid(tr!("动作名不能以 canvas. 开头：{name}", name = name)));
+            return Err(invalid(tr!(
+                "动作名不能以 canvas. 开头：{name}",
+                name = name
+            )));
         }
         if actions.iter().any(|action: &Action| action.name == name) {
             return Err(invalid(tr!("动作名重复：{name}", name = name)));
         }
-        let input_schema = item.get("inputSchema").filter(|value| !value.is_null()).cloned();
+        let input_schema = item
+            .get("inputSchema")
+            .filter(|value| !value.is_null())
+            .cloned();
         if let Some(schema) = &input_schema {
-            check_schema(schema, &format!("actions.{name}.inputSchema"), &mut warnings)
-                .map_err(invalid)?;
+            check_schema(
+                schema,
+                &format!("actions.{name}.inputSchema"),
+                &mut warnings,
+            )
+            .map_err(invalid)?;
         }
         actions.push(Action {
             name,
@@ -210,8 +240,17 @@ pub fn parse_manifest(raw: &str) -> Result<(Manifest, Vec<String>), CanvasError>
 }
 
 const SCHEMA_KEYWORDS: &[&str] = &[
-    "type", "properties", "required", "enum", "items", "minimum", "maximum", "description", "title",
-    "default", "$schema",
+    "type",
+    "properties",
+    "required",
+    "enum",
+    "items",
+    "minimum",
+    "maximum",
+    "description",
+    "title",
+    "default",
+    "$schema",
 ];
 
 /// 只支持 JSON Schema 子集；子集外的关键字忽略并记一条提示（方案 §5.2）。
@@ -261,10 +300,18 @@ pub fn validate_value(schema: &Value, value: &Value, at: &str) -> Result<(), Str
         }
     }
     if let Some(number) = value.as_f64() {
-        if schema.get("minimum").and_then(Value::as_f64).is_some_and(|min| number < min) {
+        if schema
+            .get("minimum")
+            .and_then(Value::as_f64)
+            .is_some_and(|min| number < min)
+        {
             return Err(tr!("{at} 小于最小值", at = at));
         }
-        if schema.get("maximum").and_then(Value::as_f64).is_some_and(|max| number > max) {
+        if schema
+            .get("maximum")
+            .and_then(Value::as_f64)
+            .is_some_and(|max| number > max)
+        {
             return Err(tr!("{at} 大于最大值", at = at));
         }
     }
@@ -315,13 +362,18 @@ pub fn check_action(manifest: &Manifest, name: &str, input: &Value) -> Result<()
         .iter()
         .find(|action| action.name == name)
         .ok_or_else(|| {
-            CanvasError::new("canvas.unknown_action", tr!("没有这个动作：{name}", name = name))
+            CanvasError::new(
+                "canvas.unknown_action",
+                tr!("没有这个动作：{name}", name = name),
+            )
         })?;
     if input.to_string().len() > MAX_INPUT_BYTES {
         return Err(CanvasError::new("canvas.invalid_input", tr!("输入太大")));
     }
     match &action.input_schema {
-        None if input.is_null() || input.as_object().is_some_and(|object| object.is_empty()) => Ok(()),
+        None if input.is_null() || input.as_object().is_some_and(|object| object.is_empty()) => {
+            Ok(())
+        }
         None => Err(CanvasError::new(
             "canvas.invalid_input",
             tr!("动作 {name} 不接受输入", name = name),
@@ -360,10 +412,16 @@ pub fn resolve_dir(requested: &Path, roots: &[PathBuf]) -> Result<PathBuf, Canva
         return Err(denied());
     }
     let target = requested.canonicalize().map_err(|_| {
-        CanvasError::new("canvas.invalid_args", tr!("目录不存在：{dir}", dir = requested.display()))
+        CanvasError::new(
+            "canvas.invalid_args",
+            tr!("目录不存在：{dir}", dir = requested.display()),
+        )
     })?;
     if !target.is_dir() {
-        return Err(CanvasError::new("canvas.invalid_args", tr!("不是目录：{dir}", dir = requested.display())));
+        return Err(CanvasError::new(
+            "canvas.invalid_args",
+            tr!("不是目录：{dir}", dir = requested.display()),
+        ));
     }
     let allowed = roots
         .iter()
@@ -428,7 +486,10 @@ pub fn get(db: &Connection, session_id: &str, instance_id: &str) -> Result<Value
 }
 
 fn not_found(instance_id: &str) -> CanvasError {
-    CanvasError::new("canvas.not_found", tr!("没有这个 Canvas：{id}", id = instance_id))
+    CanvasError::new(
+        "canvas.not_found",
+        tr!("没有这个 Canvas：{id}", id = instance_id),
+    )
 }
 
 /// 托管一个实例需要的信息（每次请求现读，智能体改了定义立即生效）
@@ -441,13 +502,25 @@ pub struct HostingView {
     pub input: Value,
 }
 
-pub fn hosting_view(db: &Connection, session_id: &str, instance_id: &str) -> Result<HostingView, CanvasError> {
+pub fn hosting_view(
+    db: &Connection,
+    session_id: &str,
+    instance_id: &str,
+) -> Result<HostingView, CanvasError> {
     let (canvas_id, scope, owner_id, title, input): (String, String, String, String, String) = db
         .query_row(
             "SELECT canvas_id, scope, owner_id, title, input FROM canvas_instances
              WHERE session_id=?1 AND instance_id=?2",
             params![session_id, instance_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()?
         .ok_or_else(|| not_found(instance_id))?;
@@ -484,7 +557,10 @@ pub fn open(
     request: &OpenRequest,
 ) -> Result<Opened, CanvasError> {
     if caller.session_id.is_empty() {
-        return Err(CanvasError::new("canvas.no_session", tr!("不知道当前是哪个会话")));
+        return Err(CanvasError::new(
+            "canvas.no_session",
+            tr!("不知道当前是哪个会话"),
+        ));
     }
     let session_exists: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE id=?1)",
@@ -515,12 +591,16 @@ pub fn open(
             let dir = match session_dir {
                 Some(dir) => PathBuf::from(dir),
                 None => {
-                    let found = scan_workspace_canvases(db, &session_workspaces(db, &caller.session_id))
-                        .into_iter()
-                        .find(|definition| &definition.manifest.id == id)
-                        .ok_or_else(|| {
-                            CanvasError::new("canvas.not_found", tr!("没有注册过这个 Canvas：{id}", id = id))
-                        })?;
+                    let found =
+                        scan_workspace_canvases(db, &session_workspaces(db, &caller.session_id))
+                            .into_iter()
+                            .find(|definition| &definition.manifest.id == id)
+                            .ok_or_else(|| {
+                                CanvasError::new(
+                                    "canvas.not_found",
+                                    tr!("没有注册过这个 Canvas：{id}", id = id),
+                                )
+                            })?;
                     scope = "workspace".to_string();
                     owner = found.workspace_id;
                     found.dir
@@ -530,17 +610,27 @@ pub fn open(
             (manifest, raw, dir, warnings)
         }
         (None, None) => {
-            return Err(CanvasError::new("canvas.invalid_args", tr!("需要 --dir 或 --id")));
+            return Err(CanvasError::new(
+                "canvas.invalid_args",
+                tr!("需要 --dir 或 --id"),
+            ));
         }
     };
     let scope = scope.as_str();
     let owner = owner.as_str();
-    let instance_id = request.instance.clone().unwrap_or_else(|| manifest.id.clone());
+    let instance_id = request
+        .instance
+        .clone()
+        .unwrap_or_else(|| manifest.id.clone());
     if !valid_instance_id(&instance_id) {
         return Err(CanvasError::new("canvas.invalid_args", tr!("实例 id 无效")));
     }
     let input = request.input.clone().unwrap_or_else(|| {
-        if manifest.input_schema.is_some() { json!({}) } else { Value::Null }
+        if manifest.input_schema.is_some() {
+            json!({})
+        } else {
+            Value::Null
+        }
     });
     check_open_input(&manifest, &input)?;
     let now = now();
@@ -601,7 +691,10 @@ pub fn open(
         if count as usize >= MAX_INSTANCES_PER_SESSION {
             return Err(CanvasError::new(
                 "canvas.limit",
-                tr!("一个会话最多开 {max} 个 Canvas，先关掉不用的", max = MAX_INSTANCES_PER_SESSION),
+                tr!(
+                    "一个会话最多开 {max} 个 Canvas，先关掉不用的",
+                    max = MAX_INSTANCES_PER_SESSION
+                ),
             ));
         }
         db.execute(
@@ -641,7 +734,12 @@ pub fn close(db: &Connection, session_id: &str, instance_id: &str) -> Result<(),
     Ok(())
 }
 
-pub fn set_status(db: &Connection, session_id: &str, instance_id: &str, text: &str) -> Result<Value, CanvasError> {
+pub fn set_status(
+    db: &Connection,
+    session_id: &str,
+    instance_id: &str,
+    text: &str,
+) -> Result<Value, CanvasError> {
     let text: String = text.trim().chars().take(MAX_STATUS_CHARS).collect();
     let changed = db.execute(
         "UPDATE canvas_instances SET status=?3, updated_at=?4 WHERE session_id=?1 AND instance_id=?2",
@@ -654,7 +752,12 @@ pub fn set_status(db: &Connection, session_id: &str, instance_id: &str, text: &s
 }
 
 /// 关标签只改可见性，实例和服务都保留
-pub fn set_visible(db: &Connection, session_id: &str, instance_id: &str, visible: bool) -> Result<(), CanvasError> {
+pub fn set_visible(
+    db: &Connection,
+    session_id: &str,
+    instance_id: &str,
+    visible: bool,
+) -> Result<(), CanvasError> {
     let changed = db.execute(
         "UPDATE canvas_instances SET visible=?3, updated_at=?4 WHERE session_id=?1 AND instance_id=?2",
         params![session_id, instance_id, visible as i64, now()],
@@ -666,7 +769,12 @@ pub fn set_visible(db: &Connection, session_id: &str, instance_id: &str, visible
 }
 
 /// 页面最新一次 `__multara/context`（入库，重启后智能体仍能读到）
-pub fn set_context(db: &Connection, session_id: &str, instance_id: &str, context: &Value) -> Result<(), CanvasError> {
+pub fn set_context(
+    db: &Connection,
+    session_id: &str,
+    instance_id: &str,
+    context: &Value,
+) -> Result<(), CanvasError> {
     if context.to_string().len() > MAX_INPUT_BYTES {
         return Err(CanvasError::new("canvas.invalid_input", tr!("上下文太大")));
     }
@@ -682,7 +790,11 @@ pub fn set_context(db: &Connection, session_id: &str, instance_id: &str, context
     Ok(())
 }
 
-pub fn get_context(db: &Connection, session_id: &str, instance_id: &str) -> Result<Value, CanvasError> {
+pub fn get_context(
+    db: &Connection,
+    session_id: &str,
+    instance_id: &str,
+) -> Result<Value, CanvasError> {
     let (context, at): (Option<String>, Option<String>) = db
         .query_row(
             "SELECT context, context_at FROM canvas_instances WHERE session_id=?1 AND instance_id=?2",
@@ -698,9 +810,16 @@ pub fn get_context(db: &Connection, session_id: &str, instance_id: &str) -> Resu
 }
 
 /// 会话删除：删实例和会话级定义，删 `<app-data>/canvases/<session-id>/`；canvas-data 按 canvas id 共享，不删
-pub fn delete_session(db: &Connection, app_data: Option<&Path>, session_id: &str) -> Result<(), String> {
-    db.execute("DELETE FROM canvas_instances WHERE session_id=?1", [session_id])
-        .map_err(|error| error.to_string())?;
+pub fn delete_session(
+    db: &Connection,
+    app_data: Option<&Path>,
+    session_id: &str,
+) -> Result<(), String> {
+    db.execute(
+        "DELETE FROM canvas_instances WHERE session_id=?1",
+        [session_id],
+    )
+    .map_err(|error| error.to_string())?;
     db.execute(
         "DELETE FROM canvases WHERE scope='session' AND owner_id=?1",
         [session_id],
@@ -808,14 +927,22 @@ fn workspace_rows(db: &Connection, sql: &str, key: &str) -> Vec<(String, PathBuf
         return Vec::new();
     };
     statement
-        .query_map([key], |row| Ok((row.get::<_, String>(0)?, PathBuf::from(row.get::<_, String>(1)?))))
+        .query_map([key], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                PathBuf::from(row.get::<_, String>(1)?),
+            ))
+        })
         .map(|rows| rows.flatten().collect())
         .unwrap_or_default()
 }
 
 /// 扫描工作区里的定义并登记进 canvases 表（scope=workspace，owner=workspace id）。
 /// 坏掉的定义跳过；登记失败不影响列出。
-pub fn scan_workspace_canvases(db: &Connection, workspaces: &[(String, PathBuf)]) -> Vec<WorkspaceCanvas> {
+pub fn scan_workspace_canvases(
+    db: &Connection,
+    workspaces: &[(String, PathBuf)],
+) -> Vec<WorkspaceCanvas> {
     let mut found = Vec::new();
     for (workspace_id, root) in workspaces {
         let base = root.join(".multara").join("canvases");
@@ -825,11 +952,17 @@ pub fn scan_workspace_canvases(db: &Connection, workspaces: &[(String, PathBuf)]
         let Ok(base) = base.canonicalize() else {
             continue;
         };
-        let mut dirs: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect();
+        let mut dirs: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
         dirs.sort();
         for dir in dirs {
             // 符号链接指到工作区外的不要
-            let Ok(dir) = dir.canonicalize() else { continue };
+            let Ok(dir) = dir.canonicalize() else {
+                continue;
+            };
             if !dir.starts_with(&base) {
                 continue;
             }
@@ -876,7 +1009,12 @@ pub fn project_definitions(db: &Connection, project_id: &str) -> Value {
 }
 
 /// 固定（pin）：固定的实例在所有会话的 Canvas 列表里都出现，操作仍然归属原会话
-pub fn set_pinned(db: &Connection, session_id: &str, instance_id: &str, pinned: bool) -> Result<(), CanvasError> {
+pub fn set_pinned(
+    db: &Connection,
+    session_id: &str,
+    instance_id: &str,
+    pinned: bool,
+) -> Result<(), CanvasError> {
     let changed = db.execute(
         "UPDATE canvas_instances SET pinned=?3, updated_at=?4 WHERE session_id=?1 AND instance_id=?2",
         params![session_id, instance_id, pinned as i64, now()],
@@ -952,13 +1090,22 @@ mod tests {
         .unwrap();
         let base = repo.path().join(".multara").join("canvases");
         write_canvas(&base, "release-board", "");
-        write_canvas(&base, "needs-input", r#","inputSchema":{"type":"object","required":["v"]}"#);
+        write_canvas(
+            &base,
+            "needs-input",
+            r#","inputSchema":{"type":"object","required":["v"]}"#,
+        );
         fs::create_dir_all(base.join("broken")).unwrap();
         fs::write(base.join("broken").join("canvas.json"), "{oops").unwrap();
 
         // 需求下可直接打开的：坏的和要必填输入的都不列
         let defs = project_definitions(&db, "p1");
-        let ids: Vec<&str> = defs.as_array().unwrap().iter().map(|item| item["canvasId"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = defs
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["canvasId"].as_str().unwrap())
+            .collect();
         assert_eq!(ids, vec!["release-board"]);
         assert_eq!(defs[0]["scope"], "workspace");
 
@@ -972,10 +1119,15 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(available_ids(&db), vec!["release-board"]);
-        let opened = open(&db, app.path(), &caller("s1"), &OpenRequest {
-            id: Some("release-board".into()),
-            ..Default::default()
-        })
+        let opened = open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                id: Some("release-board".into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
         assert_eq!(opened.instance["scope"], "workspace");
         // 开过的不再出现在「可打开」里
@@ -983,7 +1135,11 @@ mod tests {
         // 会话删除不动工作区定义（两份合法定义都登记过，坏的那份没有）
         delete_session(&db, Some(app.path()), "s1").unwrap();
         let left: i64 = db
-            .query_row("SELECT COUNT(*) FROM canvases WHERE scope='workspace'", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM canvases WHERE scope='workspace'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(left, 2);
         assert!(base.join("release-board").join("canvas.json").exists());
@@ -994,19 +1150,35 @@ mod tests {
         let app = tempfile::tempdir().unwrap();
         let db = db();
         let dir = write_canvas(&session_root(app.path(), "s1"), "board", "");
-        open(&db, app.path(), &caller("s1"), &OpenRequest {
-            dir: Some(dir.to_string_lossy().into()),
-            ..Default::default()
-        })
+        open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                dir: Some(dir.to_string_lossy().into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
-        assert!(list(&db, "s2", true).unwrap().as_array().unwrap().is_empty());
+        assert!(list(&db, "s2", true)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
         set_pinned(&db, "s1", "board", true).unwrap();
         let shown = list(&db, "s2", true).unwrap();
         assert_eq!(shown[0]["sessionId"], "s1");
         assert_eq!(shown[0]["pinned"], true);
         // 智能体（控制通道）只看自己会话的
-        assert!(list(&db, "s2", false).unwrap().as_array().unwrap().is_empty());
-        assert_eq!(set_pinned(&db, "s2", "board", false).unwrap_err().code, "canvas.not_found");
+        assert!(list(&db, "s2", false)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            set_pinned(&db, "s2", "board", false).unwrap_err().code,
+            "canvas.not_found"
+        );
     }
 
     #[test]
@@ -1014,9 +1186,13 @@ mod tests {
         assert!(parse_manifest(r#"{"id":"ab","title":"x"}"#).is_err());
         assert!(parse_manifest(r#"{"id":"Board","title":"x"}"#).is_err());
         assert!(parse_manifest(r#"{"id":"board","title":""}"#).is_err());
-        let err = parse_manifest(r#"{"id":"board","title":"x","actions":[{"name":"canvas.go"}]}"#).unwrap_err();
+        let err = parse_manifest(r#"{"id":"board","title":"x","actions":[{"name":"canvas.go"}]}"#)
+            .unwrap_err();
         assert_eq!(err.code, "canvas.invalid_manifest");
-        assert!(parse_manifest(r#"{"id":"board","title":"x","actions":[{"name":"a"},{"name":"a"}]}"#).is_err());
+        assert!(parse_manifest(
+            r#"{"id":"board","title":"x","actions":[{"name":"a"},{"name":"a"}]}"#
+        )
+        .is_err());
         let (manifest, warnings) = parse_manifest(
             r#"{"id":"board","title":"x","inputSchema":{"type":"object","pattern":"x"},"actions":[{"name":"set","inputSchema":{"type":"object"}}]}"#,
         )
@@ -1043,7 +1219,9 @@ mod tests {
         assert!(validate_value(&schema, &json!({"item":"x","ok":true}), "input").is_err());
         assert!(validate_value(&schema, &json!({"item":"db","ok":true,"n":5}), "input").is_err());
         assert!(validate_value(&schema, &json!({"item":"db","ok":true,"n":1.5}), "input").is_err());
-        assert!(validate_value(&schema, &json!({"item":"db","ok":true,"tags":[1]}), "input").is_err());
+        assert!(
+            validate_value(&schema, &json!({"item":"db","ok":true,"tags":[1]}), "input").is_err()
+        );
         assert!(validate_value(&schema, &Value::Null, "input").is_err());
     }
 
@@ -1055,18 +1233,35 @@ mod tests {
         let inside = write_canvas(&session_root(app.path(), "s1"), "board", "");
         assert!(resolve_dir(&inside, &roots).is_ok());
         let outside = write_canvas(app.path(), "elsewhere", "");
-        assert_eq!(resolve_dir(&outside, &roots).unwrap_err().code, "canvas.dir_not_allowed");
-        assert_eq!(resolve_dir(Path::new("relative"), &roots).unwrap_err().code, "canvas.dir_not_allowed");
-        let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/"));
-        assert_eq!(resolve_dir(&home, &roots).unwrap_err().code, "canvas.dir_not_allowed");
+        assert_eq!(
+            resolve_dir(&outside, &roots).unwrap_err().code,
+            "canvas.dir_not_allowed"
+        );
+        assert_eq!(
+            resolve_dir(Path::new("relative"), &roots).unwrap_err().code,
+            "canvas.dir_not_allowed"
+        );
+        let home = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/"));
+        assert_eq!(
+            resolve_dir(&home, &roots).unwrap_err().code,
+            "canvas.dir_not_allowed"
+        );
         // 另一个会话的根不在白名单
         let other = write_canvas(&session_root(app.path(), "s2"), "board", "");
-        assert_eq!(resolve_dir(&other, &roots).unwrap_err().code, "canvas.dir_not_allowed");
+        assert_eq!(
+            resolve_dir(&other, &roots).unwrap_err().code,
+            "canvas.dir_not_allowed"
+        );
         #[cfg(unix)]
         {
             let link = session_root(app.path(), "s1").join("link");
             std::os::unix::fs::symlink(&outside, &link).unwrap();
-            assert_eq!(resolve_dir(&link, &roots).unwrap_err().code, "canvas.dir_not_allowed");
+            assert_eq!(
+                resolve_dir(&link, &roots).unwrap_err().code,
+                "canvas.dir_not_allowed"
+            );
         }
     }
 
@@ -1084,34 +1279,54 @@ mod tests {
         assert_eq!(first.instance["instanceId"], "board");
         assert_eq!(first.instance["createdByAgent"], "miku");
         set_visible(&db, "s1", "board", false).unwrap();
-        let again = open(&db, app.path(), &caller("s1"), &OpenRequest {
-            input: Some(json!({ "v": 1 })),
-            ..request.clone()
-        })
+        let again = open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                input: Some(json!({ "v": 1 })),
+                ..request.clone()
+            },
+        )
         .unwrap();
         assert!(again.reopened);
         assert_eq!(again.instance["visible"], true);
         assert_eq!(again.instance["input"], json!({ "v": 1 }));
         assert_eq!(list(&db, "s1", false).unwrap().as_array().unwrap().len(), 1);
         // 重开已注册的
-        let by_id = open(&db, app.path(), &caller("s1"), &OpenRequest {
-            id: Some("board".into()),
-            instance: Some("second".into()),
-            ..Default::default()
-        })
+        let by_id = open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                id: Some("board".into()),
+                instance: Some("second".into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
         assert_eq!(by_id.instance["canvasId"], "board");
         for index in 2..MAX_INSTANCES_PER_SESSION {
-            open(&db, app.path(), &caller("s1"), &OpenRequest {
-                instance: Some(format!("i{index}")),
-                ..request.clone()
-            })
+            open(
+                &db,
+                app.path(),
+                &caller("s1"),
+                &OpenRequest {
+                    instance: Some(format!("i{index}")),
+                    ..request.clone()
+                },
+            )
             .unwrap();
         }
-        let over = open(&db, app.path(), &caller("s1"), &OpenRequest {
-            instance: Some("one-too-many".into()),
-            ..request.clone()
-        });
+        let over = open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                instance: Some("one-too-many".into()),
+                ..request.clone()
+            },
+        );
         assert_eq!(over.err().unwrap().code, "canvas.limit");
     }
 
@@ -1128,11 +1343,22 @@ mod tests {
             dir: Some(dir.to_string_lossy().into()),
             ..Default::default()
         };
-        assert_eq!(open(&db, app.path(), &caller("s1"), &request).err().unwrap().code, "canvas.invalid_input");
-        assert!(open(&db, app.path(), &caller("s1"), &OpenRequest {
-            input: Some(json!({ "v": "1" })),
-            ..request
-        })
+        assert_eq!(
+            open(&db, app.path(), &caller("s1"), &request)
+                .err()
+                .unwrap()
+                .code,
+            "canvas.invalid_input"
+        );
+        assert!(open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                input: Some(json!({ "v": "1" })),
+                ..request
+            }
+        )
         .is_ok());
     }
 
@@ -1141,17 +1367,38 @@ mod tests {
         let app = tempfile::tempdir().unwrap();
         let db = db();
         let dir = write_canvas(&session_root(app.path(), "s1"), "board", "");
-        open(&db, app.path(), &caller("s1"), &OpenRequest {
-            dir: Some(dir.to_string_lossy().into()),
-            ..Default::default()
-        })
+        open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                dir: Some(dir.to_string_lossy().into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
-        assert_eq!(close(&db, "s2", "board").unwrap_err().code, "canvas.not_found");
-        assert_eq!(set_status(&db, "s2", "board", "x").unwrap_err().code, "canvas.not_found");
-        assert!(list(&db, "s2", false).unwrap().as_array().unwrap().is_empty());
-        assert_eq!(set_status(&db, "s1", "board", "跑到第 2 步").unwrap()["status"], "跑到第 2 步");
+        assert_eq!(
+            close(&db, "s2", "board").unwrap_err().code,
+            "canvas.not_found"
+        );
+        assert_eq!(
+            set_status(&db, "s2", "board", "x").unwrap_err().code,
+            "canvas.not_found"
+        );
+        assert!(list(&db, "s2", false)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            set_status(&db, "s1", "board", "跑到第 2 步").unwrap()["status"],
+            "跑到第 2 步"
+        );
         set_context(&db, "s1", "board", &json!({ "text": "hi" })).unwrap();
-        assert_eq!(get_context(&db, "s1", "board").unwrap()["context"]["text"], "hi");
+        assert_eq!(
+            get_context(&db, "s1", "board").unwrap()["context"]["text"],
+            "hi"
+        );
     }
 
     #[test]
@@ -1160,15 +1407,26 @@ mod tests {
         let db = db();
         let root = session_root(app.path(), "s1");
         let dir = write_canvas(&root, "board", "");
-        open(&db, app.path(), &caller("s1"), &OpenRequest {
-            dir: Some(dir.to_string_lossy().into()),
-            ..Default::default()
-        })
+        open(
+            &db,
+            app.path(),
+            &caller("s1"),
+            &OpenRequest {
+                dir: Some(dir.to_string_lossy().into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
         fs::create_dir_all(data_root(app.path(), "board")).unwrap();
         delete_session(&db, Some(app.path()), "s1").unwrap();
-        assert!(list(&db, "s1", false).unwrap().as_array().unwrap().is_empty());
-        let left: i64 = db.query_row("SELECT COUNT(*) FROM canvases", [], |row| row.get(0)).unwrap();
+        assert!(list(&db, "s1", false)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let left: i64 = db
+            .query_row("SELECT COUNT(*) FROM canvases", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(left, 0);
         assert!(!root.exists());
         assert!(data_root(app.path(), "board").exists());
@@ -1181,16 +1439,32 @@ mod tests {
         )
         .unwrap();
         assert!(check_action(&manifest, "set", &json!({ "ok": true })).is_ok());
-        assert_eq!(check_action(&manifest, "set", &json!({})).unwrap_err().code, "canvas.invalid_input");
-        assert_eq!(check_action(&manifest, "nope", &json!({})).unwrap_err().code, "canvas.unknown_action");
+        assert_eq!(
+            check_action(&manifest, "set", &json!({})).unwrap_err().code,
+            "canvas.invalid_input"
+        );
+        assert_eq!(
+            check_action(&manifest, "nope", &json!({}))
+                .unwrap_err()
+                .code,
+            "canvas.unknown_action"
+        );
         assert!(check_action(&manifest, "reset", &Value::Null).is_ok());
-        assert_eq!(check_action(&manifest, "reset", &json!({ "x": 1 })).unwrap_err().code, "canvas.invalid_input");
+        assert_eq!(
+            check_action(&manifest, "reset", &json!({ "x": 1 }))
+                .unwrap_err()
+                .code,
+            "canvas.invalid_input"
+        );
     }
 
     #[test]
     fn exit_codes() {
         assert_eq!(CanvasError::new("canvas.invalid_args", "").exit_code(), 1);
-        assert_eq!(CanvasError::new("canvas.app_not_running", "").exit_code(), 2);
+        assert_eq!(
+            CanvasError::new("canvas.app_not_running", "").exit_code(),
+            2
+        );
         assert_eq!(CanvasError::new("canvas.timeout", "").exit_code(), 3);
     }
 }

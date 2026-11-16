@@ -195,10 +195,7 @@ mod tests {
 
     #[test]
     fn recent_report_keeps_failures_and_drops_heartbeats() {
-        let dir = std::env::temp_dir().join(format!(
-            "multara-error-log-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("multara-error-log-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(

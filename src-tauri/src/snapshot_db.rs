@@ -207,13 +207,7 @@ pub fn save_review_baseline(
     file_path: &str,
     content: &str,
 ) -> Result<(), String> {
-    save_compressed_baseline(
-        db,
-        workspace_id,
-        file_path,
-        &compress_utf8(content)?,
-        false,
-    )
+    save_compressed_baseline(db, workspace_id, file_path, &compress_utf8(content)?, false)
 }
 
 fn save_compressed_baseline(
@@ -791,7 +785,13 @@ mod tests {
         let active = load_active_snapshots(&db).unwrap();
         let mut sessions: Vec<_> = active
             .iter()
-            .map(|row| (row.session_id.as_str(), row.file_path.as_str(), row.content.as_str()))
+            .map(|row| {
+                (
+                    row.session_id.as_str(),
+                    row.file_path.as_str(),
+                    row.content.as_str(),
+                )
+            })
             .collect();
         sessions.sort();
         assert_eq!(

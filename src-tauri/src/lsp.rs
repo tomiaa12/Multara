@@ -199,15 +199,13 @@ fn start(
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command
-            .spawn()
-            .map_err(|error| {
-                tr!(
-                    "启动 {command} 失败：{error}",
-                    command = spec.command,
-                    error = error
-                )
-            })?;
+        let mut child = command.spawn().map_err(|error| {
+            tr!(
+                "启动 {command} 失败：{error}",
+                command = spec.command,
+                error = error
+            )
+        })?;
         let (Some(mut stdin), Some(stdout), Some(mut stderr)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {
