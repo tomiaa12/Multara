@@ -4,6 +4,7 @@ import { ChevronDown } from "@lucide/vue";
 import type { ExploreEntry, FileRevealTarget, PairedTool } from "./timeline-display";
 import { exploreDetail, exploreTitle, exploreVerb, fileRevealTarget, itemKind } from "./timeline-display";
 import ThinkingLine from "./ThinkingLine.vue";
+import ClipScroll from "./ClipScroll.vue";
 import { useAppStore } from "../../stores/app";
 
 const props = defineProps<{ items: ExploreEntry[]; running?: boolean; runningTail?: boolean }>();
@@ -36,7 +37,7 @@ function entryKey(entry: ExploreEntry) {
       <span>{{ title }}</span>
       <ChevronDown :size="12" />
     </summary>
-    <div class="explore-reads">
+    <ClipScroll class="explore-reads">
       <template v-for="(entry, index) in items" :key="entryKey(entry)">
         <ThinkingLine
           v-if="entry.kind === 'thinking'"
@@ -65,6 +66,6 @@ function entryKey(entry: ExploreEntry) {
           </component>
         </UiTooltip>
       </template>
-    </div>
+    </ClipScroll>
   </details>
 </template>

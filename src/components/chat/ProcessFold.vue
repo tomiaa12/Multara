@@ -92,13 +92,13 @@ function errorText(block: TimelineBlock) {
           :default-collapse-subagents="defaultCollapseSubagents"
         />
         <template v-else-if="block.type === 'edit'">
-          <FileDiffCard :item="block.item" />
+          <FileDiffCard :item="block.item" :running="running && !block.item.result" />
           <div v-if="block.item.children?.length" class="process-nested">
             <ProcessFold :blocks="block.item.children" :depth="childDepth" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
           </div>
         </template>
         <template v-else-if="block.type === 'shell'">
-          <ShellCard :item="block.item" />
+          <ShellCard :item="block.item" :running="running && !block.item.result" />
           <div v-if="block.item.children?.length" class="process-nested">
             <ProcessFold :blocks="block.item.children" :depth="childDepth" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
           </div>
@@ -135,13 +135,13 @@ function errorText(block: TimelineBlock) {
         :default-collapse-subagents="defaultCollapseSubagents"
       />
       <template v-else-if="block.type === 'edit'">
-        <FileDiffCard :item="block.item" />
+        <FileDiffCard :item="block.item" :running="running && !block.item.result" />
         <div v-if="block.item.children?.length" class="process-nested">
           <ProcessFold :blocks="block.item.children" :depth="childDepth" :running="running" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
         </div>
       </template>
       <template v-else-if="block.type === 'shell'">
-        <ShellCard :item="block.item" />
+        <ShellCard :item="block.item" :running="running && !block.item.result" />
         <div v-if="block.item.children?.length" class="process-nested">
           <ProcessFold :blocks="block.item.children" :depth="childDepth" :running="running" :run-id="runId" :default-collapse-subagents="defaultCollapseSubagents" />
         </div>

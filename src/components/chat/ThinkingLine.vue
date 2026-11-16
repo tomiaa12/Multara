@@ -4,6 +4,7 @@ import { ChevronRight } from "@lucide/vue";
 import type { TimelineItem } from "../../domain/types";
 import { useAppStore } from "../../stores/app";
 import { thinkingSummary } from "./timeline-display";
+import ClipScroll from "./ClipScroll.vue";
 
 const props = defineProps<{ item: TimelineItem; running?: boolean }>();
 const store = useAppStore();
@@ -19,7 +20,7 @@ const detail = computed(() => (props.item.content ?? "").trim());
       <UiShimmerText :text="summary" :active="Boolean(running)" />
       <ChevronRight :size="12" />
     </summary>
-    <div class="process-detail vs-scroll">{{ detail }}</div>
+    <ClipScroll class="process-detail">{{ detail }}</ClipScroll>
   </details>
   <div v-else class="thinking-line"><UiShimmerText :text="summary" :active="Boolean(running)" /></div>
 </template>

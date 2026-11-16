@@ -8,7 +8,7 @@ import { translate, useI18n } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import { useDiffStore } from "../../stores/diff";
 
-const props = defineProps<{ item: PairedTool }>();
+const props = defineProps<{ item: PairedTool; running?: boolean }>();
 const { t } = useI18n();
 const store = useAppStore();
 const diffStore = useDiffStore();
@@ -119,7 +119,11 @@ async function undoFile() {
   <details v-if="lines.length" class="diff-card" open>
     <summary>
       <ChevronDown :size="12" />
-      <UiTooltip :content="pathTitle"><button class="diff-file" type="button" @click.stop="openFile">{{ editingLabel }}</button></UiTooltip>
+      <UiTooltip :content="pathTitle">
+        <button class="diff-file" type="button" @click.stop="openFile">
+          <UiShimmerText :text="editingLabel" :active="Boolean(running && !item.result)" />
+        </button>
+      </UiTooltip>
       <span v-if="stats.added" class="diff-added">+{{ stats.added }}</span>
       <span v-if="stats.deleted" class="diff-deleted">-{{ stats.deleted }}</span>
       <template v-if="usingLiveDiff">
@@ -149,7 +153,11 @@ async function undoFile() {
     </div>
   </details>
   <div v-else class="diff-card diff-card-empty">
-    <UiTooltip :content="pathTitle"><button class="diff-file" type="button" @click="openFile">{{ editingLabel }}</button></UiTooltip>
+    <UiTooltip :content="pathTitle">
+      <button class="diff-file" type="button" @click="openFile">
+        <UiShimmerText :text="editingLabel" :active="Boolean(running && !item.result)" />
+      </button>
+    </UiTooltip>
     <span>{{ t('diff.noVisualDiff') }}</span>
   </div>
 </template>

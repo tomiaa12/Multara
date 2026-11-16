@@ -2964,10 +2964,12 @@ textarea:not(.inputarea) {
   color: var(--color-git-untracked);
 }
 .explore-reads {
+  padding: 1px 0 4px;
+}
+.explore-reads > .clip-scroll-view {
   display: grid;
   justify-items: start;
   gap: 1px;
-  padding: 1px 0 4px;
 }
 .read-row > summary span {
   min-width: 0;
@@ -3164,13 +3166,58 @@ button.read-row-line.is-clickable:hover .read-row-text {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.shell-card > .shell-summary .shell-title.ds-text-shimmer {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.clip-scroll {
+  --clip-fade: var(--color-bg);
+  position: relative;
+  max-height: 280px;
+}
+.clip-scroll-view {
+  max-height: inherit;
+  overflow: auto;
+}
+.clip-scroll.has-clip-top::before,
+.clip-scroll.has-clip-bottom::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: 22px;
+  pointer-events: none;
+}
+.clip-scroll.has-clip-top::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--clip-fade), transparent);
+}
+.clip-scroll.has-clip-bottom::after {
+  bottom: 0;
+  background: linear-gradient(to bottom, transparent, var(--clip-fade) 72%);
+}
 .shell-body.is-collapsed {
   max-height: 108px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
   cursor: pointer;
+}
+.shell-body {
+  --clip-fade: var(--color-bg-secondary);
+}
+.shell-body:not(.is-collapsed) {
+  max-height: 280px;
+}
+.explore-group[open] > .explore-reads {
+  max-height: 280px;
+}
+.process-detail.clip-scroll {
+  --clip-fade: var(--color-bg-tertiary);
+  max-height: 280px;
+}
+.process-detail.clip-scroll > pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
 }
 .shell-output {
   margin: 0;

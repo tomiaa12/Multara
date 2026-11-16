@@ -3,8 +3,9 @@ import { computed, ref } from "vue";
 import { ChevronRight } from "@lucide/vue";
 import type { PairedTool } from "./timeline-display";
 import { shellResultText, shellTranscript, toolCommand, toolDescription } from "./timeline-display";
+import ClipScroll from "./ClipScroll.vue";
 
-const props = defineProps<{ item: PairedTool }>();
+const props = defineProps<{ item: PairedTool; running?: boolean }>();
 const open = ref(false);
 const command = computed(() => toolCommand(props.item.use).trim());
 const output = computed(() => shellResultText(props.item.result?.output || props.item.result?.content || ""));
@@ -29,15 +30,16 @@ function expandFromPreview() {
   <article class="shell-card" :class="{ 'is-open': open }">
     <button type="button" class="shell-summary" :aria-expanded="open" @click="toggle">
       <ChevronRight class="shell-chevron" :size="12" />
-      <span>{{ title }}</span>
+      <UiShimmerText class="shell-title" :text="title" :active="!item.result" />
     </button>
-    <div
+    <ClipScroll
       v-if="transcript"
       class="shell-body"
       :class="{ 'is-collapsed': !open }"
+      :pin-end="!open"
       @click="expandFromPreview"
     >
       <pre class="shell-output">{{ transcript }}</pre>
-    </div>
+    </ClipScroll>
   </article>
 </template>
