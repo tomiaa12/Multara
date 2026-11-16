@@ -169,8 +169,19 @@ function numberField(input: Record<string, unknown>, keys: string[]): number | u
   return undefined;
 }
 
+const PATH_KEYS = ["path", "file_path", "filePath", "target_file", "file", "uri"];
+
+/** 半截 JSON 里路径一出现就取出来，不必等对象闭合。 */
+function partialToolPath(raw: string): string {
+  const match = /"(?:file_path|filePath|target_file|path)"\s*:\s*"((?:\\.|[^"\\])*)/.exec(raw);
+  if (!match?.[1]) return "";
+  return match[1].replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+}
+
 export function toolPath(item: TimelineItem | undefined): string {
-  return stringField(resolvedInput(item), ["path", "file_path", "filePath", "target_file", "file", "uri"]);
+  const fromInput = stringField(resolvedInput(item), PATH_KEYS);
+  if (fromInput) return fromInput;
+  return partialToolPath(item?.content ?? "");
 }
 
 export function toolCommand(item: TimelineItem | undefined): string {
@@ -471,20 +482,26 @@ function subAgentLivePrefix(items: TimelineItem[], language?: string): string {
   return `${translate("chat.subagent.running", language, { n: count })} · `;
 }
 
-// 还没有结果的修改都算正在进行。同一轮可以同时改多个文件，每个文件一条状态。
+// 还没有结果的修改都算正在进行。按完整路径区分，同名文件各占一行。
 function pendingEditNames(items: TimelineItem[]): string[] {
   const finished = finishedCallIds(items);
-  const names: string[] = [];
+  const paths: string[] = [];
   const seen = new Set<string>();
   for (const item of items) {
     if (item.eventType !== "tool_use" || !isEditItem(item)) continue;
     if (item.callId && finished.has(item.callId)) continue;
-    const name = fileName(toolPath(item));
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
+    const path = toolPath(item);
+    const key = path || item.callId || "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    paths.push(path || key);
   }
-  return names;
+  const bases = paths.map((path) => fileName(path));
+  const duplicated = new Set(bases.filter((name, index) => bases.indexOf(name) !== index));
+  return paths.map((path) => {
+    const name = fileName(path);
+    return duplicated.has(name) ? path : name;
+  });
 }
 
 function latestEditName(items: TimelineItem[]): string {
@@ -506,6 +523,14 @@ export function liveWorkParts(
   const elapsed = formatLiveElapsed(elapsedSeconds, options?.language);
   const stage = liveStageKey(items, options?.status);
   const prefix = subAgentLivePrefix(items, options?.language);
+  // 还有没返回的修改时优先列出，不因后面跟上读取或正文就把它们藏掉。
+  const pendingEdits = pendingEditNames(items);
+  if (pendingEdits.length) {
+    return pendingEdits.map((name, index) => ({
+      label: `${index ? "" : prefix}${editFileLabel(name, options?.language)}`,
+      elapsed,
+    }));
+  }
   if (stage === "chat.makingEdits") {
     const pending = pendingEditNames(items);
     const names = pending.length ? pending : [latestEditName(items)].filter(Boolean);

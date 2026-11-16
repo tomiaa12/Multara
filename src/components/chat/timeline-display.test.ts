@@ -54,6 +54,15 @@ describe("liveWorkLabel", () => {
       { status: "running", language: "zh-CN" },
     )).toBe("编辑文件 ChatComposerField.vue · 4 秒\n编辑文件 ChatComposer.vue · 4 秒");
     expect(liveWorkLabel(
+      [
+        { ...item("tool_use", "StrReplace", { path: "src/a/index.ts" }), seq: 1, callId: "a" },
+        { ...item("tool_use", "StrReplace", { path: "src/b/index.ts" }), seq: 2, callId: "b" },
+        { ...item("tool_use", "Read", { path: "README.md" }), seq: 3, callId: "c" },
+      ],
+      4,
+      { status: "running", language: "zh-CN" },
+    )).toBe("编辑文件 src/a/index.ts · 4 秒\n编辑文件 src/b/index.ts · 4 秒");
+    expect(liveWorkLabel(
       [item("tool_use", "Task", { description: "查代码" })],
       2,
       { status: "running", language: "zh-CN" },

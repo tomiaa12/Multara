@@ -682,6 +682,7 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str, mode: RunMode) -> V
                 "--input-format".into(),
                 "stream-json".into(),
                 "--verbose".into(),
+                "--include-partial-messages".into(),
                 "--permission-mode".into(),
                 if mode == RunMode::Plan {
                     "plan"
@@ -789,6 +790,7 @@ pub(crate) fn build_args(runtime_id: &str, assignment: &str, mode: RunMode) -> V
             "--input-format".into(),
             "stream-json".into(),
             "--verbose".into(),
+            "--include-partial-messages".into(),
             "--permission-mode".into(),
             if mode == RunMode::Plan {
                 "plan"
