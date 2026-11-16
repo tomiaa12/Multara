@@ -13,6 +13,8 @@ import {
 } from "./git-blame";
 
 const WIDGET_ID = "multara.git-blame-card";
+/** 同 VS Code isMouseGettingCloser：比最近距离再远过这个容差才算离开。 */
+const HOVER_CLOSER_TOLERANCE_PX = 4;
 
 export type BlameCardAction =
   | "copy"
@@ -42,20 +44,23 @@ export class GitBlameCard {
   private model: BlameCardModel | null = null;
   private signature = "";
   private anchor: BlameCardAnchor | null = null;
-  private hideTimer = 0;
+  /** 弹出时鼠标到卡片的距离，以及之后靠得最近的一次。 */
+  private seedDistance: number | null = null;
+  private closestDistance: number | null = null;
   private readonly onScroll: { dispose: () => void };
   private readonly onLayout: { dispose: () => void };
 
   constructor(
     private readonly editor: Monaco.editor.IStandaloneCodeEditor,
     private readonly onAction: (action: BlameCardAction, model: BlameCardModel) => void,
+    private readonly onPointerInside: (inside: boolean) => void = () => {},
   ) {
     this.onScroll = editor.onDidScrollChange(() => this.reposition());
     this.onLayout = editor.onDidLayoutChange(() => this.reposition());
   }
 
   show(model: BlameCardModel, anchor?: BlameCardAnchor | null) {
-    window.clearTimeout(this.hideTimer);
+    const wasVisible = this.visible();
     // 每次展示都更新锚点，避免切行后仍停在旧坐标。
     if (anchor) this.anchor = anchor;
     else if (!this.anchor) this.anchor = fallbackAnchor(this.editor, model.line);
@@ -73,6 +78,7 @@ export class GitBlameCard {
       this.editor.addOverlayWidget(this.overlay);
     }
     if (!same) this.render();
+    if (!wasVisible) this.resetApproach();
     this.reposition();
     // 首帧测高后再对齐左下角锚点，避免 height=0 时顶到错误位置。
     requestAnimationFrame(() => {
@@ -84,17 +90,45 @@ export class GitBlameCard {
     return Boolean(this.root && this.model);
   }
 
-  scheduleHide() {
-    window.clearTimeout(this.hideTimer);
-    this.hideTimer = window.setTimeout(() => this.hide(), 220);
+  containsNode(node: Node | null | undefined): boolean {
+    return Boolean(node && this.root?.contains(node));
   }
 
-  cancelHide() {
-    window.clearTimeout(this.hideTimer);
+  ownsFocus(): boolean {
+    const active = this.root?.ownerDocument.activeElement;
+    return Boolean(active && this.root?.contains(active));
+  }
+
+  /** 卡片刚出现时记下鼠标到卡片的距离，作为「是否在靠近」的起点。 */
+  seedApproach(x: number, y: number) {
+    if (this.seedDistance != null) return;
+    const distance = this.distanceFrom(x, y);
+    if (distance == null) return;
+    this.seedDistance = distance;
+    this.closestDistance = distance;
+  }
+
+  /** 同 VS Code isMouseGettingCloser：比弹出时更近（超过 4px）才算在靠近。 */
+  trackApproach(x: number, y: number): boolean {
+    const distance = this.distanceFrom(x, y);
+    if (distance == null) return false;
+    if (this.seedDistance == null || this.closestDistance == null) {
+      this.seedDistance = distance;
+      this.closestDistance = distance;
+      return false;
+    }
+    if (distance > this.closestDistance + HOVER_CLOSER_TOLERANCE_PX) return false;
+    this.closestDistance = Math.min(this.closestDistance, distance);
+    return this.closestDistance < this.seedDistance - HOVER_CLOSER_TOLERANCE_PX;
+  }
+
+  private distanceFrom(x: number, y: number): number | null {
+    const root = this.root;
+    if (!root) return null;
+    return distanceToRect(x, y, root.getBoundingClientRect());
   }
 
   hide() {
-    window.clearTimeout(this.hideTimer);
     this.model = null;
     this.signature = "";
     this.anchor = null;
@@ -103,6 +137,7 @@ export class GitBlameCard {
       this.overlay = null;
     }
     this.root = null;
+    this.resetApproach();
   }
 
   dispose() {
@@ -114,8 +149,10 @@ export class GitBlameCard {
   private build(): HTMLElement {
     const root = document.createElement("div");
     root.className = "git-blame-card";
-    root.addEventListener("mouseenter", () => this.cancelHide());
-    root.addEventListener("mouseleave", () => this.scheduleHide());
+    root.addEventListener("mouseenter", () => this.onPointerInside(true));
+    root.addEventListener("mouseleave", () => this.onPointerInside(false));
+    // 滚轮停在卡片上时不传给编辑器，避免编辑器一滚动就把卡片关掉。
+    root.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
     return root;
   }
 
@@ -289,6 +326,11 @@ export class GitBlameCard {
     return button;
   }
 
+  private resetApproach() {
+    this.seedDistance = null;
+    this.closestDistance = null;
+  }
+
   private fire(action: BlameCardAction) {
     if (!this.model) return;
     this.onAction(action, this.model);
@@ -318,6 +360,12 @@ export class GitBlameCard {
     root.style.left = `${Math.round(left)}px`;
     root.style.top = `${Math.round(top)}px`;
   }
+}
+
+function distanceToRect(x: number, y: number, rect: DOMRect): number {
+  const dx = Math.max(Math.abs(x - (rect.left + rect.width / 2)) - rect.width / 2, 0);
+  const dy = Math.max(Math.abs(y - (rect.top + rect.height / 2)) - rect.height / 2, 0);
+  return Math.hypot(dx, dy);
 }
 
 function fallbackAnchor(
