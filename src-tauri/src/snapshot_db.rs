@@ -163,6 +163,8 @@ pub struct FileBaselineRow {
     pub workspace_id: String,
     pub file_path: String,
     pub content: String,
+    /// 快照时文件不存在。空文件为 false。
+    pub absent: bool,
 }
 
 /// 文件还没有待审阅 baseline 时写入。已有 baseline 不覆盖，后续编辑叠在同一份原文上。
@@ -172,7 +174,7 @@ pub fn ensure_review_baseline(
     file_path: &str,
     content: &str,
 ) -> Result<bool, String> {
-    ensure_review_baseline_compressed(db, workspace_id, file_path, &compress_utf8(content)?)
+    ensure_review_baseline_compressed(db, workspace_id, file_path, &compress_utf8(content)?, false)
 }
 
 /// 同 [`ensure_review_baseline`]，但内容已经在锁外压缩好。
@@ -181,6 +183,7 @@ pub fn ensure_review_baseline_compressed(
     workspace_id: &str,
     file_path: &str,
     compressed: &[u8],
+    absent: bool,
 ) -> Result<bool, String> {
     let existing: Option<i64> = db
         .query_row(
@@ -194,7 +197,7 @@ pub fn ensure_review_baseline_compressed(
     if existing.is_some() {
         return Ok(false);
     }
-    save_compressed_baseline(db, workspace_id, file_path, compressed)?;
+    save_compressed_baseline(db, workspace_id, file_path, compressed, absent)?;
     Ok(true)
 }
 
@@ -204,7 +207,13 @@ pub fn save_review_baseline(
     file_path: &str,
     content: &str,
 ) -> Result<(), String> {
-    save_compressed_baseline(db, workspace_id, file_path, &compress_utf8(content)?)
+    save_compressed_baseline(
+        db,
+        workspace_id,
+        file_path,
+        &compress_utf8(content)?,
+        false,
+    )
 }
 
 fn save_compressed_baseline(
@@ -212,18 +221,21 @@ fn save_compressed_baseline(
     workspace_id: &str,
     file_path: &str,
     compressed: &[u8],
+    absent: bool,
 ) -> Result<(), String> {
     db.execute(
-        "INSERT INTO file_review_baselines (workspace_id, file_path, content, updated_at)
-         VALUES (?1, ?2, ?3, ?4)
+        "INSERT INTO file_review_baselines (workspace_id, file_path, content, updated_at, absent)
+         VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(workspace_id, file_path) DO UPDATE SET
            content=excluded.content,
-           updated_at=excluded.updated_at",
+           updated_at=excluded.updated_at,
+           absent=excluded.absent",
         params![
             workspace_id,
             file_path,
             compressed,
-            chrono::Utc::now().timestamp()
+            chrono::Utc::now().timestamp(),
+            absent
         ],
     )
     .map_err(|error| error.to_string())?;
@@ -246,7 +258,7 @@ pub fn delete_review_baseline(
 pub fn load_review_baselines(db: &Connection) -> Result<Vec<FileBaselineRow>, String> {
     let mut statement = db
         .prepare(
-            "SELECT workspace_id, file_path, content FROM file_review_baselines
+            "SELECT workspace_id, file_path, content, absent FROM file_review_baselines
              ORDER BY file_path, workspace_id",
         )
         .map_err(|error| error.to_string())?;
@@ -256,17 +268,19 @@ pub fn load_review_baselines(db: &Connection) -> Result<Vec<FileBaselineRow>, St
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, i64>(3)?,
             ))
         })
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
     rows.into_iter()
-        .map(|(workspace_id, file_path, content)| {
+        .map(|(workspace_id, file_path, content, absent)| {
             Ok(FileBaselineRow {
                 workspace_id,
                 file_path,
                 content: decompress_utf8(&content)?,
+                absent: absent != 0,
             })
         })
         .collect()
@@ -341,7 +355,8 @@ const UNRESOLVED_SNAPSHOT: &str = "tfs.file_path != ''
       )
     )";
 
-/// 每个仍有 Accept/Undo 的文件只取最早一版未处理完的快照。历史轮次留给 rollback 现查。
+/// 每个会话里仍待审阅的文件取该会话最早一份快照，用来把文件归到这个会话。
+/// 审阅原文在 file_review_baselines，不从后一次快照取。历史轮次留给 rollback 现查。
 pub fn load_active_snapshots(db: &Connection) -> Result<Vec<ActiveSnapshotRow>, String> {
     // 先只按元数据排名，最后再按 id 取 content，不把 BLOB 带进排序。
     let mut statement = db
@@ -349,7 +364,7 @@ pub fn load_active_snapshots(db: &Connection) -> Result<Vec<ActiveSnapshotRow>, 
             "WITH ranked AS (
                 SELECT tfs.id,
                        ROW_NUMBER() OVER (
-                         PARTITION BY tfs.workspace_id, tfs.file_path
+                         PARTITION BY tfs.session_id, tfs.workspace_id, tfs.file_path
                          ORDER BY tfs.snapshot_at, tfs.id
                        ) AS position
                 FROM turn_file_snapshots tfs
@@ -738,6 +753,51 @@ mod tests {
             Some("turn1")
         );
         assert_eq!(by_file.get("b.ts"), Some(&("turn2".into(), "B1".into())));
+    }
+
+    #[test]
+    fn load_active_snapshots_keeps_the_same_file_for_each_session() {
+        let db = test_db();
+        db.execute(
+            "INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('other', '另一段', 'agent', 'frontend', 't0', 't0')",
+            [],
+        )
+        .unwrap();
+        insert_message(&db, "turn1", "t1");
+        db.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at)
+             VALUES ('turn-other', 'other', 'user', 'q', 't2')",
+            [],
+        )
+        .unwrap();
+        insert_file(&db, "turn1", "a.ts", "A0", 100);
+        let compressed = zstd::bulk::compress(b"A1", 3).unwrap();
+        insert_turn_snapshot(
+            &db,
+            &TurnFileSnapshot {
+                id: "turn-other:a.ts".into(),
+                message_id: "turn-other".into(),
+                session_id: "other".into(),
+                workspace_id: "ws".into(),
+                file_path: "a.ts".into(),
+                content: compressed,
+                content_hash: "200".into(),
+                snapshot_at: 200,
+            },
+        )
+        .unwrap();
+
+        let active = load_active_snapshots(&db).unwrap();
+        let mut sessions: Vec<_> = active
+            .iter()
+            .map(|row| (row.session_id.as_str(), row.file_path.as_str(), row.content.as_str()))
+            .collect();
+        sessions.sort();
+        assert_eq!(
+            sessions,
+            vec![("other", "a.ts", "A1"), ("sess", "a.ts", "A0")]
+        );
     }
 
     #[test]

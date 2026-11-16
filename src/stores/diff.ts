@@ -31,6 +31,8 @@ export const useDiffStore = defineStore("diff", () => {
   const snapshots = ref(new Map<string, Map<string, Map<string, string>>>());
   /** workspaceId + path → 待审阅原文。跟文件走，不跟当前对话走。 */
   const baselines = ref(new Map<string, string>());
+  /** 快照时磁盘上没有这个文件。空文件不在这里，撤销时写回空内容。 */
+  const absentBaselines = ref(new Set<string>());
   const chunkStates = ref(new Map<string, "pending" | "accepted" | "undone">());
   const reviewMemory = new Map<string, string>();
   const reviewQueue = new Map<string, Promise<unknown>>();
@@ -116,11 +118,28 @@ export const useDiffStore = defineStore("diff", () => {
 
   function replaceBaselines(entries: FileBaselineEntry[]) {
     const next = new Map<string, string>();
+    const absent = new Set<string>();
     for (const entry of entries) {
       if (!entry.filePath) continue;
-      next.set(fileKey(entry.workspaceId, entry.filePath), entry.content);
+      const key = fileKey(entry.workspaceId, entry.filePath);
+      next.set(key, entry.content);
+      if (entry.absent) absent.add(key);
     }
     baselines.value = next;
+    absentBaselines.value = absent;
+  }
+
+  function baselineWasAbsent(workspaceId: string, filePath: string) {
+    return absentBaselines.value.has(fileKey(workspaceId, filePath));
+  }
+
+  function setBaselineAbsent(key: string, absent: boolean) {
+    const next = new Set(absentBaselines.value);
+    if (absent) next.add(key);
+    else next.delete(key);
+    if (next.size !== absentBaselines.value.size || absent !== absentBaselines.value.has(key)) {
+      absentBaselines.value = next;
+    }
   }
 
   function enqueueReview<T>(workspaceId: string, filePath: string, job: () => Promise<T>): Promise<T> {
@@ -323,6 +342,7 @@ export const useDiffStore = defineStore("diff", () => {
     const next = new Map(baselines.value);
     next.set(key, content);
     baselines.value = next;
+    setBaselineAbsent(key, false);
     return backend.saveFileBaseline(workspaceId, filePath, content);
   }
 
@@ -333,6 +353,7 @@ export const useDiffStore = defineStore("diff", () => {
       next.delete(key);
       baselines.value = next;
     }
+    setBaselineAbsent(key, false);
     reviewMemory.delete(key);
     return backend.deleteFileBaseline(workspaceId, filePath);
   }
@@ -377,7 +398,7 @@ export const useDiffStore = defineStore("diff", () => {
         return;
       }
       const patched = applyReversePatch(current, hunk);
-      const createdNewFile = hunk.oldLines.length === 0 && patched === "";
+      const createdNewFile = hunk.oldLines.length === 0 && patched === "" && baselineWasAbsent(workspaceId, filePath);
       if (createdNewFile) {
         await backend.deleteWorkspaceEntry(workspaceId, filePath).catch(() =>
           backend.writeWorkspaceFile(workspaceId, filePath, ""),
@@ -418,7 +439,7 @@ export const useDiffStore = defineStore("diff", () => {
     await enqueueReview(workspaceId, filePath, async () => {
       const baseline = baselineContent(workspaceId, filePath);
       if (baseline === undefined) return;
-      if (baseline === "") {
+      if (baselineWasAbsent(workspaceId, filePath)) {
         await backend.deleteWorkspaceEntry(workspaceId, filePath).catch(() =>
           backend.writeWorkspaceFile(workspaceId, filePath, ""),
         );
@@ -444,7 +465,9 @@ export const useDiffStore = defineStore("diff", () => {
     );
 
     for (const { filePath, content } of snapshotFiles) {
-      if (content === "") {
+      const knownPresent = baselineContent(workspaceId, filePath) !== undefined
+        && !baselineWasAbsent(workspaceId, filePath);
+      if (content === "" && !knownPresent) {
         await backend.deleteWorkspaceEntry(workspaceId, filePath).catch(() =>
           backend.writeWorkspaceFile(workspaceId, filePath, ""),
         );
@@ -497,8 +520,9 @@ export const useDiffStore = defineStore("diff", () => {
     content: string,
     sessionId: string,
     workspaceId = "",
+    absent = false,
   ) {
-    onTurnSnapshotReady(sessionId, messageId, [{ workspaceId, filePath, content }]);
+    onTurnSnapshotReady(sessionId, messageId, [{ workspaceId, filePath, content, absent }]);
   }
 
   function onFileDeleted(filePath: string, workspaceId = "") {
@@ -521,7 +545,7 @@ export const useDiffStore = defineStore("diff", () => {
   function onTurnSnapshotReady(
     sessionId: string,
     messageId: string,
-    fileSnapshots: Array<{ workspaceId?: string; filePath: string; content: string }>,
+    fileSnapshots: Array<{ workspaceId?: string; filePath: string; content: string; absent?: boolean }>,
   ) {
     const nextSnapshots = new Map(snapshots.value);
     const sessionSnaps = new Map(nextSnapshots.get(sessionId) ?? []);
@@ -534,15 +558,20 @@ export const useDiffStore = defineStore("diff", () => {
     nextSnapshots.set(sessionId, sessionSnaps);
     snapshots.value = nextSnapshots;
     const nextBaselines = new Map(baselines.value);
+    const nextAbsent = new Set(absentBaselines.value);
     let adopted = false;
-    for (const { workspaceId, filePath, content } of fileSnapshots) {
+    for (const { workspaceId, filePath, content, absent } of fileSnapshots) {
       if (!filePath) continue;
       const key = fileKey(workspaceId ?? "", filePath);
       if (nextBaselines.has(key)) continue;
       nextBaselines.set(key, content);
+      if (absent) nextAbsent.add(key);
       adopted = true;
     }
-    if (adopted) baselines.value = nextBaselines;
+    if (adopted) {
+      baselines.value = nextBaselines;
+      absentBaselines.value = nextAbsent;
+    }
 
     const order = turnOrder.value.get(sessionId) ?? [];
     if (!order.includes(messageId)) {

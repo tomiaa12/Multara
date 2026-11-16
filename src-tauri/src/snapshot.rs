@@ -22,6 +22,8 @@ pub struct CapturedSnapshot {
     pub workspace_id: String,
     pub file_path: String,
     pub content: String,
+    /// 快照时磁盘上没有这个文件。空文件是 `false`。
+    pub absent: bool,
 }
 
 const FILE_MUTATION_TOOLS: &[&str] = &[
@@ -109,6 +111,8 @@ pub struct PreparedSnapshot {
     content: String,
     hash: String,
     compressed: Vec<u8>,
+    /// 快照时文件不存在。空文件为 false，撤销时写回空内容，不删除。
+    absent: bool,
 }
 
 pub fn snapshot_rel_path(rel_file_path: &str) -> Result<String, String> {
@@ -121,16 +125,16 @@ pub fn prepare_snapshot(
     rel_file_path: &str,
 ) -> Result<Option<PreparedSnapshot>, String> {
     let abs_path = files::resolve_existing_or_new(&workspace.work_path, rel_file_path)?;
-    let raw_content = match fs::metadata(&abs_path) {
+    let (raw_content, absent) = match fs::metadata(&abs_path) {
         Ok(meta) if meta.len() > MAX_FILE_BYTES as u64 => return Ok(None),
         Ok(_) => {
             let mut bytes = Vec::new();
             fs::File::open(&abs_path)
                 .and_then(|file| file.take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut bytes))
                 .map_err(|error| error.to_string())?;
-            bytes
+            (bytes, false)
         }
-        Err(_) => Vec::new(),
+        Err(_) => (Vec::new(), true),
     };
 
     if raw_content.len() > MAX_FILE_BYTES || is_binary(&raw_content) {
@@ -147,6 +151,7 @@ pub fn prepare_snapshot(
         hash: sha256_hex(&raw_content),
         content: String::from_utf8_lossy(&raw_content).into_owned(),
         compressed,
+        absent,
     }))
 }
 
@@ -171,13 +176,21 @@ pub fn save_prepared_snapshot(
         content_hash: prepared.hash,
         snapshot_at: chrono::Utc::now().timestamp(),
     };
+    let absent = prepared.absent;
     snapshot_db::insert_turn_snapshot(db, &row)?;
-    snapshot_db::ensure_review_baseline_compressed(db, workspace_id, &row.file_path, &row.content)?;
+    snapshot_db::ensure_review_baseline_compressed(
+        db,
+        workspace_id,
+        &row.file_path,
+        &row.content,
+        absent,
+    )?;
 
     Ok(Some(CapturedSnapshot {
         workspace_id: row.workspace_id,
         file_path: row.file_path,
         content: prepared.content,
+        absent,
     }))
 }
 
@@ -336,6 +349,7 @@ mod tests {
                 workspace_id: "ws".into(),
                 file_path: "src/a.ts".into(),
                 content: "v0".into(),
+                absent: false,
             }
         );
         assert_eq!(snapshot_paths(&db, "msg1"), vec!["src/a.ts".to_string()]);
@@ -422,10 +436,30 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(captured.content, "");
+        assert!(captured.absent);
         assert_eq!(
             snapshot_db::get_snapshot_content(&db, "msg1", "ws", "src/new.ts").unwrap(),
             ""
         );
+        let baselines = snapshot_db::load_review_baselines(&db).unwrap();
+        assert_eq!(baselines.len(), 1);
+        assert!(baselines[0].absent);
+    }
+
+    #[test]
+    fn empty_file_baseline_is_not_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("a.ts"), "").unwrap();
+        let db = test_db();
+        let workspace = test_workspace(temp.path());
+        let captured = capture_file_before_edit(&db, "msg1", "sess", &workspace, "a.ts")
+            .unwrap()
+            .unwrap();
+        assert_eq!(captured.content, "");
+        assert!(!captured.absent);
+        let baselines = snapshot_db::load_review_baselines(&db).unwrap();
+        assert_eq!(baselines[0].content, "");
+        assert!(!baselines[0].absent);
     }
 
     #[test]

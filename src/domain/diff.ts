@@ -55,6 +55,8 @@ export interface FileBaselineEntry {
   workspaceId: string;
   filePath: string;
   content: string;
+  /** 快照时文件不存在。空文件为 false，撤销写回空内容。 */
+  absent?: boolean;
 }
 
 export interface ActiveDiffData {

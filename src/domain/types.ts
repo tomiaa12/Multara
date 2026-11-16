@@ -516,6 +516,8 @@ export interface RunEvent {
   messageId?: string | null;
   filePath?: string | null;
   snapshotContent?: string | null;
+  /** 快照时文件不存在。空文件为 false。 */
+  snapshotAbsent?: boolean | null;
   affectedFile?: string | null;
   workspaceId?: string | null;
 }

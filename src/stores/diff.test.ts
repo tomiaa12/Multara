@@ -231,10 +231,11 @@ describe("diffStore", () => {
   });
 
   test("T-A05 undo of a new file deletes the file", async () => {
-    seedSession("s1", [{ messageId: "m1", files: { "src/new.ts": "" } }]);
-    disk.set(diskKey("ws", "src/new.ts"), "export default {}");
     const store = useDiffStore();
-    await store.loadSession("s1");
+    store.onTurnSnapshotReady("s1", "m1", [
+      { workspaceId: "ws", filePath: "src/new.ts", content: "", absent: true },
+    ]);
+    disk.set(diskKey("ws", "src/new.ts"), "export default {}");
     await store.undoChunk(idOf("m1", "src/new.ts", "", "export default {}"), "ws", "src/new.ts");
     expect(deletedEntries).toContain("src/new.ts");
     expect(disk.has(diskKey("ws", "src/new.ts"))).toBe(false);
@@ -536,6 +537,28 @@ describe("diffStore", () => {
         ]),
       ).map((file) => file.filePath),
     ).toEqual(["c.ts"]);
+  });
+
+  test("undo of an empty existing file writes it back instead of deleting", async () => {
+    const store = useDiffStore();
+    store.onTurnSnapshotReady("s1", "m1", [
+      { workspaceId: "ws", filePath: "a.ts", content: "", absent: false },
+    ]);
+    disk.set(diskKey("ws", "a.ts"), "// added\n");
+    await store.undoAllChunks("ws", "a.ts");
+    expect(disk.get(diskKey("ws", "a.ts"))).toBe("");
+    expect(deletedEntries).toEqual([]);
+  });
+
+  test("undo of a file that did not exist deletes it", async () => {
+    const store = useDiffStore();
+    store.onTurnSnapshotReady("s1", "m1", [
+      { workspaceId: "ws", filePath: "a.ts", content: "", absent: true },
+    ]);
+    disk.set(diskKey("ws", "a.ts"), "// added\n");
+    await store.undoAllChunks("ws", "a.ts");
+    expect(disk.has(diskKey("ws", "a.ts"))).toBe(false);
+    expect(deletedEntries).toEqual(["a.ts"]);
   });
 
   test("missing file with an empty baseline stays pending until accepted", async () => {

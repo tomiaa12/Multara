@@ -241,6 +241,7 @@ export const useAppStore = defineStore("app", () => {
           payload.snapshotContent ?? "",
           payload.sessionId,
           payload.workspaceId,
+          payload.snapshotAbsent === true,
         );
         return;
       }
