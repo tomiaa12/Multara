@@ -2131,15 +2131,24 @@ form.modal:has(> .ds-scroll-fade) {
   left: 50%;
   z-index: var(--z-toast);
   padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid #2b2b31;
   border-radius: var(--radius-sm);
-  background: var(--color-text-strong);
-  color: var(--color-bg);
+  background: #1e1e22;
+  color: #e6e6e9;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 36%), 0 0 0 1px rgb(255 255 255 / 4%);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   line-height: 1.4;
   white-space: nowrap;
   transform: translateX(-50%);
   pointer-events: none;
+}
+[data-tooltip]:hover::after {
+  opacity: 0;
+  animation: ds-tooltip-show 0s var(--tooltip-show-delay) forwards;
+}
+@keyframes ds-tooltip-show {
+  to { opacity: 1; }
 }
 
 /* Tooltip（UiTooltip）：Teleport 到 body + fixed；z-index 由 nextPopupZIndex() 写入 */
@@ -2154,16 +2163,17 @@ form.modal:has(> .ds-scroll-fade) {
   z-index: var(--z-popup);
   box-sizing: border-box;
   padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid #2b2b31;
   border-radius: var(--radius-sm);
-  background: var(--color-text-strong);
-  color: var(--color-bg);
+  background: #1e1e22;
+  color: #e6e6e9;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 36%), 0 0 0 1px rgb(255 255 255 / 4%);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-all;
   white-space: pre-wrap;
-  box-shadow: var(--shadow-md);
   opacity: 0;
   pointer-events: none;
 }

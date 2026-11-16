@@ -79,6 +79,7 @@ const usingLiveDiff = computed(() => liveLines.value.length > 0);
 const lines = computed(() => usingLiveDiff.value ? liveLines.value : editDiff(props.item));
 const stats = computed(() => diffStats(lines.value));
 const folded = computed(() => !expanded.value && lines.value.length > DIFF_COLLAPSE_LINES);
+const scrollable = computed(() => !folded.value && lines.value.length > DIFF_COLLAPSE_LINES);
 const visibleLines = computed(() => folded.value ? lines.value.slice(0, DIFF_COLLAPSE_LINES) : lines.value);
 
 function openFile() {
@@ -131,7 +132,7 @@ async function undoFile() {
         <UiButton variant="ghost" size="small" :tip="t('diff.undoFileTitle')" :disabled="busy" @click.stop="undoFile">{{ t('diff.undo') }}</UiButton>
       </template>
     </summary>
-    <div class="diff-body vs-scroll" :class="{ 'is-collapsed': folded, 'is-expanded': !folded }">
+    <div class="diff-body" :class="{ 'is-collapsed': folded, 'is-expanded': !folded, 'vs-scroll': scrollable }">
       <div
         v-for="(line, index) in visibleLines"
         :key="index"

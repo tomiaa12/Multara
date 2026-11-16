@@ -701,8 +701,7 @@ export const DIFF_COLLAPSE_LINES = 4;
 export function withLeadingContext(lines: DiffLine[]): DiffLine[] {
   const firstChange = lines.findIndex((line) => line.kind !== "context");
   if (firstChange > 1) return lines.slice(firstChange - 1);
-  if (!lines.length || firstChange !== 0) return lines;
-  return [{ kind: "context", text: "" }, ...lines];
+  return lines;
 }
 
 function looksLikeUnifiedDiff(text: string): boolean {

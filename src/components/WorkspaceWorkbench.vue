@@ -458,6 +458,8 @@ function setTreeEditInput(el: unknown) {
     el instanceof HTMLInputElement ? el : treeEditInput.value;
 }
 
+const treeEditSubmitted = ref(false);
+const treeEditAcceptBlur = ref(false);
 const treeEditProblem = computed(() => {
   const edit = treeEdit.value;
   if (!edit) return null;
@@ -468,10 +470,34 @@ const treeEditProblem = computed(() => {
     isWindows: explorer.isWindows,
   });
 });
+const treeEditNotice = computed(() => {
+  const problem = treeEditProblem.value;
+  const name = wellFormedFileName(treeEdit.value?.name ?? "");
+  if (problem && (!name || /^\s+$/.test(name)) && !treeEditSubmitted.value) return null;
+  return problem;
+});
+
+function focusTreeEditInput() {
+  treeEditAcceptBlur.value = false;
+  void nextTick(() => {
+    const input = treeEditInput.value;
+    input?.focus();
+    requestAnimationFrame(() => {
+      if (treeEdit.value && document.activeElement !== input) input?.focus();
+      treeEditAcceptBlur.value = true;
+    });
+  });
+}
+
+function onTreeEditBlur() {
+  if (!treeEditAcceptBlur.value) return;
+  void commitTreeEdit();
+}
 
 function onTreeEditKeydown(event: KeyboardEvent) {
   if (event.key === "Enter") {
     event.preventDefault();
+    treeEditSubmitted.value = true;
     if (treeEditProblem.value?.severity === "error") return;
     void commitTreeEdit();
     return;
@@ -600,8 +626,8 @@ const treeMenuItems = computed<ContextMenuItem[]>(() => {
   const pasteItem = { id: "paste", label: t("workbench.paste"), key: explorerKeys.paste, disabled: !hasClipboard };
   if (!menu.entry) {
     const items: ContextMenuItem[] = [
-      { id: "new-file", label: t("workbench.newFile") },
-      { id: "new-folder", label: t("workbench.newFolder") },
+      { id: "new-file", label: t("workbench.newFile"), key: explorerKeys.newFile },
+      { id: "new-folder", label: t("workbench.newFolder"), key: explorerKeys.newFolder },
       { id: "add-project", label: t("workspace.addTitle") },
       { type: "sep" },
       { id: "reveal", label: t("workbench.reveal"), key: explorerKeys.reveal },
@@ -640,8 +666,8 @@ const treeMenuItems = computed<ContextMenuItem[]>(() => {
   if (entry.isDirectory) {
     if (!multi) {
       items.push(
-        { id: "new-file", label: t("workbench.newFile") },
-        { id: "new-folder", label: t("workbench.newFolder") },
+        { id: "new-file", label: t("workbench.newFile"), key: explorerKeys.newFile },
+        { id: "new-folder", label: t("workbench.newFolder"), key: explorerKeys.newFolder },
         { type: "sep" },
       );
     }
@@ -1111,6 +1137,9 @@ const explorerRowsByWorkspace = computed(() => {
       forceVisible: (path) => openEditorTreeKeys.value.has(treeKey(workspace.id, path)),
       breakCompactAt: (path) => breakCompactAt(workspace.id, path),
       missingFiles: [],
+      creating: treeEdit.value && !treeEdit.value.path && treeEdit.value.workspaceId === workspace.id
+        ? { parentPath: treeEdit.value.parentPath, isDirectory: treeEdit.value.mode === "folder" }
+        : null,
     });
     result[workspace.id] = query ? applyFind(nodes, query, explorer.findMode.value) : nodes;
   }
@@ -1242,6 +1271,87 @@ let explorerChordTimer = 0;
 const outlineFollowCursor = ref(localStorage.getItem("multara.explorer.outlineFollow") !== "0");
 const outlinePane = ref<{ collapseAll: () => void } | null>(null);
 const openEditorsMenu = ref<{ x: number; y: number; tab: EditorTab } | null>(null);
+
+const EXPLORER_SCROLL_STEP = 10;
+
+function compactPaths(workspaceId: string, path: string): string[] | null {
+  const walk = (nodes: ExplorerRowNode[]): string[] | null => {
+    for (const node of nodes) {
+      const paths = node.entry.compact?.paths;
+      if (paths && (paths.includes(path) || node.entry.path === path)) return paths;
+      const found = walk(node.children);
+      if (found) return found;
+    }
+    return null;
+  };
+  const paths = walk(explorerNodes(workspaceId));
+  return paths && paths.length > 1 ? paths : null;
+}
+
+function stepCompact(item: ExplorerItem, delta: -1 | 1 | "first" | "last"): ExplorerItem | null {
+  const paths = compactPaths(item.workspaceId, item.path);
+  if (!paths) return null;
+  const found = paths.indexOf(item.path);
+  const index = found >= 0 ? found : paths.length - 1;
+  const nextIndex = delta === "first" ? 0 : delta === "last" ? paths.length - 1 : index + delta;
+  if (nextIndex === index || nextIndex < 0 || nextIndex >= paths.length) return null;
+  return treeItem(item.workspaceId, paths[nextIndex], true);
+}
+
+function compactRowActive(workspaceId: string, entry: ExplorerRow) {
+  const paths = entry.compact?.paths;
+  if (!paths) return false;
+  return paths.some((path) => path !== entry.path && (
+    explorer.isSelected(treeKey(workspaceId, path)) || explorer.isFocused(treeKey(workspaceId, path))
+  ));
+}
+
+async function compareWithSaved(item: ExplorerItem) {
+  if (!item.path || item.isDirectory) return;
+  try {
+    const saved = await readCompareSide(item);
+    const tab = findEditorTab(item.workspaceId, item.path);
+    const buffer = tab && !isVirtualTab(tab) ? tab.file.content : saved.content;
+    const id = `saved:${item.key}`;
+    const label = `${item.name} ↔ ${item.name}`;
+    const file: FileContent = {
+      workspaceId: item.workspaceId,
+      path: item.path,
+      content: buffer,
+      language: saved.language,
+      size: buffer.length,
+      readOnly: true,
+    };
+    const gitDiff = {
+      id,
+      original: saved.content,
+      modified: buffer,
+      binary: false,
+      label,
+      short: t("workbench.compareShort"),
+    };
+    const existing = editorTabs.value.find((editor) => editor.gitDiff?.id === id);
+    if (existing) {
+      existing.gitDiff = gitDiff;
+      existing.file = file;
+      existing.original = buffer;
+      activateEditorTab(existing);
+      return;
+    }
+    editorTabs.value = [...editorTabs.value, {
+      workspaceId: item.workspaceId,
+      path: item.path,
+      pinned: true,
+      file,
+      original: buffer,
+      detectedLanguage: saved.language,
+      gitDiff,
+    }];
+    activateEditorTab(editorTabs.value.at(-1)!);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
 
 function explorerRowOf(workspaceId: string, path: string): ExplorerRow | null {
   const walk = (nodes: ExplorerRowNode[]): ExplorerRow | null => {
@@ -1919,6 +2029,7 @@ function startCreate(
   parentPath: string,
   isFolder: boolean,
 ) {
+  treeEditSubmitted.value = false;
   rememberWorkspace(workspaceId);
   expandedWorkspaces.value = new Set([
     ...expandedWorkspaces.value,
@@ -1942,8 +2053,7 @@ function startCreate(
           name: "",
           depth: parentPath.split("/").length,
         };
-        await nextTick();
-        treeEditInput.value?.focus();
+        focusTreeEditInput();
       })();
       return;
     }
@@ -1955,10 +2065,11 @@ function startCreate(
     name: "",
     depth: parentPath ? parentPath.split("/").length : 0,
   };
-  void nextTick(() => treeEditInput.value?.focus());
+  focusTreeEditInput();
 }
 
 function startRename(workspaceId: string, entry: FileEntry) {
+  treeEditSubmitted.value = false;
   rememberWorkspace(workspaceId);
   // 紧凑文件夹行的 name 是整条链，重命名只针对最后一级。
   const name = fileNameOf(entry.path);
@@ -1971,9 +2082,14 @@ function startRename(workspaceId: string, entry: FileEntry) {
     depth: entry.depth,
   };
   const [start, end] = renameSelection(name, entry.isDirectory);
+  treeEditAcceptBlur.value = false;
   void nextTick(() => {
-    treeEditInput.value?.focus({ preventScroll: true });
-    treeEditInput.value?.setSelectionRange(start, end);
+    const input = treeEditInput.value;
+    input?.focus({ preventScroll: true });
+    input?.setSelectionRange(start, end);
+    requestAnimationFrame(() => {
+      treeEditAcceptBlur.value = true;
+    });
   });
 }
 
@@ -3304,6 +3420,14 @@ function openQuickOpenFile(file: QuickOpenFile, startLine?: number, endLine?: nu
 
 function handleWorkbenchShortcuts(event: KeyboardEvent) {
   const ctrl = event.ctrlKey || event.metaKey;
+  if (ctrl && !event.altKey && event.code === "KeyN") {
+    const typing = event.target as HTMLElement | null;
+    if (typing?.closest(".chat-composer, .composer-field, .tree-inline-input, .explorer-find-input")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startCreateInSelection(event.shiftKey);
+    return;
+  }
   if (ctrl && event.shiftKey && !event.altKey && event.code === "KeyE") {
     event.preventDefault();
     event.stopPropagation();
@@ -4579,6 +4703,28 @@ async function runExplorerKey(result: ExplorerKeyResult, workspaceId?: string, e
     fileTreeEl.value?.parentElement?.querySelector<HTMLInputElement>(".explorer-find-input")?.focus();
     return;
   }
+  if (result.action === "find-in-folder") {
+    if (!item?.isDirectory && item?.path) return;
+    const workspaceId = item?.workspaceId ?? lastExplorerWorkspaceId.value ?? workspaces.value[0]?.id;
+    if (!workspaceId) return;
+    findInFolder(workspaceId, item?.isDirectory ? item.path : "");
+    return;
+  }
+  if (result.action === "new-file" || result.action === "new-folder") {
+    startCreateInSelection(result.action === "new-folder");
+    return;
+  }
+  if (result.action === "compare-saved") {
+    if (item) await compareWithSaved(item);
+    return;
+  }
+  if (result.action === "scroll-up" || result.action === "scroll-down") {
+    const scroller = fileTreeEl.value;
+    if (!scroller) return;
+    const step = result.action === "scroll-down" ? EXPLORER_SCROLL_STEP : -EXPLORER_SCROLL_STEP;
+    scroller.scrollTop += step;
+    return;
+  }
   if (result.action === "undo") {
     await explorer.undo();
     return;
@@ -4629,6 +4775,14 @@ async function runExplorerKey(result: ExplorerKeyResult, workspaceId?: string, e
     "page-up": "pageUp",
   };
   if (move[result.action]) {
+    const compact = item && !result.extend && (result.action === "first" || result.action === "last")
+      ? stepCompact(item, result.action === "first" ? "first" : "last")
+      : null;
+    if (compact) {
+      explorer.select(compact);
+      void focusExplorerItem(compact);
+      return;
+    }
     const next = explorer.moveSelection(move[result.action], Boolean(result.extend));
     if (next) void focusExplorerItem(next);
     return;
@@ -4636,6 +4790,12 @@ async function runExplorerKey(result: ExplorerKeyResult, workspaceId?: string, e
   if (!item) return;
 
   if (result.action === "left") {
+    const previous = stepCompact(item, -1);
+    if (previous) {
+      explorer.select(previous);
+      void focusExplorerItem(previous);
+      return;
+    }
     const expanded = Boolean(row?.expanded || (item.isDirectory && expandedDirectories.value.has(item.key)));
     if (item.path && (item.isDirectory || row?.expandable) && expanded) {
       if (row) await toggleExpandable(item.workspaceId, row, false);
@@ -4650,6 +4810,12 @@ async function runExplorerKey(result: ExplorerKeyResult, workspaceId?: string, e
     return;
   }
   if (result.action === "right") {
+    const nextSegment = stepCompact(item, 1);
+    if (nextSegment) {
+      explorer.select(nextSegment);
+      void focusExplorerItem(nextSegment);
+      return;
+    }
     if ((item.isDirectory || row?.expandable) && !(row?.expanded || expandedDirectories.value.has(item.key) || (item.path === "" && expandedWorkspaces.value.has(item.workspaceId)))) {
       if (!item.path) toggleWorkspace(item.workspaceId);
       else if (row) await toggleExpandable(item.workspaceId, row, false);
@@ -5886,35 +6052,6 @@ defineExpose({
               </span>
             </div>
             <template v-if="expandedWorkspaces.has(workspace.id)">
-              <div
-                v-if="
-                  treeEdit?.workspaceId === workspace.id &&
-                  !treeEdit.path &&
-                  !treeEdit.parentPath
-                "
-                class="tree-entry tree-edit"
-                :style="{ paddingLeft: `${treeRowPad(0)}px` }"
-              >
-                <span class="tree-chevron" />
-                <FileTypeIcon
-                  :name="treeEdit.name || 'untitled'"
-                  :directory="treeEdit.mode === 'folder'"
-                />
-                <input
-                  :ref="setTreeEditInput"
-                  v-model="treeEdit.name"
-                  class="tree-inline-input"
-                  spellcheck="false"
-                  @pointerdown.stop
-                  @keydown.stop="onTreeEditKeydown"
-                  @blur="commitTreeEdit"
-                />
-                <span
-                  v-if="treeEditProblem"
-                  class="tree-edit-error"
-                  :class="`is-${treeEditProblem.severity}`"
-                >{{ treeEditProblem.message }}</span>
-              </div>
               <ExplorerTreeList :nodes="explorerNodes(workspace.id)">
                 <template #row="{ entry, sticky }">
                 <div
@@ -5926,8 +6063,8 @@ defineExpose({
                     treeGitClass(workspace.id, entry),
                     {
                       'is-sticky': sticky,
-                      selected: isTreeSelected(workspace.id, entry.path),
-                      focused: explorer.isFocused(treeKey(workspace.id, entry.path)),
+                      selected: isTreeSelected(workspace.id, entry.path) || compactRowActive(workspace.id, entry),
+                      focused: explorer.isFocused(treeKey(workspace.id, entry.path)) || compactRowActive(workspace.id, entry),
                       loading: loadingDirectories.has(treeKey(workspace.id, entry.path)),
                       dragging: draggingTreeKey === treeKey(workspace.id, entry.path),
                       'is-cut': explorerCutKeys.has(treeKey(workspace.id, entry.path)),
@@ -5944,7 +6081,7 @@ defineExpose({
                     paddingLeft: `${treeRowPad(entry.depth)}px`,
                     '--tree-depth': entry.depth,
                   }"
-                  @click="onTreeClick(workspace.id, entry, $event)"
+                  @click="entry.creating ? undefined : onTreeClick(workspace.id, entry, $event)"
                   @dblclick="onTreeOpenPinned(workspace.id, entry)"
                   @keydown="onTreeKeydown(workspace.id, entry, $event)"
                   @pointerdown="onTreePointerDown(workspace.id, entry, $event)"
@@ -5966,12 +6103,12 @@ defineExpose({
                   />
                   <span v-else class="tree-chevron" />
                   <FileTypeIcon
-                    :name="entry.compact ? entry.compact.names.at(-1)! : entry.name"
-                    :directory="entry.isDirectory"
+                    :name="entry.creating ? (treeEdit?.name || 'untitled') : (entry.compact ? entry.compact.names.at(-1)! : entry.name)"
+                    :directory="entry.creating ? treeEdit?.mode === 'folder' : entry.isDirectory"
                     :open="entry.expanded"
                   />
                   <input
-                    v-if="treeEdit?.path === entry.path"
+                    v-if="entry.creating || treeEdit?.path === entry.path"
                     :ref="setTreeEditInput"
                     v-model="treeEdit.name"
                     class="tree-inline-input"
@@ -5979,7 +6116,7 @@ defineExpose({
                     @click.stop
                     @pointerdown.stop
                     @keydown.stop="onTreeEditKeydown"
-                    @blur="commitTreeEdit"
+                    @blur="onTreeEditBlur"
                   />
                   <UiTooltip v-else-if="entry.compact" :content="explorerHoverTitle(entry)">
                     <span class="tree-name tree-compact">
@@ -5988,6 +6125,7 @@ defineExpose({
                         <span
                           class="tree-compact-seg"
                           :class="{
+                            'is-current': explorer.isFocused(treeKey(workspace.id, entry.compact!.paths[index])) || isTreeSelected(workspace.id, entry.compact!.paths[index]),
                             'is-drop': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && explorerDragOver.valid,
                             'is-drop-invalid': explorerDragOver?.key === treeKey(workspace.id, entry.compact!.paths[index]) && !explorerDragOver.valid,
                           }"
@@ -6006,10 +6144,10 @@ defineExpose({
                     </span>
                   </UiTooltip>
                   <span
-                    v-if="treeEdit?.path === entry.path && treeEditProblem"
+                    v-if="(entry.creating || treeEdit?.path === entry.path) && treeEditNotice"
                     class="tree-edit-error"
-                    :class="`is-${treeEditProblem.severity}`"
-                  >{{ treeEditProblem.message }}</span>
+                    :class="`is-${treeEditNotice.severity}`"
+                  >{{ treeEditNotice.message }}</span>
                   <UiTooltip
                     v-if="entry.symlinkTarget"
                     :content="`${entry.symlinkTarget} · ${t('workbench.symlinkSuffix')}`"
@@ -6024,47 +6162,6 @@ defineExpose({
                   >
                     <GitStatusBadge :letter="treeGitStatus(workspace.id, entry)" :bubble="entry.isDirectory" />
                   </UiTooltip>
-                </div>
-                </template>
-                <template #edit="{ entry }">
-                <div
-                  v-if="
-                    treeEdit?.workspaceId === workspace.id &&
-                    !treeEdit.path &&
-                    treeEdit.parentPath === entry.path
-                  "
-                  class="tree-entry tree-edit"
-                  :style="{
-                    paddingLeft: `${treeRowPad(entry.depth + 1)}px`,
-                    '--tree-depth': entry.depth + 1,
-                  }"
-                >
-                  <span
-                    v-for="level in entry.depth + 1"
-                    :key="`edit-guide:${level}`"
-                    class="tree-indent-guide"
-                    :class="{ innermost: level === entry.depth + 1 }"
-                    :style="{ left: `${treeGuideLeft(level)}px` }"
-                  />
-                  <span class="tree-chevron" />
-                  <FileTypeIcon
-                    :name="treeEdit.name || 'untitled'"
-                    :directory="treeEdit.mode === 'folder'"
-                  />
-                  <input
-                    :ref="setTreeEditInput"
-                    v-model="treeEdit.name"
-                    class="tree-inline-input"
-                    spellcheck="false"
-                    @pointerdown.stop
-                    @keydown.stop="onTreeEditKeydown"
-                    @blur="commitTreeEdit"
-                  />
-                  <span
-                    v-if="treeEditProblem"
-                    class="tree-edit-error"
-                    :class="`is-${treeEditProblem.severity}`"
-                  >{{ treeEditProblem.message }}</span>
                 </div>
                 </template>
               </ExplorerTreeList>

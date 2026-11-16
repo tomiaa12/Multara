@@ -3082,7 +3082,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
     Menlo,
     monospace;
 }
-.diff-body.is-expanded {
+.diff-body.is-expanded.vs-scroll {
   max-height: 280px;
   overflow: auto;
 }
@@ -3123,11 +3123,11 @@ button.read-row-line.is-clickable:hover .read-row-text {
 }
 .diff-line {
   display: grid;
-  grid-template-columns: 38px 14px minmax(0, 1fr);
+  grid-template-columns: 3ch 1ch minmax(0, 1fr);
   align-items: center;
-  gap: 4px;
+  column-gap: 8px;
   min-height: 20px;
-  padding: 1px 8px;
+  padding: 0 8px;
   line-height: 18px;
 }
 .diff-line .diff-num,
@@ -6789,6 +6789,10 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 .file-tree .tree-compact-seg:hover {
   text-decoration: underline;
+}
+.file-tree .tree-compact-seg.is-current {
+  background: var(--color-selection);
+  border-radius: 2px;
 }
 .file-tree .tree-name .is-match {
   background: var(--color-warning-subtle);
