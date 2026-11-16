@@ -3,6 +3,7 @@ import {
   classifyClipboardEntry,
   decodeDroppedFileUrl,
   listOsDroppedEntries,
+  osPathEntries,
   preferDroppedFolders,
   readWorkspaceFileDragData,
   resolvePathInWorkspaces,
@@ -43,6 +44,28 @@ describe("preferDroppedFolders", () => {
     ).toEqual([
       { path: "", name: "docs", isDirectory: true },
       { path: "", name: "note.md", isDirectory: false },
+    ]);
+  });
+});
+
+describe("osPathEntries", () => {
+  test("keeps a folder and drops the files the system also listed inside it", () => {
+    expect(osPathEntries([
+      "/Users/me/Downloads/docs",
+      "/Users/me/Downloads/docs/a.md",
+      "/Users/me/Downloads/spec.md",
+    ])).toEqual([
+      { path: "/Users/me/Downloads/docs", name: "docs", isDirectory: true },
+      { path: "/Users/me/Downloads/spec.md", name: "spec.md" },
+    ]);
+  });
+
+  test("treats windows paths the same after normalizing slashes", () => {
+    expect(osPathEntries([
+      "C:\\work\\src",
+      "C:\\work\\src\\app.ts",
+    ])).toEqual([
+      { path: "C:/work/src", name: "src", isDirectory: true },
     ]);
   });
 });

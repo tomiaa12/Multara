@@ -8,6 +8,7 @@ import UiButton from "../ui/UiButton.vue";
 import { dirNameOf, fileNameOf } from "../workbench/workspace-mode";
 import {
   SCM_GROUP_LABEL,
+  gitComposerTargets,
   scmFileTree,
   scmResourceLetter,
   type ScmGroupId,
@@ -242,11 +243,18 @@ function onRowPointerDown(group: ScmGroupId, row: Row, event: PointerEvent) {
       onStart: () => {
         draggingPath.value = path;
       },
-      onDrop: (payload, zone) => {
+      onDrop: (_payload, zone) => {
         requestAnimationFrame(() => {
           draggingPath.value = "";
         });
-        if (zone === "composer") emit("attach", payload);
+        if (zone !== "composer") return;
+        const targets = gitComposerTargets(
+          isDirectory ? { kind: "dir", path } : { kind: "file", path },
+          selectedPaths(group, path),
+        );
+        for (const target of targets) {
+          emit("attach", { workspaceId: props.workspaceId, path: target.path, isDirectory: target.isDirectory });
+        }
       },
       onCancel: () => {
         requestAnimationFrame(() => {
