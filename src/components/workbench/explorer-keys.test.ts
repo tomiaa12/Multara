@@ -61,11 +61,31 @@ describe("explorerKey", () => {
   });
 
   test("Ctrl+arrow moves focus without selecting, Ctrl+Space toggles", () => {
+    expect(action({ key: "ArrowDown", ctrlKey: true }, mac)).toBe("focus-next");
+    expect(action({ key: "ArrowUp", ctrlKey: true }, mac)).toBe("focus-previous");
+    expect(action({ key: "ArrowDown", ctrlKey: true }, win)).toBe("scroll-down");
+    expect(action({ key: "ArrowUp", ctrlKey: true }, win)).toBe("scroll-up");
     for (const platform of [win, mac]) {
-      expect(action({ key: "ArrowDown", ctrlKey: true }, platform)).toBe("focus-next");
-      expect(action({ key: "ArrowUp", ctrlKey: true }, platform)).toBe("focus-previous");
       expect(action({ key: " ", ctrlKey: true }, platform)).toBe("toggle-select");
     }
     expect(action({ key: "ArrowDown", metaKey: true }, mac)).toBe("open");
+  });
+
+  test("adds the explorer shortcuts VS Code binds by default", () => {
+    expect(action({ key: "f", altKey: true, shiftKey: true }, win)).toBe("find-in-folder");
+    expect(action({ key: "f", altKey: true, shiftKey: true }, mac)).toBe("find-in-folder");
+    expect(action({ key: "F3" }, win)).toBe("find");
+    expect(action({ key: "n", metaKey: true }, mac)).toBe("new-file");
+    expect(action({ key: "n", ctrlKey: true }, win)).toBe("new-file");
+    expect(action({ key: "n", metaKey: true, shiftKey: true }, mac)).toBe("new-folder");
+    expect(action({ key: "N", ctrlKey: true, shiftKey: true }, win)).toBe("new-folder");
+    expect(action({ key: "n", ctrlKey: true }, mac)).toBe("next");
+    expect(action({ key: "p", ctrlKey: true }, mac)).toBe("previous");
+    expect(action({ key: "Enter", metaKey: true, shiftKey: true }, mac)).toBe("toggle-select");
+    expect(action({ key: "Enter", ctrlKey: true }, mac)).toBe("open-side");
+    expect(action({ key: "ArrowUp", metaKey: true, shiftKey: true }, mac)).toBe("collapse-all");
+    expect(action({ key: "ArrowDown", altKey: true }, win)).toBe("next");
+    expect(action({ key: "Home", altKey: true }, mac)).toBe("first");
+    expect(action({ key: "d" }, { isMac: true, chordK: true })).toBe("compare-saved");
   });
 });

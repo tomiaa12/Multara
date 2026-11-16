@@ -16,6 +16,12 @@ export type ExplorerKeyAction =
   | "cancel-cut"
   | "select-all"
   | "find"
+  | "find-in-folder"
+  | "new-file"
+  | "new-folder"
+  | "compare-saved"
+  | "scroll-up"
+  | "scroll-down"
   | "collapse-all"
   | "left"
   | "right"
@@ -64,6 +70,7 @@ export function explorerKey(
     (mods.primary ? true : !event.metaKey && !event.ctrlKey);
 
   if (options.chordK && only({ primary: true, shift: true }) && lower === "c") return { action: "copy-relative" };
+  if (options.chordK && (noMods || only({ primary: true })) && lower === "d") return { action: "compare-saved" };
 
   if (noMods && key === "F2") return { action: "rename" };
   if (isMac && noMods && key === "Enter") return { action: "rename" };
@@ -91,20 +98,38 @@ export function explorerKey(
   if (!isMac && only({ primary: true }) && lower === "y") return { action: "redo" };
   if (only({ primary: true }) && lower === "a") return { action: "select-all" };
   if (only({ primary: true, alt: true }) && lower === "f") return { action: "find" };
+  if (noMods && key === "F3") return { action: "find" };
+  if (only({ alt: true, shift: true }) && lower === "f") return { action: "find-in-folder" };
+  if (only({ primary: true, shift: true }) && lower === "n") return { action: "new-folder" };
+  if (only({ primary: true }) && lower === "n") return { action: "new-file" };
   if (noMods && key === "Escape") return { action: "cancel-cut" };
 
   if (isMac && only({ primary: true }) && key === "ArrowDown") return { action: "open" };
   if (!isMac && noMods && key === "Enter") return { action: "open" };
   if (only({ primary: true }) && key === "Enter") return { action: "open-side" };
+  if (isMac && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && key === "Enter") {
+    return { action: "open-side" };
+  }
+  if (only({ primary: true, shift: true }) && key === "Enter") return { action: "toggle-select" };
   if (noMods && key === " ") return { action: "open-preserve-focus" };
 
   // 不改变选择地移动焦点，再用 Ctrl+Space 切换当前项（不连续多选）。
+  // Windows 的 Ctrl+↑↓ 跟 VS Code 一样滚动列表；Mac 的 ⌃↑↓ 仍只移动焦点。
   const ctrlOnly = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+  if (!isMac && ctrlOnly && key === "ArrowDown") return { action: "scroll-down" };
+  if (!isMac && ctrlOnly && key === "ArrowUp") return { action: "scroll-up" };
   if (ctrlOnly && key === "ArrowDown") return { action: "focus-next" };
   if (ctrlOnly && key === "ArrowUp") return { action: "focus-previous" };
+  if (isMac && ctrlOnly && lower === "n") return { action: "next" };
+  if (isMac && ctrlOnly && lower === "p") return { action: "previous" };
   if (ctrlOnly && key === " ") return { action: "toggle-select" };
 
   if (only({ primary: true }) && key === "ArrowLeft") return { action: "collapse-all" };
+  if (isMac && only({ primary: true, shift: true }) && key === "ArrowUp") return { action: "collapse-all" };
+  if (only({ alt: true }) && key === "ArrowDown") return { action: "next" };
+  if (only({ alt: true }) && key === "ArrowUp") return { action: "previous" };
+  if (only({ alt: true }) && key === "Home") return { action: "first" };
+  if (only({ alt: true }) && key === "End") return { action: "last" };
   if (isMac && only({ primary: true }) && key === "ArrowUp") return { action: "left" };
   if (noMods && key === "ArrowLeft") return { action: "left" };
   if (noMods && key === "ArrowRight") return { action: "right" };
@@ -137,5 +162,7 @@ export function explorerShortcutLabels(isMac: boolean) {
     openSide: isMac ? "⌘Enter" : "Ctrl+Enter",
     find: isMac ? "⌥⌘F" : "Ctrl+Alt+F",
     findInFolder: isMac ? "⌥⇧F" : "Shift+Alt+F",
+    newFile: isMac ? "⌘N" : "Ctrl+N",
+    newFolder: isMac ? "⇧⌘N" : "Ctrl+Shift+N",
   };
 }

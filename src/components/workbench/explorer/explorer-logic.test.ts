@@ -287,6 +287,21 @@ describe("row building", () => {
     };
   };
 
+  test("new folder sorts first and new file sorts after folders", () => {
+    const folder = flattenRows(buildExplorerRows(base({
+      compactFolders: false,
+      creating: { parentPath: "", isDirectory: true },
+    })));
+    expect(folder.findIndex((row) => row.creating)).toBe(0);
+    const file = flattenRows(buildExplorerRows(base({
+      compactFolders: false,
+      creating: { parentPath: "", isDirectory: false },
+    })));
+    const names = file.filter((row) => row.depth === 0).map((row) => row.creating ? "" : row.name);
+    expect(names.indexOf("")).toBeGreaterThan(names.indexOf("src"));
+    expect(names.indexOf("")).toBeLessThan(names.indexOf("package.json"));
+  });
+
   test("compacts single-child folders, hides excluded and nests files", () => {
     const rows = flattenRows(buildExplorerRows(base()));
     expect(rows.map((row) => row.name)).toEqual(["src/main", "app.ts", "package.json"]);

@@ -19,6 +19,8 @@ const props = withDefaults(defineProps<{
   disabled: false,
 });
 
+const TOOLTIP_SHOW_DELAY_MS = 500;
+
 const open = ref(false);
 const ready = ref(false);
 const triggerEl = ref<HTMLElement | null>(null);
@@ -26,11 +28,20 @@ const tipEl = ref<HTMLElement | null>(null);
 const tipStyle = ref<Record<string, string>>({});
 const resolved = ref<TooltipPlacement>(props.placement);
 let hideTimer = 0;
+let showTimer = 0;
 let positionFrame = 0;
 
-async function show() {
+function show() {
   if (props.disabled || !props.content.trim()) return;
   window.clearTimeout(hideTimer);
+  window.clearTimeout(showTimer);
+  showTimer = window.setTimeout(() => {
+    void openTip();
+  }, TOOLTIP_SHOW_DELAY_MS);
+}
+
+async function openTip() {
+  if (props.disabled || !props.content.trim()) return;
   open.value = true;
   ready.value = false;
   tipStyle.value = {
@@ -47,6 +58,7 @@ async function show() {
 }
 
 function hide() {
+  window.clearTimeout(showTimer);
   window.clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
     open.value = false;
@@ -74,6 +86,7 @@ function updatePosition() {
 
 onBeforeUnmount(() => {
   window.clearTimeout(hideTimer);
+  window.clearTimeout(showTimer);
   cancelAnimationFrame(positionFrame);
 });
 </script>

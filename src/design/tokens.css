@@ -75,6 +75,8 @@
   --motion-duration-fast: 120ms;
   --motion-duration-normal: 180ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* 悬停提示：停一会儿再出现，避免鼠标划过就闪一下 */
+  --tooltip-show-delay: 500ms;
 
   /* ── Z-index ──────────────────────────────────────────────────
    * 页面内浮层用低档；Teleport 到 body 的叠层用高档。

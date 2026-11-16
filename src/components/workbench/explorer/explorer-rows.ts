@@ -20,6 +20,8 @@ export interface ExplorerRow extends ExplorerEntryLike {
   expanded: boolean;
   /** 磁盘上已不存在、只在待审 Diff 里的文件。 */
   missing?: boolean;
+  /** 正在新建、还没有名字的占位行。按当前排序插在同级里。 */
+  creating?: boolean;
   /** 被 files.exclude/.gitignore 隐藏，但因为已在编辑器打开而强制显示。 */
   excluded?: boolean;
   /** 查找过滤命中的字符区间（相对显示名）。 */
@@ -49,6 +51,8 @@ export interface BuildRowsInput {
   /** 紧凑链在这些路径处断开（例如正在新建或重命名的文件夹）。 */
   breakCompactAt: (path: string) => boolean;
   missingFiles: string[];
+  /** 在这个目录里插入新建占位。空名字，是否文件夹决定它落在文件夹组还是文件组。 */
+  creating?: { parentPath: string; isDirectory: boolean } | null;
 }
 
 function parentOf(path: string) {
@@ -125,6 +129,16 @@ function buildLevel(
   const top = visible
     .filter((entry) => entry.isDirectory || !nestedNames.has(entry.name) || nests.has(entry.name))
     .map((entry) => ({ ...entry, hasNests: nests.has(entry.name) }));
+  if (input.creating && input.creating.parentPath === dirPath) {
+    top.push({
+      name: "",
+      path: `${dirPath}\0new`,
+      isDirectory: input.creating.isDirectory,
+      depth,
+      creating: true,
+      hasNests: false,
+    });
+  }
 
   const nodes: ExplorerRowNode[] = [];
   for (const entry of sortExplorerEntries(top, input.sort)) {
