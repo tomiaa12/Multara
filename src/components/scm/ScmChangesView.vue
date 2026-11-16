@@ -72,6 +72,7 @@ const emit = defineEmits<{
   openFile: [path: string];
   stage: [payload: { paths: string[]; staged: boolean; all?: boolean }];
   discard: [files: Array<{ path: string; worktreeStatus: string }>];
+  attach: [file: { workspaceId: string; path: string; isDirectory?: boolean }];
   error: [message: string];
 }>();
 
@@ -537,6 +538,7 @@ function onPrimary() {
           @open-file="emit('openFile', $event)"
           @stage="emit('stage', $event)"
           @discard="emit('discard', $event)"
+          @attach="emit('attach', $event)"
         />
       </template>
       <p v-else-if="loading" class="tree-empty">{{ t("scm.loadingRepo") }}</p>

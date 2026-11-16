@@ -5663,6 +5663,7 @@ defineExpose({
         @open-change="openSourceControlChange"
         @open-changes="openSourceControlChanges"
         @open-file="(target) => openEditorFile(target.workspaceId, target.path, { pin: true })"
+        @attach-file="attachWorkspacePath"
         @updated="onGitStatusUpdated"
         @worktree-changed="reconcileOpenEditors"
       />

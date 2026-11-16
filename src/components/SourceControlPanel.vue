@@ -58,6 +58,7 @@ const emit = defineEmits<{
   openFile: [target: { workspaceId: string; path: string }];
   updated: [repositories: GitRepositoryStatus[]];
   worktreeChanged: [workspaceId: string, paths: string[]];
+  attachFile: [file: { workspaceId: string; path: string; isDirectory?: boolean }];
 }>();
 
 type HookPlanKind = "commit" | "commit-push" | "commit-sync" | "push" | "pull" | "sync";
@@ -621,6 +622,7 @@ defineExpose({ refresh, revealCommit });
       @open-file="openFile(item.workspace.id, $event)"
       @stage="stage(item.workspace.id, $event.paths, $event.staged, $event.all)"
       @discard="discard(item.workspace.id, $event)"
+      @attach="emit('attachFile', $event)"
       @error="error = $event"
     />
     </UiPane>
