@@ -62,6 +62,8 @@ type ResourceFilter = "all" | "on" | "off";
 const resourceFilter = ref<ResourceFilter>("all");
 const resourceQuery = ref("");
 const systemContext = ref<AgentSystemContext | null>(null);
+/** 平台附加的运行说明只给开发排查用，正式包不展示。 */
+const showPlatformBrief = import.meta.env.DEV;
 const enabledIds = computed(() => (capabilityTab.value === "skills" ? draft.skillIds : draft.mcpIds));
 const tabResources = computed(() => (capabilityTab.value === "skills" ? skills.value : mcps.value));
 /** 内置 skill 对所有智能体始终生效，计入「已开启」，不参与开关 */
@@ -528,7 +530,7 @@ function openRun(run: AgentActivityRecord) {
               <UiTextarea v-model="draft.instructions" :rows="isChief ? 8 : 14" :readonly="isChief" :placeholder="t('agent.instructionsPlaceholder')" />
             </label>
             <!-- 平台层的运行说明对所有智能体都会附加，只读展示，让用户知道模型实际收到了什么 -->
-            <details v-if="systemContext" class="agent-system-brief">
+            <details v-if="showPlatformBrief && systemContext" class="agent-system-brief">
               <summary>{{ t("agent.platformBrief") }} <small>{{ t("agent.platformBriefHint") }}</small></summary>
               <UiTextarea :model-value="systemContext.runtimeBrief" rows="16" readonly />
             </details>
