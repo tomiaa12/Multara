@@ -156,6 +156,23 @@ describe("parseUserPromptNodes", () => {
       .toBe("/Users/tomiaa/Documents/work");
   });
 
+  test("sends the workspace root when the chip path is empty", () => {
+    const root: ComposerNode = {
+      type: "chip",
+      id: "ws:root",
+      path: "",
+      startLine: 0,
+      endLine: 0,
+      text: "pages",
+      isDirectory: true,
+      workspaceId: "ws-1",
+    };
+    const workspaces = [{ id: "ws-1", workPath: "/Users/tomiaa/Documents/work/pages", sourcePath: "" }];
+    const content = formatAgentPrompt([root], { workspaces });
+    expect(content).toContain("[文件夹] /Users/tomiaa/Documents/work/pages");
+    expect(content).toContain("pages");
+  });
+
   test("drops a bare name that does not match a workspace", () => {
     const folder: ComposerNode = {
       type: "chip",

@@ -4550,6 +4550,55 @@ function stopTreeAutoScroll() {
   treeScrollFrame = 0;
 }
 
+let suppressWorkspaceClick = false;
+
+function onWorkspacePointerDown(workspace: { id: string; name: string }, event: PointerEvent) {
+  if (event.button === 2) {
+    event.preventDefault();
+    return;
+  }
+  if (treeEdit.value) return;
+  const item = treeItem(workspace.id, "", true);
+  beginWorkspaceFilePointerDrag(
+    event,
+    { workspaceId: workspace.id, path: "", isDirectory: true },
+    {
+      label: explorer.isSelected(item.key) && explorer.selectedItems.value.length > 1
+        ? t("workbench.selectedItems", { count: explorer.selectedItems.value.length })
+        : workspace.name,
+      onStart: () => {
+        suppressWorkspaceClick = true;
+        draggingTreeKey.value = treeKey(workspace.id, "");
+        explorer.startDrag(item);
+      },
+      onMove: (moveEvent) => {
+        explorer.updateDragOver(treeItemFromPoint(moveEvent.clientX, moveEvent.clientY), isCopyDrag(moveEvent, explorer.isMac));
+        updateTreeAutoScroll(moveEvent.clientY);
+      },
+      onCancel: () => {
+        stopTreeAutoScroll();
+        draggingTreeKey.value = "";
+        explorer.endDrag();
+      },
+      onDrop: (payload, zone, dropEvent) => {
+        stopTreeAutoScroll();
+        requestAnimationFrame(() => {
+          draggingTreeKey.value = "";
+        });
+        void finishTreeDrag(payload, zone, dropEvent);
+      },
+    },
+  );
+}
+
+function onWorkspaceHeadClick(workspaceId: string, event: MouseEvent) {
+  if (suppressWorkspaceClick) {
+    suppressWorkspaceClick = false;
+    return;
+  }
+  if (explorer.clickSelect(treeItem(workspaceId, "", true), event)) toggleWorkspace(workspaceId);
+}
+
 function onTreePointerDown(
   workspaceId: string,
   entry: FileEntry,
@@ -6018,7 +6067,8 @@ defineExpose({
               role="button"
               tabindex="0"
               :data-tree-key="explorerItemKey(workspace.id, '')"
-              @click="explorer.clickSelect(treeItem(workspace.id, '', true), $event) && toggleWorkspace(workspace.id)"
+              @pointerdown="onWorkspacePointerDown(workspace, $event)"
+              @click="onWorkspaceHeadClick(workspace.id, $event)"
               @keydown="onExplorerKeydown($event, workspace.id)"
               @contextmenu="openTreeMenu(workspace.id, null, $event)"
             >

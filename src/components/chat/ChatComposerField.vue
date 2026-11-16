@@ -17,6 +17,7 @@ import {
   type ComposerReferenceChipNode,
 } from "./composer-content";
 import { createComposerIme } from "./composer-ime";
+import { listOsDroppedEntries, type OsDroppedEntry } from "./workspace-file-drag";
 import { insertComposerLineBreak, LINE_BREAK_PAD, stripLineBreakPad } from "./composer-linebreak";
 
 export type { ComposerNode };
@@ -42,6 +43,7 @@ const emit = defineEmits<{
   change: [nodes: ComposerNode[]];
   submit: [];
   "paste-image": [files: File[]];
+  "paste-os-files": [entries: OsDroppedEntry[]];
 }>();
 
 const editor = ref<HTMLDivElement | null>(null);
@@ -93,7 +95,7 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
     if (workspaceId) chip.dataset.workspaceId = workspaceId;
     const kind = file.source === "terminal" ? "terminal" : file.isDirectory ? "folder" : isWholeFileChip(file) ? "file" : "line";
     chip.dataset.chipKind = kind;
-    chip.title = kind === "line" ? `${file.path} ${lineRange(file)}` : file.path;
+    chip.title = kind === "line" ? `${file.path} ${lineRange(file)}` : (file.path || file.text);
   }
 
   const icon = document.createElement("span");
@@ -611,24 +613,11 @@ function onPaste(event: ClipboardEvent) {
     event.preventDefault();
     return;
   }
-  const seen = new Set<string>();
-  const files: File[] = [];
-  const candidates = [
-    ...Array.from(event.clipboardData?.files ?? []),
-    ...Array.from(event.clipboardData?.items ?? [])
-      .map((item) => (item.type.startsWith("image/") ? item.getAsFile() : null))
-      .filter((file): file is File => Boolean(file)),
-  ];
-  for (const file of candidates) {
-    if (!file.type.startsWith("image/")) continue;
-    const key = `${file.type}:${file.size}:${file.name}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    files.push(file);
-  }
-  if (files.length) {
+  const entries = listOsDroppedEntries(event.clipboardData);
+  const hasFiles = entries.some((entry) => entry.path || entry.isDirectory || entry.file?.type.startsWith("image/"));
+  if (hasFiles) {
     event.preventDefault();
-    emit("paste-image", files);
+    emit("paste-os-files", entries);
     return;
   }
   const copied = decodeComposerClipboard(event.clipboardData?.getData("text/html") ?? "");
@@ -638,10 +627,16 @@ function onPaste(event: ClipboardEvent) {
     return;
   }
   const text = event.clipboardData?.getData("text/plain") ?? "";
-  if (!text) return;
+  if (text) {
+    event.preventDefault();
+    document.execCommand("insertText", false, text);
+    emitChange();
+    return;
+  }
+  if (event.clipboardData?.types.includes("text/html")) return;
+  // 资源列表的复制写在系统剪贴板，WebView 的 paste 事件里经常没有 File。
   event.preventDefault();
-  document.execCommand("insertText", false, text);
-  emitChange();
+  emit("paste-os-files", []);
 }
 
 let externalDropHtml: string | null = null;
