@@ -2348,6 +2348,9 @@ body:has(.canvas-modal) .canvas-frame-host {
   white-space: nowrap;
 }
 button.chat-editing-overview-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2355,6 +2358,21 @@ button.chat-editing-overview-open {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+.chat-editing-chevron {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  transition: transform 120ms ease;
+}
+.chat-editing-bar:not(.is-collapsed) .chat-editing-chevron {
+  transform: rotate(90deg);
+}
+.chat-editing-overview-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
 }
 button.chat-editing-overview-open:hover {
   color: var(--color-text);
