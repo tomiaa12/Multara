@@ -37,7 +37,8 @@ import type { CanvasDefinition, ChatMessage, EditorSelectionContext, MessageAtta
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
-import { resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
+import { classifyClipboardEntry, resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
+import * as explorerBackend from "../services/explorer-backend";
 import {
   afterProgrammaticStick,
   listIsAtBottom,
@@ -988,14 +989,16 @@ function projectWorkspaces() {
 }
 
 function insertLocalWorkspaceChip(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
+  const workspace = store.data?.workspaces.find((item) => item.id === file.workspaceId);
+  const root = (workspace?.workPath || workspace?.sourcePath || "").replace(/[\\/]+$/, "");
   const context: EditorSelectionContext = {
     id: crypto.randomUUID(),
     workspaceId: file.workspaceId,
     path: file.path,
     startLine: 0,
     endLine: 0,
-    text: "",
-    isDirectory: Boolean(file.isDirectory),
+    text: file.path ? "" : (workspace?.name || root.split(/[\\/]/).pop() || ""),
+    isDirectory: Boolean(file.isDirectory) || !file.path,
   };
   previewContexts.value = [...previewContexts.value, context].slice(-8);
   composerInput.value?.insertChip(context);
@@ -1013,6 +1016,62 @@ function rememberComposerFile(file: { workspaceId?: string; path: string; isDire
     },
     props.projectId,
   );
+}
+
+const ATTACHMENT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  md: "text/markdown",
+  json: "application/json",
+  csv: "text/csv",
+  zip: "application/zip",
+};
+
+function addExternalAttachment(path: string, name: string) {
+  if (!session.value || !path) return;
+  const extension = name.split(".").pop()?.toLowerCase() ?? "";
+  const current = pendingAttachments.value[session.value.id] ?? [];
+  if (current.some((item) => item.path === path)) return;
+  pendingAttachments.value[session.value.id] = [
+    ...current,
+    { name: name || "附件", path, mimeType: ATTACHMENT_MIME[extension] ?? "application/octet-stream", size: 0 },
+  ].slice(0, 10);
+}
+
+async function pasteOsFiles(entries: OsDroppedEntry[]) {
+  if (!canEditComposer()) return;
+  let list = entries;
+  if (!list.length) {
+    const copied = await explorerBackend.readClipboardFiles().catch(() => []);
+    list = copied.map((file) => ({
+      path: file.path,
+      name: file.name || file.path.split(/[\\/]/).pop() || file.path,
+      isDirectory: file.isDirectory,
+    }));
+  }
+  const workspaces = projectWorkspaces();
+  for (const entry of list) {
+    const action = classifyClipboardEntry(entry, workspaces);
+    if (!action) continue;
+    if (action.kind === "chip") {
+      await attachWorkspaceFile(action);
+      continue;
+    }
+    if (action.kind === "image") {
+      await pasteImages([action.file]);
+      continue;
+    }
+    if (action.kind === "folder") {
+      await attachExternalEntry({ path: action.path, name: action.name, isDirectory: true });
+      continue;
+    }
+    addExternalAttachment(action.path, action.name);
+  }
 }
 
 async function attachWorkspaceFile(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
@@ -2050,6 +2109,7 @@ defineExpose({
         @change="onComposerChange"
         @submit="submit"
         @paste-image="pasteImages"
+        @paste-os-files="pasteOsFiles"
         @target-change="updateTarget"
         @drop-workspace-file="attachWorkspaceFile"
         @drop-os-files="attachOsFiles"

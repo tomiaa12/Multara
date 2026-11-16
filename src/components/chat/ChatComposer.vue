@@ -116,6 +116,7 @@ const emit = defineEmits<{
   change: [nodes: ComposerNode[]];
   submit: [];
   "paste-image": [files: File[]];
+  "paste-os-files": [entries: OsDroppedEntry[]];
   "target-change": [value: string];
   "drop-workspace-file": [file: WorkspaceFileDragPayload];
   "drop-os-files": [entries: OsDroppedEntry[]];
@@ -788,6 +789,7 @@ defineExpose({
       @change="onComposerChange"
       @submit="onSubmit"
       @paste-image="emit('paste-image', $event)"
+      @paste-os-files="emit('paste-os-files', $event)"
     />
     <div class="composer-footer">
       <div class="composer-footer-start">

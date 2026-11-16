@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
+  classifyClipboardEntry,
   decodeDroppedFileUrl,
   listOsDroppedEntries,
   preferDroppedFolders,
+  readWorkspaceFileDragData,
   resolvePathInWorkspaces,
 } from "./workspace-file-drag";
 
@@ -68,6 +70,58 @@ describe("resolvePathInWorkspaces", () => {
 
   test("leaves outside-workspace paths unresolved", () => {
     expect(resolvePathInWorkspaces("/Users/me/Downloads/spec.md", workspaces)).toBeNull();
+  });
+
+  test("treats the workspace root itself as the project folder", () => {
+    expect(resolvePathInWorkspaces("/Users/me/repo", workspaces)).toEqual({
+      workspaceId: "ws",
+      path: "",
+    });
+  });
+});
+
+describe("classifyClipboardEntry", () => {
+  const workspaces = [{ id: "ws", workPath: "/Users/me/repo", sourcePath: null }];
+
+  test("turns workspace files and the project root into chips", () => {
+    expect(classifyClipboardEntry({ path: "/Users/me/repo/src/app.ts", name: "app.ts" }, workspaces)).toEqual({
+      kind: "chip",
+      workspaceId: "ws",
+      path: "src/app.ts",
+      isDirectory: false,
+    });
+    expect(classifyClipboardEntry({ path: "/Users/me/repo", name: "repo", isDirectory: true }, workspaces)).toEqual({
+      kind: "chip",
+      workspaceId: "ws",
+      path: "",
+      isDirectory: true,
+    });
+  });
+
+  test("turns outside files into attachments and keeps outside folders as path refs", () => {
+    expect(classifyClipboardEntry({ path: "/Users/me/Downloads/spec.md", name: "spec.md" }, workspaces)).toEqual({
+      kind: "attachment",
+      path: "/Users/me/Downloads/spec.md",
+      name: "spec.md",
+    });
+    expect(classifyClipboardEntry({ path: "/Users/me/Downloads/docs", name: "docs", isDirectory: true }, workspaces)).toEqual({
+      kind: "folder",
+      path: "/Users/me/Downloads/docs",
+      name: "docs",
+    });
+  });
+});
+
+describe("readWorkspaceFileDragData", () => {
+  test("keeps an empty path for the project root", () => {
+    const data = {
+      getData: () => JSON.stringify({ workspaceId: "ws", path: "", isDirectory: true }),
+    } as unknown as DataTransfer;
+    expect(readWorkspaceFileDragData(data)).toEqual({
+      workspaceId: "ws",
+      path: "",
+      isDirectory: true,
+    });
   });
 });
 

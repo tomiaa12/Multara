@@ -190,7 +190,8 @@ export function readWorkspaceFileDragData(data: DataTransfer | null): WorkspaceF
     : raw;
   try {
     const parsed = JSON.parse(encoded) as WorkspaceFileDragPayload;
-    if (parsed?.workspaceId && typeof parsed.path === "string" && parsed.path) {
+    // 项目根本身的 path 是空字符串，也要能拖进输入框。
+    if (parsed?.workspaceId && typeof parsed.path === "string") {
       return {
         workspaceId: parsed.workspaceId,
         path: parsed.path,
@@ -258,7 +259,7 @@ export function resolvePathInWorkspaces(
       const roots = [root, root.startsWith("/var/") || root.startsWith("/tmp/") ? `/private${root}` : ""].filter(Boolean);
       for (const candidate of variants) {
         for (const base of roots) {
-          if (candidate === base) return null;
+          if (candidate === base) return { workspaceId: workspace.id, path: "" };
           if (candidate.startsWith(`${base}/`)) {
             return { workspaceId: workspace.id, path: candidate.slice(base.length + 1) };
           }
@@ -266,6 +267,33 @@ export function resolvePathInWorkspaces(
       }
     }
   }
+  return null;
+}
+
+export type ClipboardPasteAction =
+  | { kind: "chip"; workspaceId: string; path: string; isDirectory: boolean }
+  | { kind: "attachment"; path: string; name: string }
+  | { kind: "image"; file: File }
+  | { kind: "folder"; path: string; name: string };
+
+/** 工作区内（含项目根）变成引用；外部文件变成附件；外部文件夹没有可发送的文件字节，仍作路径引用。 */
+export function classifyClipboardEntry(
+  entry: OsDroppedEntry,
+  workspaces: Array<{ id: string; workPath?: string | null; sourcePath?: string | null }>,
+): ClipboardPasteAction | null {
+  const resolved = entry.path ? resolvePathInWorkspaces(entry.path, workspaces) : null;
+  if (resolved) {
+    return {
+      kind: "chip",
+      workspaceId: resolved.workspaceId,
+      path: resolved.path,
+      isDirectory: resolved.path === "" || Boolean(entry.isDirectory),
+    };
+  }
+  if (entry.file?.type.startsWith("image/")) return { kind: "image", file: entry.file };
+  const name = entry.name || entry.path.split(/[\\/]/).pop() || entry.path;
+  if (entry.isDirectory && entry.path) return { kind: "folder", path: entry.path, name };
+  if (entry.path) return { kind: "attachment", path: entry.path, name };
   return null;
 }
 

@@ -161,7 +161,7 @@ export function chipLabel(item: ComposerChipNode) {
     return `${prefix}${item.label}`;
   }
   if (item.source === "terminal") return t("chat.chip.terminal", { range: lineRange(item) });
-  if (item.isDirectory || isWholeFileChip(item)) return fileName(item.path) || item.path;
+  if (item.isDirectory || isWholeFileChip(item)) return fileName(item.path) || item.text || item.path;
   return `${fileName(item.path)} ${lineRange(item)}`;
 }
 
@@ -198,7 +198,7 @@ function workspaceRoot(workspaceId: string | undefined, workspaces: PromptWorksp
  */
 export function locatedChipPath(node: { path: string; workspaceId?: string }, workspaces: PromptWorkspace[] = []) {
   const path = node.path.replaceAll("\\", "/").replace(/\/+$/, "");
-  if (!path) return "";
+  if (!path) return workspaceRoot(node.workspaceId, workspaces);
   if (isAbsolutePath(path)) return path;
   const root = workspaceRoot(node.workspaceId, workspaces);
   if (root) return `${root}/${path}`;
@@ -219,7 +219,8 @@ export function formatAgentPrompt(
     if (isReferenceChip(node)) {
       return [`[实体引用] ${node.referenceKind} ${encodeURIComponent(node.referenceId)} ${encodeURIComponent(node.label)}`];
     }
-    if (!isFileChip(node) || !node.path) return [];
+    if (!isFileChip(node)) return [];
+    if (!node.path && !(node.isDirectory && node.workspaceId)) return [];
     const located = node.source === "terminal" ? "" : locatedChipPath(node, options.workspaces ?? []);
     if (node.source !== "terminal" && !located) return [];
     if (node.source === "terminal") {

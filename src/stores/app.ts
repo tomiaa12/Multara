@@ -1491,7 +1491,8 @@ export const useAppStore = defineStore("app", () => {
     path: string,
     options?: { isDirectory?: boolean },
   ) {
-    if (!workspaceId || !path) return;
+    if (!workspaceId) return;
+    if (!path && !options?.isDirectory) return;
     let isDirectory = Boolean(options?.isDirectory);
     // 未标明时用列目录探测（文件会失败），不再读全文。
     if (options?.isDirectory === undefined) {
@@ -1502,19 +1503,24 @@ export const useAppStore = defineStore("app", () => {
         isDirectory = false;
       }
     }
+    const workspace = data.value?.workspaces.find((item) => item.id === workspaceId);
+    const root = (workspace?.workPath || workspace?.sourcePath || "").replace(/[\\/]+$/, "");
     addComposerContext({
       workspaceId,
       path,
       startLine: 0,
       endLine: 0,
-      text: "",
+      text: path ? "" : (workspace?.name || root.split(/[\\/]/).pop() || ""),
       isDirectory,
     });
   }
 
   function addComposerContext(input: Omit<EditorSelectionContext, "id">) {
     const existing = composerContexts.value.find((item) =>
-      item.path === input.path && item.startLine === input.startLine && item.endLine === input.endLine,
+      item.path === input.path
+      && item.startLine === input.startLine
+      && item.endLine === input.endLine
+      && (input.path !== "" || item.workspaceId === input.workspaceId),
     );
     if (existing) {
       existing.text = input.text;
