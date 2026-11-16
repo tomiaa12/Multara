@@ -17,6 +17,7 @@ import GitStatusBadge from "../workbench/GitStatusBadge.vue";
 import { folderGitStatus, gitStatusClass, gitStatusTitle } from "../workbench/tree-git-status";
 import { treeGuideLeft, treeRowPad } from "../workbench/tree-layout";
 import { scmBusyTitle } from "../workbench/scm-commit-action";
+import { beginWorkspaceFilePointerDrag } from "../chat/workspace-file-drag";
 
 const props = defineProps<{
   workspaceId: string;
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   openFile: [path: string];
   stage: [payload: { paths: string[]; staged: boolean; all?: boolean }];
   discard: [files: Array<{ path: string; worktreeStatus: string }>];
+  attach: [file: { workspaceId: string; path: string; isDirectory?: boolean }];
 }>();
 
 const closedGroups = ref(new Set<string>());
@@ -37,6 +39,9 @@ const closedDirs = ref(new Set<string>());
 const selected = ref(new Set<string>());
 const anchor = ref("");
 const menu = ref<{ x: number; y: number; group: ScmGroupId; paths: string[] } | null>(null);
+const draggingPath = ref("");
+
+const DRAG_GROUPS = new Set<ScmGroupId>(["changes", "untracked"]);
 
 const menuItems = computed<ContextMenuItem[]>(() => {
   if (!menu.value) return [];
@@ -223,7 +228,37 @@ function rowStatusTitle(group: ScmGroupId, row: Row) {
   return row.count > 0 ? t("git.folderDirty", { count: row.count }) : "";
 }
 
+function onRowPointerDown(group: ScmGroupId, row: Row, event: PointerEvent) {
+  if (!DRAG_GROUPS.has(group)) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest("button, a, input, .scm-file-actions")) return;
+  const path = row.kind === "dir" ? row.path : row.file.path;
+  const isDirectory = row.kind === "dir";
+  beginWorkspaceFilePointerDrag(
+    event,
+    { workspaceId: props.workspaceId, path, isDirectory },
+    {
+      label: row.kind === "dir" ? row.name : fileNameOf(row.file.path),
+      onStart: () => {
+        draggingPath.value = path;
+      },
+      onDrop: (payload, zone) => {
+        requestAnimationFrame(() => {
+          draggingPath.value = "";
+        });
+        if (zone === "composer") emit("attach", payload);
+      },
+      onCancel: () => {
+        requestAnimationFrame(() => {
+          draggingPath.value = "";
+        });
+      },
+    },
+  );
+}
+
 function onRowClick(group: ScmGroupId, row: Row, event: MouseEvent) {
+  if (draggingPath.value) return;
   if (row.kind === "dir") {
     toggleDir(group, row.path);
     return;
@@ -301,6 +336,7 @@ function onRowMenu(group: ScmGroupId, row: Row, event: MouseEvent) {
           :style="{ paddingLeft: rowPad(row), '--tree-depth': rowDepth(row) }"
           role="button"
           tabindex="0"
+          @pointerdown="onRowPointerDown(group.id, row, $event)"
           @click="onRowClick(group.id, row, $event)"
           @keyup.enter="onRowEnter(group.id, row)"
           @contextmenu="onRowMenu(group.id, row, $event)"
