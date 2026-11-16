@@ -40,10 +40,12 @@ import { RunLogHost } from "./components/run-log";
 import UnsavedChangesDialog from "./components/workbench/UnsavedChangesDialog.vue";
 import UiConfirmDialog from "./components/ui/UiConfirmDialog.vue";
 import {
+  confirmDialog,
   finishConfirmDialog,
   getConfirmDialogRequest,
   onConfirmDialogChange,
 } from "./components/ui/confirm-dialog";
+import { closeFocusedSurface } from "./components/close-surface";
 import {
   confirmLeaveUnsavedEditors,
   finishUnsavedPrompt,
@@ -198,6 +200,7 @@ let stopWindowClose: (() => void) | undefined;
 let stopUnsavedPrompt: (() => void) | undefined;
 let stopConfirmDialog: (() => void) | undefined;
 let stopMenuWordWrap: UnlistenFn | undefined;
+let stopMenuClose: UnlistenFn | undefined;
 
 function onPageUnload(event: BeforeUnloadEvent) {
   if (!hasUnsavedEditors()) return;
@@ -286,11 +289,36 @@ async function quitWindow() {
   }
 }
 
+let closeShortcutBusy = false;
+
+async function handleCloseShortcut() {
+  if (closeShortcutBusy || closing) return;
+  closeShortcutBusy = true;
+  try {
+    const handled = await closeFocusedSurface();
+    if (!handled) await closeWindow();
+  } finally {
+    closeShortcutBusy = false;
+  }
+}
+
+function onCloseShortcut(event: KeyboardEvent) {
+  if (event.isComposing || event.altKey || event.shiftKey) return;
+  if (!(event.metaKey || event.ctrlKey) || event.code !== "KeyW") return;
+  event.preventDefault();
+  event.stopPropagation();
+  void handleCloseShortcut();
+}
+
 async function closeWindow() {
   if (closing) return;
   closing = true;
   try {
-    if (!(await confirmLeaveUnsavedEditors())) return;
+    if (hasUnsavedEditors()) {
+      if (!(await confirmLeaveUnsavedEditors())) return;
+    } else if (!(await confirmDialog(t("app.closeConfirm"), { type: "warning", primary: t("app.close") }))) {
+      return;
+    }
     await quitWindow();
   } catch {
     // Browser preview has no native window chrome.
@@ -387,6 +415,7 @@ onMounted(async () => {
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   window.addEventListener("beforeunload", onPageUnload);
+  window.addEventListener("keydown", onCloseShortcut, true);
   stopUnsavedPrompt = onUnsavedPromptChange(() => {
     unsavedPrompt.value = getUnsavedPrompt();
   });
@@ -394,6 +423,9 @@ onMounted(async () => {
     confirmRequest.value = getConfirmDialogRequest();
   });
   try {
+    stopMenuClose = await listen("menu-close", () => {
+      void handleCloseShortcut();
+    });
     stopMenuWordWrap = await listen<boolean>("menu-word-wrap", async ({ payload }) => {
       try {
         await store.saveSettings({ wordWrap: String(payload) });
@@ -437,8 +469,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   themeObserver?.disconnect();
   window.removeEventListener("beforeunload", onPageUnload);
+  window.removeEventListener("keydown", onCloseShortcut, true);
   stopUnsavedPrompt?.();
   stopConfirmDialog?.();
+  stopMenuClose?.();
   stopMenuWordWrap?.();
   stopWindowClose?.();
   stopWindowResize?.();

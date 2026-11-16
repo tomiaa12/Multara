@@ -592,6 +592,7 @@ const catalog: MessageCatalog = {
   "app.maximize": "Maximize",
   "app.restore": "Restore",
   "app.close": "Close",
+  "app.closeConfirm": "Close Multara?",
   "app.expandSidebar": "Expand sidebar",
   "app.collapseSidebar": "Collapse sidebar",
   "app.resizeSidebar": "Resize sidebar",
