@@ -133,7 +133,10 @@ pub async fn runtime_account_remove(
     app: AppHandle,
 ) -> Result<AccountStatus, String> {
     builtin(&runtime_id)?;
-    run(app, move |_, ctx, dir| super::remove(ctx, dir, &runtime_id, &account_id)).await
+    run(app, move |_, ctx, dir| {
+        super::remove(ctx, dir, &runtime_id, &account_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -160,7 +163,10 @@ pub struct LoginCommand {
 
 /// 内嵌终端里要跑的登录命令。
 #[tauri::command]
-pub async fn runtime_account_login(runtime_id: String, app: AppHandle) -> Result<LoginCommand, String> {
+pub async fn runtime_account_login(
+    runtime_id: String,
+    app: AppHandle,
+) -> Result<LoginCommand, String> {
     builtin(&runtime_id)?;
     run(app, move |_, ctx, dir| {
         let runtime = detected(&runtime_id).ok_or_else(|| tr!("找不到这个运行时"))?;

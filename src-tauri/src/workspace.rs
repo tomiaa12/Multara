@@ -608,10 +608,7 @@ mod tests {
         assert_eq!(plan.local_branch(), "feat/login");
         create_worktree(&source, &target, &plan, "git").unwrap();
 
-        assert_eq!(
-            output(&target, &["branch", "--show-current"]),
-            "feat/login"
-        );
+        assert_eq!(output(&target, &["branch", "--show-current"]), "feat/login");
         assert_eq!(
             output(&target, &["rev-parse", "--abbrev-ref", "@{upstream}"]),
             "upstream/feat/login"

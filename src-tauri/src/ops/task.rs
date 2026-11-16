@@ -1337,7 +1337,10 @@ mod tests {
         let second = super::maybe_resume_parent(&db, &child.session_id, "t3")
             .unwrap()
             .expect("bridge still reported");
-        assert!(second.resume_run_id.is_none(), "parent already has queued resume");
+        assert!(
+            second.resume_run_id.is_none(),
+            "parent already has queued resume"
+        );
         let bridge_count: i64 = db
             .query_row(
                 "SELECT COUNT(*) FROM messages WHERE id=?1",

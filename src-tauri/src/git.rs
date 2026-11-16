@@ -192,12 +192,7 @@ pub fn stage_contents(
     if add {
         args.push("--add".to_string());
     }
-    args.extend([
-        "--cacheinfo".to_string(),
-        mode,
-        hash,
-        relative,
-    ]);
+    args.extend(["--cacheinfo".to_string(), mode, hash, relative]);
     run(git_command, root, &args)
 }
 
@@ -224,7 +219,9 @@ fn hash_object(
             .write_all(contents)
             .map_err(|error| error.to_string())?;
     }
-    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+    let output = child
+        .wait_with_output()
+        .map_err(|error| error.to_string())?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -905,7 +902,10 @@ pub fn delete_remote_branch(root: &str, git_command: &str, branch: &str) -> Resu
         return Err(tr!("无法解析远程分支 {upstream}", upstream = upstream));
     };
     if is_protected_remote_branch(git_command, root, &remote, remote_branch) {
-        return Err(tr!("不能删除受保护远程分支 {upstream}", upstream = upstream));
+        return Err(tr!(
+            "不能删除受保护远程分支 {upstream}",
+            upstream = upstream
+        ));
     }
     run_with_timeout(
         git_command,
@@ -968,7 +968,8 @@ pub fn abort_merge(root: &str, git_command: &str) -> Result<(), String> {
 fn valid_revision_token(value: &str) -> bool {
     !value.is_empty()
         && value.chars().all(|ch| {
-            ch.is_ascii_alphanumeric() || matches!(ch, '/' | '_' | '-' | '.' | '@' | '^' | '~' | ':')
+            ch.is_ascii_alphanumeric()
+                || matches!(ch, '/' | '_' | '-' | '.' | '@' | '^' | '~' | ':')
         })
 }
 
@@ -1696,7 +1697,8 @@ mod tests {
     use super::{
         blame_line, commit, commit_files, current_upstream, discard, graph_commit_action, history,
         index_file, parse_blame_porcelain, parse_branch_header, parse_status_records, pull, push,
-        revision_file, stage, stage_all, stage_contents, status, strip_commit_message_comments, switch_branch,
+        revision_file, stage, stage_all, stage_contents, status, strip_commit_message_comments,
+        switch_branch,
     };
 
     #[test]
@@ -1727,7 +1729,9 @@ mod tests {
 
         let repository = status("workspace", "repo", root, "git").unwrap();
         assert!(repository.merging);
-        assert!(repository.commit_message.starts_with("Merge branch 'other'"));
+        assert!(repository
+            .commit_message
+            .starts_with("Merge branch 'other'"));
         assert!(!repository.commit_message.contains('#'));
     }
 
@@ -1909,10 +1913,27 @@ mod tests {
         )
         .unwrap();
         let staged = status("workspace", "repo", root, "git").unwrap();
-        let tracked = staged.changes.iter().find(|item| item.path == "tracked.txt").unwrap();
-        let added = staged.changes.iter().find(|item| item.path == "new.txt").unwrap();
-        assert_eq!((tracked.index_status.as_str(), tracked.worktree_status.as_str()), ("M", " "));
-        assert_eq!((added.index_status.as_str(), added.worktree_status.as_str()), ("A", " "));
+        let tracked = staged
+            .changes
+            .iter()
+            .find(|item| item.path == "tracked.txt")
+            .unwrap();
+        let added = staged
+            .changes
+            .iter()
+            .find(|item| item.path == "new.txt")
+            .unwrap();
+        assert_eq!(
+            (
+                tracked.index_status.as_str(),
+                tracked.worktree_status.as_str()
+            ),
+            ("M", " ")
+        );
+        assert_eq!(
+            (added.index_status.as_str(), added.worktree_status.as_str()),
+            ("A", " ")
+        );
 
         stage(
             root,
@@ -1922,10 +1943,27 @@ mod tests {
         )
         .unwrap();
         let back = status("workspace", "repo", root, "git").unwrap();
-        let tracked = back.changes.iter().find(|item| item.path == "tracked.txt").unwrap();
-        let added = back.changes.iter().find(|item| item.path == "new.txt").unwrap();
-        assert_eq!((tracked.index_status.as_str(), tracked.worktree_status.as_str()), (" ", "M"));
-        assert_eq!((added.index_status.as_str(), added.worktree_status.as_str()), ("?", "?"));
+        let tracked = back
+            .changes
+            .iter()
+            .find(|item| item.path == "tracked.txt")
+            .unwrap();
+        let added = back
+            .changes
+            .iter()
+            .find(|item| item.path == "new.txt")
+            .unwrap();
+        assert_eq!(
+            (
+                tracked.index_status.as_str(),
+                tracked.worktree_status.as_str()
+            ),
+            (" ", "M")
+        );
+        assert_eq!(
+            (added.index_status.as_str(), added.worktree_status.as_str()),
+            ("?", "?")
+        );
     }
 
     #[test]
@@ -1937,7 +1975,13 @@ mod tests {
         command(root, &["config", "user.name", "Multara Test"]);
         fs::write(temp.path().join("a.txt"), "same\n").unwrap();
         fs::write(temp.path().join("b.txt"), "body\n").unwrap();
-        stage(root, "git", &["a.txt".to_string(), "b.txt".to_string()], true).unwrap();
+        stage(
+            root,
+            "git",
+            &["a.txt".to_string(), "b.txt".to_string()],
+            true,
+        )
+        .unwrap();
         commit(root, "git", "feat: base", false).unwrap();
 
         fs::write(temp.path().join("a.txt"), "edited\n").unwrap();
@@ -1946,7 +1990,11 @@ mod tests {
         stage(
             root,
             "git",
-            &["a.txt".to_string(), "b.txt".to_string(), "b-renamed.txt".to_string()],
+            &[
+                "a.txt".to_string(),
+                "b.txt".to_string(),
+                "b-renamed.txt".to_string(),
+            ],
             true,
         )
         .unwrap();
@@ -1965,8 +2013,18 @@ mod tests {
         stage_all(root, "git", false).unwrap();
         let back = status("workspace", "repo", root, "git").unwrap();
         assert!(back.changes.iter().all(|change| !change.staged));
-        let deleted = back.changes.iter().find(|change| change.path == "b.txt").unwrap();
-        assert_eq!((deleted.index_status.as_str(), deleted.worktree_status.as_str()), (" ", "D"));
+        let deleted = back
+            .changes
+            .iter()
+            .find(|change| change.path == "b.txt")
+            .unwrap();
+        assert_eq!(
+            (
+                deleted.index_status.as_str(),
+                deleted.worktree_status.as_str()
+            ),
+            (" ", "D")
+        );
     }
 
     #[test]

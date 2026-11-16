@@ -120,12 +120,7 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         Some("CmdOrCtrl+W"),
     )?;
-    let file_menu = Submenu::with_items(
-        app,
-        &tr!("文件"),
-        true,
-        &[&close_surface],
-    )?;
+    let file_menu = Submenu::with_items(app, &tr!("文件"), true, &[&close_surface])?;
 
     let edit_menu = Submenu::with_items(
         app,

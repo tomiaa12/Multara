@@ -159,7 +159,7 @@ fn send_one(
     let (body, questions) = split_questions(content);
     let body = strip_genui(&body, &tr!("（此处有一个界面块，请在 Multara 中查看）"));
     let text = format_outbound(&installation, delivery, &body);
-        let chunks = split_message(&text, OUTBOUND_CHUNK_CHARS);
+    let chunks = split_message(&text, OUTBOUND_CHUNK_CHARS);
     let mut first = true;
     for chunk in chunks {
         if chunk.trim().is_empty() {
@@ -563,7 +563,10 @@ mod tests {
 
     #[test]
     fn drops_unclosed_genui_block() {
-        assert_eq!(strip_genui("看这里：\n```multara-ui\n{\"type\"", "[UI]"), "看这里：\n[UI]");
+        assert_eq!(
+            strip_genui("看这里：\n```multara-ui\n{\"type\"", "[UI]"),
+            "看这里：\n[UI]"
+        );
     }
 
     #[test]

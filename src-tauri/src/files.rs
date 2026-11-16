@@ -204,7 +204,12 @@ pub fn read(workspace_id: &str, root: &str, relative_path: &str) -> Result<FileC
     let path = root
         .join(normalize_relative(relative_path)?)
         .canonicalize()
-        .map_err(|error| format!("{FILE_MISSING}{}", tr!("文件不存在：{error}", error = error)))?;
+        .map_err(|error| {
+            format!(
+                "{FILE_MISSING}{}",
+                tr!("文件不存在：{error}", error = error)
+            )
+        })?;
     let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
         return Err(tr!("只能打开文件"));
@@ -527,10 +532,7 @@ pub(crate) fn create_parents_inside(
         }
         current = ensure_inside(root, &next)?;
         if !current.is_dir() {
-            return Err(tr!(
-                "{path} 不是文件夹",
-                path = relative_parent.display()
-            ));
+            return Err(tr!("{path} 不是文件夹", path = relative_parent.display()));
         }
     }
     Ok(current)

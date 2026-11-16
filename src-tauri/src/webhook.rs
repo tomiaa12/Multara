@@ -201,11 +201,7 @@ fn handle_request(mut request: tiny_http::Request, app: &AppHandle) {
         ),
         Err(error) => respond(
             request,
-            if is_auth_error(&error) {
-                401
-            } else {
-                400
-            },
+            if is_auth_error(&error) { 401 } else { 400 },
             &error_body(&error),
         ),
     }

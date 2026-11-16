@@ -108,7 +108,11 @@ pub fn run_args(
             let _ = writeln!(stderr, "{line}");
         }
         let _ = writeln!(stdout, "{}", output.stdout);
-        return if output.code == 0 { Ok(()) } else { Err(output.code) };
+        return if output.code == 0 {
+            Ok(())
+        } else {
+            Err(output.code)
+        };
     }
     match execute(args, &mut db) {
         Ok(json) => {
@@ -146,10 +150,16 @@ fn with_ui(args: &[String], json: String) -> String {
             ("status", "状态"),
             ("createdAt", "开始时间"),
         ],
-        ("agent", "list") => &[("name", "名称"), ("id", "ID"), ("runtimeId", "运行时"), ("model", "模型")],
+        ("agent", "list") => &[
+            ("name", "名称"),
+            ("id", "ID"),
+            ("runtimeId", "运行时"),
+            ("model", "模型"),
+        ],
         _ => return json,
     };
-    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(&json) else {
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(&json)
+    else {
         return json;
     };
     let rows: Vec<serde_json::Value> = items
@@ -161,7 +171,9 @@ fn with_ui(args: &[String], json: String) -> String {
                     .iter()
                     .map(|(key, _)| {
                         let value = match item.get(*key) {
-                            Some(serde_json::Value::String(text)) => serde_json::Value::String(text.clone()),
+                            Some(serde_json::Value::String(text)) => {
+                                serde_json::Value::String(text.clone())
+                            }
                             Some(serde_json::Value::Null) | None => serde_json::Value::Null,
                             Some(other) => serde_json::Value::String(other.to_string()),
                         };
@@ -213,9 +225,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&ops::task::get(db, &id)?)
         }
         ("task", "create") => {
-            let title = parsed
-                .flag(&["title"])
-                .ok_or_else(|| tr!("缺少 --title"))?;
+            let title = parsed.flag(&["title"]).ok_or_else(|| tr!("缺少 --title"))?;
             let description = description_from(&parsed)?;
             let assignee = parsed
                 .flag(&["assignee", "assignee-id"])
@@ -295,9 +305,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&ops::agent::get(db, &id)?)
         }
         ("agent", "create") => {
-            let name = parsed
-                .flag(&["name"])
-                .ok_or_else(|| tr!("缺少 --name"))?;
+            let name = parsed.flag(&["name"]).ok_or_else(|| tr!("缺少 --name"))?;
             let runtime_id = parsed
                 .flag(&["runtime-id"])
                 .ok_or_else(|| tr!("缺少 --runtime-id"))?;
@@ -373,9 +381,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&ops::squad::get(db, &id)?)
         }
         ("squad", "create") => {
-            let name = parsed
-                .flag(&["name"])
-                .ok_or_else(|| tr!("缺少 --name"))?;
+            let name = parsed.flag(&["name"]).ok_or_else(|| tr!("缺少 --name"))?;
             let lead = parsed
                 .flag(&["lead-id", "leader-id"])
                 .ok_or_else(|| tr!("缺少 --lead-id"))?;
@@ -431,9 +437,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         }
         ("project", "create") => ops::json(&ops::project::create(
             db,
-            parsed
-                .flag(&["name"])
-                .ok_or_else(|| tr!("缺少 --name"))?,
+            parsed.flag(&["name"]).ok_or_else(|| tr!("缺少 --name"))?,
             parsed.flag(&["description", "note"]).unwrap_or(""),
         )?),
         ("project", "update") => {
@@ -473,14 +477,9 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&channel_json(&installation))
         }
         ("feishu", "send") => {
-            let handle = parsed
-                .flag(&["to"])
-                .ok_or_else(|| tr!("缺少 --to"))?;
-            let text = parsed
-                .flag(&["text"])
-                .ok_or_else(|| tr!("缺少 --text"))?;
-            let run_id = env::var("MULTARA_RUN_ID")
-                .map_err(|_| tr!("没有可发送的飞书收件人"))?;
+            let handle = parsed.flag(&["to"]).ok_or_else(|| tr!("缺少 --to"))?;
+            let text = parsed.flag(&["text"]).ok_or_else(|| tr!("缺少 --text"))?;
+            let run_id = env::var("MULTARA_RUN_ID").map_err(|_| tr!("没有可发送的飞书收件人"))?;
             crate::channel::feishu_send::send(db, &run_id, handle, text)
         }
         ("channel", "enable") | ("channel", "disable") => {
@@ -504,9 +503,9 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             let genui = crate::commands::genui_enabled(db);
             ops::json(&ops::skill::builtin(locale, genui))
         }
-        ("skill", "import") => {
-            Err(tr!("第一期不支持 URL 导入。用 `multara skill list` 查看本机扫描结果。"))
-        }
+        ("skill", "import") => Err(tr!(
+            "第一期不支持 URL 导入。用 `multara skill list` 查看本机扫描结果。"
+        )),
         ("runtime", "list") => ops::json(&runtime::detect()),
         ("session", "history") => {
             let session_id = id
@@ -605,12 +604,8 @@ fn add_workspace_cli(db: &Connection, parsed: &ParsedArgs) -> Result<String, Str
     let project_id = parsed
         .flag(&["project-id", "project"])
         .ok_or_else(|| tr!("缺少 --project"))?;
-    let path = parsed
-        .flag(&["path"])
-        .ok_or_else(|| tr!("缺少 --path"))?;
-    let mode = parsed
-        .flag(&["mode"])
-        .unwrap_or("worktree-new");
+    let path = parsed.flag(&["path"]).ok_or_else(|| tr!("缺少 --path"))?;
+    let mode = parsed.flag(&["mode"]).unwrap_or("worktree-new");
     ops::require_project(db, project_id)?;
     let git_command = crate::commands::setting_value(db, "gitExecutable", "git");
     let candidates = crate::workspace::discover(path, &git_command)?;
@@ -649,7 +644,11 @@ fn add_workspace_cli(db: &Connection, parsed: &ParsedArgs) -> Result<String, Str
             let base = parsed.flag(&["base", "base-ref"]).unwrap_or("HEAD");
             ("isolated", true, Some(branch), Some(base))
         }
-        _ => return Err(tr!("--mode 只能是 worktree-new、worktree-existing 或 current")),
+        _ => {
+            return Err(tr!(
+                "--mode 只能是 worktree-new、worktree-existing 或 current"
+            ))
+        }
     };
     let configured = db
         .query_row(
@@ -669,13 +668,8 @@ fn add_workspace_cli(db: &Connection, parsed: &ParsedArgs) -> Result<String, Str
         checkout_name,
         create_branch,
     )?;
-    let workspace = crate::commands::commit_workspace(
-        db,
-        prepared,
-        &git_command,
-        create_branch,
-        base_ref,
-    )?;
+    let workspace =
+        crate::commands::commit_workspace(db, prepared, &git_command, create_branch, base_ref)?;
     ops::json(&workspace)
 }
 
@@ -683,9 +677,7 @@ fn create_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String,
     if parsed.flag(&["mode"]) == Some("plan") {
         return Err(tr!("自动化不支持规划模式"));
     }
-    let name = parsed
-        .flag(&["name"])
-        .ok_or_else(|| tr!("缺少 --name"))?;
+    let name = parsed.flag(&["name"]).ok_or_else(|| tr!("缺少 --name"))?;
     let agent_id = parsed
         .flag(&["agent-id", "assignee", "assignee-id"])
         .ok_or_else(|| tr!("缺少 --agent-id"))?;
@@ -808,8 +800,8 @@ const MAX_DESCRIPTION_FILE_BYTES: u64 = 1024 * 1024;
 /// 描述内容之后能通过 `task get` 读出来，所以只允许读当前目录（智能体的工作区）和系统临时目录里的文件，
 /// 不能拿它去读 `~/.ssh/*` 之类的任意路径。
 fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
-    let target =
-        fs::canonicalize(path).map_err(|error| tr!("读取 description-file 失败：{error}", error = error))?;
+    let target = fs::canonicalize(path)
+        .map_err(|error| tr!("读取 description-file 失败：{error}", error = error))?;
     let allowed = [env::current_dir().ok(), Some(env::temp_dir())]
         .into_iter()
         .flatten()
@@ -1071,7 +1063,11 @@ fn resolve_resource(
             return Err(ambiguous_resource(kind, token, &matched));
         }
     }
-    let matched: Vec<_> = pool.iter().copied().filter(|item| item.name == token).collect();
+    let matched: Vec<_> = pool
+        .iter()
+        .copied()
+        .filter(|item| item.name == token)
+        .collect();
     if matched.len() == 1 {
         return Ok(matched[0].id.clone());
     }
@@ -1472,14 +1468,20 @@ mod tests {
         let raw = r#"[{"title":"修登录","status":"todo","agentId":"miku","priority":"high","updatedAt":"2026-11-01T00:00:00Z"}]"#.to_string();
         // 不带 --ui：原样
         assert_eq!(super::with_ui(&args(&["task", "list"]), raw.clone()), raw);
-        let wrapped: serde_json::Value =
-            serde_json::from_str(&super::with_ui(&args(&["task", "list", "--ui"]), raw.clone())).unwrap();
+        let wrapped: serde_json::Value = serde_json::from_str(&super::with_ui(
+            &args(&["task", "list", "--ui"]),
+            raw.clone(),
+        ))
+        .unwrap();
         assert_eq!(wrapped["items"][0]["title"], "修登录");
         assert_eq!(wrapped["_ui"]["type"], "table");
         assert_eq!(wrapped["_ui"]["props"]["rows"][0]["status"], "todo");
         assert_eq!(wrapped["_ui"]["props"]["columns"][4]["format"], "date");
         // 不支持的命令带 --ui 也原样
-        assert_eq!(super::with_ui(&args(&["squad", "list", "--ui"]), raw.clone()), raw);
+        assert_eq!(
+            super::with_ui(&args(&["squad", "list", "--ui"]), raw.clone()),
+            raw
+        );
     }
 
     #[test]

@@ -82,7 +82,10 @@ impl ResolvedTool {
 }
 
 /// 在缓存的工具定义里找这个工具的 UI。同名 server 有多份配置时取第一个声明了这个工具 UI 的。
-pub fn resolve_tool(entries: &[crate::mcp_tools_cache::McpToolsCacheEntry], tool_name: &str) -> Option<ResolvedTool> {
+pub fn resolve_tool(
+    entries: &[crate::mcp_tools_cache::McpToolsCacheEntry],
+    tool_name: &str,
+) -> Option<ResolvedTool> {
     for (server, tool) in split_tool_name(tool_name) {
         for entry in entries.iter().filter(|entry| entry.name == server) {
             if let Some(ui) = entry
@@ -115,7 +118,9 @@ fn domains(value: Option<&Value>) -> Vec<String> {
         .map(str::trim)
         .filter(|item| {
             !item.is_empty()
-                && !item.chars().any(|ch| ch == ';' || ch == ',' || ch == '\'' || ch == '"' || ch.is_whitespace())
+                && !item.chars().any(|ch| {
+                    ch == ';' || ch == ',' || ch == '\'' || ch == '"' || ch.is_whitespace()
+                })
         })
         .map(str::to_string)
         .collect()
@@ -142,9 +147,23 @@ pub fn app_csp(meta_csp: Option<&Value>) -> String {
         join("img-src 'self' data:", &resource),
         join("font-src 'self'", &resource),
         join("media-src 'self' data:", &resource),
-        format!("frame-src {}", if frame.is_empty() { "'none'".to_string() } else { frame.join(" ") }),
+        format!(
+            "frame-src {}",
+            if frame.is_empty() {
+                "'none'".to_string()
+            } else {
+                frame.join(" ")
+            }
+        ),
         "object-src 'none'".to_string(),
-        format!("base-uri {}", if base.is_empty() { "'self'".to_string() } else { base.join(" ") }),
+        format!(
+            "base-uri {}",
+            if base.is_empty() {
+                "'self'".to_string()
+            } else {
+                base.join(" ")
+            }
+        ),
         format!("frame-ancestors {}", ui_host::frame_ancestors()),
     ]
     .join("; ")
@@ -157,8 +176,16 @@ pub fn resource_html(result: &Value) -> Result<(String, Value), String> {
         .and_then(Value::as_array)
         .and_then(|items| items.first())
         .ok_or_else(|| tr!("界面资源是空的"))?;
-    let mime = content.get("mimeType").and_then(Value::as_str).unwrap_or("text/html");
-    let mime_base = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let mime = content
+        .get("mimeType")
+        .and_then(Value::as_str)
+        .unwrap_or("text/html");
+    let mime_base = mime
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     if mime_base != "text/html" {
         return Err(tr!("界面资源不是 HTML：{mime}", mime = mime));
     }
@@ -184,13 +211,19 @@ fn page_id(uri: &str) -> String {
 }
 
 impl McpAppHost {
-    fn session(&self, app: &AppHandle, owner: &str, server: &str) -> Result<Arc<Mutex<Pooled>>, String> {
+    fn session(
+        &self,
+        app: &AppHandle,
+        owner: &str,
+        server: &str,
+    ) -> Result<Arc<Mutex<Pooled>>, String> {
         let key = format!("{owner}:{server}");
         if let Some(existing) = self.pool.lock().map_err(|_| "lock")?.get(&key).cloned() {
             return Ok(existing);
         }
         let entry_json = crate::resources::mcp_entry_json(owner, server)?;
-        let wrapped: Value = serde_json::from_str(&entry_json).map_err(|error| error.to_string())?;
+        let wrapped: Value =
+            serde_json::from_str(&entry_json).map_err(|error| error.to_string())?;
         let entry = wrapped.get(server).cloned().unwrap_or(Value::Null);
         let _ = app;
         let session = McpSession::open(server, &entry)?;
@@ -205,7 +238,14 @@ impl McpAppHost {
         Ok(pooled)
     }
 
-    fn request(&self, app: &AppHandle, owner: &str, server: &str, method: &str, params: Value) -> Result<Value, String> {
+    fn request(
+        &self,
+        app: &AppHandle,
+        owner: &str,
+        server: &str,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
         let pooled = self.session(app, owner, server)?;
         let mut guard = pooled.lock().map_err(|_| "lock")?;
         guard.last_used = Instant::now();
@@ -221,7 +261,11 @@ impl McpAppHost {
     }
 
     /// 读 UI 资源并托管，返回页面地址
-    fn host_page(&self, app: &AppHandle, resolved: &ResolvedTool) -> Result<(String, Value), String> {
+    fn host_page(
+        &self,
+        app: &AppHandle,
+        resolved: &ResolvedTool,
+    ) -> Result<(String, Value), String> {
         let key = resolved.server_key();
         let result = self.request(
             app,
@@ -234,7 +278,10 @@ impl McpAppHost {
         let csp = app_csp(meta.get("csp"));
         let id = page_id(&resolved.ui.resource_uri);
         let mut hosted = self.hosted.lock().map_err(|_| "lock")?;
-        if hosted.get(&key).is_some_and(|server| server.site.is_stopped()) {
+        if hosted
+            .get(&key)
+            .is_some_and(|server| server.site.is_stopped())
+        {
             hosted.remove(&key);
         }
         if !hosted.contains_key(&key) {
@@ -247,7 +294,11 @@ impl McpAppHost {
                 let Some(id) = request.path.strip_prefix("/r/") else {
                     return HostResponse::Status(404);
                 };
-                match handler_pages.lock().ok().and_then(|pages| pages.get(id).cloned()) {
+                match handler_pages
+                    .lock()
+                    .ok()
+                    .and_then(|pages| pages.get(id).cloned())
+                {
                     Some((html, csp)) => HostResponse::HtmlWithCsp { html, csp },
                     None => HostResponse::Status(404),
                 }
@@ -281,7 +332,13 @@ impl McpAppHost {
     }
 
     /// 页面能调的工具：同一 server、`visibility` 含 `app`（缺省视为含，R18）
-    fn app_tool_allowed(&self, app: &AppHandle, owner: &str, server: &str, tool: &str) -> Result<bool, String> {
+    fn app_tool_allowed(
+        &self,
+        app: &AppHandle,
+        owner: &str,
+        server: &str,
+        tool: &str,
+    ) -> Result<bool, String> {
         let pooled = self.session(app, owner, server)?;
         let guard = pooled.lock().map_err(|_| "lock")?;
         Ok(guard
@@ -325,27 +382,31 @@ fn remember_port(app: &AppHandle, key: &str, port: u16) {
 
 /// 空闲 5 分钟的连接关掉；设置里关了 MCP Apps 就全部关掉
 pub fn start_reaper(app: AppHandle) {
-    let _ = thread::Builder::new().name("mcp-app-reaper".into()).spawn(move || loop {
-        thread::sleep(Duration::from_secs(60));
-        let host = app.state::<McpAppHost>();
-        let enabled = app
-            .state::<AppState>()
-            .lock_db()
-            .map(|db| mcp_apps_enabled(&db))
-            .unwrap_or(false);
-        if !enabled {
-            host.close_all();
-            continue;
-        }
-        let Ok(mut pool) = host.pool.lock() else { continue };
-        pool.retain(|_, pooled| {
-            pooled
-                .try_lock()
-                .map(|guard| guard.last_used.elapsed() < IDLE)
-                .unwrap_or(true)
+    let _ = thread::Builder::new()
+        .name("mcp-app-reaper".into())
+        .spawn(move || loop {
+            thread::sleep(Duration::from_secs(60));
+            let host = app.state::<McpAppHost>();
+            let enabled = app
+                .state::<AppState>()
+                .lock_db()
+                .map(|db| mcp_apps_enabled(&db))
+                .unwrap_or(false);
+            if !enabled {
+                host.close_all();
+                continue;
+            }
+            let Ok(mut pool) = host.pool.lock() else {
+                continue;
+            };
+            pool.retain(|_, pooled| {
+                pooled
+                    .try_lock()
+                    .map(|guard| guard.last_used.elapsed() < IDLE)
+                    .unwrap_or(true)
+            });
+            drop(pool);
         });
-        drop(pool);
-    });
 }
 
 fn cache_entries(app: &AppHandle) -> Vec<crate::mcp_tools_cache::McpToolsCacheEntry> {
@@ -373,11 +434,7 @@ pub async fn mcp_app_resolve(tool: String, app: AppHandle) -> Result<Option<Valu
         };
         let host = app.state::<McpAppHost>();
         let (url, meta) = host.host_page(&app, &resolved)?;
-        let origin = url
-            .split('/')
-            .take(3)
-            .collect::<Vec<_>>()
-            .join("/");
+        let origin = url.split('/').take(3).collect::<Vec<_>>().join("/");
         Ok(Some(json!({
             "serverKey": resolved.server_key(),
             "server": resolved.server,
@@ -470,10 +527,16 @@ mod tests {
 
     #[test]
     fn splits_mcp_tool_names() {
-        assert_eq!(split_tool_name("mcp__charts__draw"), vec![("charts".into(), "draw".into())]);
+        assert_eq!(
+            split_tool_name("mcp__charts__draw"),
+            vec![("charts".into(), "draw".into())]
+        );
         assert_eq!(
             split_tool_name("mcp__my__srv__go"),
-            vec![("my".into(), "srv__go".into()), ("my__srv".into(), "go".into())]
+            vec![
+                ("my".into(), "srv__go".into()),
+                ("my__srv".into(), "go".into())
+            ]
         );
         assert!(split_tool_name("Bash").is_empty());
         assert!(split_tool_name("mcp____x").is_empty());
@@ -482,7 +545,11 @@ mod tests {
     #[test]
     fn resolves_only_tools_with_ui() {
         let entries = vec![
-            entry("claude", "charts", vec![tool("draw", Some("ui://draw")), tool("plain", None)]),
+            entry(
+                "claude",
+                "charts",
+                vec![tool("draw", Some("ui://draw")), tool("plain", None)],
+            ),
             entry("cursor", "my__srv", vec![tool("go", Some("ui://go"))]),
         ];
         let found = resolve_tool(&entries, "mcp__charts__draw").unwrap();
@@ -490,7 +557,10 @@ mod tests {
         assert_eq!(found.ui.resource_uri, "ui://draw");
         assert!(resolve_tool(&entries, "mcp__charts__plain").is_none());
         assert!(resolve_tool(&entries, "mcp__other__draw").is_none());
-        assert_eq!(resolve_tool(&entries, "mcp__my__srv__go").unwrap().server, "my__srv");
+        assert_eq!(
+            resolve_tool(&entries, "mcp__my__srv__go").unwrap().server,
+            "my__srv"
+        );
     }
 
     #[test]
@@ -523,9 +593,14 @@ mod tests {
         assert_eq!(html, "<p>x</p>");
         assert_eq!(meta["prefersBorder"], false);
         let blob = base64::engine::general_purpose::STANDARD.encode("<b>y</b>");
-        let (html, _) = resource_html(&json!({ "contents": [{ "mimeType": "text/html", "blob": blob }] })).unwrap();
+        let (html, _) =
+            resource_html(&json!({ "contents": [{ "mimeType": "text/html", "blob": blob }] }))
+                .unwrap();
         assert_eq!(html, "<b>y</b>");
-        assert!(resource_html(&json!({ "contents": [{ "mimeType": "image/png", "blob": "" }] })).is_err());
+        assert!(
+            resource_html(&json!({ "contents": [{ "mimeType": "image/png", "blob": "" }] }))
+                .is_err()
+        );
         assert!(resource_html(&json!({ "contents": [] })).is_err());
     }
 

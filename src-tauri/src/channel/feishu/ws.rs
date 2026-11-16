@@ -30,8 +30,8 @@ pub struct WsConn {
 
 impl WsConn {
     pub fn connect(url: &str, timeout: Duration) -> Result<WsConn, String> {
-        let parsed = url::Url::parse(url)
-            .map_err(|error| tr!("长连接地址无效：{error}", error = error))?;
+        let parsed =
+            url::Url::parse(url).map_err(|error| tr!("长连接地址无效：{error}", error = error))?;
         if parsed.scheme() != "wss" {
             return Err(tr!("长连接只支持 wss"));
         }
@@ -52,9 +52,7 @@ impl WsConn {
         let mut addrs = (host.as_str(), port)
             .to_socket_addrs()
             .map_err(|error| tr!("无法解析长连接主机：{error}", error = error))?;
-        let address = addrs
-            .next()
-            .ok_or_else(|| tr!("长连接主机没有可用地址"))?;
+        let address = addrs.next().ok_or_else(|| tr!("长连接主机没有可用地址"))?;
         let tcp = TcpStream::connect_timeout(&address, timeout)
             .map_err(|error| tr!("连接长连接网关失败：{error}", error = error))?;
         let _ = tcp.set_nodelay(true);

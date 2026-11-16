@@ -164,11 +164,7 @@ fn system_language() -> String {
 }
 
 fn env_language_usable(value: &str) -> bool {
-    let base = value
-        .split(['.', '@'])
-        .next()
-        .unwrap_or(value)
-        .trim();
+    let base = value.split(['.', '@']).next().unwrap_or(value).trim();
     !base.is_empty() && !base.eq_ignore_ascii_case("C") && !base.eq_ignore_ascii_case("POSIX")
 }
 

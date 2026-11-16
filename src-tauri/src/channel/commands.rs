@@ -234,8 +234,7 @@ fn save_installation_blocking(
     };
     store::save_installation(&*state.lock_db()?, &installation)?;
     supervisor::reload(app);
-    let saved =
-        store::get_installation(&*state.lock_db()?, &id)?.ok_or_else(|| tr!("保存失败"))?;
+    let saved = store::get_installation(&*state.lock_db()?, &id)?.ok_or_else(|| tr!("保存失败"))?;
     Ok(view(app, &saved))
 }
 
@@ -338,7 +337,8 @@ fn fill_missing_names(
             continue;
         };
         if let Ok(db) = state.lock_db() {
-            let _ = store::set_allowed_user_name(&db, installation_id, &user.channel_user_id, &name);
+            let _ =
+                store::set_allowed_user_name(&db, installation_id, &user.channel_user_id, &name);
         }
         user.display_name = Some(name);
     }
@@ -368,8 +368,7 @@ pub fn rotate_channel_pairing_code(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
     let db = state.lock_db()?;
-    let installation =
-        store::get_installation(&db, &id)?.ok_or_else(|| tr!("渠道连接不存在"))?;
+    let installation = store::get_installation(&db, &id)?.ok_or_else(|| tr!("渠道连接不存在"))?;
     let mut config = installation.config.clone();
     config.pairing_code = generate_pairing_code();
     store::set_config(&db, &id, &config)?;

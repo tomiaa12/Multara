@@ -54,8 +54,10 @@ fn format_squad_roster(
     squad: &crate::models::Squad,
     agents: &[crate::models::Agent],
 ) -> String {
-    let by_id: std::collections::HashMap<&str, &crate::models::Agent> =
-        agents.iter().map(|agent| (agent.id.as_str(), agent)).collect();
+    let by_id: std::collections::HashMap<&str, &crate::models::Agent> = agents
+        .iter()
+        .map(|agent| (agent.id.as_str(), agent))
+        .collect();
     let no_desc = no_desc(locale);
     let leader = by_id.get(squad.leader_agent_id.as_str());
     let leader_line = match leader {
@@ -625,13 +627,17 @@ mod tests {
                 assert!(brief.contains("```multara-questions"), "{locale}");
                 assert!(brief.contains("```multara-ui"), "{locale}");
                 assert!(brief.contains("$MULTARA_TASK_ID"), "{locale}");
-                assert!(brief.contains("/tmp/multara-builtin-skills/<name>/SKILL.md"), "{locale}");
+                assert!(
+                    brief.contains("/tmp/multara-builtin-skills/<name>/SKILL.md"),
+                    "{locale}"
+                );
                 assert!(brief.contains("multara squad list"), "{locale}");
                 if *locale == "zh-CN" {
                     assert!(brief.contains("向用户提问"));
                     continue;
                 }
-                for chinese in ["直接改", "向用户提问", "这次运行", "智能体", "代码块"] {
+                for chinese in ["直接改", "向用户提问", "这次运行", "智能体", "代码块"]
+                {
                     assert!(!brief.contains(chinese), "{locale} 含有「{chinese}」");
                 }
             }

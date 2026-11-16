@@ -112,7 +112,11 @@ impl CanvasHost {
 }
 
 /// 起服务（已在跑就复用 URL）。实例必须存在。
-pub fn ensure_hosted(app: &AppHandle, session_id: &str, instance_id: &str) -> Result<String, CanvasError> {
+pub fn ensure_hosted(
+    app: &AppHandle,
+    session_id: &str,
+    instance_id: &str,
+) -> Result<String, CanvasError> {
     let host = app.state::<CanvasHost>();
     if let Some(url) = host.url(session_id, instance_id) {
         return Ok(url);
@@ -135,7 +139,10 @@ pub fn ensure_hosted(app: &AppHandle, session_id: &str, instance_id: &str) -> Re
     if sites.len() >= MAX_HOSTED {
         return Err(CanvasError::new(
             "canvas.limit",
-            tr!("同时显示的 Canvas 太多（上限 {max}），先关掉一些", max = MAX_HOSTED),
+            tr!(
+                "同时显示的 Canvas 太多（上限 {max}），先关掉一些",
+                max = MAX_HOSTED
+            ),
         ));
     }
     let last_used = Arc::new(AtomicU64::new(now_secs()));
@@ -261,7 +268,10 @@ fn err(error: CanvasError) -> String {
 }
 
 #[tauri::command]
-pub fn list_canvas_instances(session_id: String, state: State<'_, AppState>) -> Result<Value, String> {
+pub fn list_canvas_instances(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let _span = crate::diag::span("list_canvas_instances");
     let db = state.lock_db()?;
     if !ops::canvases_enabled(&db) {
@@ -275,11 +285,17 @@ pub fn list_canvas_instances(session_id: String, state: State<'_, AppState>) -> 
 }
 
 #[tauri::command]
-pub async fn ensure_canvas_hosted(session_id: String, instance_id: String, app: AppHandle) -> Result<String, String> {
+pub async fn ensure_canvas_hosted(
+    session_id: String,
+    instance_id: String,
+    app: AppHandle,
+) -> Result<String, String> {
     let _span = crate::diag::span("ensure_canvas_hosted");
-    tauri::async_runtime::spawn_blocking(move || ensure_hosted(&app, &session_id, &instance_id).map_err(err))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_hosted(&app, &session_id, &instance_id).map_err(err)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -346,7 +362,11 @@ pub fn close_canvas(
 
 /// 服务当前地址；没在跑返回 None。不会起服务（前端用来探测断开）
 #[tauri::command]
-pub fn canvas_hosted_url(session_id: String, instance_id: String, app: AppHandle) -> Option<String> {
+pub fn canvas_hosted_url(
+    session_id: String,
+    instance_id: String,
+    app: AppHandle,
+) -> Option<String> {
     app.state::<CanvasHost>().url(&session_id, &instance_id)
 }
 
@@ -363,13 +383,19 @@ pub fn set_canvas_pinned(
     ops::set_pinned(&db, &session_id, &instance_id, pinned).map_err(err)?;
     drop(db);
     // 所有会话的列表都可能变：前端收到后刷新它关心的会话
-    let _ = app.emit("canvas-changed", json!({ "sessionId": session_id, "pinned": true }));
+    let _ = app.emit(
+        "canvas-changed",
+        json!({ "sessionId": session_id, "pinned": true }),
+    );
     Ok(())
 }
 
 /// 新建聊天菜单的 Canvas 子菜单：这个需求的工作区里 `.multara/canvases/` 下可直接打开的定义（五期）
 #[tauri::command]
-pub fn list_project_canvases(project_id: String, state: State<'_, AppState>) -> Result<Value, String> {
+pub fn list_project_canvases(
+    project_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let db = state.lock_db()?;
     if !ops::canvases_enabled(&db) {
         return Ok(Value::Array(Vec::new()));

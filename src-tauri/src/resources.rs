@@ -15,7 +15,8 @@ use serde_json::{Map, Value};
 use crate::cli_catalog;
 use crate::models::{GlobalResource, McpForm, McpInput, PromptFile, ResourceSource};
 
-/// Skills 只扫用户目录，不扫工作区；MCP 仍可挂工作区配置。
+/// 资源页的 Skill 只扫用户目录，不扫工作区。对话里的项目技能另按工作区根目录收集。
+/// MCP 仍可挂工作区配置。
 /// 全局 CLI / 路径见 `shared/cli-catalog.json`。
 const WORKSPACE_MCP_KEYS: &[(&str, &str)] = &[
     ("mcp", ".mcp.json"),
@@ -1649,7 +1650,10 @@ pub fn skill_directory(resource_id: &str) -> Result<PathBuf, String> {
 
 /// 把路径组件按本机分隔符重拼，避免 UI 出现 `C:\Users\...\.agents/skills\...` 这种混用。
 fn display_path(path: &Path) -> String {
-    path.components().collect::<PathBuf>().to_string_lossy().into_owned()
+    path.components()
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn modified_at(path: &Path) -> String {
@@ -1699,7 +1703,7 @@ fn skill_description(path: &Path) -> String {
 
 /// 从 SKILL.md 的 frontmatter 里取 description。
 /// 支持单行写法和 YAML 块标量：`>` / `>-` 折叠成一行，`|` / `|-` 保留换行。
-fn parse_skill_description(content: &str) -> Option<String> {
+pub(crate) fn parse_skill_description(content: &str) -> Option<String> {
     let mut lines = content.lines();
     // 有 frontmatter 时只在 `---` 之间找，避免误读正文里的 description:
     let in_frontmatter = content.trim_start().starts_with("---");

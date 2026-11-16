@@ -41,13 +41,14 @@ pub mod ops;
 pub mod plan;
 pub mod plan_prompts;
 pub mod process;
+pub mod project_skills;
 pub mod protocol;
 pub mod resources;
 pub mod runtime;
 pub mod runtime_accounts;
-pub mod runtime_usage;
 pub mod runtime_brief;
 pub mod runtime_models;
+pub mod runtime_usage;
 pub mod session;
 pub mod session_export;
 pub mod snapshot;
@@ -73,38 +74,38 @@ use commands::{
     create_task, create_workspace_directory, create_workspace_file, delete_agent,
     delete_automation, delete_custom_runtime, delete_file_baseline, delete_inbox_item, delete_mcp,
     delete_project, delete_skill, delete_snapshots_from, delete_squad, delete_task,
-    delete_workspace_entry, detach_workspace, detect_runtimes, list_runtimes, fork_chat_session,
-    generate_branch_name, generate_chat_session_title, generate_git_commit_message, generate_skill,
-    get_custom_runtime, get_mcp, get_mcp_inputs, get_mcp_json, get_run_statistics,
-    get_snapshot_content, get_turn_snapshots, git_abort_workspace_merge, git_blame_file,
-    git_blame_line, git_commit_files, git_commit_multiple, git_commit_workspace, git_discard_files,
-    git_compare_refs_workspace, git_fetch_workspace, git_graph_commit_action, git_head_file,
-    git_index_file, git_log_workspace,
+    delete_workspace_entry, detach_workspace, detect_runtimes, dictation_environment,
+    fork_chat_session, generate_branch_name, generate_chat_session_title,
+    generate_git_commit_message, generate_skill, get_custom_runtime, get_mcp, get_mcp_inputs,
+    get_mcp_json, get_run_statistics, get_snapshot_content, get_turn_snapshots,
+    git_abort_workspace_merge, git_blame_file, git_blame_line, git_commit_files,
+    git_commit_multiple, git_commit_workspace, git_compare_refs_workspace, git_discard_files,
+    git_fetch_workspace, git_graph_commit_action, git_head_file, git_index_file, git_log_workspace,
     git_merge_workspace_branch, git_pull_workspace, git_push_workspace,
     git_rename_workspace_branch, git_repair_worktree_runtime, git_revision_file,
     git_set_branch_upstream, git_stage_contents, git_stage_files, git_stage_repository,
-    git_switch_workspace_branch,
-    git_sync_workspace, import_skill_from_folder, import_skill_from_url, install_mcp,
-    list_agent_runs, list_agents_and_squads, list_automation_runs, list_chat_messages, list_projects_and_workspaces,
-    list_external_directory, list_mcp_tool_cache, list_project_git_status, list_prompt_files,
-    list_quick_open_files, list_resource_sources, list_runtime_models, list_skill_directory,
-    list_task_inbox_surfaces, list_task_runs, list_webhook_deliveries, list_workspace_directory,
-    list_workspace_tree, load_active_diff_data, load_attachment_preview, load_session_diff_data,
-    mark_inbox_all_read, mark_inbox_read, mark_inbox_unread, open_external_url, dictation_environment,
-    open_message_attachment, plan_action, probe_mcp, probe_runtime_command, read_external_file,
-    read_skill_file, read_workspace_file, receive_automation_webhook, rename_workspace_entry,
-    resolve_permission, reveal_resource, reveal_workspace_path, run_automation, save_agent,
-    save_automation, save_custom_runtime, save_file_baseline, save_mcp, save_mcp_inputs,
-    save_pasted_attachment, save_settings, save_squad, scan_resources, scan_workspace_candidates,
-    schedule_mcp_tools_refresh, search_catalog, search_workspace, send_message, set_mcp_enabled,
-    set_message_feedback, set_project_archived, set_session_default_mode, set_skill_enabled,
-    sign_out_mcp, skill_file_count, stop_run, terminal_clipboard_text, terminal_close,
-    terminal_command_names, terminal_free_port, terminal_open, terminal_profiles, terminal_publish,
-    terminal_resize, terminal_resolve_paths, terminal_services, terminal_write,
-    test_runtime_connection, transfer_resource, trigger_automation_event,
-    truncate_session_from_message, update_chat_session_target, update_chat_session_title,
-    update_chunk_state, update_project, update_task, update_task_meta, update_task_status,
-    upsert_inbox_item, write_skill_file, write_workspace_file,
+    git_switch_workspace_branch, git_sync_workspace, import_skill_from_folder,
+    import_skill_from_url, install_mcp, list_agent_runs, list_agents_and_squads,
+    list_automation_runs, list_chat_messages, list_external_directory, list_mcp_tool_cache,
+    list_project_git_status, list_projects_and_workspaces, list_prompt_files,
+    list_quick_open_files, list_resource_sources, list_runtime_models, list_runtimes,
+    list_skill_directory, list_task_inbox_surfaces, list_task_runs, list_webhook_deliveries,
+    list_workspace_directory, list_workspace_tree, load_active_diff_data, load_attachment_preview,
+    load_session_diff_data, mark_inbox_all_read, mark_inbox_read, mark_inbox_unread,
+    open_external_url, open_message_attachment, plan_action, probe_mcp, probe_runtime_command,
+    read_external_file, read_skill_file, read_workspace_file, receive_automation_webhook,
+    rename_workspace_entry, resolve_permission, reveal_resource, reveal_workspace_path,
+    run_automation, save_agent, save_automation, save_custom_runtime, save_file_baseline, save_mcp,
+    save_mcp_inputs, save_pasted_attachment, save_settings, save_squad, scan_resources,
+    scan_workspace_candidates, schedule_mcp_tools_refresh, search_catalog, search_workspace,
+    send_message, set_mcp_enabled, set_message_feedback, set_project_archived,
+    set_session_default_mode, set_skill_enabled, sign_out_mcp, skill_file_count, stop_run,
+    terminal_clipboard_text, terminal_close, terminal_command_names, terminal_free_port,
+    terminal_open, terminal_profiles, terminal_publish, terminal_resize, terminal_resolve_paths,
+    terminal_services, terminal_write, test_runtime_connection, transfer_resource,
+    trigger_automation_event, truncate_session_from_message, update_chat_session_target,
+    update_chat_session_title, update_chunk_state, update_project, update_task, update_task_meta,
+    update_task_status, upsert_inbox_item, write_skill_file, write_workspace_file,
 };
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -179,10 +180,7 @@ fn browser_dev_mode() -> bool {
     )
 }
 
-fn reveal_main_window(
-    app: &tauri::App,
-    theme_setting: Option<&str>,
-) -> tauri::Result<()> {
+fn reveal_main_window(app: &tauri::App, theme_setting: Option<&str>) -> tauri::Result<()> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
@@ -230,25 +228,23 @@ fn reveal_main_window(
 fn persist_main_window_state(window: &tauri::WebviewWindow) {
     let app = window.app_handle().clone();
     let scheduled = Arc::new(AtomicBool::new(false));
-    window.on_window_event(move |event| {
-        match event {
-            WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
-                if scheduled.swap(true, Ordering::SeqCst) {
-                    return;
-                }
-                let app = app.clone();
-                let scheduled = Arc::clone(&scheduled);
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(400));
-                    scheduled.store(false, Ordering::SeqCst);
-                    let _ = app.save_window_state(RESTORED_WINDOW_FLAGS);
-                });
+    window.on_window_event(move |event| match event {
+        WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+            if scheduled.swap(true, Ordering::SeqCst) {
+                return;
             }
-            WindowEvent::CloseRequested { .. } => {
+            let app = app.clone();
+            let scheduled = Arc::clone(&scheduled);
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(400));
+                scheduled.store(false, Ordering::SeqCst);
                 let _ = app.save_window_state(RESTORED_WINDOW_FLAGS);
-            }
-            _ => {}
+            });
         }
+        WindowEvent::CloseRequested { .. } => {
+            let _ = app.save_window_state(RESTORED_WINDOW_FLAGS);
+        }
+        _ => {}
     });
 }
 
@@ -281,9 +277,11 @@ pub fn run() {
         );
 
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(macos_menu::app_menu).on_menu_event(|app, event| {
-        macos_menu::handle_menu_event(app, event.id().as_ref());
-    });
+    let builder = builder
+        .menu(macos_menu::app_menu)
+        .on_menu_event(|app, event| {
+            macos_menu::handle_menu_event(app, event.id().as_ref());
+        });
 
     builder
         .setup(|app| {

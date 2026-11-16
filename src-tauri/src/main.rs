@@ -26,10 +26,7 @@ mod packaging_tests {
                 "缺少 {target} 打包目标"
             );
         }
-        assert!(
-            !targets.iter().any(|item| item == "msi"),
-            "不再打包 msi"
-        );
+        assert!(!targets.iter().any(|item| item == "msi"), "不再打包 msi");
         assert_eq!(value["bundle"]["createUpdaterArtifacts"], true);
         assert!(value["plugins"]["updater"]["endpoints"]
             .as_array()

@@ -189,7 +189,8 @@ pub fn merge_running(
         .iter()
         .filter(|recipient| {
             !existing.iter().any(|item| {
-                item.installation_id == recipient.installation_id && item.open_id == recipient.open_id
+                item.installation_id == recipient.installation_id
+                    && item.open_id == recipient.open_id
             })
         })
         .cloned()
@@ -260,7 +261,10 @@ pub fn attach_sends(db: &Connection, messages: &mut [ChatMessage]) -> Result<(),
 
 /// 收件箱里的代发消息没有 run，列表时补上发送人和收件人，旧记录也能对上。
 pub fn fill_outbound_speakers(db: &Connection, messages: &mut [ChatMessage]) -> Result<(), String> {
-    if !messages.iter().any(|message| message.message_kind == "channel_outbound") {
+    if !messages
+        .iter()
+        .any(|message| message.message_kind == "channel_outbound")
+    {
         return Ok(());
     }
     let session_id = messages[0].session_id.clone();
@@ -288,7 +292,9 @@ pub fn fill_outbound_speakers(db: &Connection, messages: &mut [ChatMessage]) -> 
         if message.message_kind != "channel_outbound" {
             continue;
         }
-        let Some((_, label, _, agent_id)) = closest_send(&hints, &message.content, &message.created_at) else {
+        let Some((_, label, _, agent_id)) =
+            closest_send(&hints, &message.content, &message.created_at)
+        else {
             continue;
         };
         if message.agent_id.as_deref().unwrap_or("").is_empty() {
@@ -304,7 +310,10 @@ pub fn fill_outbound_speakers(db: &Connection, messages: &mut [ChatMessage]) -> 
             .map(|value| value.trim().is_empty())
             .unwrap_or(true);
         if missing {
-            meta.insert("recipientLabel".to_string(), serde_json::Value::String(label.clone()));
+            meta.insert(
+                "recipientLabel".to_string(),
+                serde_json::Value::String(label.clone()),
+            );
         }
         message.source_meta = Some(serde_json::Value::Object(meta));
     }
@@ -452,7 +461,15 @@ fn deliver(db: &Connection, target: &Target, api: &FeishuApi) -> Result<String, 
     match api.send_to("open_id", &target.open_id, "text", &payload) {
         Ok(sent) => {
             let inbox_session_id = mirror_outbound(db, target, &sent.chat_id).ok().flatten();
-            write_send(db, target, "sent", None, Some(&sent.message_id), Some(&sent.chat_id), inbox_session_id.as_deref())?;
+            write_send(
+                db,
+                target,
+                "sent",
+                None,
+                Some(&sent.message_id),
+                Some(&sent.chat_id),
+                inbox_session_id.as_deref(),
+            )?;
             if !sent.message_id.is_empty() {
                 let _ = record_outbound(
                     db,
@@ -611,7 +628,11 @@ fn write_send(
     Ok(())
 }
 
-fn mirror_outbound(db: &Connection, target: &Target, chat_id: &str) -> Result<Option<String>, String> {
+fn mirror_outbound(
+    db: &Connection,
+    target: &Target,
+    chat_id: &str,
+) -> Result<Option<String>, String> {
     let chat_id = chat_id.trim();
     if chat_id.is_empty() {
         return Ok(None);
@@ -671,7 +692,11 @@ fn mirror_outbound(db: &Connection, target: &Target, chat_id: &str) -> Result<Op
     Ok(Some(session_id))
 }
 
-fn insert_outbound_message(db: &Connection, session_id: &str, target: &Target) -> Result<(), String> {
+fn insert_outbound_message(
+    db: &Connection,
+    session_id: &str,
+    target: &Target,
+) -> Result<(), String> {
     let agent_id: Option<String> = db
         .query_row(
             "SELECT agent_id FROM agent_runs WHERE id=?1",
@@ -893,7 +918,11 @@ fn p2p_session(
     .map_err(|error| error.to_string())
 }
 
-fn latest_send_at(db: &Connection, installation_id: &str, open_id: &str) -> Result<Option<String>, String> {
+fn latest_send_at(
+    db: &Connection,
+    installation_id: &str,
+    open_id: &str,
+) -> Result<Option<String>, String> {
     db.query_row(
         "SELECT MAX(created_at) FROM feishu_sends
          WHERE installation_id=?1 AND open_id=?2 AND status='sent'",
@@ -907,7 +936,11 @@ fn installation(db: &Connection, id: &str) -> Result<Installation, String> {
     store::get_installation(db, id)?.ok_or_else(|| tr!("渠道连接不存在"))
 }
 
-fn ensure_still_allowed(db: &Connection, installation_id: &str, open_id: &str) -> Result<(), String> {
+fn ensure_still_allowed(
+    db: &Connection,
+    installation_id: &str,
+    open_id: &str,
+) -> Result<(), String> {
     let allowed: bool = db
         .query_row(
             "SELECT EXISTS(
@@ -960,11 +993,9 @@ fn root_run_id(db: &Connection, run_id: &str) -> Result<String, String> {
 }
 
 fn run_mode(db: &Connection, run_id: &str) -> Result<Option<String>, String> {
-    db.query_row(
-        "SELECT mode FROM agent_runs WHERE id=?1",
-        [run_id],
-        |row| row.get(0),
-    )
+    db.query_row("SELECT mode FROM agent_runs WHERE id=?1", [run_id], |row| {
+        row.get(0)
+    })
     .optional()
     .map_err(|error| error.to_string())
 }
@@ -1061,16 +1092,7 @@ mod tests {
         let target = authorize(&db, "r1", "feishu:1", "hello").unwrap();
         write_send(&db, &target, "failed", Some("nope"), None, None, None).unwrap();
         assert!(authorize(&db, "r1", "feishu:1", "hello again").is_ok());
-        write_send(
-            &db,
-            &target,
-            "sent",
-            None,
-            Some("om_1"),
-            Some("oc_1"),
-            None,
-        )
-        .unwrap();
+        write_send(&db, &target, "sent", None, Some("om_1"), Some("oc_1"), None).unwrap();
         assert!(authorize(&db, "r1", "feishu:1", "third").is_err());
     }
 
@@ -1085,7 +1107,13 @@ mod tests {
             .unwrap();
         grant(&db, &["r1".into()], &[person("ou_abcdef")]).unwrap();
         assert!(authorize(&db, "r1", "feishu:9", "hi").is_err());
-        assert!(authorize(&db, "r1", "feishu:1", &"字".repeat(OUTBOUND_CHUNK_CHARS + 1)).is_err());
+        assert!(authorize(
+            &db,
+            "r1",
+            "feishu:1",
+            &"字".repeat(OUTBOUND_CHUNK_CHARS + 1)
+        )
+        .is_err());
     }
 
     #[test]
@@ -1138,7 +1166,11 @@ mod tests {
         fill_outbound_speakers(&db, &mut messages).unwrap();
         assert_eq!(messages[0].agent_id.as_deref(), Some("a1"));
         assert_eq!(
-            messages[0].source_meta.as_ref().and_then(|value| value.get("recipientLabel")).and_then(|value| value.as_str()),
+            messages[0]
+                .source_meta
+                .as_ref()
+                .and_then(|value| value.get("recipientLabel"))
+                .and_then(|value| value.as_str()),
             Some("ou_abcdef"),
         );
     }

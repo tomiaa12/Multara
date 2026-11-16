@@ -6,8 +6,7 @@ use uuid::Uuid;
 use crate::{
     builtin_agents::{self, MIKU_SYSTEM_KEY},
     models::{Agent, AgentInput},
-    resources,
-    runtime,
+    resources, runtime,
 };
 
 pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
@@ -353,7 +352,12 @@ pub fn delete(db: &mut Connection, agent_id: &str) -> Result<Vec<Agent>, String>
         .map_err(|error| error.to_string())?;
     transaction
         .execute("DELETE FROM agents WHERE id = ?1", [agent_id])
-        .map_err(|error| tr!("该智能体仍被小队或历史任务使用，无法删除：{error}", error = error))?;
+        .map_err(|error| {
+            tr!(
+                "该智能体仍被小队或历史任务使用，无法删除：{error}",
+                error = error
+            )
+        })?;
     transaction.commit().map_err(|error| error.to_string())?;
     list(db)
 }
@@ -552,7 +556,9 @@ mod tests {
             .unwrap();
         assert!(parent.is_none());
         let status: String = db
-            .query_row("SELECT status FROM tasks WHERE id='task'", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id='task'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status, "cancelled");
     }

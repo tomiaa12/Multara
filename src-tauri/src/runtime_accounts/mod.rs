@@ -105,9 +105,12 @@ fn unsupported(ctx: &Ctx, spec: &Spec) -> Option<String> {
 
 fn codex_uses_keyring(ctx: &Ctx) -> bool {
     let text = fs::read_to_string(ctx.codex_home.join("config.toml")).unwrap_or_default();
-    let store = toml::from_str::<toml::Table>(&text)
-        .ok()
-        .and_then(|table| table.get("cli_auth_credentials_store")?.as_str().map(str::to_string));
+    let store = toml::from_str::<toml::Table>(&text).ok().and_then(|table| {
+        table
+            .get("cli_auth_credentials_store")?
+            .as_str()
+            .map(str::to_string)
+    });
     matches!(store.as_deref(), Some("keyring" | "auto"))
 }
 
@@ -127,7 +130,11 @@ fn override_env(ctx: &Ctx, spec: &Spec) -> Option<String> {
     let env = settings.get("env")?;
     spec.env_overrides
         .iter()
-        .find(|name| env.get(**name).and_then(|value| value.as_str()).is_some_and(|value| !value.trim().is_empty()))
+        .find(|name| {
+            env.get(**name)
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| !value.trim().is_empty())
+        })
         .map(|name| name.to_string())
 }
 
@@ -148,12 +155,7 @@ fn unknown_status(runtime: &str) -> AccountStatus {
     }
 }
 
-fn build_status(
-    ctx: &Ctx,
-    spec: &Spec,
-    store: &Store,
-    live: Option<&Identity>,
-) -> AccountStatus {
+fn build_status(ctx: &Ctx, spec: &Spec, store: &Store, live: Option<&Identity>) -> AccountStatus {
     let reason = unsupported(ctx, spec);
     let current = live.and_then(|identity| find_by_key(store, &identity.key));
     AccountStatus {
@@ -183,11 +185,19 @@ fn build_status(
 }
 
 fn find_by_key<'s>(store: &'s Store, key: &str) -> Option<&'s Account> {
-    store.accounts.iter().find(|account| account.identity_key == key)
+    store
+        .accounts
+        .iter()
+        .find(|account| account.identity_key == key)
 }
 
 /// 已收录就更新内容，没收录就新建；返回账号 id。内容没变时不动，免得「保存于」一直是刚刚。
-fn upsert(store: &mut Store, tags: &[String], identity: &Identity, values: &[Option<Vec<u8>>]) -> String {
+fn upsert(
+    store: &mut Store,
+    tags: &[String],
+    identity: &Identity,
+    values: &[Option<Vec<u8>>],
+) -> String {
     let items = store::encode(tags, values);
     let now = chrono::Utc::now().timestamp_millis();
     if let Some(account) = store
@@ -279,7 +289,13 @@ pub fn status(ctx: &Ctx, dir: &Path, runtime: &str) -> Result<AccountStatus, Str
     Ok(build_status(ctx, spec, &store, live.as_ref()))
 }
 
-pub fn switch(ctx: &Ctx, dir: &Path, runtime: &str, account_id: &str, command: &str) -> Result<AccountStatus, String> {
+pub fn switch(
+    ctx: &Ctx,
+    dir: &Path,
+    runtime: &str,
+    account_id: &str,
+    command: &str,
+) -> Result<AccountStatus, String> {
     let spec = registry::spec(runtime).ok_or_else(|| tr!("这个 CLI 暂不支持账号切换"))?;
     if let Some(reason) = unsupported(ctx, spec) {
         return Err(reason);
@@ -334,7 +350,12 @@ fn write_all(ctx: &Ctx, spec: &Spec, values: &[Option<Vec<u8>>]) -> Result<(), S
         .try_for_each(|(item, value)| item::write(ctx, item, value.as_deref()))
 }
 
-pub fn remove(ctx: &Ctx, dir: &Path, runtime: &str, account_id: &str) -> Result<AccountStatus, String> {
+pub fn remove(
+    ctx: &Ctx,
+    dir: &Path,
+    runtime: &str,
+    account_id: &str,
+) -> Result<AccountStatus, String> {
     let spec = registry::spec(runtime).ok_or_else(|| tr!("这个 CLI 暂不支持账号切换"))?;
     let _guard = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let path = store::path(dir, runtime);
@@ -348,7 +369,13 @@ pub fn remove(ctx: &Ctx, dir: &Path, runtime: &str, account_id: &str) -> Result<
     Ok(build_status(ctx, spec, &store, live.as_ref()))
 }
 
-pub fn rename(ctx: &Ctx, dir: &Path, runtime: &str, account_id: &str, name: &str) -> Result<AccountStatus, String> {
+pub fn rename(
+    ctx: &Ctx,
+    dir: &Path,
+    runtime: &str,
+    account_id: &str,
+    name: &str,
+) -> Result<AccountStatus, String> {
     let spec = registry::spec(runtime).ok_or_else(|| tr!("这个 CLI 暂不支持账号切换"))?;
     let _guard = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let path = store::path(dir, runtime);
@@ -451,10 +478,13 @@ mod tests {
 
         // 用户在终端登录了另一个号、还没打开面板：切回 A 时 B 会被收录
         item::write_private(&auth, codex_auth("b", "b@x.com").as_bytes()).unwrap();
-        let switched = switch(&ctx, data.path(), "codex", &account_a, "codex-test-missing").unwrap();
+        let switched =
+            switch(&ctx, data.path(), "codex", &account_a, "codex-test-missing").unwrap();
         assert_eq!(switched.live.label.as_deref(), Some("a@x.com"));
         assert_eq!(switched.accounts.len(), 2);
-        assert!(fs::read_to_string(&auth).unwrap().contains(&jwt("a", "a@x.com")));
+        assert!(fs::read_to_string(&auth)
+            .unwrap()
+            .contains(&jwt("a", "a@x.com")));
 
         let account_b = switched
             .accounts
@@ -475,12 +505,23 @@ mod tests {
         let ctx = ctx(home.path(), &keychain);
         let auth = home.path().join(".grok/auth.json");
 
-        item::write_private(&auth, format!(r#"{{"sub":"g","refresh":"old"}}"#).as_bytes()).unwrap();
-        let id = status(&ctx, data.path(), "grok").unwrap().live.account_id.unwrap();
+        item::write_private(
+            &auth,
+            format!(r#"{{"sub":"g","refresh":"old"}}"#).as_bytes(),
+        )
+        .unwrap();
+        let id = status(&ctx, data.path(), "grok")
+            .unwrap()
+            .live
+            .account_id
+            .unwrap();
         rename(&ctx, data.path(), "grok", &id, "工作号").unwrap();
         let captured_at = status(&ctx, data.path(), "grok").unwrap().accounts[0].captured_at;
         thread::sleep(Duration::from_millis(5));
-        assert_eq!(status(&ctx, data.path(), "grok").unwrap().accounts[0].captured_at, captured_at);
+        assert_eq!(
+            status(&ctx, data.path(), "grok").unwrap().accounts[0].captured_at,
+            captured_at
+        );
         item::write_private(&auth, br#"{"sub":"g","refresh":"new"}"#).unwrap();
         let refreshed = status(&ctx, data.path(), "grok").unwrap();
         assert_eq!(refreshed.accounts.len(), 1);
@@ -488,7 +529,10 @@ mod tests {
 
         let saved = store::load(&store::path(data.path(), "grok")).unwrap();
         let values = saved.accounts[0].values(&tags(registry::spec("grok").unwrap()));
-        assert_eq!(values[0].as_deref(), Some(br#"{"sub":"g","refresh":"new"}"#.as_slice()));
+        assert_eq!(
+            values[0].as_deref(),
+            Some(br#"{"sub":"g","refresh":"new"}"#.as_slice())
+        );
     }
 
     #[test]
@@ -499,22 +543,38 @@ mod tests {
         let ctx = ctx(home.path(), &keychain);
         let config = home.path().join(".cursor/cli-config.json");
         let set = |token: &str, email: &str, id: u32| {
-            keychain.write("cursor-access-token", "cursor-user", token).unwrap();
-            keychain.write("cursor-refresh-token", "cursor-user", token).unwrap();
-            let root = format!(r#"{{"editor":{{"vimMode":true}},"authInfo":{{"email":"{email}","userId":{id}}}}}"#);
+            keychain
+                .write("cursor-access-token", "cursor-user", token)
+                .unwrap();
+            keychain
+                .write("cursor-refresh-token", "cursor-user", token)
+                .unwrap();
+            let root = format!(
+                r#"{{"editor":{{"vimMode":true}},"authInfo":{{"email":"{email}","userId":{id}}}}}"#
+            );
             item::write_private(&config, root.as_bytes()).unwrap();
         };
         if !keychain::supported() {
             return;
         }
         set("t1", "one@x.com", 1);
-        let one = status(&ctx, data.path(), "cursor").unwrap().live.account_id.unwrap();
+        let one = status(&ctx, data.path(), "cursor")
+            .unwrap()
+            .live
+            .account_id
+            .unwrap();
         set("t2", "two@x.com", 2);
-        assert_eq!(status(&ctx, data.path(), "cursor").unwrap().accounts.len(), 2);
+        assert_eq!(
+            status(&ctx, data.path(), "cursor").unwrap().accounts.len(),
+            2
+        );
 
         switch(&ctx, data.path(), "cursor", &one, "cursor-test-missing").unwrap();
         assert_eq!(
-            keychain.read("cursor-access-token", "cursor-user").unwrap().as_deref(),
+            keychain
+                .read("cursor-access-token", "cursor-user")
+                .unwrap()
+                .as_deref(),
             Some("t1")
         );
         let root: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
@@ -524,7 +584,14 @@ mod tests {
         // 列表上不读钥匙串，靠显示名认出当前账号
         let listed = summary(&ctx, data.path(), "cursor");
         assert_eq!(listed.live.account_id.as_deref(), Some(one.as_str()));
-        assert_eq!(listed.accounts.iter().filter(|account| account.current).count(), 1);
+        assert_eq!(
+            listed
+                .accounts
+                .iter()
+                .filter(|account| account.current)
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -561,7 +628,11 @@ mod tests {
             .write("copilot-cli", "https://github.com:alice", "token-alice")
             .unwrap();
         keychain
-            .write("copilot-cli", "https://github.com:alice:github", "token-alice")
+            .write(
+                "copilot-cli",
+                "https://github.com:alice:github",
+                "token-alice",
+            )
             .unwrap();
         keychain
             .write("copilot-cli", "https://github.com:bob", "token-bob")
@@ -569,7 +640,9 @@ mod tests {
         keychain
             .write("copilot-cli", "https://github.com:bob:github", "token-bob")
             .unwrap();
-        keychain.write("gh:github.com", "gh-only", "gh-token").unwrap();
+        keychain
+            .write("gh:github.com", "gh-only", "gh-token")
+            .unwrap();
 
         let first = status(&ctx, data.path(), "copilot").unwrap();
         assert_eq!(first.live.label.as_deref(), Some("alice"));
@@ -589,8 +662,7 @@ mod tests {
                 .as_deref(),
             Some("token-alice")
         );
-        let saved: serde_json::Value =
-            serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         assert_eq!(saved["lastLoggedInUser"]["login"], "alice");
         assert_eq!(switched.accounts.len(), 2);
     }

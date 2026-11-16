@@ -125,9 +125,8 @@ impl GatewayState {
 
 impl GatewayProxy {
     pub fn start(config: GatewayProxyConfig) -> Result<Self, String> {
-        let server =
-            Server::http("127.0.0.1:0")
-                .map_err(|error| tr!("无法监听本地代理：{error}", error = error))?;
+        let server = Server::http("127.0.0.1:0")
+            .map_err(|error| tr!("无法监听本地代理：{error}", error = error))?;
         let address = server
             .server_addr()
             .to_ip()
@@ -206,8 +205,7 @@ impl Drop for ActiveSlot {
 
 /// 转换代码 panic 时回 502，而不是让请求在展开时被丢弃。
 fn guarded<T>(work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    panic::catch_unwind(AssertUnwindSafe(work))
-        .unwrap_or_else(|_| Err(tr!("本地代理内部错误")))
+    panic::catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(tr!("本地代理内部错误")))
 }
 
 fn lock_state(state: &Mutex<GatewayState>) -> MutexGuard<'_, GatewayState> {
@@ -408,7 +406,11 @@ fn handle_request(
     let mut output: Value = match serde_json::from_str(&upstream.body) {
         Ok(output) => output,
         Err(error) => {
-            respond_error(request, 502, &tr!("上游返回了无法解析的响应：{error}", error = error));
+            respond_error(
+                request,
+                502,
+                &tr!("上游返回了无法解析的响应：{error}", error = error),
+            );
             return;
         }
     };

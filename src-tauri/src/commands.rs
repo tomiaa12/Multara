@@ -20,8 +20,7 @@ use crate::{
         BootstrapData, ChatMessage, ChatSession, ChatSessionInput, CustomRuntimeForm,
         CustomRuntimeInput, DashboardStats, FileContent, FileEntry, GitCommitFile, GitCommitInput,
         GitCompareRefs, GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus,
-        GlobalResource,
-        InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
+        GlobalResource, InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
         MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunMode,
         RunStatistics, Runtime, Squad, SquadInput, StatisticGroup, Task, TaskChecklistItem,
         TaskInput, TimelineItem, UsageDay, WebhookDelivery, WebhookInput, Workspace,
@@ -1531,7 +1530,13 @@ pub async fn add_workspace(
     .await
     .map_err(|error| tr!("添加项目中断：{error}", error = error))??;
     let db = state.lock_db()?;
-    let item = commit_workspace(&db, prepared, &git_command, create_branch, origin_ref.as_deref())?;
+    let item = commit_workspace(
+        &db,
+        prepared,
+        &git_command,
+        create_branch,
+        origin_ref.as_deref(),
+    )?;
     sync_resource_workspaces(&db);
     Ok(item)
 }
@@ -1697,7 +1702,9 @@ fn prepare_custom_runtime(
     }
     let provider = input.provider.trim();
     if provider.is_empty() || provider == "custom" {
-        return Err(tr!("旧版自定义命令不能继续保存，请改成某个内置运行时，或删除这条记录"));
+        return Err(tr!(
+            "旧版自定义命令不能继续保存，请改成某个内置运行时，或删除这条记录"
+        ));
     }
     let mut kind = match input.kind.trim() {
         "gateway" => "gateway",
@@ -2226,7 +2233,10 @@ fn run_runtime_connection_test(
         return Ok(tr!("连接成功"));
     }
     let message = if output.trim().is_empty() {
-        tr!("连接失败，退出码 {code}", code = status.code().unwrap_or(-1))
+        tr!(
+            "连接失败，退出码 {code}",
+            code = status.code().unwrap_or(-1)
+        )
     } else {
         tr!("连接失败")
     };
@@ -2853,7 +2863,10 @@ pub(crate) fn process_automation_webhook(
         crate::diag::write(&format!(
             "webhook delivery {delivery_id} not dispatched: {reason_code}"
         ));
-        return Err(tr!("Webhook 未派发：{reason_code}", reason_code = reason_code));
+        return Err(tr!(
+            "Webhook 未派发：{reason_code}",
+            reason_code = reason_code
+        ));
     }
     db.execute(
         "UPDATE webhook_deliveries
@@ -3615,7 +3628,10 @@ pub fn agent_system_context(
         .to_string();
     let (genui_enabled, canvas_enabled) = {
         let db = state.lock_db()?;
-        (genui_enabled(&db), crate::ops::canvas::canvases_enabled(&db))
+        (
+            genui_enabled(&db),
+            crate::ops::canvas::canvases_enabled(&db),
+        )
     };
     let skill_names = crate::builtin_skills::names(genui_enabled);
     let brief = crate::runtime_brief::build(crate::runtime_brief::RuntimeBrief {
@@ -3810,7 +3826,8 @@ pub fn delete_task(
         &session_id,
     )?;
     transaction.commit().map_err(|error| error.to_string())?;
-    app.state::<crate::canvas::CanvasHost>().stop_session(&session_id);
+    app.state::<crate::canvas::CanvasHost>()
+        .stop_session(&session_id);
     list_tasks(&db)
 }
 
@@ -4243,7 +4260,8 @@ fn load_attachment_preview_blocking(
     if !mime_type.starts_with("image/") || stored_size > 10 * 1024 * 1024 {
         return Err(tr!("该附件不支持图片预览"));
     }
-    let metadata = std::fs::metadata(&path).map_err(|error| tr!("无法读取附件：{error}", error = error))?;
+    let metadata =
+        std::fs::metadata(&path).map_err(|error| tr!("无法读取附件：{error}", error = error))?;
     if !metadata.is_file() || metadata.len() > 10 * 1024 * 1024 {
         return Err(tr!("附件已变化或超过 10 MB"));
     }
@@ -4477,7 +4495,11 @@ fn link_referenced_requirements(
     let before = linked.len();
     for id in wanted {
         let exists: bool = db
-            .query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)", [&id], |row| row.get(0))
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
+                [&id],
+                |row| row.get(0),
+            )
             .map_err(|error| error.to_string())?;
         if exists && !linked.contains(&id) {
             linked.push(id);
@@ -4539,7 +4561,11 @@ fn genui_reply_agent(source: &MessageSource) -> Option<String> {
 /// - 会话目标就是它，或它是小队队长：走会话默认目标即可（队长要带小队指引），返回 None；
 /// - 它是会话小队里的普通队员：等同于 @ 它，返回 Some；
 /// - 其它情况（已离队、已删除、不相干）：回落到会话默认目标。
-fn genui_reply_target(db: &Connection, session_id: &str, agent_id: &str) -> Option<(String, String)> {
+fn genui_reply_target(
+    db: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Option<(String, String)> {
     let (target_type, target_id): (String, String) = db
         .query_row(
             "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
@@ -4958,7 +4984,10 @@ fn send_message_inner_ext(
             &explicit_targets,
             requested_mode,
         )?;
-        let run_ids = created.iter().map(|(run_id, _)| run_id.clone()).collect::<Vec<_>>();
+        let run_ids = created
+            .iter()
+            .map(|(run_id, _)| run_id.clone())
+            .collect::<Vec<_>>();
         crate::channel::feishu_send::grant(&db, &run_ids, &feishu_recipients)?;
         drop(db);
         for (run_id, agent_id) in &created {
@@ -4977,7 +5006,10 @@ fn send_message_inner_ext(
         &explicit_targets,
         requested_mode,
     )?;
-    let run_ids = created.iter().map(|(run_id, _)| run_id.clone()).collect::<Vec<_>>();
+    let run_ids = created
+        .iter()
+        .map(|(run_id, _)| run_id.clone())
+        .collect::<Vec<_>>();
     crate::channel::feishu_send::grant(&transaction, &run_ids, &feishu_recipients)?;
     transaction.commit().map_err(|error| error.to_string())?;
     drop(db);
@@ -6049,7 +6081,10 @@ pub(crate) fn list_workspaces(db: &Connection) -> Result<Vec<Workspace>, String>
     Ok(workspaces)
 }
 
-pub(crate) fn list_project_workspaces(db: &Connection, project_id: &str) -> Result<Vec<Workspace>, String> {
+pub(crate) fn list_project_workspaces(
+    db: &Connection,
+    project_id: &str,
+) -> Result<Vec<Workspace>, String> {
     let mut statement = db
         .prepare(
             "SELECT id, project_id, session_id, source_workspace_id, name, kind,
@@ -7028,11 +7063,14 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
     {
         return Err(tr!("无效的文件图标主题"));
     }
-    if ["genuiEnabled", "canvasesEnabled", "mcpAppsEnabled"].iter().any(|key| {
-        settings
-            .get(*key)
-            .is_some_and(|value| !["true", "false"].contains(&value.as_str()))
-    }) {
+    if ["genuiEnabled", "canvasesEnabled", "mcpAppsEnabled"]
+        .iter()
+        .any(|key| {
+            settings
+                .get(*key)
+                .is_some_and(|value| !["true", "false"].contains(&value.as_str()))
+        })
+    {
         return Err(tr!("无效的生成式界面设置"));
     }
     if let Some(value) = settings.get("explorerSettings") {
@@ -7769,15 +7807,19 @@ mod tests {
             .unwrap();
         assert_eq!(runs, vec!["child".to_string(), "old-run".to_string()]);
         let parent: Option<String> = db
-            .query_row("SELECT parent_run_id FROM agent_runs WHERE id='child'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT parent_run_id FROM agent_runs WHERE id='child'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert!(parent.is_none());
         let events: i64 = db
-            .query_row("SELECT COUNT(*) FROM run_events WHERE run_id='run'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM run_events WHERE run_id='run'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(events, 0);
         let kept: String = db

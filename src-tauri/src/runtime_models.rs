@@ -56,17 +56,13 @@ pub fn list(runtime_id: &str, refresh: bool) -> RuntimeModels {
         "claude" => RuntimeModels {
             supported: true,
             source: "preset",
-            models: [
-                ("sonnet", "Sonnet"),
-                ("opus", "Opus"),
-                ("haiku", "Haiku"),
-            ]
-            .into_iter()
-            .map(|(id, name)| RuntimeModel {
-                id: id.into(),
-                label: tr!("{name}（最新）", name = name),
-            })
-            .collect(),
+            models: [("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")]
+                .into_iter()
+                .map(|(id, name)| RuntimeModel {
+                    id: id.into(),
+                    label: tr!("{name}（最新）", name = name),
+                })
+                .collect(),
             error: None,
         },
         "codex" | "gemini" | "qwen" | "opencode" => RuntimeModels {
@@ -118,7 +114,9 @@ fn query_cursor_models() -> RuntimeModels {
             supported: true,
             source: "manual",
             models: Vec::new(),
-            error: Some(tr!("Cursor CLI 没有返回模型列表，可能还没登录（cursor-agent login）")),
+            error: Some(tr!(
+                "Cursor CLI 没有返回模型列表，可能还没登录（cursor-agent login）"
+            )),
         },
         Err(error) => RuntimeModels {
             supported: true,
