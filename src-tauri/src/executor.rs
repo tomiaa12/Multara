@@ -1874,6 +1874,10 @@ fn read_stream<R: Read + Send + 'static>(
             .map(|db| crate::app_locale::from_db(&db))
             .unwrap_or("zh-CN");
         let mut last_stop_check = Instant::now();
+        // Claude 增量事件只有 index，没有 call id。同一条调用的后续片段写回同一行。
+        let mut claude_blocks: HashMap<u64, (String, String)> = HashMap::new();
+        let mut open_tools: HashMap<String, TimelineItem> = HashMap::new();
+        let mut tool_flushed: HashMap<String, Instant> = HashMap::new();
         'lines: for line in crate::process::BoundedLines(BufReader::new(stream)) {
             // 每行都查一次数据库会和写事件抢全局锁；停止信号半秒内到达即可。
             if last_stop_check.elapsed() >= STOP_CHECK_INTERVAL {
@@ -1912,7 +1916,14 @@ fn read_stream<R: Read + Send + 'static>(
                     close_active_stdin(&app, &run_id);
                 }
             }
-            for event in normalize_runtime_value(&parser_id, &line, parsed) {
+            let mut events = normalize_runtime_value(&parser_id, &line, parsed.clone());
+            if matches!(parser_id.as_str(), "claude" | "codebuddy") {
+                if let Some(value) = &parsed {
+                    remember_claude_block(value, &events, &mut claude_blocks);
+                    stamp_claude_tool_delta(value, &mut events, &claude_blocks);
+                }
+            }
+            for event in events {
                 if is_garbage_tool_use(&event) {
                     continue;
                 }
@@ -1974,13 +1985,52 @@ fn read_stream<R: Read + Send + 'static>(
                     }
                     continue;
                 }
-                let seq = match previous.as_ref().filter(|_| merge) {
-                    Some(old) => old.seq,
-                    None => event_seq.fetch_add(1, Ordering::SeqCst) + 1,
+                let open_seq = (event.event_type == "tool_use")
+                    .then(|| event.call_id.as_ref())
+                    .flatten()
+                    .and_then(|call_id| open_tools.get(call_id).map(|item| item.seq));
+                let seq = if let Some(seq) = open_seq {
+                    seq
+                } else {
+                    match previous.as_ref().filter(|_| merge) {
+                        Some(old) => old.seq,
+                        None => event_seq.fetch_add(1, Ordering::SeqCst) + 1,
+                    }
                 };
                 let mut item = timeline_item(seq, event);
-                if let Some(old) = previous.as_ref().filter(|_| merge) {
+                if let Some(call_id) = item
+                    .call_id
+                    .clone()
+                    .filter(|_| item.event_type == "tool_use")
+                {
+                    if let Some(old) = open_tools.get(&call_id) {
+                        item = merge_timeline_item(old, item);
+                    }
+                } else if let Some(old) = previous.as_ref().filter(|_| merge) {
                     item = merge_timeline_item(old, item);
+                }
+                if item.event_type == "tool_use" {
+                    if let Some(call_id) = item.call_id.clone() {
+                        let input_changed = match open_tools.get(&call_id) {
+                            None => true,
+                            Some(old) => old.input != item.input,
+                        };
+                        let due = match tool_flushed.get(&call_id) {
+                            None => true,
+                            Some(flushed) => flushed.elapsed() >= STREAM_FLUSH_INTERVAL,
+                        };
+                        open_tools.insert(call_id.clone(), item.clone());
+                        previous = Some(item.clone());
+                        if !input_changed && !due {
+                            continue;
+                        }
+                        tool_flushed.insert(call_id, Instant::now());
+                    }
+                } else if item.event_type == "tool_result" {
+                    if let Some(call_id) = item.call_id.clone() {
+                        open_tools.remove(&call_id);
+                        tool_flushed.remove(&call_id);
+                    }
                 }
                 if let Ok(mut pending) = pending.lock() {
                     pending.flush(&app, &run_id, &session_id, &agent_id);
@@ -2008,6 +2058,12 @@ fn read_stream<R: Read + Send + 'static>(
                 outgoing.affected_file = affected_file;
                 let _ = app.emit("run-event", outgoing);
             }
+        }
+        for item in open_tools.values() {
+            persist_timeline_item(&app, &run_id, &session_id, item);
+            let mut outgoing = run_event(&run_id, &session_id, &agent_id, "running");
+            outgoing.timeline_item = Some(item.clone());
+            let _ = app.emit("run-event", outgoing);
         }
         drop(done_guard);
         let _ = flusher.join();
@@ -3797,6 +3853,54 @@ fn normalize_runtime_value(
     }
 }
 
+fn remember_claude_block(
+    value: &Value,
+    events: &[NormalizedEvent],
+    blocks: &mut HashMap<u64, (String, String)>,
+) {
+    if value.get("type").and_then(Value::as_str) != Some("content_block_start") {
+        return;
+    }
+    let Some(index) = value.get("index").and_then(Value::as_u64) else {
+        return;
+    };
+    let Some(event) = events.iter().find(|event| event.event_type == "tool_use") else {
+        return;
+    };
+    let (Some(call_id), Some(tool)) = (event.call_id.clone(), event.tool.clone()) else {
+        return;
+    };
+    blocks.insert(index, (call_id, tool));
+}
+
+fn stamp_claude_tool_delta(
+    value: &Value,
+    events: &mut [NormalizedEvent],
+    blocks: &HashMap<u64, (String, String)>,
+) {
+    if value.get("type").and_then(Value::as_str) != Some("content_block_delta") {
+        return;
+    }
+    if value.pointer("/delta/type").and_then(Value::as_str) != Some("input_json_delta") {
+        return;
+    }
+    let Some(index) = value.get("index").and_then(Value::as_u64) else {
+        return;
+    };
+    let Some((call_id, tool)) = blocks.get(&index) else {
+        return;
+    };
+    for event in events
+        .iter_mut()
+        .filter(|event| event.event_type == "tool_use" && event.call_id.is_none())
+    {
+        event.call_id = Some(call_id.clone());
+        if event.tool.is_none() {
+            event.tool = Some(tool.clone());
+        }
+    }
+}
+
 fn normalize_claude(value: &Value) -> Vec<NormalizedEvent> {
     let parent = value
         .get("parent_tool_use_id")
@@ -4243,6 +4347,7 @@ fn normalize_codex(value: &Value) -> Vec<NormalizedEvent> {
             "thinking",
             text_at(item, &["/text", "/content"]),
         )],
+        "file_change" => normalize_codex_file_change(item, event_type),
         "command_execution" | "mcp_tool_call" | "tool_call" => {
             let mut event = if event_type == "item.completed" {
                 tool_result_event(item)
@@ -4263,6 +4368,66 @@ fn normalize_codex(value: &Value) -> Vec<NormalizedEvent> {
         }
         _ => Vec::new(),
     }
+}
+
+fn normalize_codex_file_change(item: &Value, event_type: &str) -> Vec<NormalizedEvent> {
+    let id = item.get("id").and_then(Value::as_str).unwrap_or("file");
+    let Some(changes) = item.get("changes").and_then(Value::as_array) else {
+        if event_type == "item.completed" {
+            return Vec::new();
+        }
+        return vec![NormalizedEvent {
+            event_type: "tool_use",
+            call_id: Some(id.to_string()),
+            tool: Some("apply_patch".into()),
+            content: None,
+            input: None,
+            output: None,
+            replaces_final_text: false,
+            parent_call_id: None,
+            status: None,
+            output_json: None,
+        }];
+    };
+    let mut events = Vec::new();
+    for (index, change) in changes.iter().enumerate() {
+        let path = change
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if path.is_empty() {
+            continue;
+        }
+        let call_id = format!("{id}:{index}");
+        let input = json!({ "path": path });
+        events.push(NormalizedEvent {
+            event_type: "tool_use",
+            call_id: Some(call_id.clone()),
+            tool: Some("apply_patch".into()),
+            content: None,
+            input: Some(input),
+            output: None,
+            replaces_final_text: false,
+            parent_call_id: None,
+            status: None,
+            output_json: None,
+        });
+        if event_type == "item.completed" {
+            events.push(NormalizedEvent {
+                event_type: "tool_result",
+                call_id: Some(call_id),
+                tool: Some("apply_patch".into()),
+                content: change.get("diff").and_then(Value::as_str).map(str::to_string),
+                input: None,
+                output: None,
+                replaces_final_text: false,
+                parent_call_id: None,
+                status: Some("ok".into()),
+                output_json: None,
+            });
+        }
+    }
+    events
 }
 
 fn normalize_qwen_gemini(value: &Value) -> Vec<NormalizedEvent> {
@@ -4374,21 +4539,29 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
                 status: None,
                 output_json: None,
             }];
-            if let Some(output) =
-                text_at(value, &["/part/state/output"]).filter(|text| !text.is_empty())
-            {
-                events.push(NormalizedEvent {
-                    event_type: "tool_result",
-                    call_id,
-                    tool: None,
-                    content: Some(output),
-                    input: None,
-                    output: None,
-                    replaces_final_text: false,
-                    parent_call_id: None,
-                    status: None,
-                    output_json: None,
-                });
+            let status = value
+                .pointer("/part/state/status")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let output = text_at(value, &["/part/state/output"]).filter(|text| !text.is_empty());
+            // pending / running 先只记进行中，完成后再配结果，才能和别的编辑并列。
+            let finished = matches!(status, "completed" | "error" | "done")
+                || (status.is_empty() && output.is_some());
+            if finished {
+                if let Some(output) = output {
+                    events.push(NormalizedEvent {
+                        event_type: "tool_result",
+                        call_id,
+                        tool: None,
+                        content: Some(output),
+                        input: None,
+                        output: None,
+                        replaces_final_text: false,
+                        parent_call_id: None,
+                        status: None,
+                        output_json: None,
+                    });
+                }
             }
             events
         }
@@ -4948,8 +5121,9 @@ fn persist_timeline_item(app: &AppHandle, run_id: &str, session_id: &str, item: 
 mod tests {
     use super::{
         claude_control_response, merge_timeline_item, normalize_runtime_line, push_tail,
-        replace_assignment, runtime_stdin_payload, sanitize_value, should_merge_timeline,
-        timeline_item, tool_use_event, truncate_and_redact, NormalizedEvent, PendingStream,
+        remember_claude_block, replace_assignment, runtime_stdin_payload, sanitize_value,
+        should_merge_timeline, stamp_claude_tool_delta, timeline_item, tool_use_event,
+        truncate_and_redact, NormalizedEvent, PendingStream,
         ToolErrorActor, ToolErrorTracker, MAX_CONSECUTIVE_TOOL_ERRORS,
     };
     use serde_json::{json, Value};
@@ -5137,6 +5311,46 @@ mod tests {
         assert_eq!(item.content.as_deref(), Some("你好，世界"));
         assert!(item.replaces_final_text);
         assert_eq!(pending.chunk, "你好，世界");
+    }
+
+    #[test]
+    fn claude_partial_tool_delta_keeps_the_call_id() {
+        let start = r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call-edit","name":"Edit","input":{}}}"#;
+        let delta = r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"src/a.ts\""}}"#;
+        let mut blocks = std::collections::HashMap::new();
+        let started = normalize_runtime_line("claude", start, false);
+        remember_claude_block(
+            &serde_json::from_str(start).unwrap(),
+            &started,
+            &mut blocks,
+        );
+        let mut streamed = normalize_runtime_line("claude", delta, false);
+        stamp_claude_tool_delta(
+            &serde_json::from_str(delta).unwrap(),
+            &mut streamed,
+            &blocks,
+        );
+        assert_eq!(streamed[0].call_id.as_deref(), Some("call-edit"));
+        assert_eq!(streamed[0].tool.as_deref(), Some("Edit"));
+    }
+
+    #[test]
+    fn codex_file_change_lists_each_path() {
+        let started = normalize_runtime_line(
+            "codex",
+            r#"{"type":"item.started","item":{"id":"fc1","type":"file_change","changes":[{"path":"a.ts"},{"path":"b.ts"}]}}"#,
+            false,
+        );
+        assert_eq!(started.len(), 2);
+        assert!(started.iter().all(|event| event.event_type == "tool_use"));
+        let done = normalize_runtime_line(
+            "codex",
+            r#"{"type":"item.completed","item":{"id":"fc1","type":"file_change","changes":[{"path":"a.ts"},{"path":"b.ts"}]}}"#,
+            false,
+        );
+        assert_eq!(done.len(), 4);
+        assert_eq!(done[1].event_type, "tool_result");
+        assert_eq!(done[3].event_type, "tool_result");
     }
 
     #[test]
