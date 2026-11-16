@@ -1073,7 +1073,11 @@ export const useAppStore = defineStore("app", () => {
     await loadMessages(sessionId);
   }
 
-  async function createChatSession(projectId: string | null, targetValue?: string) {
+  async function createChatSession(
+    projectId: string | null,
+    targetValue?: string,
+    options?: { activate?: boolean },
+  ) {
     if (!data.value) return null;
     const miku = data.value.agents.find((item) => item.systemKey === "miku") ?? data.value.agents[0];
     const fallback = miku
@@ -1093,8 +1097,9 @@ export const useAppStore = defineStore("app", () => {
     });
     data.value.sessions.unshift(session);
     messages.value[session.id] = [];
-    activeSessionId.value = session.id;
     addOpenSessionTab(projectId, session.id);
+    // 调用方要先写入草稿再切换，避免新输入框挂载时读到空内容。
+    if (options?.activate !== false) activeSessionId.value = session.id;
     return session;
   }
 
