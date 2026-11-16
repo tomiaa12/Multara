@@ -396,6 +396,7 @@ fn reg_query_value(key: &str, name: &str, creation_flags: u32) -> Option<String>
         })
 }
 
+#[cfg(any(windows, test))]
 fn normalize_proxy_server(raw: &str) -> Option<String> {
     let raw = raw.trim();
     if raw.is_empty() {
