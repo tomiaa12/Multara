@@ -592,6 +592,7 @@ const catalog: MessageCatalog = {
   "app.maximize": "최대화",
   "app.restore": "복원",
   "app.close": "닫기",
+  "app.closeConfirm": "Multara를 닫을까요?",
   "app.expandSidebar": "사이드바 펼치기",
   "app.collapseSidebar": "사이드바 접기",
   "app.resizeSidebar": "사이드바 너비 조정",

@@ -592,6 +592,7 @@ const catalog: MessageCatalog = {
   "app.maximize": "最大化",
   "app.restore": "元に戻す",
   "app.close": "閉じる",
+  "app.closeConfirm": "Multara を閉じますか？",
   "app.expandSidebar": "サイドバーを展開",
   "app.collapseSidebar": "サイドバーを折りたたむ",
   "app.resizeSidebar": "サイドバーの幅を調整",

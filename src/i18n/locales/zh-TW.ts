@@ -592,6 +592,7 @@ const catalog: MessageCatalog = {
   "app.maximize": "最大化",
   "app.restore": "還原",
   "app.close": "關閉",
+  "app.closeConfirm": "確定關閉 Multara？",
   "app.expandSidebar": "展開側邊欄",
   "app.collapseSidebar": "收合側邊欄",
   "app.resizeSidebar": "調整側邊欄寬度",

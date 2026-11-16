@@ -33,6 +33,7 @@ import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
+import { registerCloseSurface } from "./close-surface";
 import type { CanvasDefinition, ChatMessage, EditorSelectionContext, MessageAttachmentInput, RunMode } from "../domain/types";
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
@@ -1644,7 +1645,19 @@ watch(
   { immediate: true },
 );
 
+let unregisterCloseSurface: (() => void) | null = null;
+
+async function closeActiveChatTab() {
+  const id = session.value?.id;
+  if (!id) return;
+  await closeSessionTab(id);
+}
+
 onMounted(() => {
+  unregisterCloseSurface = registerCloseSurface({
+    element: () => chatRoot.value,
+    close: closeActiveChatTab,
+  });
   void ensureSession();
   canvas.startListening();
   if (chatRoot.value) {
@@ -1763,6 +1776,8 @@ watch(
   },
 );
 onBeforeUnmount(() => {
+  unregisterCloseSurface?.();
+  unregisterCloseSurface = null;
   unregisterFiller?.();
   unregisterFiller = null;
   cancelStickFollowRelease?.();

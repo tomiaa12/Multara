@@ -15,6 +15,7 @@ import {
 } from "vue";
 import { useRoute } from "vue-router";
 import { confirmDialog } from "./ui/confirm-dialog";
+import { registerCloseSurface } from "./close-surface";
 import { t } from "../i18n";
 import { titlebarDetail } from "../stores/titlebar";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
@@ -736,6 +737,7 @@ const rightPanelWidth = ref(
   Number(localStorage.getItem("multara.workspace.rightWidth")) || 320,
 );
 const workbenchEl = ref<HTMLElement | null>(null);
+const editorAreaEl = ref<HTMLElement | null>(null);
 const fileTreeEl = ref<HTMLElement | null>(null);
 let stickyTreeObserver: ResizeObserver | null = null;
 
@@ -3119,6 +3121,12 @@ function closeActiveCanvasInstance() {
   void canvas.close(target.sessionId, target.instanceId);
 }
 
+async function closeActiveEditorTab() {
+  const tab = activeEditorTab();
+  if (!tab) return;
+  await closeEditorTab(tab);
+}
+
 async function closeEditorTab(tab: EditorTab, event?: Event) {
   event?.preventDefault();
   event?.stopPropagation();
@@ -5478,7 +5486,14 @@ const stopOsHover = onOsDropHover((zone, point) => {
   explorer.updateDragOver(treeItemFromPoint(point.x, point.y), false);
 });
 
+let unregisterCloseSurface: (() => void) | null = null;
+
 onMounted(() => {
+  unregisterCloseSurface = registerCloseSurface({
+    element: () => editorAreaEl.value,
+    ignore: (element) => Boolean(element.closest(".bottom-panel")),
+    close: closeActiveEditorTab,
+  });
   workbenchEl.value?.addEventListener(OS_DROP_EVENT, onNativeOsDrop);
   startCodeNavigation();
   editorStatus.setLanguages(listSelectableLanguages(monaco.languages.getLanguages()));
@@ -5506,6 +5521,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  unregisterCloseSurface?.();
+  unregisterCloseSurface = null;
   stopOsHover();
   workbenchEl.value?.removeEventListener(OS_DROP_EVENT, onNativeOsDrop);
   gitChangeRefreshScheduler.dispose();
@@ -6341,7 +6358,7 @@ defineExpose({
       @keydown="resizeWithKeyboard('left', $event)"
     />
 
-    <section class="editor-area" data-workspace-drop="editor">
+    <section ref="editorAreaEl" class="editor-area" data-workspace-drop="editor">
       <header class="editor-tabbar">
         <div ref="editorTabsEl" class="editor-tabs vs-scroll">
           <EditorTabButton

@@ -13,6 +13,8 @@ use crate::database::AppState;
 pub const TOGGLE_DEVTOOLS_ID: &str = "toggle-devtools";
 /// 查看 → 自动换行（对齐 VS Code `editor.action.toggleWordWrap` / ⌥Z）。
 pub const TOGGLE_WORD_WRAP_ID: &str = "toggle-word-wrap";
+/// 文件 → 关闭。不走系统关窗口，交给界面按焦点关聊天或编辑器标签。
+pub const CLOSE_SURFACE_ID: &str = "close-surface";
 
 static WORD_WRAP: AtomicBool = AtomicBool::new(false);
 
@@ -68,6 +70,9 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
             set_word_wrap_checked(app, next);
             let _ = app.emit("menu-word-wrap", next);
         }
+        CLOSE_SURFACE_ID => {
+            let _ = app.emit("menu-close", ());
+        }
         _ => {}
     }
 }
@@ -108,11 +113,18 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let close_surface = MenuItem::with_id(
+        app,
+        CLOSE_SURFACE_ID,
+        &tr!("关闭"),
+        true,
+        Some("CmdOrCtrl+W"),
+    )?;
     let file_menu = Submenu::with_items(
         app,
         &tr!("文件"),
         true,
-        &[&PredefinedMenuItem::close_window(app, Some(&tr!("关闭")))?],
+        &[&close_surface],
     )?;
 
     let edit_menu = Submenu::with_items(
