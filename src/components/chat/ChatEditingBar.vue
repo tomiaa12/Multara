@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { ChevronRight } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import { useDiffStore } from "../../stores/diff";
 import { useAppStore } from "../../stores/app";
@@ -23,6 +24,7 @@ const diffStore = useDiffStore();
 const store = useAppStore();
 const contents = ref(new Map<string, string>());
 const busy = ref(false);
+const expanded = ref(false);
 
 function fileKey(workspaceId: string, filePath: string) {
   return `${workspaceId}\n${filePath}`;
@@ -136,29 +138,59 @@ function open(workspaceId: string, filePath: string) {
   store.revealWorkspaceFile(filePath, line, line, workspaceId);
 }
 
-function openFirst() {
-  const row = rows.value[0];
-  if (!row) return;
-  open(row.workspaceId, row.filePath);
+async function keepAll() {
+  if (busy.value || !rows.value.length) return;
+  busy.value = true;
+  try {
+    for (const row of rows.value) {
+      const key = fileKey(row.workspaceId, row.filePath);
+      if (diffStore.missingFiles.has(key)) {
+        await diffStore.acceptMissingFile(row.workspaceId, row.filePath);
+      } else {
+        await diffStore.acceptAllChunks(row.workspaceId, row.filePath, contents.value.get(key));
+      }
+    }
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function undoAll() {
+  if (busy.value || !rows.value.length) return;
+  busy.value = true;
+  try {
+    for (const row of rows.value) {
+      await diffStore.undoAllChunks(row.workspaceId, row.filePath);
+    }
+    await refreshContents();
+  } finally {
+    busy.value = false;
+  }
 }
 </script>
 
 <template>
-  <section v-if="rows.length" class="chat-editing-bar">
+  <section v-if="rows.length" class="chat-editing-bar" :class="{ 'is-collapsed': !expanded }">
     <header class="chat-editing-overview">
       <button
-        v-if="reviewInPlace"
         type="button"
         class="working-set-title chat-editing-overview-open"
-        @click="openFirst"
-      >{{ t('chat.editingFilesCount', { count: rows.length }) }}</button>
-      <span v-else class="working-set-title">{{ t('chat.editingFilesCount', { count: rows.length }) }}</span>
-      <span class="working-set-line-counts">
+        :aria-expanded="expanded"
+        @click="expanded = !expanded"
+      >
+        <ChevronRight class="chat-editing-chevron" :size="12" />
+        {{ t('chat.editingFilesCount', { count: rows.length }) }}
+      </button>
+      <span v-if="expanded" class="working-set-line-counts">
         <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
         <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
       </span>
+      <span v-else class="chat-editing-overview-actions">
+        <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
+        <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepAllTitle')" :disabled="busy" @click="keepAll">{{ t('chat.editingKeepAll') }}</UiButton>
+      </span>
     </header>
-    <div class="chat-editing-files vs-scroll">
+    <div v-if="expanded" class="chat-editing-files vs-scroll">
       <div v-for="row in rows" :key="fileKey(row.workspaceId, row.filePath)" class="chat-editing-file">
         <button type="button" class="chat-editing-file-name" @click="open(row.workspaceId, row.filePath)">
           <FileTypeIcon :name="fileName(row.filePath)" />
