@@ -22,6 +22,10 @@ const props = defineProps<{
   diffId: string;
   files: CommitDiffFile[];
   theme: string;
+  sideBySide?: boolean;
+  wordWrap?: boolean;
+  expandEpoch?: number;
+  focusPath?: string;
 }>();
 
 /** header 高度 + 未测量前默认内容高度 */
@@ -162,11 +166,36 @@ function measureViewport() {
   scrollTop.value = root.scrollTop;
 }
 
+watch(
+  () => [props.sideBySide !== false, Boolean(props.wordWrap)] as const,
+  ([sideBySide, wordWrap]) => pool?.setPresentation(sideBySide, wordWrap),
+);
+
+watch(
+  () => props.expandEpoch ?? 0,
+  () => {
+    collapsed.clear();
+    void nextTick(syncBindings);
+  },
+);
+
+watch(
+  () => props.focusPath,
+  (path) => {
+    if (!path || !rootEl.value) return;
+    collapsed.delete(path);
+    const item = layout.value.find((entry) => entry.file.path === path);
+    if (!item) return;
+    rootEl.value.scrollTop = item.top;
+  },
+);
+
 onMounted(() => {
   pool = new CommitMultiDiffPool(props.theme, (path, height) => {
     if (contentHeights[path] === height) return;
     contentHeights[path] = height;
   });
+  pool.setPresentation(props.sideBySide !== false, Boolean(props.wordWrap));
   measureViewport();
   resizeObserver = new ResizeObserver(() => {
     measureViewport();
