@@ -13311,12 +13311,36 @@ label.settings-row:hover {
   width: max-content;
   max-width: 100%;
 }
-.req-run .inbox-list button > span:not(.agent-avatar):not(.inbox-meta):not(.ds-tooltip-trigger) {
-  display: block;
+.req-run .inbox-list button > .req-run-item {
+  display: grid;
+  flex: 1;
+  gap: var(--spacing-0-5);
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+  font-weight: inherit;
+}
+.req-run .req-run-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+.req-run .req-run-workers {
+  min-width: 0;
+  max-width: 100%;
+}
+/* 没人在跑时不占位（编码表是「—」，侧栏更紧） */
+.req-run .req-run-workers:not(:has(.agent-live-status.is-live)) {
+  display: none;
+}
+.req-run .req-run-workers .agent-live-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-secondary);
 }
 .req-run .inbox-detail > .req-run-empty {
   margin: auto;
