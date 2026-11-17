@@ -318,22 +318,18 @@ export function listOsDroppedEntries(data: DataTransfer | null): OsDroppedEntry[
   const files = [...data.files];
   const items = [...data.items];
   const byKey = new Map<string, OsDroppedEntry>();
-  const count = Math.max(items.length, files.length);
-  for (let index = 0; index < count; index += 1) {
-    const file = files[index] ?? items[index]?.getAsFile() ?? null;
+  const seenFiles = new Set<string>();
+  files.forEach((file, index) => {
     const fsEntry = items[index]?.webkitGetAsEntry?.() ?? null;
-    const path = droppedFilePath(file);
-    const name = entryName(path, file, fsEntry?.name ?? "");
-    if (!path && !file && !name) continue;
-    const key = path || `unnamed:${index}:${name}`;
-    if (byKey.has(key)) continue;
-    byKey.set(key, {
-      path,
-      name,
-      isDirectory: fsEntry ? fsEntry.isDirectory : undefined,
-      file: file ?? undefined,
-    });
-  }
+    pushDroppedEntry(byKey, seenFiles, index, file, fsEntry?.name ?? "", fsEntry ? fsEntry.isDirectory : undefined);
+  });
+  items.forEach((item, index) => {
+    if (files[index]) return;
+    const file = item.getAsFile?.() ?? null;
+    const fsEntry = item.webkitGetAsEntry?.() ?? null;
+    if (!file && !fsEntry) return;
+    pushDroppedEntry(byKey, seenFiles, index, file, fsEntry?.name ?? "", fsEntry ? fsEntry.isDirectory : undefined);
+  });
   // Tauri / WKWebView 上 File.path 经常是空的，Finder 会带 file:// URI。
   for (const path of pathsFromUriList(data)) {
     if ([...byKey.values()].some((item) => item.path === path)) continue;
@@ -346,7 +342,53 @@ export function listOsDroppedEntries(data: DataTransfer | null): OsDroppedEntry[
     }
     byKey.set(path, { path, name });
   }
-  return preferDroppedFolders(markContainingDirectories([...byKey.values()]));
+  return preferDroppedFolders(markContainingDirectories(dedupeClipboardImages([...byKey.values()])));
+}
+
+function pushDroppedEntry(
+  byKey: Map<string, OsDroppedEntry>,
+  seenFiles: Set<string>,
+  index: number,
+  file: File | null,
+  fallbackName: string,
+  isDirectory: boolean | undefined,
+) {
+  const path = droppedFilePath(file);
+  const name = entryName(path, file, fallbackName);
+  if (!path && !file && !name) return;
+  const fingerprint = file ? `${file.type}:${file.size}:${file.name}` : "";
+  if (fingerprint && seenFiles.has(fingerprint)) return;
+  if (fingerprint) seenFiles.add(fingerprint);
+  const key = path || `unnamed:${index}:${name}`;
+  if (byKey.has(key)) return;
+  byKey.set(key, {
+    path,
+    name,
+    isDirectory,
+    file: file ?? undefined,
+  });
+}
+
+/** 截图粘贴常同时给出 PNG 和 TIFF。没有独立路径时只留一张，优先非 TIFF。 */
+export function dedupeClipboardImages(entries: OsDroppedEntry[]): OsDroppedEntry[] {
+  const images = entries.filter((entry) => entry.file?.type.startsWith("image/") && !entry.path);
+  if (images.length < 2) return entries;
+  const keepTiff = !images.some((entry) => entry.file && entry.file.type !== "image/tiff");
+  const seen = new Set<string>();
+  const drop = new Set<OsDroppedEntry>();
+  for (const entry of images) {
+    const file = entry.file;
+    if (!file) continue;
+    if (!keepTiff && file.type === "image/tiff") {
+      drop.add(entry);
+      continue;
+    }
+    const key = `${file.type}:${file.size}:${file.name}`;
+    if (seen.has(key)) drop.add(entry);
+    else seen.add(key);
+  }
+  if (!drop.size) return entries;
+  return entries.filter((entry) => !drop.has(entry));
 }
 
 /**
