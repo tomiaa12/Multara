@@ -1401,8 +1401,6 @@ Who is this for? Any constraints?
   "collection.stat.running": "Running",
   "collection.stat.queued": "Queued",
   "collection.stat.failedToday": "Failed today",
-  "scm.confirmDirect": "{action} real branch {branch} of {name}?",
-  "scm.confirmCommitDirect": "Commit to real branch {branch} of {name}?",
   "scm.action.publish": "Publish",
   "scm.action.rename": "Rename",
   "scm.action.detachCheckout": "Detach checkout",

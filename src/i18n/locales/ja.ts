@@ -1401,8 +1401,6 @@ const catalog: MessageCatalog = {
   "collection.stat.running": "実行中",
   "collection.stat.queued": "キュー待ち",
   "collection.stat.failedToday": "今日失敗",
-  "scm.confirmDirect": "{name} の実ブランチ {branch} を{action}しますか？",
-  "scm.confirmCommitDirect": "{name} の実ブランチ {branch} にコミットしますか？",
   "scm.action.publish": "公開",
   "scm.action.rename": "名前変更",
   "scm.action.detachCheckout": "デタッチチェックアウト",

@@ -1401,8 +1401,6 @@ const catalog: MessageCatalog = {
   "collection.stat.running": "실행 중",
   "collection.stat.queued": "대기 중",
   "collection.stat.failedToday": "오늘 실패",
-  "scm.confirmDirect": "{name}의 실제 브랜치 {branch}를 {action}할까요?",
-  "scm.confirmCommitDirect": "{name}의 실제 브랜치 {branch}에 커밋할까요?",
   "scm.action.publish": "게시",
   "scm.action.rename": "이름 바꾸기",
   "scm.action.detachCheckout": "분리 체크아웃",
