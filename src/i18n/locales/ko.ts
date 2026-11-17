@@ -1274,6 +1274,7 @@ const catalog: MessageCatalog = {
   "chat.compact": "컨텍스트 압축",
   "chat.exportDiagnostics": "진단 파일 내보내기",
   "chat.exportDiagnosticsFailed": "진단 파일을 내보내지 못했습니다. {error}",
+  "chat.copySessionId": "세션 ID 복사",
   "chat.close": "닫기",
   "chat.closeOthers": "다른 탭 닫기",
   "chat.closeRight": "오른쪽 탭 닫기",

@@ -1274,6 +1274,7 @@ const catalog: MessageCatalog = {
   "chat.compact": "コンテキストを圧縮",
   "chat.exportDiagnostics": "診断ファイルを書き出す",
   "chat.exportDiagnosticsFailed": "診断ファイルを書き出せませんでした。{error}",
+  "chat.copySessionId": "セッション ID をコピー",
   "chat.close": "閉じる",
   "chat.closeOthers": "他を閉じる",
   "chat.closeRight": "右側のタブを閉じる",

@@ -1274,6 +1274,7 @@ const catalog: MessageCatalog = {
   "chat.compact": "压缩上下文",
   "chat.exportDiagnostics": "导出诊断文件",
   "chat.exportDiagnosticsFailed": "导出诊断文件失败。{error}",
+  "chat.copySessionId": "复制会话 ID",
   "chat.close": "关闭",
   "chat.closeOthers": "关闭其他",
   "chat.closeRight": "关闭右侧标签页",
