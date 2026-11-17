@@ -259,15 +259,6 @@ const manageWorkspaces = computed(() =>
   ),
 );
 
-function workerItems(row: HomeProject) {
-  return row.workers.map((worker) => ({
-    key: worker.key,
-    name: worker.name,
-    image: worker.image,
-    title: worker.title,
-  }));
-}
-
 async function saveProject() {
   if (!projectName.value.trim() || busy.value) return;
   if (!editingId.value && workspacePicker.value?.picking) return;
@@ -408,12 +399,6 @@ function onRunLayout(payload: { content: boolean; width: number; terminal: boole
           <p>{{ t("dashboard.subtitle") }}</p>
         </div>
         <div class="header-actions">
-          <SegmentedTabs
-            :model-value="requirementHomeMode"
-            :label="t('dashboard.modeLabel')"
-            :items="homeModeTabs"
-            @update:model-value="onHomeMode"
-          />
           <UiButton variant="primary" @click="openCreate">
             <Plus :size="15" /> {{ t("dashboard.create") }}
           </UiButton>
@@ -424,6 +409,15 @@ function onRunLayout(payload: { content: boolean; width: number; terminal: boole
 
       <section class="page-section">
         <div class="req-filters">
+          <div class="req-mode-row">
+            <span class="req-mode-label">{{ t("dashboard.modeLabel") }}</span>
+            <SegmentedTabs
+              :model-value="requirementHomeMode"
+              :label="t('dashboard.modeLabel')"
+              :items="homeModeTabs"
+              @update:model-value="onHomeMode"
+            />
+          </div>
           <div class="page-toolbar">
             <SegmentedTabs v-model="filter" :label="t('dashboard.filterLabel')" :items="homeTabs" />
             <label class="ds-search req-search">
@@ -470,7 +464,7 @@ function onRunLayout(payload: { content: boolean; width: number; terminal: boole
               <th class="req-col-name">{{ t("dashboard.col.name") }}</th>
               <th class="req-col-fluid">{{ t("dashboard.col.tags") }}</th>
               <th class="req-col-fluid">{{ t("dashboard.col.projects") }}</th>
-              <th class="req-col-agents">{{ t("dashboard.col.agents") }}</th>
+              <th class="req-col-agents">{{ t("dashboard.col.workers") }}</th>
               <th class="req-col-actions">{{ t("dashboard.col.actions") }}</th>
             </tr>
           </thead>
@@ -522,14 +516,9 @@ function onRunLayout(payload: { content: boolean; width: number; terminal: boole
               <td class="req-col-agents">
                 <AgentLiveStatus
                   :session-ids="row.sessionIds"
-                  :fallback="workerItems(row)"
                   :max="AVATAR_VISIBLE"
                   :size="24"
-                  :dialog-title="
-                    row.filters.includes('running')
-                      ? t('dashboard.overflowAgentsTitle')
-                      : t('dashboard.overflowAgentsHistoryTitle')
-                  "
+                  :dialog-title="t('dashboard.col.workers')"
                 />
               </td>
               <td class="req-col-actions" @click.stop>

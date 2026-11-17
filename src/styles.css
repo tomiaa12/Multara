@@ -13270,6 +13270,17 @@ label.settings-row:hover {
   display: grid;
   gap: var(--spacing-2);
 }
+.req-mode-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+.req-mode-label {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
 
 /* 列表：单一容器 + 分隔行，展开内容内嵌在行内 */
 .req-table-wrap {

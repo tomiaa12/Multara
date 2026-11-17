@@ -118,12 +118,6 @@ function onMenu(id: string) {
       <div class="req-run-head">
         <h1>{{ t("dashboard.title") }}</h1>
         <div class="req-run-head-actions">
-          <SegmentedTabs
-            :model-value="mode"
-            :label="t('dashboard.modeLabel')"
-            :items="modeTabs"
-            @update:model-value="emit('switch-mode', $event)"
-          />
           <UiButton variant="primary" size="icon" :tip="t('dashboard.create')" @click="emit('create')">
             <Plus :size="15" />
           </UiButton>
@@ -131,6 +125,15 @@ function onMenu(id: string) {
       </div>
       <div v-if="error" class="error-card">{{ error }}</div>
       <div class="req-run-filters">
+        <div class="req-mode-row">
+          <span class="req-mode-label">{{ t("dashboard.modeLabel") }}</span>
+          <SegmentedTabs
+            :model-value="mode"
+            :label="t('dashboard.modeLabel')"
+            :items="modeTabs"
+            @update:model-value="emit('switch-mode', $event)"
+          />
+        </div>
         <SegmentedTabs v-model="filter" :label="t('dashboard.filterLabel')" :items="tabs" />
         <label class="ds-search">
           <Search :size="14" />
