@@ -89,6 +89,12 @@
     "ja": "ペアリングが完了しました。このボットに直接メッセージを送れます。/help でコマンド一覧を表示できます。",
     "ko": "페어링되었습니다. 이제 이 봇에게 바로 메시지를 보낼 수 있으며, /help를 보내면 명령어를 볼 수 있습니다."
   },
+  "你已经绑定过了。直接说要做的事，不要再发送配对码。": {
+    "en": "You're already linked. Say what you want done, and don't send the pairing code again.",
+    "zh-TW": "你已經綁定過了。直接說要做的事，不要再傳送配對碼。",
+    "ja": "すでに連携済みです。やりたいことを直接送ってください。ペアリングコードは再送しないでください。",
+    "ko": "이미 연결되어 있습니다. 할 일을 바로 말하세요. 페어링 코드는 다시 보내지 마세요."
+  },
   "可用指令：\n/new 开启新会话\n/stop 中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明": {
     "en": "Available commands:\n/new Start a new session\n/stop Stop the current run\n/status Show the current session status\n/project <project name> Switch the default project\n/help Show this help",
     "zh-TW": "可用指令：\n/new 開啟新會話\n/stop 中止目前執行\n/status 查看目前會話狀態\n/project <需求名稱> 切換預設需求\n/help 顯示這段說明",

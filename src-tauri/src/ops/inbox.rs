@@ -12,7 +12,14 @@ SELECT i.id, i.session_id, i.project_id, i.task_id, i.title, i.preview, i.status
          WHERE m.session_id = i.session_id
            AND (anchor.id IS NULL OR (m.created_at, m.id) > (anchor.created_at, anchor.id))
        ) END,
-       i.archived_at
+       i.archived_at,
+       (
+         SELECT inst.channel_type
+         FROM channel_session_bindings b
+         JOIN channel_installations inst ON inst.id = b.installation_id
+         WHERE b.session_id = i.session_id AND b.retired_at IS NULL
+         LIMIT 1
+       )
 FROM inbox_items i
 LEFT JOIN messages anchor ON anchor.id = i.read_message_id
 ";
@@ -31,6 +38,7 @@ fn map_item(row: &Row) -> rusqlite::Result<InboxItem> {
         read_message_id: row.get(9)?,
         unread_count: row.get(10)?,
         archived_at: row.get(11)?,
+        channel_type: row.get(12)?,
     })
 }
 

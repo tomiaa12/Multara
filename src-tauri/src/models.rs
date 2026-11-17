@@ -854,6 +854,9 @@ pub struct InboxItem {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<String>,
+    /// 飞书 / Lark 等渠道会话。没有绑定则为空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_type: Option<String>,
 }
 
 #[derive(Deserialize)]
