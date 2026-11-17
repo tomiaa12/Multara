@@ -199,6 +199,20 @@ fn with_ui(args: &[String], json: String) -> String {
     serde_json::to_string_pretty(&serde_json::json!({ "items": items, "_ui": ui })).unwrap_or(json)
 }
 
+fn current_run_agent_id(db: &Connection) -> Option<String> {
+    let run_id = env::var("MULTARA_RUN_ID").ok()?;
+    let run_id = run_id.trim();
+    if run_id.is_empty() {
+        return None;
+    }
+    db.query_row(
+        "SELECT agent_id FROM agent_runs WHERE id=?1",
+        [run_id],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
 pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
     let parsed = parse_args(args);
     let resource = parsed.positional.first().map(String::as_str).unwrap_or("");
@@ -268,6 +282,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                 parsed.flag(&["status"]),
                 parsed.flag(&["assignee", "assignee-id"]),
                 parsed.flag(&["comment"]),
+                current_run_agent_id(db).as_deref(),
             )?)
         }
         ("task", "status") => {
@@ -292,7 +307,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             let text = parsed
                 .flag(&["comment"])
                 .ok_or_else(|| tr!("缺少 --comment"))?;
-            ops::task::comment(db, &id, text)?;
+            ops::task::comment(db, &id, text, current_run_agent_id(db).as_deref())?;
             ops::json(&serde_json::json!({ "ok": true }))
         }
         ("task", "runs") => {

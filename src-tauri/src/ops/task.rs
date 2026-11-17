@@ -844,7 +844,7 @@ pub fn assign(db: &Connection, task_id: &str, agent_id: &str) -> Result<Task, St
     get(db, task_id)
 }
 
-pub fn comment(db: &Connection, task_id: &str, text: &str) -> Result<(), String> {
+pub fn comment(db: &Connection, task_id: &str, text: &str, author_agent_id: Option<&str>) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
         return Err(tr!("评论不能为空"));
@@ -857,11 +857,12 @@ pub fn comment(db: &Connection, task_id: &str, text: &str) -> Result<(), String>
         )
         .map_err(|_| tr!("任务不存在"))?;
     let now = Utc::now().to_rfc3339();
+    let author = author_agent_id.map(str::trim).filter(|value| !value.is_empty());
     db.execute(
         "INSERT INTO messages
-         (id, session_id, role, content, message_kind, quick_actions_json, created_at)
-         VALUES (?1, ?2, 'system', ?3, 'message', '[]', ?4)",
-        params![Uuid::new_v4().to_string(), session_id, text, now],
+         (id, session_id, role, content, agent_id, message_kind, quick_actions_json, created_at)
+         VALUES (?1, ?2, 'system', ?3, ?4, 'message', '[]', ?5)",
+        params![Uuid::new_v4().to_string(), session_id, text, author, now],
     )
     .map_err(|error| error.to_string())?;
     db.execute(
@@ -970,6 +971,7 @@ pub fn update(
     status: Option<&str>,
     agent_id: Option<&str>,
     comment_text: Option<&str>,
+    comment_author: Option<&str>,
 ) -> Result<Task, String> {
     get(db, task_id)?;
     if let Some(title) = title.map(str::trim).filter(|value| !value.is_empty()) {
@@ -999,7 +1001,7 @@ pub fn update(
         update_status(db, task_id, status)?;
     }
     if let Some(comment_text) = comment_text {
-        comment(db, task_id, comment_text)?;
+        comment(db, task_id, comment_text, comment_author)?;
     }
     get(db, task_id)
 }

@@ -1623,6 +1623,8 @@ const catalog: MessageCatalog = {
   "chat.role.lead": "Lead",
   "chat.role.member": "Member",
   "chat.role.agent": "Agent",
+  "chat.commentAuthor": "コメント",
+  "chat.commentPill": "コメント",
   "chat.question.aria": "Question from {name}: {question}",
   "chat.question.waitingTitle": "{name} is waiting for your answer",
   "chat.question.multiSuffix": " · {n} questions",

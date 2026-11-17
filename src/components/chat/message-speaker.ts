@@ -196,8 +196,22 @@ export function speakerForMessage(
   fallbackAgentId?: string | null,
   options?: { messages?: ChatMessage[]; session?: ChatSession | null },
 ): SpeakerInfo | null {
-  if (message.role !== "assistant") return null;
-  const agentId = message.agentId || fallbackAgentId || "";
+  if (message.role !== "assistant" && message.role !== "system") return null;
+  const agentId = message.role === "system"
+    ? (message.agentId || "")
+    : (message.agentId || fallbackAgentId || "");
+  if (message.role === "system" && !agentId) {
+    return {
+      agentId: "",
+      name: t("chat.commentAuthor"),
+      avatar: "评",
+      roleLabel: t("chat.commentPill"),
+      roleKind: "solo",
+      internal: false,
+      audienceName: null,
+      audienceRole: null,
+    };
+  }
   const agent = agentById(agents, agentId);
   const target = resolveTurnTarget(message, options?.messages ?? [], options?.session);
   const squadId = target?.type === "squad" ? target.id : null;
