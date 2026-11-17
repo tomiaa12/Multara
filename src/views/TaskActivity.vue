@@ -12,6 +12,7 @@ import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import UserPrompt from "../components/chat/UserPrompt.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
+import { resolveQuestionStates } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
 import { carriedMentions, feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
@@ -201,13 +202,16 @@ onBeforeUnmount(() => {
 const canSend = computed(() => !draftEmpty.value || pastes.value.length > 0);
 const pendingQuestion = computed(() => {
   if (sessionProcessing.value || props.historyViewOnly || !store.awaitingAnswer(props.sessionId)) return null;
-  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
-    const message = messages.value[index];
-    if (message.role === "user") return null;
-    if (message.role !== "assistant" || message.failureReason) continue;
+  const states = resolveQuestionStates(messages.value, {
+    genui: isGenUiEnabled(store.data?.settings),
+    dismissedIds: store.dismissedQuestions,
+  });
+  for (const [id, state] of states) {
+    if (state !== "pending") continue;
+    const message = messages.value.find((item) => item.id === id);
+    if (!message) continue;
     const questions = extractQuestions(message.content, { genui: isGenUiEnabled(store.data?.settings) }).questions;
-    if (!questions.length) continue;
-    return { messageId: message.id, questions, agentName: agent.value?.name ?? t("inbox.agentFallback") };
+    return { messageId: id, questions, agentName: agent.value?.name ?? t("inbox.agentFallback") };
   }
   return null;
 });

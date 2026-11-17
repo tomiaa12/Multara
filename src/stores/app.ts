@@ -20,7 +20,7 @@ import { useDiffStore } from "./diff";
 import { mergeById } from "./merge-by-id";
 import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
-import { extractQuestions } from "../components/chat/question-block";
+import { hasAwaitingQuestion } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
 import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unanswered-turn";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
@@ -853,8 +853,10 @@ export const useAppStore = defineStore("app", () => {
     if (!session) return;
     const task = data.value.tasks.find((item) => item.sessionId === session.id) ?? null;
     const transcript = messages.value[payload.sessionId] ?? [];
-    const lastAssistant = [...transcript].reverse().find((message) => message.role === "assistant");
-    const waitingQuestion = Boolean(lastAssistant && extractQuestions(lastAssistant.content, { genui: isGenUiEnabled(data.value.settings) }).questions.length);
+    const waitingQuestion = hasAwaitingQuestion(transcript, {
+      genui: isGenUiEnabled(data.value.settings),
+      dismissedIds: dismissedQuestions.value,
+    });
     const waitingPermission = transcript.some((message) =>
       message.timeline.some((item) => item.eventType === "permission" && item.status !== "resolved"),
     );
@@ -1323,15 +1325,10 @@ export const useAppStore = defineStore("app", () => {
    * 这时排队消息先停住，不然会被当成回答发出去，提问卡片直接消失。
    */
   function awaitingAnswer(sessionId: string) {
-    const list = messages.value[sessionId] ?? [];
-    for (let index = list.length - 1; index >= 0; index -= 1) {
-      const message = list[index];
-      if (message.role === "user") return false;
-      if (message.role !== "assistant" || message.failureReason) continue;
-      if (dismissedQuestions.value.has(message.id)) continue;
-      if (extractQuestions(message.content, { genui: isGenUiEnabled(data.value?.settings) }).questions.length) return true;
-    }
-    return false;
+    return hasAwaitingQuestion(messages.value[sessionId] ?? [], {
+      genui: isGenUiEnabled(data.value?.settings),
+      dismissedIds: dismissedQuestions.value,
+    });
   }
 
   function dismissQuestion(messageId: string) {

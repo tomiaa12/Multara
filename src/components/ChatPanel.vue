@@ -8,6 +8,7 @@ import { chatMessagesKey } from "./chat/context-usage";
 import ChatEditingBar from "./chat/ChatEditingBar.vue";
 import ChatQuestionCarousel from "./chat/ChatQuestionCarousel.vue";
 import { extractQuestions } from "./chat/question-block";
+import { resolveQuestionStates } from "./chat/question-state";
 import { isCanvasEnabled, isGenUiEnabled } from "./chat/genui/block";
 import CanvasBar from "./chat/CanvasBar.vue";
 import UiFrame from "./UiFrame.vue";
@@ -473,29 +474,12 @@ const dismissedQuestions = computed(() => store.dismissedQuestions);
 const dismissQuestion = (messageId: string) => store.dismissQuestion(messageId);
 
 const genUiOn = computed(() => isGenUiEnabled(store.data?.settings));
-const questionStates = computed(() => {
-  const states = new Map<string, "pending" | "answered" | "skipped">();
-  const messages = displayMessages.value;
-  let userAfter = false;
-  let pendingTaken = false;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "user") {
-      userAfter = true;
-      continue;
-    }
-    if (message.role !== "assistant" || message.failureReason) continue;
-    if (!extractQuestions(message.content, { genui: genUiOn.value }).questions.length) continue;
-    if (userAfter) states.set(message.id, "answered");
-    else if (dismissedQuestions.value.has(message.id)) states.set(message.id, "skipped");
-    else if (!pendingTaken) {
-      // 同一轮小队里多条带提问时，只让最新一条占用输入框上方
-      states.set(message.id, "pending");
-      pendingTaken = true;
-    }
-  }
-  return states;
-});
+const questionStates = computed(() =>
+  resolveQuestionStates(displayMessages.value, {
+    genui: genUiOn.value,
+    dismissedIds: dismissedQuestions.value,
+  }),
+);
 const pendingQuestion = computed(() => {
   if (sessionProcessing.value || composerLocked.value) return null;
   for (const [id, state] of questionStates.value) {
