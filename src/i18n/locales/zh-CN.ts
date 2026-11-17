@@ -1401,8 +1401,6 @@ const catalog: MessageCatalog = {
   "collection.stat.running": "运行中",
   "collection.stat.queued": "排队中",
   "collection.stat.failedToday": "今日失败",
-  "scm.confirmDirect": "将{action} {name} 的真实分支 {branch}，确认？",
-  "scm.confirmCommitDirect": "将提交到 {name} 的真实分支 {branch}，确认？",
   "scm.action.publish": "发布",
   "scm.action.rename": "重命名",
   "scm.action.detachCheckout": "分离检出",

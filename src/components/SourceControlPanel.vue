@@ -270,14 +270,6 @@ async function run(
   }
 }
 
-async function confirmDirect(workspace: Workspace, repository: GitRepositoryStatus, action: string) {
-  if (workspaceMode(workspace) !== "direct") return true;
-  return confirmDialog(
-    t("scm.confirmDirect", { action, name: workspace.name, branch: repository.branch }),
-    { type: "warning" },
-  );
-}
-
 function stage(workspaceId: string, paths: string[], staged: boolean, all = false) {
   if (all) {
     return run(`stage:${workspaceId}`, () => backend.gitStageRepository(workspaceId, staged));
@@ -322,17 +314,6 @@ async function generateMessage(workspaceId: string) {
 async function commit(workspace: Workspace, repository: GitRepositoryStatus, next?: "push" | "sync") {
   const message = messages[workspace.id]?.trim();
   if (!message || !repository.changes.some((item) => item.staged)) return;
-  if (
-    workspaceMode(workspace) === "direct"
-    && !(await confirmDialog(
-      t("scm.confirmCommitDirect", { name: workspace.name, branch: repository.branch }),
-      { type: "warning" },
-    ))
-  ) {
-    return;
-  }
-  if (next === "push" && !(await confirmDirect(workspace, repository, t("scm.commitPush")))) return;
-  if (next === "sync" && !(await confirmDirect(workspace, repository, t("scm.commitSync")))) return;
   const kind: HookPlanKind = next === "push" ? "commit-push" : next === "sync" ? "commit-sync" : "commit";
   return run(`commit:${workspace.id}`, async () => {
     rememberCommitMessage(workspace.id, message);
@@ -359,31 +340,27 @@ async function publishBranch(workspace: Workspace, repository: GitRepositoryStat
   ) {
     return;
   }
-  if (!(await confirmDirect(workspace, repository, t("scm.action.publish")))) return;
   return run(`push:${workspace.id}`, async () => {
     await backend.gitPushWorkspace(workspace.id);
     if (publishSkipsStagedChanges(message, stagedCount)) notice.value = publishStagedLeftNotice();
   }, { workspaceId: workspace.id, kind: "push" });
 }
 
-async function syncRepo(workspace: Workspace, repository: GitRepositoryStatus) {
-  if (!(await confirmDirect(workspace, repository, t("scm.sync")))) return;
+async function syncRepo(workspace: Workspace) {
   return run(`sync:${workspace.id}`, async () => {
     await backend.gitSyncWorkspace(workspace.id);
     emit("worktreeChanged", workspace.id, []);
   }, { workspaceId: workspace.id, kind: "sync" });
 }
 
-async function pullRepo(workspace: Workspace, repository: GitRepositoryStatus) {
-  if (!(await confirmDirect(workspace, repository, t("scm.pull")))) return;
+async function pullRepo(workspace: Workspace) {
   return run(`pull:${workspace.id}`, async () => {
     await backend.gitPullWorkspace(workspace.id);
     emit("worktreeChanged", workspace.id, []);
   }, { workspaceId: workspace.id, kind: "pull" });
 }
 
-async function pushRepo(workspace: Workspace, repository: GitRepositoryStatus) {
-  if (!(await confirmDirect(workspace, repository, t("scm.push")))) return;
+async function pushRepo(workspace: Workspace) {
   return run(`push:${workspace.id}`, () => backend.gitPushWorkspace(workspace.id), {
     workspaceId: workspace.id,
     kind: "push",
@@ -391,7 +368,6 @@ async function pushRepo(workspace: Workspace, repository: GitRepositoryStatus) {
 }
 
 async function renameBranch(workspace: Workspace, repository: GitRepositoryStatus, branch: string, renameRemote = false) {
-  if (!(await confirmDirect(workspace, repository, t("scm.action.rename")))) return;
   return run(`switch:${workspace.id}`, async () => {
     const report = await backend.gitRenameWorkspaceBranch(workspace.id, branch, renameRemote);
     notice.value = renameBranchNotice(report);
@@ -410,14 +386,11 @@ function setUpstream(workspace: Workspace, upstream: string) {
 
 async function switchBranch(
   workspace: Workspace,
-  repository: GitRepositoryStatus,
   branch: string,
   create: boolean,
   from = "",
   detach = false,
 ) {
-  const verb = detach ? t("scm.action.detachCheckout") : create ? t("scm.action.createSwitch") : t("scm.action.switchTo");
-  if (!(await confirmDirect(workspace, repository, verb))) return;
   return run(`switch:${workspace.id}`, async () => {
     await backend.gitSwitchWorkspaceBranch(workspace.id, branch, create, from || null, detach);
     emit("worktreeChanged", workspace.id, []);
@@ -607,15 +580,15 @@ defineExpose({ refresh, revealCommit });
       @primary="item.repository && commit(item.workspace, item.repository)"
       @commit="(next) => item.repository && commit(item.workspace, item.repository, next)"
       @publish="item.repository && publishBranch(item.workspace, item.repository)"
-      @sync="item.repository && syncRepo(item.workspace, item.repository)"
+      @sync="item.repository && syncRepo(item.workspace)"
       @fetch="item.repository && run(`fetch:${item.workspace.id}`, () => backend.gitFetchWorkspace(item.workspace.id))"
-      @pull="item.repository && pullRepo(item.workspace, item.repository)"
-      @push="item.repository && pushRepo(item.workspace, item.repository)"
+      @pull="item.repository && pullRepo(item.workspace)"
+      @push="item.repository && pushRepo(item.workspace)"
       @generate="generateMessage(item.workspace.id)"
       @open-settings="openGitSettings"
       @refresh="refresh()"
       @toggle-view="setViewMode(viewMode === 'list' ? 'tree' : 'list')"
-      @switch-branch="(branch, create, from, detach) => item.repository && switchBranch(item.workspace, item.repository, branch, create, from, detach)"
+      @switch-branch="(branch, create, from, detach) => item.repository && switchBranch(item.workspace, branch, create, from, detach)"
       @rename-branch="(branch, renameRemote) => item.repository && renameBranch(item.workspace, item.repository, branch, renameRemote)"
       @set-upstream="(upstream) => setUpstream(item.workspace, upstream)"
       @open="openChange(item.workspace.id, $event)"
