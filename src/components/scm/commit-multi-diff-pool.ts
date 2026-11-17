@@ -33,6 +33,8 @@ export class CommitMultiDiffPool {
   private readonly busy = new Map<string, Template>();
   private readonly garage: HTMLElement;
   private theme: string;
+  private sideBySide = true;
+  private wordWrap: "off" | "on" = "off";
   private disposed = false;
 
   constructor(
@@ -49,6 +51,14 @@ export class CommitMultiDiffPool {
   setTheme(theme: string) {
     this.theme = theme;
     monaco.editor.setTheme(theme);
+  }
+
+  setPresentation(sideBySide: boolean, wordWrap: boolean) {
+    this.sideBySide = sideBySide;
+    this.wordWrap = wordWrap ? "on" : "off";
+    const apply = (template: Template) => template.applyPresentation(this.sideBySide, this.wordWrap);
+    this.busy.forEach(apply);
+    this.free.forEach(apply);
   }
 
   /** 把模板绑到 body；同 path 重复 bind 会先 release。 */
@@ -72,6 +82,7 @@ export class CommitMultiDiffPool {
       return;
     }
     const template = this.free.pop() ?? new Template();
+    template.applyPresentation(this.sideBySide, this.wordWrap);
     template.attach(body, file);
     this.busy.set(file.path, template);
     void template.load(file, this.theme, (height) => {
@@ -131,6 +142,16 @@ class Template {
   private boundPath = "";
   /** diff 未就绪前不回写高度 */
   private heightReady = false;
+  private sideBySide = true;
+  private wordWrap: "off" | "on" = "off";
+
+  applyPresentation(sideBySide: boolean, wordWrap: "off" | "on") {
+    this.sideBySide = sideBySide;
+    this.wordWrap = wordWrap;
+    this.editor?.updateOptions({ renderSideBySide: sideBySide });
+    this.editor?.getOriginalEditor().updateOptions({ wordWrap });
+    this.editor?.getModifiedEditor().updateOptions({ wordWrap });
+  }
 
   constructor() {
     this.host = document.createElement("div");
@@ -182,7 +203,7 @@ class Template {
         readOnlyMessage: monacoReadOnlyMessage(),
         originalEditable: false,
         automaticLayout: false,
-        renderSideBySide: true,
+        renderSideBySide: this.sideBySide,
         useInlineViewWhenSpaceIsLimited: true,
         renderSideBySideInlineBreakpoint: SIDE_BY_SIDE_BREAKPOINT,
         enableSplitViewResizing: true,
@@ -211,8 +232,8 @@ class Template {
         overflowWidgetsDomNode: monacoOverflowWidgetsRoot(),
       });
       const semantic = { "semanticHighlighting.enabled": true as const };
-      this.editor.getOriginalEditor().updateOptions(semantic);
-      this.editor.getModifiedEditor().updateOptions(semantic);
+      this.editor.getOriginalEditor().updateOptions({ ...semantic, wordWrap: this.wordWrap });
+      this.editor.getModifiedEditor().updateOptions({ ...semantic, wordWrap: this.wordWrap });
     } else {
       monaco.editor.setTheme(theme);
     }

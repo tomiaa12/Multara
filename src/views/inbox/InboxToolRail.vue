@@ -40,6 +40,7 @@ import { inboxBrowserLinks } from "./inbox-browser-links";
 import { placeEditorTab } from "./editor-tabs";
 import InboxBrowser from "./InboxBrowser.vue";
 import InboxCanvas from "./InboxCanvas.vue";
+import UncommittedChanges from "./UncommittedChanges.vue";
 import TaskIssueSide from "../TaskIssueSide.vue";
 import {
   INBOX_FILES_OPEN_KEY,
@@ -282,6 +283,7 @@ function watchFloatHost() {
 
 const surfaceLabel: Record<InboxSurfaceId, string> = {
   changes: "workbench.git",
+  uncommitted: "inbox.tool.uncommitted",
   browser: "inbox.tool.browser",
   search: "workbench.search",
   details: "tasks.propertiesPanel",
@@ -293,7 +295,7 @@ function surfaceAllowed(id: InboxSurfaceId) {
     return isCanvasEnabled(store.data?.settings);
   }
   if (id === "details") return props.kind === "task";
-  if (id === "changes") return props.kind === "project";
+  if (id === "changes" || id === "uncommitted") return props.kind === "project";
   return true;
 }
 
@@ -436,6 +438,15 @@ function closeSurface(key: string) {
   surfaces.value = next;
   if (activeSurfaceKey.value === key) activeSurfaceKey.value = next.at(-1)?.key ?? "";
   writeLayout();
+}
+
+function openUncommitted() {
+  openSurface("uncommitted", "singleton");
+}
+
+function openWorkspaceFile(workspaceId: string, path: string) {
+  filesWanted.value = true;
+  void openFile(workspaceId, path, true);
 }
 
 function openGitList() {
@@ -871,13 +882,15 @@ function closeAll() {
   writeLayout();
 }
 
-defineExpose({ closeAll });
+defineExpose({ closeAll, openWorkspaceFile });
 
 watch([stageOpen, panelWidth, terminalOpen], () => writeLayout(), { immediate: true });
 
 watch(() => props.kind, (kind) => {
   if (kind !== "task" && activeSurface.value?.kind === "details") activeSurfaceKey.value = "";
-  if (kind !== "project" && activeSurface.value?.kind === "changes") activeSurfaceKey.value = "";
+  if (kind !== "project" && (activeSurface.value?.kind === "changes" || activeSurface.value?.kind === "uncommitted")) {
+    activeSurfaceKey.value = "";
+  }
 });
 
 function workspaceExpanded(id: string) {
@@ -1005,6 +1018,7 @@ onBeforeUnmount(() => {
             <Codicon v-else-if="tab.kind === 'browser'" name="globe" :size="16" />
             <Codicon v-else-if="tab.kind === 'search'" name="search" :size="16" />
             <Codicon v-else-if="tab.kind === 'changes'" name="source-control" :size="16" />
+            <Codicon v-else-if="tab.kind === 'uncommitted'" name="diff-multiple" :size="16" />
             <Codicon v-else-if="tab.kind === 'canvas'" name="dashboard" :size="16" />
           </EditorTabButton>
         </div>
@@ -1050,6 +1064,11 @@ onBeforeUnmount(() => {
             v-if="tab.kind === 'browser'"
             :links="links"
             :open-url="activeSurfaceKey === tab.key ? browserRequest : ''"
+          />
+          <UncommittedChanges
+            v-else-if="tab.kind === 'uncommitted'"
+            :project-id="workspace?.projectId ?? ''"
+            :theme="theme"
           />
           <SearchView
             v-else-if="tab.kind === 'search'"
@@ -1296,6 +1315,16 @@ onBeforeUnmount(() => {
         @click="openGitList"
       >
         <Codicon name="source-control" :size="16" />
+      </UiButton>
+      <UiButton
+        v-if="kind === 'project'"
+        variant="ghost"
+        size="icon"
+        :tip="t('inbox.tool.uncommitted')"
+        :aria-pressed="activeSurface?.kind === 'uncommitted'"
+        @click="openUncommitted"
+      >
+        <Codicon name="diff-multiple" :size="16" />
       </UiButton>
       <UiButton
         v-if="kind === 'project'"

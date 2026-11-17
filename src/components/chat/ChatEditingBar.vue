@@ -171,12 +171,12 @@ async function undoAll() {
 
 <template>
   <section v-if="rows.length" class="chat-editing-bar" :class="{ 'is-collapsed': !expanded }">
-    <header class="chat-editing-overview">
+    <header class="chat-editing-overview" @click="expanded = !expanded">
       <button
         type="button"
         class="working-set-title chat-editing-overview-open"
         :aria-expanded="expanded"
-        @click="expanded = !expanded"
+        @click.stop="expanded = !expanded"
       >
         <ChevronRight class="chat-editing-chevron" :size="12" />
         {{ t('chat.editingFilesCount', { count: rows.length }) }}
@@ -185,7 +185,7 @@ async function undoAll() {
         <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
         <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
       </span>
-      <span v-else class="chat-editing-overview-actions">
+      <span v-else class="chat-editing-overview-actions" @click.stop>
         <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
         <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepAllTitle')" :disabled="busy" @click="keepAll">{{ t('chat.editingKeepAll') }}</UiButton>
       </span>

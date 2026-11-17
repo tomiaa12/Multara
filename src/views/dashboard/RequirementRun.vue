@@ -34,6 +34,11 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
+const toolRail = ref<{ openWorkspaceFile: (workspaceId: string, path: string) => void } | null>(null);
+
+function onReviewFile(file: { workspaceId: string; filePath: string }) {
+  toolRail.value?.openWorkspaceFile(file.workspaceId, file.filePath);
+}
 const filter = ref<HomeFilter>("all");
 const query = ref("");
 const selectedId = ref("");
@@ -254,6 +259,8 @@ onBeforeUnmount(() => {
       :project-id="selected.id"
       compact
       session-commands
+      review-in-place
+      @review-file="onReviewFile"
     />
     <div v-else class="ds-empty req-run-empty">
       <h3>{{ t("dashboard.run.emptyTitle") }}</h3>
@@ -263,6 +270,7 @@ onBeforeUnmount(() => {
 
   <InboxToolRail
     v-if="selected"
+    ref="toolRail"
     :key="selected.id"
     :workspaces="toolWorkspaces"
     :workspace-id="activeWorkspace?.id ?? ''"
