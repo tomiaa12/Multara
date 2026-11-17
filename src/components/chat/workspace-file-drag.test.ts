@@ -179,4 +179,26 @@ describe("listOsDroppedEntries", () => {
     expect(entries[0]?.path).toBe("/Users/me/Downloads/spec.md");
     expect(entries[0]?.file).toBe(file);
   });
+
+  test("keeps one image when a paste offers both png and tiff", () => {
+    const png = new File(["png"], "image.png", { type: "image/png" });
+    const tiff = new File(["tiff"], "image.tiff", { type: "image/tiff" });
+    const entries = listOsDroppedEntries(droppedData([png, tiff]));
+    expect(entries.map((entry) => entry.file?.type)).toEqual(["image/png"]);
+  });
+
+  test("does not add a second copy of the same image from extra clipboard items", () => {
+    const png = new File(["png"], "image.png", { type: "image/png" });
+    const copy = new File(["png"], "image.png", { type: "image/png" });
+    const data = {
+      files: [png],
+      items: [
+        { getAsFile: () => png, webkitGetAsEntry: () => null },
+        { getAsFile: () => copy, webkitGetAsEntry: () => null },
+      ],
+      getData: () => "",
+      types: ["Files"],
+    } as unknown as DataTransfer;
+    expect(listOsDroppedEntries(data)).toHaveLength(1);
+  });
 });
