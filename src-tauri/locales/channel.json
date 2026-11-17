@@ -95,11 +95,17 @@
     "ja": "すでに連携済みです。やりたいことを直接送ってください。ペアリングコードは再送しないでください。",
     "ko": "이미 연결되어 있습니다. 할 일을 바로 말하세요. 페어링 코드는 다시 보내지 마세요."
   },
-  "可用指令：\n/new 开启新会话\n/stop 中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明": {
-    "en": "Available commands:\n/new Start a new session\n/stop Stop the current run\n/status Show the current session status\n/project <project name> Switch the default project\n/help Show this help",
-    "zh-TW": "可用指令：\n/new 開啟新會話\n/stop 中止目前執行\n/status 查看目前會話狀態\n/project <需求名稱> 切換預設需求\n/help 顯示這段說明",
-    "ja": "利用できるコマンド：\n/new 新しいセッションを開始\n/stop 現在の実行を停止\n/status 現在のセッションの状態を表示\n/project <プロジェクト名> 既定のプロジェクトを切り替え\n/help このヘルプを表示",
-    "ko": "사용 가능한 명령어:\n/new 새 세션 시작\n/stop 현재 실행 중지\n/status 현재 세션 상태 보기\n/project <요구사항 이름> 기본 요구사항 전환\n/help 이 도움말 보기"
+  "可用指令：\n/new 开启新会话\n/stop 或「停止运行」中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明": {
+    "en": "Available commands:\n/new Start a new session\n/stop or 「停止运行」 Stop the current run\n/status Show the current session status\n/project <project name> Switch the default project\n/help Show this help",
+    "zh-TW": "可用指令：\n/new 開啟新會話\n/stop 或「停止運行」中止目前執行\n/status 查看目前會話狀態\n/project <需求名稱> 切換預設需求\n/help 顯示這段說明",
+    "ja": "利用できるコマンド：\n/new 新しいセッションを開始\n/stop または「停止运行」で現在の実行を停止\n/status 現在のセッションの状態を表示\n/project <プロジェクト名> 既定のプロジェクトを切り替え\n/help このヘルプを表示",
+    "ko": "사용 가능한 명령어:\n/new 새 세션 시작\n/stop 또는 「停止运行」 현재 실행 중지\n/status 현재 세션 상태 보기\n/project <요구사항 이름> 기본 요구사항 전환\n/help 이 도움말 보기"
+  },
+  "当前还在处理上一条消息，请稍后再试；需要立刻停下时，发送「停止运行」或 /stop。": {
+    "en": "Still working on the previous message. Please try again later, or send 「停止运行」 / /stop to cancel the current run.",
+    "zh-TW": "目前還在處理上一則訊息，請稍後再試；需要立刻停下時，傳送「停止運行」或 /stop。",
+    "ja": "前のメッセージを処理中です。しばらくしてから再試行するか、「停止运行」または /stop を送って現在の実行を止めてください。",
+    "ko": "이전 메시지를 처리 중입니다. 잠시 후 다시 시도하거나 「停止运行」 또는 /stop을 보내 현재 실행을 중지하세요."
   },
   "已开启新会话，下一条消息会创建新的对话。": {
     "en": "Started a new session. Your next message will begin a new conversation.",
@@ -532,6 +538,12 @@
     "zh-TW": "（此處有一個介面區塊，請在 Multara 中查看）",
     "ja": "（ここに UI ブロックがあります。Multara で確認してください）",
     "ko": "(여기에 UI 블록이 있습니다. Multara에서 확인하세요)"
+  },
+  "（请在 Multara 中填写并提交）": {
+    "en": "(Please fill and submit this form in Multara.)",
+    "zh-TW": "（請在 Multara 中填寫並提交）",
+    "ja": "（Multara で記入して送信してください）",
+    "ko": "(Multara에서 작성하고 제출하세요)"
   },
   "不支持的接收人类型": {
     "en": "Unsupported recipient type",

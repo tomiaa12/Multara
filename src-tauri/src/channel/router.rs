@@ -115,6 +115,20 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
         }
     };
 
+    if session_is_busy(app, &binding.session_id) {
+        if is_stop_request(&message.text) {
+            stop_session_runs(app, installation, &message, &binding.session_id);
+            return;
+        }
+        send_notice(
+            app,
+            installation,
+            &message,
+            &tr!("当前还在处理上一条消息，请稍后再试；需要立刻停下时，发送「停止运行」或 /stop。"),
+        );
+        return;
+    }
+
     let attachments = download_media(app, installation, &message);
     if message.text.is_empty() && attachments.is_empty() {
         return;
@@ -231,7 +245,7 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
             app,
             installation,
             message,
-            &tr!("可用指令：\n/new 开启新会话\n/stop 中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明"),
+            &tr!("可用指令：\n/new 开启新会话\n/stop 或「停止运行」中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明"),
         ),
         "/new" => {
             let route_key = route_key(message);
@@ -261,35 +275,7 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
                 send_notice(app, installation, message, &tr!("当前没有正在运行的会话。"));
                 return true;
             };
-            let run_ids: Vec<String> = {
-                let state = app.state::<AppState>();
-                let Ok(db) = state.lock_db() else {
-                    return true;
-                };
-                let mut statement = db
-                    .prepare(
-                        "SELECT id FROM agent_runs
-                         WHERE session_id=?1 AND status IN ('queued', 'running')",
-                    )
-                    .ok();
-                statement
-                    .as_mut()
-                    .and_then(|statement| {
-                        statement
-                            .query_map([&session_id], |row| row.get(0))
-                            .ok()
-                            .map(|rows| rows.filter_map(Result::ok).collect())
-                    })
-                    .unwrap_or_default()
-            };
-            if run_ids.is_empty() {
-                send_notice(app, installation, message, &tr!("当前没有正在运行的智能体。"));
-                return true;
-            }
-            for run_id in &run_ids {
-                let _ = crate::executor::stop(app, run_id);
-            }
-            send_notice(app, installation, message, &tr!("已请求停止当前运行。"));
+            stop_session_runs(app, installation, message, &session_id);
         }
         "/status" => {
             let route_key = route_key(message);
@@ -398,6 +384,81 @@ fn target_label(installation: &Installation) -> String {
         installation.name
     );
     state
+}
+
+fn session_is_busy(app: &AppHandle, session_id: &str) -> bool {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return false;
+    };
+    db.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM agent_runs
+             WHERE session_id=?1 AND status IN ('queued', 'running')
+         )",
+        [session_id],
+        |row| row.get::<_, bool>(0),
+    )
+    .unwrap_or(false)
+}
+
+fn is_stop_request(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "/stop" | "stop" | "停止运行" | "停止運行" | "停止当前运行" | "停止目前執行"
+    )
+}
+
+fn stop_session_runs(
+    app: &AppHandle,
+    installation: &Installation,
+    message: &InboundMessage,
+    session_id: &str,
+) {
+    let run_ids: Vec<String> = {
+        let state = app.state::<AppState>();
+        let Ok(db) = state.lock_db() else {
+            return;
+        };
+        let mut statement = db
+            .prepare(
+                "SELECT id FROM agent_runs
+                 WHERE session_id=?1 AND status IN ('queued', 'running')",
+            )
+            .ok();
+        statement
+            .as_mut()
+            .and_then(|statement| {
+                statement
+                    .query_map([session_id], |row| row.get(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(Result::ok).collect())
+            })
+            .unwrap_or_default()
+    };
+    if run_ids.is_empty() {
+        send_notice(
+            app,
+            installation,
+            message,
+            &tr!("当前没有正在运行的智能体。"),
+        );
+        return;
+    }
+    for run_id in &run_ids {
+        let _ = crate::executor::stop(app, run_id);
+    }
+    send_notice(
+        app,
+        installation,
+        message,
+        &tr!("已请求停止当前运行。"),
+    );
 }
 
 fn route_key(message: &InboundMessage) -> String {
@@ -596,6 +657,26 @@ fn flush(app: &AppHandle, key: &str) {
         return;
     };
     if batch.texts.is_empty() && batch.attachments.is_empty() {
+        return;
+    }
+    // 防抖期间会话可能已有运行；渠道消息不再 steer，直接提示忙，避免打断当前回合。
+    if session_is_busy(app, &batch.binding.session_id) {
+        let joined = batch.texts.join("\n\n");
+        if is_stop_request(&joined) {
+            stop_session_runs(
+                app,
+                &batch.installation,
+                &batch.message,
+                &batch.binding.session_id,
+            );
+            return;
+        }
+        send_notice(
+            app,
+            &batch.installation,
+            &batch.message,
+            &tr!("当前还在处理上一条消息，请稍后再试；需要立刻停下时，发送「停止运行」或 /stop。"),
+        );
         return;
     }
     let raw_content = batch.texts.join("\n\n");
@@ -945,7 +1026,7 @@ fn handle_plan_action(app: &AppHandle, installation: &Installation, action: &Car
 
 #[cfg(test)]
 mod tests {
-    use super::{is_owner, parse_mode_command};
+    use super::{is_owner, is_stop_request, parse_mode_command};
     use crate::models::RunMode;
 
     #[test]
@@ -966,6 +1047,15 @@ mod tests {
         assert!(is_owner(Some("owner")));
         assert!(!is_owner(Some("member")));
         assert!(!is_owner(None));
+    }
+
+    #[test]
+    fn recognizes_stop_phrases() {
+        assert!(is_stop_request("/stop"));
+        assert!(is_stop_request("停止运行"));
+        assert!(is_stop_request(" STOP "));
+        assert!(!is_stop_request("不要停止运行啊"));
+        assert!(!is_stop_request("帮我写这个"));
     }
 }
 
