@@ -691,6 +691,7 @@ const field = ref<{
   focusEnd: () => void;
   clear: () => void;
   insertChip: (item: EditorSelectionContext) => void;
+  insertMissing: (items: EditorSelectionContext[]) => void;
   insertText: (value: string) => void;
   restore: (nodes: ComposerNode[]) => void;
   snapshot: () => ComposerNode[];

@@ -6178,7 +6178,7 @@ defineExpose({
                     :open="entry.expanded"
                   />
                   <input
-                    v-if="entry.creating || treeEdit?.path === entry.path"
+                    v-if="treeEdit && (entry.creating || treeEdit.path === entry.path)"
                     :ref="setTreeEditInput"
                     v-model="treeEdit.name"
                     class="tree-inline-input"
