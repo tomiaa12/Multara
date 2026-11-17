@@ -17,10 +17,15 @@ pub struct McpLaunch {
     /// ACP `session/new` 和 dsh `mcp_servers` 用的服务器列表。
     pub protocol_servers: Vec<Value>,
     temps: Vec<PathBuf>,
+    /// Cursor：`(mcp.json, 备份文件)`。备份落盘，异常退出下次启动也能还原。
+    project_mcp_restore: Option<(PathBuf, PathBuf)>,
 }
 
 impl Drop for McpLaunch {
     fn drop(&mut self) {
+        if let Some((path, bak)) = self.project_mcp_restore.take() {
+            restore_project_mcp_from_bak(&path, &bak);
+        }
         for dir in self.temps.drain(..) {
             let _ = fs::remove_dir_all(dir);
         }
@@ -37,6 +42,7 @@ pub fn prepare(
         env: Vec::new(),
         protocol_servers: Vec::new(),
         temps: Vec::new(),
+        project_mcp_restore: None,
     };
     let Some(path) = config_file else {
         return Ok(launch);
@@ -147,15 +153,31 @@ fn prepare_cursor(
     cwd: &Path,
     servers: &Map<String, Value>,
 ) -> Result<(), String> {
-    // cursor-agent 只从各个 workspace root 的 .cursor/mcp.json 和 ~/.cursor/mcp.json 读配置。
-    // 把配置放在临时目录，用 --add-dir 挂进去，避免写进用户仓库。
+    // cursor-agent 只发现「当前 workspace / 父目录」和 ~/.cursor 的 mcp.json。
+    // --add-dir 里的 .cursor/mcp.json 文件能读到，但不会进工具命名空间（对话诊断已证实）。
+    // 因此把本轮授权的 MCP 合并进 workspace 根的 .cursor/mcp.json，跑完再还原。
+    let project = project_root(cwd);
+    let project_mcp = project.join(".cursor").join("mcp.json");
+    let bak = project.join(".cursor").join("mcp.json.multara-bak");
+    // 上次异常退出留下的备份：先还原再继续。
+    if bak.exists() {
+        restore_project_mcp_from_bak(&project_mcp, &bak);
+    }
+    let previous = fs::read(&project_mcp).ok();
+    match previous.as_ref() {
+        Some(bytes) => write_private(&bak, bytes)?,
+        None => write_private(&bak, b"")?,
+    }
+    write_merged_project_mcp(&project_mcp, previous.as_deref(), servers)?;
+    launch.project_mcp_restore = Some((project_mcp, bak));
+
+    // 仍挂一份临时目录：给只扫 add-dir 的旁路 / 人工排查用；真正加载靠上面的 workspace 文件。
     let root = mcp_root(servers)?;
     launch.temps.push(root.clone());
     launch.args.push("--add-dir".into());
     launch.args.push(root.display().to_string());
     launch.args.push("--approve-mcps".into());
 
-    let project = project_root(cwd);
     let data_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
     let cursor_data = data_dir.path().join("cursor-data");
     let mut approvals = approval_keys(&project, servers)?;
@@ -180,6 +202,51 @@ fn prepare_cursor(
         .push(("CURSOR_DATA_DIR".into(), cursor_data.display().to_string()));
     launch.temps.push(data_dir.keep());
     Ok(())
+}
+
+/// 把本轮 MCP 合并进已有 mcp.json（保留项目原有 server）。
+fn write_merged_project_mcp(
+    path: &Path,
+    previous: Option<&[u8]>,
+    servers: &Map<String, Value>,
+) -> Result<(), String> {
+    let mut root = previous
+        .and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+        .filter(|value| value.is_object())
+        .unwrap_or_else(|| serde_json::json!({ "mcpServers": {} }));
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| "MCP 配置无效".to_string())?;
+    if !object.contains_key("mcpServers") {
+        object.insert("mcpServers".into(), Value::Object(Map::new()));
+    }
+    let mcp_servers = object
+        .get_mut("mcpServers")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "MCP 配置无效".to_string())?;
+    for (name, server) in servers {
+        mcp_servers.insert(name.clone(), server.clone());
+    }
+    write_private(
+        path,
+        &serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?,
+    )
+}
+
+fn restore_project_mcp_from_bak(path: &Path, bak: &Path) {
+    let previous = fs::read(bak).ok();
+    let _ = fs::remove_file(bak);
+    match previous.as_deref() {
+        Some(bytes) if !bytes.is_empty() => {
+            let _ = write_private(path, bytes);
+        }
+        _ => {
+            let _ = fs::remove_file(path);
+            if let Some(dir) = path.parent() {
+                let _ = fs::remove_dir(dir);
+            }
+        }
+    }
 }
 
 /// 临时目录里放一份 `.cursor/mcp.json`，给会扫描附加工作区的 CLI 用。
@@ -488,8 +555,52 @@ fn dirs_home() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::approval_keys;
+    use super::{
+        approval_keys, restore_project_mcp_from_bak, write_merged_project_mcp, write_private,
+    };
     use serde_json::json;
+    use std::fs;
+
+    #[test]
+    fn merges_into_existing_project_mcp_and_restores() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".cursor").join("mcp.json");
+        let bak = dir.path().join(".cursor").join("mcp.json.multara-bak");
+        let original = br#"{"mcpServers":{"keep-me":{"command":"echo"}}}"#;
+        write_private(&path, original).unwrap();
+        write_private(&bak, original).unwrap();
+        let mut servers = serde_json::Map::new();
+        servers.insert(
+            "feishu-project".into(),
+            json!({"type":"http","url":"https://project.feishu.cn/mcp_server/v1"}),
+        );
+        write_merged_project_mcp(&path, Some(original), &servers).unwrap();
+        let merged: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(merged["mcpServers"]["keep-me"].is_object());
+        assert_eq!(
+            merged["mcpServers"]["feishu-project"]["url"],
+            "https://project.feishu.cn/mcp_server/v1"
+        );
+        restore_project_mcp_from_bak(&path, &bak);
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(!bak.exists());
+    }
+
+    #[test]
+    fn restores_missing_project_mcp_by_deleting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".cursor").join("mcp.json");
+        let bak = dir.path().join(".cursor").join("mcp.json.multara-bak");
+        write_private(&bak, b"").unwrap();
+        write_private(
+            &path,
+            br#"{"mcpServers":{"feishu-project":{"url":"https://x"}}}"#,
+        )
+        .unwrap();
+        restore_project_mcp_from_bak(&path, &bak);
+        assert!(!path.exists());
+        assert!(!bak.exists());
+    }
 
     fn keys(path: &str, server: serde_json::Value) -> Vec<String> {
         let servers = serde_json::Map::from_iter([("fetch".into(), server.clone())]);
