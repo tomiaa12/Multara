@@ -4040,7 +4040,8 @@ button.read-row-line.is-clickable:hover .read-row-text {
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
-  height: 16px;
+  max-width: 100%;
+  height: 18px;
   gap: 3px;
   margin: 0 2px;
   padding: 0 2px 0 2px;
@@ -4052,21 +4053,32 @@ button.read-row-line.is-clickable:hover .read-row-text {
   user-select: none;
   white-space: nowrap;
   font-size: var(--font-size-sm);
-  line-height: 18px;
+  line-height: 16px;
 }
 .composer-chip-icon {
   display: inline-flex;
+  flex: 0 0 12px;
   width: 12px;
+  min-width: 12px;
+  max-width: 12px;
   height: 12px;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 .composer-chip-icon .file-type-icon {
+  display: block;
   width: 12px;
   height: 12px;
+  max-width: 12px;
+  max-height: 12px;
 }
 .composer-chip-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
 }
 .composer-chip-remove {
   display: inline-flex;
