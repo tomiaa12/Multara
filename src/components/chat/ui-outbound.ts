@@ -6,7 +6,7 @@ import type { ChatMessage } from "../../domain/types";
 import { t } from "../../i18n";
 import { genUiLabel } from "./genui/registry";
 
-export type UiSource = "canvas" | "mcp-app";
+export type UiSource = "canvas" | "mcp-app" | "browser";
 
 export type FillResult = { ok: true } | { ok: false; reason: "composer_not_empty" | "session_closed" };
 
@@ -36,7 +36,10 @@ export function fillComposerFromUi(input: { sessionId: string; source: UiSource;
 export function formatUiContexts(items: { source: UiSource; label: string; text: string | null; data: unknown }[]) {
   return items
     .map((item) => {
-      const head = t(item.source === "canvas" ? "canvas.contextHeader" : "mcpApp.contextHeader", { title: item.label });
+      let headerKey = "mcpApp.contextHeader";
+      if (item.source === "canvas") headerKey = "canvas.contextHeader";
+      else if (item.source === "browser") headerKey = "inbox.browser.contextHeader";
+      const head = t(headerKey, { title: item.label });
       const parts = [head];
       if (item.text?.trim()) parts.push(item.text.trim());
       if (item.data !== undefined && item.data !== null) {

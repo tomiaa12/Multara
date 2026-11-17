@@ -46,7 +46,7 @@ export interface LiveFrame {
 export interface UiContextItem {
   id: string;
   sessionId: string;
-  source: "canvas" | "mcp-app";
+  source: "canvas" | "mcp-app" | "browser";
   sourceId: string;
   label: string;
   text: string | null;

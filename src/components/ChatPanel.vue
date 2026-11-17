@@ -38,6 +38,7 @@ import type { CanvasDefinition, ChatMessage, EditorSelectionContext, MessageAtta
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
+import { BROWSER_ATTACH_IMAGE } from "../views/inbox/browser-chat-attach";
 import { classifyClipboardEntry, resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
 import * as explorerBackend from "../services/explorer-backend";
 import {
@@ -129,6 +130,13 @@ const canvas = useCanvasStore();
 /** Canvas 是生成式界面下面的子开关 */
 const canvasOn = computed(() => isCanvasEnabled(store.data?.settings));
 const uiContexts = computed(() => (props.preview ? [] : canvas.contextsFor(session.value?.id)));
+
+function uiContextChipLabel(item: { source: string; label: string }) {
+  if (item.source === "mcp-app") return t("mcpApp.contextChip", { title: item.label });
+  if (item.source === "browser") return t("inbox.browser.contextChip", { title: item.label });
+  return t("canvas.contextChip", { title: item.label });
+}
+
 /** 没有工作台可以显示 Canvas 时（浮动聊天），在聊天面板上弹窗显示 */
 const canvasModal = ref<{ sessionId: string; instanceId: string } | null>(null);
 const canvasModalViewId = `chat-modal-${crypto.randomUUID()}`;
@@ -1661,6 +1669,7 @@ onMounted(() => {
   });
   void ensureSession();
   canvas.startListening();
+  window.addEventListener(BROWSER_ATTACH_IMAGE, onBrowserAttachImage);
   if (chatRoot.value) {
     // 隐藏着的气泡实例宽度是 0，会停在抽屉模式且抽屉关着，不会和工作台的列表抢
     panelResize = new ResizeObserver(([entry]) => {
@@ -1674,6 +1683,22 @@ onMounted(() => {
     if (session.value?.id) revealTranscript(session.value.id);
   });
 });
+
+async function onBrowserAttachImage(event: Event) {
+  const detail = (event as CustomEvent<{ sessionId: string; name: string; mimeType: string; base64: string }>).detail;
+  if (!detail || props.preview || props.historyViewOnly) return;
+  if (!session.value || session.value.id !== detail.sessionId) return;
+  try {
+    const binary = atob(detail.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const file = new File([bytes], detail.name || "browser.png", { type: detail.mimeType || "image/png" });
+    await pasteImages([file]);
+    composerInput.value?.focus();
+  } catch (error) {
+    composerError.value = error instanceof Error ? error.message : t("chat.pasteFailed");
+  }
+}
 
 // Canvas 页面要填输入框（__multara/message）：输入框为空时填进去并聚焦，用户自己按发送
 let unregisterFiller: (() => void) | null = null;
@@ -1781,6 +1806,7 @@ onBeforeUnmount(() => {
   unregisterCloseSurface = null;
   unregisterFiller?.();
   unregisterFiller = null;
+  window.removeEventListener(BROWSER_ATTACH_IMAGE, onBrowserAttachImage);
   cancelStickFollowRelease?.();
   cancelStickFollowRelease = null;
   messageListResize?.disconnect();
@@ -2174,7 +2200,7 @@ defineExpose({
         <div v-if="uiContexts.length" class="composer-attachments vs-scroll">
           <div v-for="item in uiContexts" :key="item.id" class="composer-attachment ui-context-chip">
             <Codicon name="dashboard" :size="12" />
-            <span>{{ t(item.source === "mcp-app" ? "mcpApp.contextChip" : "canvas.contextChip", { title: item.label }) }}</span>
+            <span>{{ uiContextChipLabel(item) }}</span>
             <UiButton type="button" variant="ghost" size="icon" :tip="t('chat.removeAttachment')" @click="canvas.removeContext(item.sessionId, item.id)">
               <X :size="10" />
             </UiButton>

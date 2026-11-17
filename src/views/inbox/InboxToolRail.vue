@@ -1063,6 +1063,7 @@ onBeforeUnmount(() => {
           <InboxBrowser
             v-if="tab.kind === 'browser'"
             :links="links"
+            :session-id="sessionId"
             :active="activeSurfaceKey === tab.key"
             :open-url="activeSurfaceKey === tab.key ? browserRequest : ''"
           />
