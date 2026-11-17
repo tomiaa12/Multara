@@ -1074,6 +1074,48 @@ export async function openExternalUrl(url: string): Promise<void> {
   await invoke("open_external_url", { url });
 }
 
+export type InboxBrowserSetArgs = {
+  url?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible: boolean;
+};
+
+/** 桌面内嵌浏览器（child Webview）；浏览器预览无此能力。 */
+export async function inboxBrowserSet(args: InboxBrowserSetArgs): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("inbox_browser_set", {
+    url: args.url ?? null,
+    x: args.x,
+    y: args.y,
+    width: args.width,
+    height: args.height,
+    visible: args.visible,
+  });
+}
+
+export async function inboxBrowserBack(): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("inbox_browser_back");
+}
+
+export async function inboxBrowserForward(): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("inbox_browser_forward");
+}
+
+export async function inboxBrowserReload(): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("inbox_browser_reload");
+}
+
+export async function inboxBrowserDestroy(): Promise<void> {
+  if (!inTauri()) return;
+  await invoke("inbox_browser_destroy");
+}
+
 // ---------- Canvas（生成式界面 L2） ----------
 
 export async function listCanvasInstances(sessionId: string): Promise<CanvasListing> {
