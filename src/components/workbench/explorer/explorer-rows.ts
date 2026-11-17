@@ -126,7 +126,7 @@ function buildLevel(
   }
   const nestedNames = new Set([...nests.values()].flat());
   const byName = new Map(visible.map((entry) => [entry.name, entry]));
-  const top = visible
+  const top: Array<ExplorerEntryLike & { excluded?: boolean; hasNests: boolean; creating?: boolean }> = visible
     .filter((entry) => entry.isDirectory || !nestedNames.has(entry.name) || nests.has(entry.name))
     .map((entry) => ({ ...entry, hasNests: nests.has(entry.name) }));
   if (input.creating && input.creating.parentPath === dirPath) {
