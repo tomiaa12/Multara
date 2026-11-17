@@ -10042,6 +10042,12 @@ body.is-dragging-workspace-file * {
 .inbox-page.has-file-review.has-stage {
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 4px var(--inbox-review-width, 420px) var(--inbox-stage-width, 420px);
 }
+.inbox-page.req-run {
+  grid-template-columns: var(--req-run-rail, 300px) minmax(0, 1fr);
+}
+.inbox-page.req-run.has-stage {
+  grid-template-columns: var(--req-run-rail, 300px) minmax(0, 1fr) var(--inbox-stage-width, 420px);
+}
 .inbox-stage {
   position: relative;
   z-index: 6;
@@ -10076,9 +10082,49 @@ body.is-dragging-workspace-file * {
   flex-direction: column;
 }
 .inbox-stage-body > .inbox-surface-pane > .inbox-browser,
+.inbox-stage-body > .inbox-surface-pane > .inbox-git-split,
 .inbox-stage-body > .inbox-surface-pane > .source-control-panel,
 .inbox-stage-body > .inbox-surface-pane > .search-view,
 .inbox-stage-body > .inbox-surface-pane > .task-issue-side {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+.inbox-git-split {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.inbox-git-preview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.inbox-git-preview > .monaco-host,
+.inbox-git-preview > .git-diff-binary,
+.inbox-git-preview > .commit-multi-diff {
+  flex: 1;
+  min-height: 0;
+}
+.inbox-git-bar {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-width: 220px;
+  max-width: 360px;
+  min-height: 0;
+  border-left: 1px solid var(--color-border);
+}
+.inbox-git-split:not(.has-preview) .inbox-git-bar {
+  flex: 1;
+  width: auto;
+  max-width: none;
+  border-left: 0;
+}
+.inbox-git-bar > .source-control-panel {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -10128,6 +10174,7 @@ body.is-dragging-workspace-file * {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   border-left: 1px solid var(--color-border);
   background: var(--color-bg);
 }
@@ -10146,8 +10193,22 @@ body.is-dragging-workspace-file * {
   touch-action: none;
 }
 .inbox-files-pane > .inbox-files-tree {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  overflow: auto;
+}
+/* 收起时只留两行标题；展开后和文件树分高度，标题不会被挤出栏外 */
+.inbox-files-pane > .inbox-files-history.ui-pane-view {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 44px;
+  max-height: 50%;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+}
+.inbox-files-pane > .inbox-files-history.ui-pane-view:has(.ui-pane:not(.is-collapsed)) {
+  flex: 1 1 0;
+  min-height: 44px;
 }
 .workspace-file-tree.is-embedded {
   overflow: visible;
@@ -10816,9 +10877,14 @@ body.is-dragging-inbox-float * {
   .inbox-page.has-file-review.has-stage,
   .inbox-page.has-stage.has-rail,
   .inbox-page.has-task-side.has-stage.has-rail,
-  .inbox-page.has-file-review.has-stage.has-rail {
+  .inbox-page.has-file-review.has-stage.has-rail,
+  .inbox-page.req-run,
+  .inbox-page.req-run.has-stage {
     position: relative;
     grid-template-columns: minmax(0, 1fr);
+  }
+  .req-run-rail-resize {
+    display: none;
   }
   .inbox-stage,
   .inbox-tool-panel {
@@ -13122,11 +13188,24 @@ label.settings-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.req-run-head-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
+.req-run-head .req-run-create {
   flex: 0 0 auto;
+}
+.req-run-rail {
+  position: relative;
+}
+.req-run-rail-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+}
+.req-run-create-measure {
+  position: absolute;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
 }
 .req-run-filters {
   display: grid;
@@ -13144,6 +13223,12 @@ label.settings-row:hover {
   display: flex;
   flex-wrap: wrap;
 }
+.req-run-filters .req-mode-row .ds-segmented {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  width: max-content;
+  max-width: 100%;
+}
 .req-run .inbox-list button > span:not(.agent-avatar):not(.inbox-meta):not(.ds-tooltip-trigger) {
   display: block;
   overflow: hidden;
@@ -13155,12 +13240,12 @@ label.settings-row:hover {
   margin: auto;
   border: 0;
 }
-/* 与 compact 消息列表左右 14px 内边距对齐，避免再吃到收件箱那条左边距后撑出容器 */
+/* 与回答同宽：消息区左右 14px，回答本身最多 720px 且靠左 */
 .req-run .shared-chat-panel.compact .chat-surface > .chat-editing-dock,
 .req-run .shared-chat-panel.compact .chat-surface > .chat-composer {
   box-sizing: border-box;
-  width: calc(100% - 28px);
-  max-width: calc(100% - 28px);
+  width: min(720px, calc(100% - 28px));
+  max-width: 720px;
   margin: 0 14px 10px;
   align-self: flex-start;
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Plus, Search } from "@lucide/vue";
 import ChatPanel from "../../components/ChatPanel.vue";
 import ContextMenu, { type ContextMenuItem } from "../../components/ui/ContextMenu.vue";
@@ -12,6 +12,7 @@ import {
   type HomeFilter,
   type HomeProject,
 } from "./project-home";
+import { RUN_RAIL_MAX, RUN_RAIL_MIN, readRunRail, writeRunRail } from "./requirement-home-mode";
 
 const props = defineProps<{
   rows: HomeProject[];
@@ -29,6 +30,7 @@ const emit = defineEmits<{
   remove: [id: string, name: string];
   "add-workspace": [id: string];
   layout: [payload: { content: boolean; files: boolean; width: number; terminal: boolean }];
+  rail: [width: number];
 }>();
 
 const store = useAppStore();
@@ -37,6 +39,12 @@ const query = ref("");
 const selectedId = ref("");
 const pickedWorkspaceId = ref("");
 const menu = ref<{ x: number; y: number; row: HomeProject } | null>(null);
+const railWidth = ref(readRunRail());
+const headEl = ref<HTMLElement | null>(null);
+const createMeasure = ref<HTMLElement | null>(null);
+const createCompact = ref(false);
+let createLockWidth = 0;
+let headObserver: ResizeObserver | null = null;
 
 const modeTabs = computed(() => [
   { id: "code", label: t("dashboard.mode.code") },
@@ -110,18 +118,86 @@ function onMenu(id: string) {
   if (id === "archive") emit("archive", row.id, row.archived);
   if (id === "delete") emit("remove", row.id, row.name);
 }
+
+function fitCreate() {
+  const head = headEl.value;
+  const title = head?.querySelector("h1");
+  const measure = createMeasure.value;
+  if (!head || !(title instanceof HTMLElement) || !measure) return;
+  const overflow = title.scrollWidth - title.clientWidth;
+  if (!createCompact.value) {
+    if (overflow > 1) {
+      createCompact.value = true;
+      createLockWidth = head.clientWidth;
+    }
+    return;
+  }
+  if (head.clientWidth <= createLockWidth) return;
+  const button = head.querySelector(".req-run-create");
+  const gap = button instanceof HTMLElement ? Number.parseFloat(getComputedStyle(button).columnGap) || 0 : 0;
+  if (title.clientWidth - title.scrollWidth < measure.offsetWidth + gap) return;
+  createCompact.value = false;
+}
+
+function beginRailResize(event: PointerEvent) {
+  const handle = event.currentTarget;
+  if (!(handle instanceof HTMLElement)) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  const startX = event.clientX;
+  const startWidth = railWidth.value;
+  document.body.classList.add("is-resizing-panels");
+  const move = (moveEvent: PointerEvent) => {
+    const next = startWidth + (moveEvent.clientX - startX);
+    railWidth.value = Math.min(RUN_RAIL_MAX, Math.max(RUN_RAIL_MIN, next));
+    emit("rail", railWidth.value);
+  };
+  const finish = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", finish);
+    handle.removeEventListener("pointercancel", finish);
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    document.body.classList.remove("is-resizing-panels");
+    railWidth.value = writeRunRail(railWidth.value);
+    emit("rail", railWidth.value);
+    fitCreate();
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+}
+
+onMounted(() => {
+  emit("rail", railWidth.value);
+  fitCreate();
+  const head = headEl.value;
+  if (!head) return;
+  headObserver = new ResizeObserver(() => fitCreate());
+  headObserver.observe(head);
+});
+
+onBeforeUnmount(() => {
+  headObserver?.disconnect();
+  headObserver = null;
+});
 </script>
 
 <template>
-  <aside class="inbox-rail">
+  <aside class="inbox-rail req-run-rail">
     <header>
-      <div class="req-run-head">
+      <div ref="headEl" class="req-run-head">
         <h1>{{ t("dashboard.title") }}</h1>
-        <div class="req-run-head-actions">
-          <UiButton variant="primary" size="icon" :tip="t('dashboard.create')" @click="emit('create')">
-            <Plus :size="15" />
-          </UiButton>
-        </div>
+        <UiButton
+          class="req-run-create"
+          variant="primary"
+          :size="createCompact ? 'icon' : undefined"
+          :tip="createCompact ? t('dashboard.create') : ''"
+          @click="emit('create')"
+        >
+          <Plus :size="15" />
+          <span v-if="!createCompact">{{ t("dashboard.create") }}</span>
+        </UiButton>
+        <span ref="createMeasure" class="req-run-create-measure" aria-hidden="true">{{ t("dashboard.create") }}</span>
       </div>
       <div v-if="error" class="error-card">{{ error }}</div>
       <div class="req-run-filters">
@@ -157,6 +233,17 @@ function onMenu(id: string) {
       <h3>{{ t("dashboard.noMatch") }}</h3>
       <p>{{ t("dashboard.noMatchHint") }}</p>
     </div>
+    <div
+      class="panel-resize-handle req-run-rail-resize"
+      role="separator"
+      :aria-label="t('app.resizeSidebar')"
+      aria-orientation="vertical"
+      :aria-valuemin="RUN_RAIL_MIN"
+      :aria-valuemax="RUN_RAIL_MAX"
+      :aria-valuenow="railWidth"
+      tabindex="0"
+      @pointerdown="beginRailResize"
+    />
   </aside>
 
   <section class="inbox-detail chat-surface">

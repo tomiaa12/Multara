@@ -56,6 +56,7 @@ import {
 import RequirementRun from "./dashboard/RequirementRun.vue";
 import {
   isRequirementHomeMode,
+  readRunRail,
   requirementHomeMode,
   setRequirementHomeMode,
 } from "./dashboard/requirement-home-mode";
@@ -348,6 +349,7 @@ const homeModeTabs = computed(() => [
 ]);
 const runActive = computed(() => hasProjects.value && requirementHomeMode.value === "run");
 const runStage = ref({ content: false, width: 0, terminal: false });
+const runRail = ref(readRunRail());
 
 function onHomeMode(value: string) {
   if (!isRequirementHomeMode(value)) return;
@@ -357,6 +359,18 @@ function onHomeMode(value: string) {
 function onRunLayout(payload: { content: boolean; width: number; terminal: boolean }) {
   runStage.value = { content: payload.content, width: payload.width, terminal: payload.terminal };
 }
+
+function onRunRail(width: number) {
+  runRail.value = width;
+}
+
+const runShellStyle = computed(() => {
+  if (!runActive.value) return undefined;
+  return {
+    "--req-run-rail": `${runRail.value}px`,
+    ...(runStage.value.content ? { "--inbox-stage-width": `${runStage.value.width}px` } : {}),
+  };
+});
 </script>
 
 <template>
@@ -370,7 +384,7 @@ function onRunLayout(payload: { content: boolean; width: number; terminal: boole
       'has-stage': runActive && runStage.content,
       'has-terminal': runActive && runStage.terminal,
     }"
-    :style="runActive && runStage.content ? { '--inbox-stage-width': `${runStage.width}px` } : undefined"
+    :style="runShellStyle"
   >
     <RequirementRun
       v-if="runActive"
@@ -386,6 +400,7 @@ function onRunLayout(payload: { content: boolean; width: number; terminal: boole
       @remove="askRemoveProject"
       @add-workspace="openWorkspacePicker"
       @layout="onRunLayout"
+      @rail="onRunRail"
     />
     <template v-else-if="!hasProjects">
       <div v-if="error" class="error-card">{{ error }}</div>

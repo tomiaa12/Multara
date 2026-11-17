@@ -7,6 +7,8 @@ import type { TerminalProfile } from "../../services/backend";
 import { detectIndent } from "../../editor/eol";
 import { currentDocumentTheme, monacoThemeName } from "../../editor/monaco-workspace";
 import SourceControlPanel from "../../components/SourceControlPanel.vue";
+import ScmHistoryListView from "../../components/scm/ScmHistoryListView.vue";
+import UiPaneView from "../../components/ui/UiPaneView.vue";
 import CommitMultiDiffEditor, { type CommitDiffFile } from "../../components/scm/CommitMultiDiffEditor.vue";
 import GitDiffEditor from "../../components/scm/GitDiffEditor.vue";
 import FileTypeIcon from "../../components/FileTypeIcon.vue";
@@ -89,7 +91,44 @@ const emit = defineEmits<{
 
 const store = useAppStore();
 const panelWidth = ref(readInboxPanelWidth());
+const gitBarOpen = ref(true);
+type GitSideDiff = { id: string; original: string; modified: string; binary: boolean; language: string };
+const gitPreview = ref<{
+  workspaceId: string;
+  path: string;
+  language: string;
+  content: string;
+  readOnly: boolean;
+  diff: GitSideDiff | null;
+  commitFiles: CommitDiffFile[] | null;
+  commitId: string;
+} | null>(null);
 const filesWidth = ref(readInboxFilesWidth());
+const filePreview = ref<{
+  workspaceId: string;
+  path: string;
+  language: string;
+  content: string;
+  readOnly: boolean;
+  diff: GitSideDiff | null;
+} | null>(null);
+const fileLine = ref(0);
+const fileHistoryEpoch = 0;
+const lineHistoryView = ref<{ setExpanded: (value: boolean) => void } | null>(null);
+const fileHistoryView = ref<{ setExpanded: (value: boolean) => void } | null>(null);
+let fileCursor: { dispose: () => void } | null = null;
+const fileHistoryWorkspaceId = computed(() => {
+  const tab = activeEditor.value;
+  if (tab && !tab.emptyFiles && tab.workspaceId) return tab.workspaceId;
+  return filePreview.value?.workspaceId
+    || props.workspaces.find((item) => item.kind === "git")?.id
+    || "";
+});
+const historyPath = computed(() => {
+  const tab = activeEditor.value;
+  if (tab && !tab.emptyFiles && tab.path) return tab.path;
+  return filePreview.value?.path || "";
+});
 const filesWanted = ref(false);
 const terminalOpen = ref(false);
 const surfaces = ref<InboxSurfaceTab[]>(readInboxSurfaces());
@@ -119,7 +158,8 @@ const activeTerminalId = computed(() => {
   return sessions.value[0]?.id ?? "";
 });
 const theme = computed(() => monacoThemeName(currentDocumentTheme()));
-const indent = computed(() => detectIndent(activeEditor.value?.content ?? ""));
+const indent = computed(() => detectIndent(activeEditor.value?.content || filePreview.value?.content || ""));
+const gitIndent = computed(() => detectIndent(gitPreview.value?.content ?? ""));
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
 const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
 
@@ -387,10 +427,21 @@ function onAddMenu(id: string) {
 }
 
 function closeSurface(key: string) {
+  const closing = surfaces.value.find((item) => item.key === key);
+  if (closing?.kind === "changes") {
+    gitPreview.value = null;
+    gitBarOpen.value = true;
+  }
   const next = surfaces.value.filter((item) => item.key !== key);
   surfaces.value = next;
   if (activeSurfaceKey.value === key) activeSurfaceKey.value = next.at(-1)?.key ?? "";
   writeLayout();
+}
+
+function openGitList() {
+  gitPreview.value = null;
+  gitBarOpen.value = true;
+  openSurface("changes", "singleton");
 }
 
 function closeEditor(tab: EditorTab) {
@@ -414,6 +465,7 @@ async function openFile(workspaceId: string, path: string, pin = false) {
   if (existing) {
     if (pin) existing.pinned = true;
     activateEditor(existing);
+    closeEmptyFilesTab();
     return;
   }
   let file: FileContent;
@@ -436,6 +488,37 @@ async function openFile(workspaceId: string, path: string, pin = false) {
     commitFiles: null,
     commitId: "",
   });
+  closeEmptyFilesTab();
+}
+
+function closeEmptyFilesTab() {
+  if (!editorTabs.value.some((tab) => tab.emptyFiles)) return;
+  editorTabs.value = editorTabs.value.filter((tab) => !tab.emptyFiles);
+  if (activeEditorKey.value === "files-empty") {
+    activeEditorKey.value = editorTabs.value.at(-1)?.key ?? "";
+  }
+}
+
+async function previewInFiles(workspaceId: string, path: string) {
+  showFiles();
+  const opened = editorTabs.value.find((tab) => tab.key === `${workspaceId}\n${path}`);
+  if (opened) closeEditor(opened);
+  const filesTab = editorTabs.value.find((tab) => tab.emptyFiles);
+  if (filesTab) activateEditor(filesTab);
+  let file: FileContent;
+  try {
+    file = await backend.readWorkspaceFile(workspaceId, path);
+  } catch {
+    file = { workspaceId, path, content: "", language: "plaintext", size: 0, readOnly: true };
+  }
+  filePreview.value = {
+    workspaceId,
+    path,
+    language: file.language,
+    content: file.content,
+    readOnly: Boolean(file.readOnly),
+    diff: null,
+  };
 }
 
 async function readSide(workspaceId: string, path: string) {
@@ -462,41 +545,119 @@ function diffReaders(workspaceId: string) {
   };
 }
 
-async function openChange(target: ScmOpenTarget) {
+function ensureChanges() {
+  gitBarOpen.value = true;
+  const existing = surfaces.value.find((item) => item.kind === "changes");
+  if (existing) {
+    activeSurfaceKey.value = existing.key;
+    writeLayout();
+    return;
+  }
+  openSurface("changes", "singleton");
+}
+
+async function showGitFile(workspaceId: string, path: string) {
+  let file: FileContent;
+  try {
+    file = await backend.readWorkspaceFile(workspaceId, path);
+  } catch {
+    file = { workspaceId, path, content: "", language: "plaintext", size: 0, readOnly: true };
+  }
+  gitPreview.value = {
+    workspaceId,
+    path,
+    language: file.language,
+    content: file.content,
+    readOnly: Boolean(file.readOnly),
+    diff: null,
+    commitFiles: null,
+    commitId: "",
+  };
+}
+
+async function showGitDiff(target: ScmOpenTarget) {
+  const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
+  const same = !loaded.binary && loaded.original === loaded.modified;
+  if (same) return false;
+  gitPreview.value = {
+    workspaceId: target.workspaceId,
+    path: target.path,
+    language: loaded.language,
+    content: loaded.modified,
+    readOnly: true,
+    diff: {
+      id: scmDiffId(target),
+      original: loaded.original,
+      modified: loaded.modified,
+      binary: loaded.binary,
+      language: loaded.language,
+    },
+    commitFiles: null,
+    commitId: "",
+  };
+  return true;
+}
+
+async function openInGit(workspaceId: string, path: string) {
+  ensureChanges();
+  for (const group of ["changes", "staged"] as const) {
+    try {
+      const shown = await showGitDiff({ workspaceId, path, group });
+      if (shown) return;
+    } catch {
+      // 没有这一侧的差异时继续看文件本身
+    }
+  }
+  await showGitFile(workspaceId, path);
+}
+
+async function openChangeInGit(target: ScmOpenTarget) {
+  if (target.group === "commit") {
+    await showGitCommit(target);
+    return;
+  }
+  ensureChanges();
   if (scmOpensAsFile(target.group)) {
-    await openFile(target.workspaceId, target.path, true);
+    await showGitFile(target.workspaceId, target.path);
     return;
   }
   try {
+    const shown = await showGitDiff(target);
+    if (shown) return;
+  } catch {
+    // 差异读失败时打开工作区文件
+  }
+  await showGitFile(target.workspaceId, target.path);
+}
+
+async function showGitCommit(target: ScmOpenTarget) {
+  ensureChanges();
+  try {
     const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
-    const id = scmDiffId(target);
-    const existing = editorTabs.value.find((tab) => tab.diff?.id === id);
-    if (existing) {
-      existing.pinned = true;
-      activateEditor(existing);
-      return;
-    }
-    place({
-      key: id,
+    gitPreview.value = {
       workspaceId: target.workspaceId,
       path: target.path,
-      name: loaded.tabName || fileNameOf(target.path),
-      pinned: true,
-      content: loaded.modified,
-      original: loaded.modified,
       language: loaded.language,
+      content: loaded.modified,
       readOnly: true,
-      diff: { id, original: loaded.original, modified: loaded.modified, binary: loaded.binary, language: loaded.language },
+      diff: {
+        id: scmDiffId(target),
+        original: loaded.original,
+        modified: loaded.modified,
+        binary: loaded.binary,
+        language: loaded.language,
+      },
       commitFiles: null,
       commitId: "",
-    });
+    };
   } catch {
-    await openFile(target.workspaceId, target.path, true);
+    await showGitFile(target.workspaceId, target.path);
   }
 }
 
 async function openChanges(payload: ScmOpenChangesPayload) {
   if (!payload.targets.length) return;
+  ensureChanges();
   try {
     const files = await Promise.all(payload.targets.map(async (target) => {
       const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
@@ -509,30 +670,19 @@ async function openChanges(payload: ScmOpenChangesPayload) {
         binary: loaded.binary,
       } satisfies CommitDiffFile;
     }));
-    const id = `${payload.workspaceId}:commit-multi:${payload.commit}`;
-    const existing = editorTabs.value.find((tab) => tab.commitId === id);
-    if (existing) {
-      existing.commitFiles = files;
-      activateEditor(existing);
-      return;
-    }
-    place({
-      key: id,
+    gitPreview.value = {
       workspaceId: payload.workspaceId,
       path: files[0]?.path ?? payload.commit,
-      name: payload.title,
-      pinned: false,
+      language: files[0]?.language || "plaintext",
       content: "",
-      original: "",
-      language: "plaintext",
       readOnly: true,
       diff: null,
       commitFiles: files,
-      commitId: id,
-    });
+      commitId: `${payload.workspaceId}:commit-multi:${payload.commit}`,
+    };
   } catch {
     const first = payload.targets[0];
-    if (first) await openFile(first.workspaceId, first.path, true);
+    if (first) await showGitCommit(first);
   }
 }
 
@@ -753,6 +903,45 @@ watch(() => props.sessionId, () => {
   writeLayout();
 });
 
+function switchHistoryKind(kind: "file" | "line") {
+  if (kind === "line") lineHistoryView.value?.setExpanded(true);
+  else fileHistoryView.value?.setExpanded(true);
+}
+
+function onFileEditorMount(editor: {
+  getPosition: () => { lineNumber: number } | null;
+  onDidChangeCursorPosition: (listener: (event: { position: { lineNumber: number } }) => void) => { dispose: () => void };
+}) {
+  fileCursor?.dispose();
+  fileLine.value = editor.getPosition()?.lineNumber ?? 1;
+  fileCursor = editor.onDidChangeCursorPosition((event) => {
+    fileLine.value = event.position.lineNumber;
+  });
+}
+
+async function openHistoryInFiles(target: ScmOpenTarget) {
+  showFiles();
+  try {
+    const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
+    filePreview.value = {
+      workspaceId: target.workspaceId,
+      path: target.path,
+      language: loaded.language,
+      content: loaded.modified,
+      readOnly: true,
+      diff: {
+        id: scmDiffId(target),
+        original: loaded.original,
+        modified: loaded.modified,
+        binary: loaded.binary,
+        language: loaded.language,
+      },
+    };
+  } catch {
+    await previewInFiles(target.workspaceId, target.path);
+  }
+}
+
 onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   void nextTick(watchFloatHost);
@@ -764,6 +953,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  fileCursor?.dispose();
+  fileCursor = null;
   window.removeEventListener("keydown", onKeydown);
   floatHostObserver?.disconnect();
   floatHostObserver = null;
@@ -823,8 +1014,8 @@ onBeforeUnmount(() => {
           </UiButton>
         </div>
         </div>
-        <div v-if="fileTabActive" class="inbox-tabbar-actions">
-          <UiTooltip :content="t('workbench.files')">
+        <div v-if="fileTabActive || activeSurface?.kind === 'changes'" class="inbox-tabbar-actions">
+          <UiTooltip v-if="fileTabActive" :content="t('workbench.files')">
             <button
               type="button"
               class="action-item menu-entry"
@@ -833,6 +1024,17 @@ onBeforeUnmount(() => {
               @click="toggleFiles"
             >
               <Codicon class="action-label" :class="{ checked: filesVisible }" name="list-selection" :size="16" />
+            </button>
+          </UiTooltip>
+          <UiTooltip v-if="activeSurface?.kind === 'changes'" :content="t('workbench.git')">
+            <button
+              type="button"
+              class="action-item menu-entry"
+              :aria-pressed="gitBarOpen"
+              :aria-label="t('workbench.git')"
+              @click="gitBarOpen = !gitBarOpen"
+            >
+              <Codicon class="action-label" :class="{ checked: gitBarOpen }" name="source-control" :size="16" />
             </button>
           </UiTooltip>
         </div>
@@ -865,17 +1067,82 @@ onBeforeUnmount(() => {
             v-else-if="tab.kind === 'canvas'"
             :session-id="sessionId"
           />
-          <SourceControlPanel
+          <div
             v-else-if="tab.kind === 'changes'"
-            :project-id="workspace?.projectId ?? ''"
-            :workspaces="workspaces"
-            @open-change="openChange"
-            @open-changes="openChanges"
-            @open-file="(target) => openFile(target.workspaceId, target.path, true)"
-          />
+            class="inbox-git-split"
+            :class="{ 'has-preview': Boolean(gitPreview), 'has-bar': gitBarOpen || !gitPreview }"
+          >
+            <div v-if="gitPreview" class="inbox-git-preview">
+              <CommitMultiDiffEditor
+                v-if="gitPreview.commitFiles?.length"
+                :diff-id="gitPreview.commitId"
+                :files="gitPreview.commitFiles"
+                :theme="theme"
+              />
+              <GitDiffEditor
+                v-else-if="gitPreview.diff"
+                :diff-id="gitPreview.diff.id"
+                :original="gitPreview.diff.original"
+                :modified="gitPreview.diff.modified"
+                :language="gitPreview.diff.language"
+                :file-path="gitPreview.path"
+                :theme="theme"
+                :binary="gitPreview.diff.binary"
+              />
+              <EditorWithDiff
+                v-else
+                :file-path="gitPreview.path"
+                :workspace-id="gitPreview.workspaceId"
+                :content="gitPreview.content"
+                :language="gitPreview.language"
+                :read-only="gitPreview.readOnly"
+                :theme="theme"
+                :tab-size="gitIndent.tabSize"
+                :insert-spaces="gitIndent.insertSpaces"
+                :sticky-scroll="stickyScroll"
+                :word-wrap="wordWrap"
+              />
+            </div>
+            <aside v-if="gitBarOpen || !gitPreview" class="inbox-git-bar">
+              <SourceControlPanel
+                :project-id="workspace?.projectId ?? ''"
+                :workspaces="workspaces"
+                :show-file-history="false"
+                @open-change="openChangeInGit"
+                @open-changes="openChanges"
+                @open-file="(target) => openInGit(target.workspaceId, target.path)"
+              />
+            </aside>
+          </div>
         </div>
         <div v-if="activeEditor && !activeSurface" class="editor-area">
-          <div v-if="activeEditor.emptyFiles" class="empty-file-editor">
+          <div v-if="activeEditor.emptyFiles && filePreview" class="editor-main">
+            <GitDiffEditor
+              v-if="filePreview.diff"
+              :diff-id="filePreview.diff.id"
+              :original="filePreview.diff.original"
+              :modified="filePreview.diff.modified"
+              :language="filePreview.diff.language"
+              :file-path="filePreview.path"
+              :theme="theme"
+              :binary="filePreview.diff.binary"
+            />
+            <EditorWithDiff
+              v-else
+              :file-path="filePreview.path"
+              :workspace-id="filePreview.workspaceId"
+              :content="filePreview.content"
+              :language="filePreview.language"
+              :read-only="filePreview.readOnly"
+              :theme="theme"
+              :tab-size="indent.tabSize"
+              :insert-spaces="indent.insertSpaces"
+              :sticky-scroll="stickyScroll"
+              :word-wrap="wordWrap"
+              @mount="onFileEditorMount"
+            />
+          </div>
+          <div v-else-if="activeEditor.emptyFiles" class="empty-file-editor">
             <p>{{ t("inbox.tool.filesEmpty") }}</p>
           </div>
           <div v-else class="editor-main">
@@ -908,6 +1175,7 @@ onBeforeUnmount(() => {
               :sticky-scroll="stickyScroll"
               :word-wrap="wordWrap"
               @change="onEditorChange"
+              @mount="onFileEditorMount"
             />
           </div>
         </div>
@@ -965,6 +1233,38 @@ onBeforeUnmount(() => {
               />
             </section>
           </div>
+          <UiPaneView v-if="fileHistoryWorkspaceId" class="inbox-files-history">
+            <ScmHistoryListView
+              ref="lineHistoryView"
+              kind="line"
+              :title="t('scm.inspect.lineHistory')"
+              storage-key="multara.inbox.lineHistoryCollapsed"
+              size-key="multara.inbox.lineHistorySize"
+              :workspace-id="fileHistoryWorkspaceId"
+              :path="historyPath"
+              :line="fileLine"
+              :epoch="fileHistoryEpoch"
+              live
+              @open="openHistoryInFiles"
+              @open-file="(path) => openFile(fileHistoryWorkspaceId, path)"
+              @switch-kind="switchHistoryKind"
+            />
+            <ScmHistoryListView
+              ref="fileHistoryView"
+              kind="file"
+              :title="t('scm.inspect.fileHistory')"
+              storage-key="multara.inbox.fileHistoryCollapsed"
+              size-key="multara.inbox.fileHistorySize"
+              :workspace-id="fileHistoryWorkspaceId"
+              :path="historyPath"
+              :line="fileLine"
+              :epoch="fileHistoryEpoch"
+              live
+              @open="openHistoryInFiles"
+              @open-file="(path) => openFile(fileHistoryWorkspaceId, path)"
+              @switch-kind="switchHistoryKind"
+            />
+          </UiPaneView>
         </aside>
       </div>
     </div>
@@ -993,9 +1293,9 @@ onBeforeUnmount(() => {
         size="icon"
         :tip="t('inbox.tool.changes')"
         :aria-pressed="activeSurface?.kind === 'changes'"
-        @click="openSurface('changes', 'singleton')"
+        @click="openGitList"
       >
-        <Codicon name="diff-multiple" :size="16" />
+        <Codicon name="source-control" :size="16" />
       </UiButton>
       <UiButton
         v-if="kind === 'project'"
