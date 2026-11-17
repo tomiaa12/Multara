@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Plus, Search } from "@lucide/vue";
+import AgentLiveStatus from "../../components/AgentLiveStatus.vue";
 import ChatPanel from "../../components/ChatPanel.vue";
 import ContextMenu, { type ContextMenuItem } from "../../components/ui/ContextMenu.vue";
 import SegmentedTabs from "../../components/ui/SegmentedTabs.vue";
@@ -230,7 +231,17 @@ onBeforeUnmount(() => {
           @click="selectedId = row.id"
           @contextmenu="onRowContext(row, $event)"
         >
-          <span>{{ row.name }}</span>
+          <span class="req-run-item">
+            <strong class="req-run-name">{{ row.name }}</strong>
+            <span class="req-run-workers">
+              <AgentLiveStatus
+                :session-ids="row.sessionIds"
+                :max="3"
+                :size="18"
+                :dialog-title="t('dashboard.col.workers')"
+              />
+            </span>
+          </span>
         </button>
       </li>
     </ul>
