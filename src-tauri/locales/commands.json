@@ -425,6 +425,54 @@
     "ja": "ブラウザが開いていません",
     "ko": "브라우저가 열려 있지 않습니다"
   },
+  "页面脚本执行超时": {
+    "en": "Page script timed out",
+    "zh-TW": "頁面腳本執行逾時",
+    "ja": "ページスクリプトがタイムアウトしました",
+    "ko": "페이지 스크립트 시간이 초과되었습니다"
+  },
+  "脚本为空": {
+    "en": "Script is empty",
+    "zh-TW": "腳本為空",
+    "ja": "スクリプトが空です",
+    "ko": "스크립트가 비어 있습니다"
+  },
+  "临时路径无效": {
+    "en": "Invalid temporary path",
+    "zh-TW": "臨時路徑無效",
+    "ja": "一時パスが無効です",
+    "ko": "임시 경로가 잘못되었습니다"
+  },
+  "截图失败：{error}": {
+    "en": "Screenshot failed: {error}",
+    "zh-TW": "截圖失敗：{error}",
+    "ja": "スクリーンショットに失敗しました：{error}",
+    "ko": "스크린샷 실패: {error}"
+  },
+  "截图失败": {
+    "en": "Screenshot failed",
+    "zh-TW": "截圖失敗",
+    "ja": "スクリーンショットに失敗しました",
+    "ko": "스크린샷에 실패했습니다"
+  },
+  "当前平台暂不支持浏览器截图": {
+    "en": "Browser screenshot is not supported on this platform yet",
+    "zh-TW": "目前平台暫不支援瀏覽器截圖",
+    "ja": "このプラットフォームではブラウザのスクリーンショットは未対応です",
+    "ko": "이 플랫폼에서는 아직 브라우저 스크린샷을 지원하지 않습니다"
+  },
+  "读取截图失败：{error}": {
+    "en": "Failed to read screenshot: {error}",
+    "zh-TW": "讀取截圖失敗：{error}",
+    "ja": "スクリーンショットの読み取りに失敗しました：{error}",
+    "ko": "스크린샷을 읽지 못했습니다: {error}"
+  },
+  "截图为空": {
+    "en": "Screenshot is empty",
+    "zh-TW": "截圖為空",
+    "ja": "スクリーンショットが空です",
+    "ko": "스크린샷이 비어 있습니다"
+  },
   "链接包含不允许的字符": {
     "en": "The link contains disallowed characters",
     "zh-TW": "連結包含不允許的字元",

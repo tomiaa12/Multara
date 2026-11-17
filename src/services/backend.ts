@@ -1116,6 +1116,31 @@ export async function inboxBrowserDestroy(): Promise<void> {
   await invoke("inbox_browser_destroy");
 }
 
+export async function inboxBrowserEval(script: string): Promise<string> {
+  if (!inTauri()) return "";
+  return invoke<string>("inbox_browser_eval", { script });
+}
+
+export async function inboxBrowserConsoleLogs(): Promise<string> {
+  if (!inTauri()) return "";
+  return invoke<string>("inbox_browser_console_logs");
+}
+
+export async function inboxBrowserScreenshot(rect?: {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}): Promise<string> {
+  if (!inTauri()) throw new Error("Browser screenshot requires the desktop app");
+  return invoke<string>("inbox_browser_screenshot", {
+    x: rect?.x ?? null,
+    y: rect?.y ?? null,
+    width: rect?.width ?? null,
+    height: rect?.height ?? null,
+  });
+}
+
 // ---------- Canvas（生成式界面 L2） ----------
 
 export async function listCanvasInstances(sessionId: string): Promise<CanvasListing> {
