@@ -791,6 +791,11 @@ export const useAppStore = defineStore("app", () => {
     data.value.automations = await backend.saveAutomation(input);
   }
 
+  async function setAutomationEnabled(automationId: string, enabled: boolean) {
+    if (!data.value) return;
+    data.value.automations = await backend.setAutomationEnabled(automationId, enabled);
+  }
+
   async function deleteAutomation(automationId: string) {
     if (!data.value) return;
     data.value.automations = await backend.deleteAutomation(automationId);
@@ -1901,6 +1906,7 @@ export const useAppStore = defineStore("app", () => {
     confirmDeleteTask,
     projectHasActiveRuns,
     saveAutomation,
+    setAutomationEnabled,
     deleteAutomation,
     runAutomation,
     saveSettings,

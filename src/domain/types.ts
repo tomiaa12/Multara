@@ -873,6 +873,7 @@ export interface ChannelInstallation {
   appId: string;
   region: "feishu" | "lark";
   botName?: string | null;
+  botAvatar?: string | null;
   botOpenId?: string | null;
   groupEnabled: boolean;
   pairingCode: string;
@@ -900,4 +901,9 @@ export interface ChannelUser {
   channelUserId: string;
   displayName?: string | null;
   role: string;
+  /** 没拿到姓名的原因（如缺少飞书通讯录权限） */
+  nameError?: string | null;
+  /** 授权（配对成功）时间，ISO 字符串 */
+  createdAt: string;
+  note?: string | null;
 }

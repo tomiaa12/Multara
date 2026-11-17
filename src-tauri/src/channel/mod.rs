@@ -49,6 +49,8 @@ pub struct ChannelConfig {
     pub region: String,
     pub bot_open_id: Option<String>,
     pub bot_name: Option<String>,
+    /// 机器人头像地址，连接或测试时从飞书刷新。
+    pub bot_avatar: Option<String>,
     pub group_enabled: bool,
     /// 新用户私聊机器人时发送这串数字完成绑定。
     pub pairing_code: String,

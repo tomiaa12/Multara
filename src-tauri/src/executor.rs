@@ -3642,10 +3642,11 @@ fn resource_context(
         None
     } else {
         let config = resources::selected_mcp_config(&mcp_ids)?;
-        let names = mcp_ids
-            .iter()
-            .filter_map(|id| id.splitn(3, ':').nth(2))
-            .collect::<Vec<_>>();
+        let names = config
+            .get("mcpServers")
+            .and_then(Value::as_object)
+            .map(|servers| servers.keys().map(String::as_str).collect::<Vec<_>>())
+            .unwrap_or_default();
         if names.is_empty() {
             context.push('\n');
             context.push_str(&tr!("本次未授权任何 MCP。"));

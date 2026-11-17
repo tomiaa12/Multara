@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import { Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { AlertTriangle, Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
 import type { ChannelInstallation, ChannelInstallationInput, ChannelUser } from "../domain/types";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
@@ -10,6 +11,8 @@ import UiButton from "../components/ui/UiButton.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import UiModal from "../components/ui/UiModal.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
+import UiRelativeTime from "../components/ui/UiRelativeTime.vue";
+import AgentAvatar from "../components/AgentAvatar.vue";
 
 const store = useAppStore();
 const installations = ref<ChannelInstallation[]>([]);
@@ -61,16 +64,42 @@ async function refresh() {
   }
 }
 
+let unlistenPaired: UnlistenFn | null = null;
+let unmounted = false;
+
+/** 有人配对成功：后端已换新码，同步到卡片上；授权用户弹窗开着就顺便刷新列表。 */
+async function onPaired(payload: { installationId: string; channelUserId: string; pairingCode: string }) {
+  const item = installations.value.find((entry) => entry.id === payload.installationId);
+  if (item) item.pairingCode = payload.pairingCode;
+  try {
+    users[payload.installationId] = await backend.listChannelAllowedUsers(payload.installationId);
+  } catch {
+    /* 列表刷新失败不影响换码提示 */
+  }
+  const name = users[payload.installationId]?.find((user) => user.channelUserId === payload.channelUserId)?.displayName
+    || payload.channelUserId;
+  notice.value = t("channels.paired", { name, code: payload.pairingCode });
+}
+
 onMounted(async () => {
   if (!store.data) await store.initialize();
   await refresh();
+  if (!backend.inTauri()) return;
+  const unlisten = await listen<{ installationId: string; channelUserId: string; pairingCode: string }>(
+    "channel-paired",
+    (event) => {
+      if (event.payload?.installationId) void onPaired(event.payload);
+    },
+  );
+  if (unmounted) unlisten();
+  else unlistenPaired = unlisten;
 });
 
-function statusTone(status: ChannelInstallation["status"]) {
-  if (status === "connected") return "success";
-  if (status === "error") return "error";
-  return undefined;
-}
+onBeforeUnmount(() => {
+  unmounted = true;
+  unlistenPaired?.();
+  unlistenPaired = null;
+});
 
 function statusLabel(status: ChannelInstallation["status"]) {
   if (status === "connected") return t("channels.connected");
@@ -123,13 +152,30 @@ async function save() {
   }
 }
 
-async function toggle(item: ChannelInstallation) {
+/** 正在保存的开关，`<id>:group` / `<id>:enabled`；保存返回前禁用，防止连点。 */
+const switching = ref(new Set<string>());
+
+async function runSwitch(key: string, action: () => Promise<void>) {
+  if (switching.value.has(key)) return;
+  switching.value = new Set(switching.value).add(key);
   try {
-    await backend.setChannelEnabled(item.id, !item.enabled);
+    await action();
     await refresh();
   } catch (cause) {
     error.value = String(cause);
+  } finally {
+    const next = new Set(switching.value);
+    next.delete(key);
+    switching.value = next;
   }
+}
+
+function setEnabled(item: ChannelInstallation, enabled: boolean) {
+  return runSwitch(`${item.id}:enabled`, () => backend.setChannelEnabled(item.id, enabled));
+}
+
+function setGroup(item: ChannelInstallation, enabled: boolean) {
+  return runSwitch(`${item.id}:group`, () => backend.setChannelGroupEnabled(item.id, enabled));
 }
 
 async function remove(item: ChannelInstallation) {
@@ -163,6 +209,14 @@ function roleLabel(role: string) {
   return role;
 }
 
+/** 同一原因（如缺权限）只提示一次。 */
+function nameErrors(installationId: string) {
+  const messages = (users[installationId] ?? [])
+    .filter((user) => !user.displayName && user.nameError)
+    .map((user) => user.nameError as string);
+  return [...new Set(messages)];
+}
+
 async function openUsers(item: ChannelInstallation) {
   usersTarget.value = item;
   try {
@@ -182,12 +236,24 @@ async function removeUser(item: ChannelInstallation | null, userId: string) {
   }
 }
 
+async function saveNote(item: ChannelInstallation, user: ChannelUser, event: Event) {
+  const note = (event.target as HTMLInputElement).value.trim();
+  if (note === (user.note ?? "")) return;
+  const previous = user.note;
+  user.note = note || null;
+  try {
+    await backend.setChannelUserNote(item.id, user.channelUserId, note);
+  } catch (cause) {
+    user.note = previous;
+    error.value = String(cause);
+  }
+}
+
 async function rotateCode(item: ChannelInstallation) {
   try {
     const code = await backend.rotateChannelPairingCode(item.id);
     item.pairingCode = code;
     await navigator.clipboard?.writeText(code).catch(() => {});
-    notice.value = t("channels.codeRotated", { code });
   } catch (cause) {
     error.value = String(cause);
   }
@@ -237,7 +303,6 @@ function projectName(item: ChannelInstallation) {
     <div v-else class="card-list">
       <article v-for="item in installations" :key="item.id" class="channel-entry">
         <div class="list-card channel-card">
-          <span class="channel-status" :class="item.status" />
           <div class="grow">
             <strong>{{ item.name }}</strong>
             <small>
@@ -246,27 +311,50 @@ function projectName(item: ChannelInstallation) {
               {{ projectName(item) }}
             </small>
             <p class="channel-meta">
-              <span class="ds-badge" :data-tone="statusTone(item.status)">{{ statusLabel(item.status) }}</span>
-              <span v-if="item.botName">Bot：{{ item.botName }}</span>
-              <span>{{ t("channels.groupEnabled", { state: item.groupEnabled ? t("common.enabledOn") : t("common.enabledOff") }) }}</span>
+              <span class="channel-state">
+                <span class="channel-status" :class="item.status" />
+                {{ statusLabel(item.status) }}
+              </span>
+              <span v-if="item.botName" class="channel-bot">
+                <AgentAvatar :value="item.botAvatar" :name="item.botName" :size="18" />
+                {{ item.botName }}
+              </span>
             </p>
             <p v-if="item.lastError" class="form-error">{{ item.lastError }}</p>
             <p class="channel-code">
               {{ t("channels.pairingCode") }}
-              <code>{{ item.pairingCode }}</code>
+              <UiTooltip :content="t('channels.codeOneTime')"><code>{{ item.pairingCode }}</code></UiTooltip>
               <UiButton variant="ghost" size="icon" :tip="t('channels.copyCode')" @click="copyCode(item)"><Copy :size="13" /></UiButton>
               <UiButton variant="ghost" size="icon" :tip="t('channels.rotateCode')" @click="rotateCode(item)"><RefreshCw :size="13" /></UiButton>
             </p>
           </div>
-          <span class="ds-badge channel-enabled" :data-tone="item.enabled ? 'success' : undefined">
-            {{ item.enabled ? t("common.enabledOn") : t("common.enabledOff") }}
-          </span>
           <div class="channel-actions">
             <UiButton variant="ghost" size="small" :disabled="busy" @click="test(item)"><Check :size="14" /> {{ t("channels.test") }}</UiButton>
-            <UiButton variant="ghost" size="small" @click="toggle(item)">{{ item.enabled ? t("channels.disable") : t("channels.enable") }}</UiButton>
             <UiButton variant="ghost" size="small" @click="openUsers(item)">{{ t("channels.users") }}</UiButton>
             <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
             <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+          </div>
+          <div class="channel-switches">
+            <UiTooltip :content="t('channels.allowGroup')">
+              <label class="channel-switch">
+                <span>{{ t("channels.groupChat") }}</span>
+                <UiSwitch
+                  :model-value="item.groupEnabled"
+                  :busy="switching.has(`${item.id}:group`)"
+                  :label="t('channels.groupChat')"
+                  @update:model-value="setGroup(item, $event)"
+                />
+              </label>
+            </UiTooltip>
+            <label class="channel-switch">
+              <span>{{ t("channels.enable") }}</span>
+              <UiSwitch
+                :model-value="item.enabled"
+                :busy="switching.has(`${item.id}:enabled`)"
+                :label="t('channels.enable')"
+                @update:model-value="setEnabled(item, $event)"
+              />
+            </label>
           </div>
         </div>
       </article>
@@ -278,6 +366,10 @@ function projectName(item: ChannelInstallation) {
           <h2>{{ t("channels.users") }}</h2>
           <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="usersTarget = null"><X :size="16" /></UiButton>
         </header>
+        <p v-for="message in nameErrors(usersTarget.id)" :key="message" class="channel-name-hint" role="status">
+          <AlertTriangle :size="14" />
+          <span>{{ message }}</span>
+        </p>
         <p v-if="!users[usersTarget.id]?.length" class="empty-inline">{{ t("channels.noUsers") }}</p>
         <div v-else class="ds-table-wrap">
           <table class="ds-table">
@@ -286,14 +378,32 @@ function projectName(item: ChannelInstallation) {
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("channels.userId") }}</th>
                 <th>{{ t("channels.userRole") }}</th>
+                <th>{{ t("channels.authorizedAt") }}</th>
+                <th>{{ t("channels.note") }}</th>
                 <th>{{ t("common.actions") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="user in users[usersTarget.id]" :key="user.channelUserId">
-                <td>{{ user.displayName || "—" }}</td>
+                <td>
+                  <UiTooltip v-if="!user.displayName && user.nameError" :content="user.nameError">
+                    <span class="channel-name-missing">—</span>
+                  </UiTooltip>
+                  <template v-else>{{ user.displayName || "—" }}</template>
+                </td>
                 <td class="channel-user-id">{{ user.channelUserId }}</td>
                 <td>{{ roleLabel(user.role) }}</td>
+                <td class="channel-user-time"><UiRelativeTime :value="user.createdAt" /></td>
+                <td class="channel-user-note">
+                  <UiInput
+                    :model-value="user.note ?? ''"
+                    :placeholder="t('channels.notePlaceholder')"
+                    :aria-label="t('channels.note')"
+                    maxlength="200"
+                    @change="saveNote(usersTarget, user, $event)"
+                    @keydown.enter="($event.target as HTMLInputElement).blur()"
+                  />
+                </td>
                 <td class="channel-user-actions">
                   <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="removeUser(usersTarget, user.channelUserId)"><X :size="13" /></UiButton>
                 </td>
@@ -329,8 +439,6 @@ function projectName(item: ChannelInstallation) {
             {{ t("channels.appSecret") }}
             <UiInput v-model="form.appSecret" type="password" :placeholder="form.id && !form.appSecret ? t('channels.secretUnchanged') : ''" />
           </label>
-          <label class="channel-check"><input v-model="form.groupEnabled" type="checkbox" /> {{ t("channels.allowGroup") }}</label>
-          <label class="channel-check"><input v-model="form.enabled" type="checkbox" /> {{ t("channels.enableNow") }}</label>
           <p class="channel-hint">{{ t("channels.setupHint") }}</p>
         </div>
         <footer class="channel-dialog-foot">
@@ -346,15 +454,20 @@ function projectName(item: ChannelInstallation) {
 .channels-page { display: flex; flex-direction: column; gap: 16px; }
 .channel-card { align-items: flex-start; }
 .grow { flex: 1; min-width: 0; }
-.channel-status { width: 8px; height: 8px; border-radius: 50%; margin-top: 8px; background: var(--text-muted, #888); }
+.channel-state, .channel-bot { display: inline-flex; align-items: center; gap: 6px; }
+.channel-status { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted, #888); }
+.channel-switches { display: flex; gap: 16px; align-items: center; align-self: center; flex: none; }
+.channel-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: var(--font-size-sm); white-space: nowrap; cursor: pointer; }
 .channel-status.connected { background: var(--success, #3fb950); }
 .channel-status.error { background: var(--danger, #f85149); }
 .channel-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); margin: 6px 0; }
 .channel-code { display: flex; gap: 6px; align-items: center; color: var(--text-muted); }
 .channel-code code { font-size: 14px; letter-spacing: 2px; color: var(--text-primary); }
-.channel-enabled { height: var(--control-height-sm); align-self: center; }
 .channel-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; align-self: center; justify-content: flex-end; }
-.channel-users-dialog { width: min(720px, 92vw); }
+.channel-users-dialog { width: min(920px, 94vw); }
+.channel-user-time { white-space: nowrap; color: var(--color-text-secondary); }
+.channel-user-note { min-width: 160px; }
+.channel-user-note .ui-input { width: 100%; }
 .channel-user-id { font-family: var(--font-family-mono); font-weight: var(--font-weight-regular); overflow-wrap: anywhere; }
 .channel-user-actions { width: 1%; text-align: right; white-space: nowrap; }
 .channel-dialog { width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
@@ -362,7 +475,6 @@ function projectName(item: ChannelInstallation) {
 .channel-dialog-foot { justify-content: flex-end; }
 .channel-dialog-body { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .channel-dialog-body label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
-.channel-check { flex-direction: row !important; align-items: center; gap: 8px !important; }
 .channel-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
 .form-error { color: var(--danger, #f85149); font-size: 13px; }
 .form-notice { color: var(--success, #3fb950); font-size: 13px; }

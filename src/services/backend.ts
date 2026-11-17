@@ -900,6 +900,11 @@ export async function saveAutomation(input: AutomationInput): Promise<Automation
   return invoke<Automation[]>("save_automation", { input });
 }
 
+export async function setAutomationEnabled(automationId: string, enabled: boolean): Promise<Automation[]> {
+  if (!hasBackend()) throw new Error("请在桌面应用中配置自动化");
+  return invoke<Automation[]>("set_automation_enabled", { automationId, enabled });
+}
+
 export async function deleteAutomation(automationId: string): Promise<Automation[]> {
   if (!hasBackend()) return [];
   return invoke<Automation[]>("delete_automation", { automationId });
@@ -2297,6 +2302,11 @@ export async function deleteChannelInstallation(id: string): Promise<void> {
   await invoke("delete_channel_installation", { id });
 }
 
+export async function setChannelGroupEnabled(id: string, enabled: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_group_enabled", { id, enabled });
+}
+
 export async function setChannelEnabled(id: string, enabled: boolean): Promise<void> {
   if (!hasBackend()) return;
   await invoke("set_channel_enabled", { id, enabled });
@@ -2317,6 +2327,11 @@ export async function listChannelAllowedUsers(id: string): Promise<ChannelUser[]
 export async function removeChannelAllowedUser(id: string, userId: string): Promise<void> {
   if (!hasBackend()) return;
   await invoke("remove_channel_allowed_user", { id, userId });
+}
+
+export async function setChannelUserNote(id: string, userId: string, note: string): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_user_note", { id, userId, note });
 }
 
 export async function rotateChannelPairingCode(id: string): Promise<string> {

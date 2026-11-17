@@ -158,7 +158,7 @@ fn prepare_cursor(
     // 因此把本轮授权的 MCP 合并进 workspace 根的 .cursor/mcp.json，跑完再还原。
     let project = project_root(cwd);
     let project_mcp = project.join(".cursor").join("mcp.json");
-    let bak = project.join(".cursor").join("mcp.json.multara-bak");
+    let bak = injection_backup_path(&project_mcp);
     // 上次异常退出留下的备份：先还原再继续。
     if bak.exists() {
         restore_project_mcp_from_bak(&project_mcp, &bak);
@@ -231,6 +231,22 @@ fn write_merged_project_mcp(
         path,
         &serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?,
     )
+}
+
+fn injection_backup_path(project_mcp: &Path) -> PathBuf {
+    project_mcp.with_file_name(PROJECT_MCP_BACKUP_NAME)
+}
+
+const PROJECT_MCP_BACKUP_NAME: &str = "mcp.json.multara-bak";
+
+/// Cursor 运行期间 workspace 的 `.cursor/mcp.json` 被临时合并了本轮注入的 MCP。
+/// 这段时间里扫描要读备份里的原始内容，否则临时项会被当成工作区 MCP 绑给 Miku，跑完文件还原后变成失效绑定。
+/// 返回 `None` 表示当前没有注入；`Some("")` 表示注入前文件不存在。
+pub fn original_project_mcp(path: &Path) -> Option<String> {
+    if path.file_name()? != "mcp.json" {
+        return None;
+    }
+    fs::read_to_string(injection_backup_path(path)).ok()
 }
 
 fn restore_project_mcp_from_bak(path: &Path, bak: &Path) {
@@ -556,7 +572,8 @@ fn dirs_home() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        approval_keys, restore_project_mcp_from_bak, write_merged_project_mcp, write_private,
+        approval_keys, original_project_mcp, restore_project_mcp_from_bak,
+        write_merged_project_mcp, write_private,
     };
     use serde_json::json;
     use std::fs;
@@ -584,6 +601,24 @@ mod tests {
         restore_project_mcp_from_bak(&path, &bak);
         assert_eq!(fs::read(&path).unwrap(), original);
         assert!(!bak.exists());
+    }
+
+    #[test]
+    fn original_project_mcp_reads_backup_only_while_injected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".cursor").join("mcp.json");
+        let bak = dir.path().join(".cursor").join("mcp.json.multara-bak");
+        write_private(&path, br#"{"mcpServers":{"injected":{"command":"echo"}}}"#).unwrap();
+        assert_eq!(original_project_mcp(&path), None);
+        write_private(&bak, b"").unwrap();
+        assert_eq!(original_project_mcp(&path).as_deref(), Some(""));
+        write_private(&bak, br#"{"mcpServers":{}}"#).unwrap();
+        assert_eq!(
+            original_project_mcp(&path).as_deref(),
+            Some(r#"{"mcpServers":{}}"#)
+        );
+        let other = dir.path().join(".vscode").join("mcp.json");
+        assert_eq!(original_project_mcp(&other), None);
     }
 
     #[test]

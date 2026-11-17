@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   Ban,
@@ -21,9 +21,11 @@ import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import { readStorage, writeStorage } from "../utils/safe-storage";
+import { vDragPan } from "../ui/drag-pan";
 import { sharedRequirementCategories } from "./dashboard/requirement-categories";
 import { moveTask, orderColumn, relativeTime, TASK_COLUMNS, taskCodeMap } from "./task-board";
 import { readTaskMeta } from "./task-meta";
+import { beginTaskCardDrag, cancelTaskCardDrag, type TaskDropTarget } from "./task-card-drag";
 const ORDER_KEY = "multara.task-board-order";
 const DISPLAY_KEY = "multara.task-board-display";
 const store = useAppStore();
@@ -42,8 +44,7 @@ const error = ref("");
 const dragId = ref("");
 const dropStatus = ref<TaskStatus | "">("");
 const dropBeforeId = ref("");
-let draggingTaskId = "";
-let dragClearTimer = 0;
+const boardRef = ref<HTMLElement | null>(null);
 const cardMenu = ref<{ x: number; y: number; taskId: string } | null>(null);
 const columnMenu = ref<{ x: number; y: number; status: TaskStatus } | null>(null);
 const order = ref<Record<string, string[]>>(loadOrder());
@@ -218,78 +219,50 @@ function openTask(task: Task) {
 }
 
 function clearDragState() {
-  window.clearTimeout(dragClearTimer);
-  dragClearTimer = 0;
-  draggingTaskId = "";
   dragId.value = "";
   dropStatus.value = "";
   dropBeforeId.value = "";
 }
 
-function onDragStart(event: DragEvent, task: Task) {
-  window.clearTimeout(dragClearTimer);
-  dragClearTimer = 0;
-  draggingTaskId = task.id;
-  dragId.value = task.id;
-  dropStatus.value = "";
-  dropBeforeId.value = "";
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", task.id);
-  }
-}
-
-function allowDrop(event: DragEvent) {
-  if (!draggingTaskId) return false;
-  event.preventDefault();
-  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-  return true;
-}
-
-function onCardOver(event: DragEvent, status: TaskStatus, taskId: string) {
-  if (!allowDrop(event)) return;
-  dropStatus.value = status;
-  if (taskId === draggingTaskId) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const after = event.clientY > rect.top + rect.height / 2;
-  if (!after) {
-    dropBeforeId.value = taskId;
-    return;
-  }
-  const ids = columnTasks(status).map((item) => item.id);
-  const index = ids.indexOf(taskId);
-  dropBeforeId.value = ids[index + 1] ?? "";
-}
-
-function onColumnOver(event: DragEvent, status: TaskStatus) {
-  if (!allowDrop(event)) return;
-  dropStatus.value = status;
-  const card = (event.target as HTMLElement | null)?.closest("article.task-card");
-  if (!card) dropBeforeId.value = "";
-}
-
-function onDragEnd() {
-  skipClick = true;
-  // macOS/WKWebView 可能在 drop 之后才清状态；保留短暂宽限避免丢单。
-  window.clearTimeout(dragClearTimer);
-  dragClearTimer = window.setTimeout(() => {
-    clearDragState();
-    skipClick = false;
-  }, 50);
-}
-
-async function finishDrop(event: DragEvent, status: TaskStatus) {
-  event.preventDefault();
-  const taskId = draggingTaskId || event.dataTransfer?.getData("text/plain") || "";
-  const beforeId = dropStatus.value === status ? dropBeforeId.value : "";
-  clearDragState();
+/** 拖完松手时浏览器还会补一个 click，吞掉它免得打开卡片。 */
+function suppressNextClick() {
   skipClick = true;
   window.setTimeout(() => {
     skipClick = false;
   }, 0);
+}
+
+function onCardPointerDown(event: PointerEvent, task: Task) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  beginTaskCardDrag(event, task.id, boardRef.value, {
+    onStart() {
+      cardMenu.value = null;
+      columnMenu.value = null;
+      dragId.value = task.id;
+    },
+    onOver(target) {
+      dropStatus.value = (target?.status as TaskStatus | undefined) ?? "";
+      dropBeforeId.value = target?.beforeId ?? "";
+    },
+    onDrop(target) {
+      clearDragState();
+      suppressNextClick();
+      if (target) void dropTask(task.id, target);
+    },
+    onCancel() {
+      clearDragState();
+      suppressNextClick();
+    },
+  });
+}
+
+async function dropTask(taskId: string, target: TaskDropTarget) {
+  const status = target.status as TaskStatus;
+  if (!TASK_COLUMNS.some((column) => column.id === status)) return;
   const task = tasks.value.find((item) => item.id === taskId);
-  if (!task || !taskId) return;
+  if (!task) return;
   const source = task.status;
+  error.value = "";
   try {
     if (source !== status) await store.updateTaskStatus(taskId, status);
   } catch (cause) {
@@ -297,9 +270,11 @@ async function finishDrop(event: DragEvent, status: TaskStatus) {
     return;
   }
   const destination = columnTasks(status).map((item) => item.id);
-  persist(status, moveTask(destination, taskId, beforeId === taskId ? "" : beforeId));
+  persist(status, moveTask(destination, taskId, target.beforeId === taskId ? "" : target.beforeId));
   if (source !== status) persist(source, (order.value[source] ?? []).filter((id) => id !== taskId));
 }
+
+onBeforeUnmount(cancelTaskCardDrag);
 
 function openCardMenu(event: MouseEvent, task: Task) {
   displayOpen.value = false;
@@ -431,14 +406,13 @@ function onColumnMenu(id: string) {
       <span v-if="!squads.length" class="task-scope-note">{{ t("tasks.noSquads") }}</span>
     </div>
     <p v-if="error" class="task-board-error">{{ error }}</p>
-    <div class="task-board vs-scroll">
+    <div ref="boardRef" v-drag-pan class="task-board vs-scroll">
       <section
         v-for="column in columns"
         :key="column.id"
         class="task-column"
         :class="{ 'is-drop-target': dropStatus === column.id && !!dragId }"
-        @dragover.prevent="onColumnOver($event, column.id)"
-        @drop.prevent="finishDrop($event, column.id)"
+        :data-status="column.id"
       >
         <header>
           <component :is="icons[column.id]" :size="15" />
@@ -465,20 +439,18 @@ function onColumnMenu(id: string) {
             </UiButton>
           </div>
         </header>
-        <div class="task-column-list vs-scroll">
+        <div class="task-column-list vs-scroll" data-task-list>
           <article
             v-for="task in columnTasks(column.id)"
             :key="task.id"
             class="task-card"
-            draggable="true"
+            :data-task-id="task.id"
+            data-pan-ignore
             :class="{
               'is-dragging': dragId === task.id,
               'is-drop-before': dropStatus === column.id && dropBeforeId === task.id && dragId !== task.id,
             }"
-            @dragstart="onDragStart($event, task)"
-            @dragover.prevent="onCardOver($event, column.id, task.id)"
-            @drop.prevent="finishDrop($event, column.id)"
-            @dragend="onDragEnd"
+            @pointerdown="onCardPointerDown($event, task)"
             @click="openTask(task)"
             @contextmenu.prevent="openCardMenu($event, task)"
           >

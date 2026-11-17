@@ -291,6 +291,22 @@ async function save() {
   }
 }
 
+const togglingIds = ref(new Set<string>());
+
+async function setEnabled(item: Automation, enabled: boolean) {
+  if (togglingIds.value.has(item.id)) return;
+  togglingIds.value = new Set(togglingIds.value).add(item.id);
+  try {
+    await store.setAutomationEnabled(item.id, enabled);
+  } catch (cause) {
+    window.alert(cause instanceof Error ? cause.message : String(cause));
+  } finally {
+    const next = new Set(togglingIds.value);
+    next.delete(item.id);
+    togglingIds.value = next;
+  }
+}
+
 async function remove(item: Automation) {
   if (!(await confirmDialog(t("automation.deleteConfirm", { name: item.name }), { danger: true }))) return;
   try {
@@ -396,8 +412,15 @@ function toggleWeekday(day: number) {
               <code class="webhook-url">{{ webhookUrl(item) }}</code>
             </UiTooltip>
           </div>
-          <span class="ds-badge" :data-tone="item.enabled ? 'success' : undefined">{{ item.enabled ? t("common.enabledOn") : t("common.enabledOff") }}</span>
           <div class="automation-actions">
+            <UiTooltip :content="item.enabled ? t('common.enabledOn') : t('common.enabledOff')">
+              <UiSwitch
+                :model-value="item.enabled"
+                :busy="togglingIds.has(item.id)"
+                :label="t('automation.enable')"
+                @update:model-value="setEnabled(item, $event)"
+              />
+            </UiTooltip>
             <UiButton variant="ghost" size="icon" :tip="t('common.runNow')" :disabled="!item.enabled" @click="run(item)"><Play :size="14" /></UiButton>
             <UiButton variant="ghost" size="small" :tip="t('common.history')" :class="{ active: expandedId === item.id }" @click="toggleHistory(item)"><History :size="14" /><component :is="expandedId === item.id ? ChevronUp : ChevronDown" :size="12" /></UiButton>
             <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
@@ -653,7 +676,6 @@ function toggleWeekday(day: number) {
               <p class="automation-hint">{{ t("automation.manualOnlyHint") }}</p>
             </template>
 
-            <label class="check-row"><UiInput v-model="form.enabled" type="checkbox" />{{ t("automation.enable") }}</label>
           </aside>
         </div>
 
