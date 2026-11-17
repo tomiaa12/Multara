@@ -3540,6 +3540,7 @@ pub fn update_task(
             status.as_deref(),
             agent_id.as_deref(),
             None,
+            None,
         )?
     };
     Ok(task)

@@ -1623,6 +1623,8 @@ Who is this for? Any constraints?
   "chat.role.lead": "Lead",
   "chat.role.member": "Member",
   "chat.role.agent": "Agent",
+  "chat.commentAuthor": "Comment",
+  "chat.commentPill": "Comment",
   "chat.question.aria": "Question from {name}: {question}",
   "chat.question.waitingTitle": "{name} is waiting for your answer",
   "chat.question.multiSuffix": " · {n} questions",

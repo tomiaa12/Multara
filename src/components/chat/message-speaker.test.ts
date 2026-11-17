@@ -232,4 +232,12 @@ describe("assignment / speaker collapse", () => {
     expect(subtaskEmbedForMessage([assignment, note, bridge, summary], 1)).toBeNull();
     expect(subtaskEmbedForMessage([assignment, bridge, summary], 2)).toBeNull();
   });
+
+  it("任务评论显示写下它的智能体，没有作者时标成评论", () => {
+    const authored = message({ id: "c1", role: "system", agentId: "member", content: "结论" });
+    const anonymous = message({ id: "c2", role: "system", content: "结论" });
+    expect(speakerForMessage(authored, agents, squads, "lead")?.name).toBe("队员乙");
+    expect(speakerForMessage(authored, agents, squads, "lead")?.avatar).toBe("M");
+    expect(speakerForMessage(anonymous, agents, squads, "lead")?.name).toBe(t("chat.commentAuthor"));
+  });
 });

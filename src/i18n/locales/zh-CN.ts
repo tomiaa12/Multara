@@ -1623,6 +1623,8 @@ const catalog: MessageCatalog = {
   "chat.role.lead": "队长",
   "chat.role.member": "队员",
   "chat.role.agent": "智能体",
+  "chat.commentAuthor": "评论",
+  "chat.commentPill": "评论",
   "chat.question.aria": "{name}的提问：{question}",
   "chat.question.waitingTitle": "{name}在等你回答",
   "chat.question.multiSuffix": " · {n} 个问题",
