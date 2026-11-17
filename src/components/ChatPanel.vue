@@ -725,6 +725,7 @@ const tabMenuItems = computed<ContextMenuItem[]>(() => {
   if (!sessionId) return [];
   const index = displaySessions.value.findIndex((item) => item.id === sessionId);
   return [
+    { id: "copy-id", label: t("chat.copySessionId") },
     { id: "fork", label: t("chat.forkSession") },
     { id: "compact", label: t("chat.compact") },
     { id: "export", label: t("chat.exportDiagnostics"), disabled: props.preview },
@@ -739,6 +740,7 @@ function onTabMenuSelect(id: string) {
   const sessionId = tabMenu.value?.sessionId;
   tabMenu.value = null;
   if (!sessionId) return;
+  if (id === "copy-id") void navigator.clipboard.writeText(sessionId);
   if (id === "fork") void store.forkSession(sessionId);
   if (id === "compact") void store.compactSession(sessionId);
   if (id === "export") void exportDiagnostics(sessionId);

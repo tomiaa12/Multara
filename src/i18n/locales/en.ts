@@ -1274,6 +1274,7 @@ Who is this for? Any constraints?
   "chat.compact": "Compact context",
   "chat.exportDiagnostics": "Export diagnostics",
   "chat.exportDiagnosticsFailed": "Couldn't export diagnostics. {error}",
+  "chat.copySessionId": "Copy session ID",
   "chat.close": "Close",
   "chat.closeOthers": "Close others",
   "chat.closeRight": "Close tabs to the right",

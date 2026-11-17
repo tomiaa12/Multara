@@ -48,6 +48,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
   if (!row) return [];
   return [
     { id: "open", label: t("chat.sessionList.open") },
+    { id: "copy-id", label: t("chat.copySessionId") },
     ...(props.editable ? [{ id: "rename", label: t("chat.sessionList.rename") }] : []),
     ...(props.sessionCommands && props.editable
       ? [{ id: "fork", label: t("chat.forkSession") }, { id: "compact", label: t("chat.compact") }]
@@ -103,6 +104,7 @@ function onMenuSelect(id: string) {
   menu.value = null;
   if (!row) return;
   if (id === "open") emit("select", row.id);
+  if (id === "copy-id") void navigator.clipboard.writeText(row.id);
   if (id === "rename") void startRename(row);
   if (id === "fork") emit("fork", row.id);
   if (id === "compact") emit("compact", row.id);
