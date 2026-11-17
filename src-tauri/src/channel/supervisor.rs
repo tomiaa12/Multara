@@ -28,10 +28,11 @@ pub fn start(app: AppHandle) {
     });
 }
 
-/// 连接线程持有的是启动时的配置副本，配对码和群聊开关也要算进来，轮换 / 切换后才会重启生效。
+/// 连接线程持有的是启动时的配置副本，群聊开关要算进来，切换后才会重启生效。
+/// 配对码不算：路由每次现读数据库，配对成功自动换码时不能把正在用的连接重启掉。
 fn fingerprint(installation: &Installation) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}",
         installation.channel_type,
         installation.config.app_id,
         installation.config.region(),
@@ -39,7 +40,6 @@ fn fingerprint(installation: &Installation) -> String {
         installation.target_id,
         installation.project_id.clone().unwrap_or_default(),
         installation.enabled as u8,
-        installation.config.pairing_code,
         installation.config.group_enabled as u8
     )
 }

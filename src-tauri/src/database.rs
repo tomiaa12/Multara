@@ -470,6 +470,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         ",
     )?;
     let columns = ColumnCache::new(db);
+    ensure_column(&columns, "channel_allowed_users", "note", "TEXT")?;
     ensure_column(&columns, "agent_runs", "started_at", "TEXT")?;
     ensure_column(&columns, "agent_runs", "completed_at", "TEXT")?;
     ensure_column(

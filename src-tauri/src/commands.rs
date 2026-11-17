@@ -2662,6 +2662,69 @@ pub fn save_automation(
     list_automations(&db)
 }
 
+/// 列表上的启停开关：只改启用状态，不动名称、触发器配置和 Webhook 密钥。
+/// 重新启用时按当前时间重算下次运行，避免停用期间错过的时间点一启用就立刻补跑。
+#[tauri::command]
+pub fn set_automation_enabled(
+    automation_id: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<Automation>, String> {
+    let _span = crate::diag::span("set_automation_enabled");
+    let mut db = state.lock_db()?;
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    let updated = transaction
+        .execute(
+            "UPDATE automations SET enabled = ?1 WHERE id = ?2",
+            params![enabled, automation_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 0 {
+        return Err(tr!("自动化不存在"));
+    }
+    let triggers: Vec<(String, Option<String>, Option<String>)> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id, cron_expression, timezone FROM automation_triggers
+                 WHERE automation_id = ?1",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([&automation_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+    for (trigger_id, cron_expression, timezone) in triggers {
+        let next_run_at = match (enabled, cron_expression, timezone) {
+            (true, Some(expression), Some(timezone)) => {
+                Some(cron_next(&expression, &timezone, Utc::now())?)
+            }
+            _ => None,
+        };
+        if let Some(next_run_at) = next_run_at {
+            transaction
+                .execute(
+                    "UPDATE automation_triggers SET enabled = ?1, next_run_at = ?2 WHERE id = ?3",
+                    params![enabled, next_run_at, trigger_id],
+                )
+                .map_err(|error| error.to_string())?;
+        } else {
+            transaction
+                .execute(
+                    "UPDATE automation_triggers SET enabled = ?1 WHERE id = ?2",
+                    params![enabled, trigger_id],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    list_automations(&db)
+}
+
 #[tauri::command]
 pub fn delete_automation(
     automation_id: String,

@@ -221,7 +221,15 @@ pub fn selected_mcp_config(resource_ids: &[String]) -> Result<Value, String> {
         }
         let owner = parts.next().ok_or_else(|| tr!("MCP 资源 ID 无效"))?;
         let name = parts.next().ok_or_else(|| tr!("MCP 资源 ID 无效"))?;
-        let entry = read_mcp_entry(owner, name)?;
+        // 绑定还在、来源配置里已经没有这项（文件被删、切了分支、工作区换了）时跳过，
+        // 不能因为一项失效就让整次运行失败。
+        let entry = match read_mcp_entry(owner, name) {
+            Ok(entry) => entry,
+            Err(error) => {
+                eprintln!("[mcp] 跳过 {resource_id}：{error}");
+                continue;
+            }
+        };
         if !mcp_profile_for(owner, name, &entry).enabled {
             continue;
         }
@@ -341,7 +349,11 @@ fn mcp_entries(owner: &str, path: &Path) -> Vec<(String, Value)> {
     if uses_toml_mcp_servers_map(owner) || owner == "zeroclaw" || uses_toml_plugins_array(owner) {
         return mcp_entries_from_toml(owner, path);
     }
-    read_json(path)
+    let value = match crate::mcp_launch::original_project_mcp(path) {
+        Some(original) => parse_json_text(&original),
+        None => read_json(path),
+    };
+    value
         .map(|value| json_mcp_server_map(&value, owner))
         .unwrap_or_default()
 }

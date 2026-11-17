@@ -185,6 +185,42 @@
     "ja": "移行元は MCP に対応していません",
     "ko": "원본은 MCP를 지원하지 않습니다"
   },
+  "自动化不存在": {
+    "en": "Automation not found",
+    "zh-TW": "自動化不存在",
+    "ja": "自動化が見つかりません",
+    "ko": "자동화를 찾을 수 없습니다"
+  },
+  "用户 ID 格式不正确": {
+    "en": "Invalid user ID format",
+    "zh-TW": "使用者 ID 格式不正確",
+    "ja": "ユーザー ID の形式が正しくありません",
+    "ko": "사용자 ID 형식이 올바르지 않습니다"
+  },
+  "飞书没有返回用户信息": {
+    "en": "Feishu returned no user info",
+    "zh-TW": "飛書沒有返回使用者資訊",
+    "ja": "Feishu からユーザー情報が返されませんでした",
+    "ko": "Feishu가 사용자 정보를 반환하지 않았습니다"
+  },
+  "飞书没有返回姓名：应用需开通「获取用户基本信息」权限（contact:user.base:readonly），并创建新版本发布后生效": {
+    "en": "Feishu returned no name. Enable the \"Read basic user info\" scope (contact:user.base:readonly) for the app, then create and publish a new version.",
+    "zh-TW": "飛書沒有返回姓名：應用需開通「獲取用戶基本信息」權限（contact:user.base:readonly），並建立新版本發布後生效",
+    "ja": "Feishu から氏名が返されませんでした。アプリで「ユーザー基本情報の取得」権限（contact:user.base:readonly）を有効にし、新しいバージョンを公開してください。",
+    "ko": "Feishu가 이름을 반환하지 않았습니다. 앱에 '사용자 기본 정보 가져오기' 권한(contact:user.base:readonly)을 활성화한 뒤 새 버전을 게시하세요."
+  },
+  "查询飞书用户姓名失败：{error}": {
+    "en": "Couldn't look up the Feishu user's name: {error}",
+    "zh-TW": "查詢飛書使用者姓名失敗：{error}",
+    "ja": "Feishu ユーザーの氏名を取得できませんでした：{error}",
+    "ko": "Feishu 사용자 이름 조회 실패: {error}"
+  },
+  "授权用户不存在": {
+    "en": "Authorized user not found",
+    "zh-TW": "授權使用者不存在",
+    "ja": "認可済みユーザーが見つかりません",
+    "ko": "승인된 사용자를 찾을 수 없습니다"
+  },
   "MCP 配置不存在": {
     "en": "MCP config not found",
     "zh-TW": "MCP 設定不存在",

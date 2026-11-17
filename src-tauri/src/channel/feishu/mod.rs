@@ -101,11 +101,12 @@ fn run_inner(
     }
 
     let (url, ping_secs) = api.ws_endpoint()?;
-    let (bot_open_id, bot_name) = api.bot_info().unwrap_or_default();
+    let bot = api.bot_info().unwrap_or_default();
     let mut config = installation.config.clone();
-    if !bot_open_id.is_empty() {
-        config.bot_open_id = Some(bot_open_id.clone());
-        config.bot_name = (!bot_name.is_empty()).then(|| bot_name.clone());
+    if !bot.open_id.is_empty() {
+        config.bot_open_id = Some(bot.open_id.clone());
+        config.bot_name = (!bot.name.is_empty()).then(|| bot.name.clone());
+        config.bot_avatar = (!bot.avatar_url.is_empty()).then(|| bot.avatar_url.clone());
         let state = app.state::<AppState>();
         if let Ok(db) = state.lock_db() {
             let _ = store::set_config(&db, installation_id, &config);

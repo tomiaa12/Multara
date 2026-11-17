@@ -81,33 +81,29 @@ impl FeishuApi {
     }
 
     /// 通讯录基本信息。消息事件里没有姓名，用 open_id 再查一次。
-    /// 用户不在通讯录权限范围内时飞书不返回 name，这里得到 None，不打断收消息。
+    /// 查不到时返回 None，不打断收消息；要知道原因用 `lookup_user_name`。
     pub fn user_name(&self, open_id: &str) -> Option<String> {
-        if !is_contact_id(open_id) {
-            return None;
+        match self.lookup_user_name(open_id) {
+            ContactLookup::Name(name) => Some(name),
+            _ => None,
         }
-        let value = self
-            .get(&format!(
-                "/open-apis/contact/v3/users/{open_id}?user_id_type=open_id"
-            ))
-            .ok()?;
-        contact_name(&value)
     }
 
-    pub fn bot_info(&self) -> Result<(String, String), String> {
+    pub fn lookup_user_name(&self, open_id: &str) -> ContactLookup {
+        if !is_contact_id(open_id) {
+            return ContactLookup::Failed(tr!("用户 ID 格式不正确"));
+        }
+        match self.get(&format!(
+            "/open-apis/contact/v3/users/{open_id}?user_id_type=open_id"
+        )) {
+            Ok(value) => classify_contact(&value),
+            Err(error) => ContactLookup::Failed(error),
+        }
+    }
+
+    pub fn bot_info(&self) -> Result<BotInfo, String> {
         let value = self.get("/open-apis/bot/v3/info")?;
-        let bot = value.get("bot").cloned().unwrap_or(Value::Null);
-        let open_id = bot
-            .get("open_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let name = bot
-            .get("app_name")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        Ok((open_id, name))
+        Ok(parse_bot_info(&value))
     }
 
     pub fn send_text(&self, chat_id: &str, text: &str) -> Result<String, String> {
@@ -361,6 +357,52 @@ fn is_contact_id(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub struct BotInfo {
+    pub open_id: String,
+    pub name: String,
+    pub avatar_url: String,
+}
+
+fn parse_bot_info(value: &Value) -> BotInfo {
+    let field = |key: &str| {
+        value
+            .pointer(&format!("/bot/{key}"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
+    BotInfo {
+        open_id: field("open_id"),
+        name: field("app_name"),
+        avatar_url: field("avatar_url"),
+    }
+}
+
+/// 查用户姓名的结果。
+#[derive(Debug, PartialEq)]
+pub enum ContactLookup {
+    Name(String),
+    /// 接口调通了但没有 name 字段：应用只开了「获取通讯录基本信息」，
+    /// 姓名还要单独开「获取用户基本信息」contact:user.base:readonly。
+    MissingNamePermission,
+    Failed(String),
+}
+
+fn classify_contact(value: &Value) -> ContactLookup {
+    let code = value.get("code").and_then(Value::as_i64).unwrap_or(-1);
+    if code != 0 {
+        let msg = value.get("msg").and_then(Value::as_str).unwrap_or_default();
+        return ContactLookup::Failed(format!("{code} {msg}").trim().to_string());
+    }
+    match contact_name(value) {
+        Some(name) => ContactLookup::Name(name),
+        None if value.pointer("/data/user").is_some() => ContactLookup::MissingNamePermission,
+        None => ContactLookup::Failed(tr!("飞书没有返回用户信息")),
+    }
+}
+
 fn contact_name(value: &Value) -> Option<String> {
     if value.get("code").and_then(Value::as_i64).unwrap_or(-1) != 0 {
         return None;
@@ -411,5 +453,44 @@ mod tests {
             "data": { "user": { "open_id": "ou_user", "mobile_visible": true } }
         });
         assert_eq!(contact_name(&value), None);
+    }
+
+    #[test]
+    fn reads_bot_info_with_avatar() {
+        let value = json!({
+            "code": 0,
+            "bot": { "open_id": "ou_bot", "app_name": "助手", "avatar_url": "https://x/a.png" }
+        });
+        assert_eq!(
+            parse_bot_info(&value),
+            BotInfo {
+                open_id: "ou_bot".into(),
+                name: "助手".into(),
+                avatar_url: "https://x/a.png".into(),
+            }
+        );
+        assert_eq!(parse_bot_info(&json!({ "code": 0 })), BotInfo::default());
+    }
+
+    #[test]
+    fn classifies_contact_lookup() {
+        let named = json!({ "code": 0, "data": { "user": { "name": "邝永鑫" } } });
+        assert_eq!(
+            classify_contact(&named),
+            ContactLookup::Name("邝永鑫".into())
+        );
+        let nameless = json!({
+            "code": 0,
+            "data": { "user": { "open_id": "ou_user", "mobile_visible": true } }
+        });
+        assert_eq!(
+            classify_contact(&nameless),
+            ContactLookup::MissingNamePermission
+        );
+        let denied = json!({ "code": 99991672, "msg": "Access denied" });
+        assert_eq!(
+            classify_contact(&denied),
+            ContactLookup::Failed("99991672 Access denied".into())
+        );
     }
 }

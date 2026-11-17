@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use serde_json::json;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::database::AppState;
 use crate::models::MessageAttachmentInput;
@@ -87,7 +87,7 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
             .or_else(|| remember_sender_name(app, installation, &message.sender_id));
     }
 
-    let code = installation.config.pairing_code.trim();
+    let code = current_pairing_code(app, installation);
     if !code.is_empty() && message.text.trim() == code {
         send_notice(
             app,
@@ -179,8 +179,18 @@ fn is_reply_to_bot(app: &AppHandle, installation: &Installation, message: &Inbou
         .unwrap_or(false)
 }
 
+/// 配对码会在每次配对成功后轮换，连接线程里的配置副本可能已经过期，统一现读数据库。
+fn current_pairing_code(app: &AppHandle, installation: &Installation) -> String {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return installation.config.pairing_code.trim().to_string();
+    };
+    store::current_pairing_code(&db, &installation.id)
+}
+
 fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessage) -> bool {
-    let code = installation.config.pairing_code.trim();
+    let code = current_pairing_code(app, installation);
+    let code = code.as_str();
     if code.is_empty() {
         return false;
     }
@@ -205,23 +215,34 @@ fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessa
     }
     pairing::clear(&installation.id, sender);
     let name = lookup_sender_name(app, installation, &message.sender_id);
-    let saved = {
+    // 一个配对码只能配对一个人：校验、加用户、换新码在同一个事务里。
+    // 查姓名要走网络，放在拿数据库锁之前。
+    let next_code = super::commands::generate_pairing_code();
+    let rotated = {
         let state = app.state::<AppState>();
-        let Ok(db) = state.lock_db() else {
+        let Ok(mut db) = state.lock_db() else {
             return false;
         };
-        store::add_allowed_user(
-            &db,
+        store::consume_pairing_code(
+            &mut db,
             &installation.id,
+            code,
             &message.sender_id,
             name.as_deref(),
-            "owner",
+            &next_code,
         )
-        .is_ok()
     };
-    if !saved {
+    let Ok(Some(next_code)) = rotated else {
         return false;
-    }
+    };
+    let _ = app.emit(
+        "channel-paired",
+        json!({
+            "installationId": installation.id,
+            "channelUserId": message.sender_id,
+            "pairingCode": next_code,
+        }),
+    );
     send_notice(
         app,
         installation,

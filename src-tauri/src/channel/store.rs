@@ -9,6 +9,10 @@ pub struct AllowedUser {
     pub channel_user_id: String,
     pub display_name: Option<String>,
     pub role: String,
+    /// 配对成功的时间
+    pub created_at: String,
+    /// 用户在界面上手填的备注
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -159,7 +163,7 @@ pub fn list_allowed_users(
 ) -> Result<Vec<AllowedUser>, String> {
     let mut statement = db
         .prepare(
-            "SELECT installation_id, channel_user_id, display_name, role
+            "SELECT installation_id, channel_user_id, display_name, role, created_at, note
              FROM channel_allowed_users WHERE installation_id=?1 ORDER BY created_at",
         )
         .map_err(|error| error.to_string())?;
@@ -170,6 +174,8 @@ pub fn list_allowed_users(
                 channel_user_id: row.get(1)?,
                 display_name: row.get(2)?,
                 role: row.get(3)?,
+                created_at: row.get(4)?,
+                note: row.get(5)?,
             })
         })
         .map_err(|error| error.to_string())?
@@ -180,7 +186,7 @@ pub fn list_allowed_users(
 
 pub fn allowed_user(db: &Connection, installation_id: &str, user_id: &str) -> Option<AllowedUser> {
     db.query_row(
-        "SELECT installation_id, channel_user_id, display_name, role
+        "SELECT installation_id, channel_user_id, display_name, role, created_at, note
          FROM channel_allowed_users WHERE installation_id=?1 AND channel_user_id=?2",
         params![installation_id, user_id],
         |row| {
@@ -189,6 +195,8 @@ pub fn allowed_user(db: &Connection, installation_id: &str, user_id: &str) -> Op
                 channel_user_id: row.get(1)?,
                 display_name: row.get(2)?,
                 role: row.get(3)?,
+                created_at: row.get(4)?,
+                note: row.get(5)?,
             })
         },
     )
@@ -221,6 +229,60 @@ pub fn add_allowed_user(
     )
     .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+pub fn set_allowed_user_note(
+    db: &Connection,
+    installation_id: &str,
+    user_id: &str,
+    note: Option<&str>,
+) -> Result<(), String> {
+    let updated = db
+        .execute(
+            "UPDATE channel_allowed_users SET note=?1
+             WHERE installation_id=?2 AND channel_user_id=?3",
+            params![note, installation_id, user_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 0 {
+        return Err(tr!("授权用户不存在"));
+    }
+    Ok(())
+}
+
+/// 配对码一次性：校验当前码（从库里现读，不用连接线程启动时的副本），
+/// 对上就在同一事务里加用户并换新码，返回新码。码不对返回 None。
+pub fn consume_pairing_code(
+    db: &mut Connection,
+    installation_id: &str,
+    candidate: &str,
+    user_id: &str,
+    display_name: Option<&str>,
+    next_code: &str,
+) -> Result<Option<String>, String> {
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    let Some(installation) = get_installation(&transaction, installation_id)? else {
+        return Ok(None);
+    };
+    let current = installation.config.pairing_code.trim();
+    if current.is_empty() || current != candidate {
+        return Ok(None);
+    }
+    add_allowed_user(&transaction, installation_id, user_id, display_name, "owner")?;
+    let mut config = installation.config.clone();
+    config.pairing_code = next_code.to_string();
+    set_config(&transaction, installation_id, &config)?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(Some(config.pairing_code))
+}
+
+/// 当前配对码，现读数据库。
+pub fn current_pairing_code(db: &Connection, installation_id: &str) -> String {
+    get_installation(db, installation_id)
+        .ok()
+        .flatten()
+        .map(|installation| installation.config.pairing_code.trim().to_string())
+        .unwrap_or_default()
 }
 
 pub fn set_allowed_user_name(
@@ -490,6 +552,54 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         crate::database::migrate(&connection).unwrap();
         connection
+    }
+
+    fn install_with_code(db: &Connection, code: &str) {
+        db.execute(
+            "INSERT INTO channel_installations
+             (id, channel_type, name, target_type, target_id, config_json, created_at, updated_at)
+             VALUES ('inst', 'feishu', 'bot', 'agent', 'a1', ?1, 'now', 'now')",
+            [format!(r#"{{"appId":"cli_x","pairingCode":"{code}"}}"#)],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn pairing_code_pairs_only_one_user() {
+        let mut db = db();
+        install_with_code(&db, "123456");
+        assert_eq!(
+            consume_pairing_code(&mut db, "inst", "000000", "ou_a", None, "654321").unwrap(),
+            None
+        );
+        assert_eq!(current_pairing_code(&db, "inst"), "123456");
+        assert_eq!(
+            consume_pairing_code(&mut db, "inst", "123456", "ou_a", Some("A"), "654321")
+                .unwrap()
+                .as_deref(),
+            Some("654321")
+        );
+        assert_eq!(current_pairing_code(&db, "inst"), "654321");
+        // 旧码已失效，第二个人用同一个码配不上
+        assert_eq!(
+            consume_pairing_code(&mut db, "inst", "123456", "ou_b", None, "111111").unwrap(),
+            None
+        );
+        let users = list_allowed_users(&db, "inst").unwrap();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].channel_user_id, "ou_a");
+        assert!(!users[0].created_at.is_empty());
+    }
+
+    #[test]
+    fn allowed_user_note_round_trips() {
+        let db = db();
+        add_allowed_user(&db, "inst", "ou_a", None, "owner").unwrap();
+        set_allowed_user_note(&db, "inst", "ou_a", Some("产品")).unwrap();
+        assert_eq!(allowed_user(&db, "inst", "ou_a").unwrap().note.as_deref(), Some("产品"));
+        set_allowed_user_note(&db, "inst", "ou_a", None).unwrap();
+        assert_eq!(allowed_user(&db, "inst", "ou_a").unwrap().note, None);
+        assert!(set_allowed_user_note(&db, "inst", "ou_missing", None).is_err());
     }
 
     #[test]

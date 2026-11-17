@@ -75,6 +75,7 @@ import UiTooltip from "./components/ui/UiTooltip.vue";
 import UiNotice from "./components/ui/UiNotice.vue";
 import UiModal from "./components/ui/UiModal.vue";
 import UiTextarea from "./components/ui/UiTextarea.vue";
+import UiSwitch from "./components/ui/UiSwitch.vue";
 import { router } from "./router";
 import { overlayScrollPlugin } from "./ui/overlay-scroll";
 import { applyThemeSetting, THEME_STORAGE_KEY } from "./theme";
@@ -101,6 +102,7 @@ createApp(App)
   .use(overlayScrollPlugin)
   .component("Codicon", Codicon)
   .component("UiButton", UiButton)
+  .component("UiSwitch", UiSwitch)
   .component("UiInput", UiInput)
   .component("UiPane", UiPane)
   .component("UiPaneView", UiPaneView)

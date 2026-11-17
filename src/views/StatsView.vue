@@ -6,6 +6,7 @@ import type { RunStatistics, StatisticGroup, UsageDay } from "../domain/types";
 import { getRunStatistics } from "../services/backend";
 import { useAppStore } from "../stores/app";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import ProviderLogo from "../components/ProviderLogo.vue";
 import { useRouter } from "vue-router";
 import {
   addUsageDays,
@@ -25,6 +26,12 @@ const RANGES = computed(() => [
 ]);
 
 const store = useAppStore();
+/** 统计按 runtime id 分组；显示时换成运行时名称和品牌图标。已删除的运行时退回 id 本身。 */
+const runtimesById = computed(() => new Map((store.data?.runtimes ?? []).map((item) => [item.id, item])));
+function runtimeDisplay(id: string) {
+  const runtime = runtimesById.value.get(id);
+  return { name: runtime?.name ?? id, provider: runtime?.provider ?? id };
+}
 const router = useRouter();
 const stats = ref<RunStatistics | null>(null);
 const loading = ref(false);
@@ -423,7 +430,12 @@ function openAgent(group: StatisticGroup) {
           </thead>
           <tbody>
             <tr v-for="runtime in stats.byRuntime" :key="runtime.name">
-              <td>{{ runtime.name }}</td>
+              <td>
+                <span class="usage-agent">
+                  <ProviderLogo :provider="runtimeDisplay(runtime.name).provider" :size="20" />
+                  <span>{{ runtimeDisplay(runtime.name).name }}</span>
+                </span>
+              </td>
               <td>{{ formatUsd(runtime.costUsd) }}</td>
               <td>{{ formatTokens(totalTokens(runtime)) }}</td>
               <td>{{ formatDuration(runtime.seconds) }}</td>
