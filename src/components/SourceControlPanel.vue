@@ -45,12 +45,15 @@ const props = withDefaults(defineProps<{
   activePath?: string;
   activeLine?: number;
   activeWorkspaceId?: string;
+  /** 行历史、文件历史。执行模式和收件箱把这两块放到文件页。 */
+  showFileHistory?: boolean;
 }>(), {
   readonly: false,
   viewModeStorageKey: "multara.scm.viewMode",
   activePath: "",
   activeLine: 0,
   activeWorkspaceId: "",
+  showFileHistory: true,
 });
 const emit = defineEmits<{
   openChange: [target: ScmOpenTarget];
@@ -628,6 +631,7 @@ defineExpose({ refresh, revealCommit });
         @open-changes="emit('openChanges', $event)"
       />
       <ScmHistoryListView
+        v-if="showFileHistory"
         ref="lineHistoryView"
         kind="line"
         :title="t('scm.inspect.lineHistory')"
@@ -643,6 +647,7 @@ defineExpose({ refresh, revealCommit });
         @switch-kind="switchHistoryKind"
       />
       <ScmHistoryListView
+        v-if="showFileHistory"
         ref="fileHistoryView"
         kind="file"
         :title="t('scm.inspect.fileHistory')"
