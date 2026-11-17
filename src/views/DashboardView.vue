@@ -53,6 +53,12 @@ import {
   type RequirementCategory,
   type RequirementCategoryState,
 } from "./dashboard/requirement-categories";
+import RequirementRun from "./dashboard/RequirementRun.vue";
+import {
+  isRequirementHomeMode,
+  requirementHomeMode,
+  setRequirementHomeMode,
+} from "./dashboard/requirement-home-mode";
 
 const TAG_FILTER_MAX_HEIGHT = 52;
 const CELL_PREVIEW = 1;
@@ -344,11 +350,53 @@ function openWorkbenchFromManage() {
   manageWorkspacesTarget.value = null;
   void router.push(`/projects/${target.id}`);
 }
+
+const homeModeTabs = computed(() => [
+  { id: "code", label: t("dashboard.mode.code") },
+  { id: "run", label: t("dashboard.mode.run") },
+]);
+const runActive = computed(() => hasProjects.value && requirementHomeMode.value === "run");
+const runStage = ref({ content: false, width: 0, terminal: false });
+
+function onHomeMode(value: string) {
+  if (!isRequirementHomeMode(value)) return;
+  setRequirementHomeMode(value);
+}
+
+function onRunLayout(payload: { content: boolean; width: number; terminal: boolean }) {
+  runStage.value = { content: payload.content, width: payload.width, terminal: payload.terminal };
+}
 </script>
 
 <template>
-  <div class="page req-home" :class="{ 'is-empty': !hasProjects }">
-    <template v-if="!hasProjects">
+  <div
+    :class="{
+      page: !runActive,
+      'req-home': !runActive,
+      'is-empty': !runActive && !hasProjects,
+      'inbox-page': runActive,
+      'req-run': runActive,
+      'has-stage': runActive && runStage.content,
+      'has-terminal': runActive && runStage.terminal,
+    }"
+    :style="runActive && runStage.content ? { '--inbox-stage-width': `${runStage.width}px` } : undefined"
+  >
+    <RequirementRun
+      v-if="runActive"
+      :rows="rows"
+      :tabs="homeTabs"
+      :error="error"
+      :mode="requirementHomeMode"
+      @switch-mode="onHomeMode"
+      @create="openCreate"
+      @open="openProject"
+      @edit="openEdit"
+      @archive="toggleArchive"
+      @remove="askRemoveProject"
+      @add-workspace="openWorkspacePicker"
+      @layout="onRunLayout"
+    />
+    <template v-else-if="!hasProjects">
       <div v-if="error" class="error-card">{{ error }}</div>
       <RequirementEmptyState @create="openCreate" />
     </template>
@@ -360,6 +408,12 @@ function openWorkbenchFromManage() {
           <p>{{ t("dashboard.subtitle") }}</p>
         </div>
         <div class="header-actions">
+          <SegmentedTabs
+            :model-value="requirementHomeMode"
+            :label="t('dashboard.modeLabel')"
+            :items="homeModeTabs"
+            @update:model-value="onHomeMode"
+          />
           <UiButton variant="primary" @click="openCreate">
             <Plus :size="15" /> {{ t("dashboard.create") }}
           </UiButton>

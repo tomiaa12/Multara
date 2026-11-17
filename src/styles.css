@@ -13096,6 +13096,62 @@ label.settings-row:hover {
   padding-top: 0;
   padding-bottom: 0;
 }
+.req-run-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+.req-run-head h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-run-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex: 0 0 auto;
+}
+.req-run-filters {
+  display: grid;
+  gap: var(--spacing-2);
+  min-width: 0;
+  margin-top: var(--spacing-2);
+}
+.req-run-filters .ds-segmented,
+.req-run-filters .ds-search {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.req-run-filters .ds-segmented {
+  display: flex;
+  flex-wrap: wrap;
+}
+.req-run .inbox-list button > span:not(.agent-avatar):not(.inbox-meta):not(.ds-tooltip-trigger) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-weight-semibold);
+}
+.req-run .inbox-detail > .req-run-empty {
+  margin: auto;
+  border: 0;
+}
+/* 与 compact 消息列表左右 14px 内边距对齐，避免再吃到收件箱那条左边距后撑出容器 */
+.req-run .shared-chat-panel.compact .chat-surface > .chat-editing-dock,
+.req-run .shared-chat-panel.compact .chat-surface > .chat-composer {
+  box-sizing: border-box;
+  width: calc(100% - 28px);
+  max-width: calc(100% - 28px);
+  margin: 0 14px 10px;
+  align-self: flex-start;
+}
 .req-empty {
   display: grid;
   justify-items: center;

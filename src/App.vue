@@ -60,6 +60,7 @@ import EditorLanguagePicker from "./components/workbench/EditorLanguagePicker.vu
 import ContextMenu, { type ContextMenuItem } from "./components/ui/ContextMenu.vue";
 import { editorZoomLabel } from "./components/workbench/monaco-zoom";
 import { isWorkbenchPath } from "./router";
+import { requirementHomeMode } from "./views/dashboard/requirement-home-mode";
 import { t } from "./i18n";
 import { unreadBadgeLabel, unreadTotal } from "./domain/inbox";
 import SideNav, { type SideNavItem } from "./components/SideNav.vue";
@@ -78,6 +79,9 @@ const showEditorLanguage = computed(
 );
 const showEditorStatus = computed(
   () => isWorkbenchPath(route.path) && Boolean(editorStatus.fileKey),
+);
+const hideFloatingChat = computed(
+  () => isWorkbenchPath(route.path) || route.path === "/inbox" || (route.path === "/projects" && requirementHomeMode.value === "run"),
 );
 const statusMenu = ref<{ x: number; y: number; kind: "indent" | "eol" } | null>(null);
 const indentMenuItems: ContextMenuItem[] = [
@@ -580,7 +584,7 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- 需求工作台/预览自带聊天：只隐藏不销毁，避免切菜单后再开气泡回到最早提问 -->
-    <FloatingChat :hidden="isWorkbenchPath(route.path) || route.path === '/inbox'" />
+    <FloatingChat :hidden="hideFloatingChat" />
     <!-- Canvas 页面的 iframe 都在这一层（keep-alive 外面），切走页面也保持连接 -->
     <CanvasFrameHost />
     <UpdateNotification />
