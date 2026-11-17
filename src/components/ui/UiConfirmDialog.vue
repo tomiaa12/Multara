@@ -24,7 +24,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <UiModal @click.self="finish(false)" @keydown="onKeydown">
+  <UiModal class="is-confirm" @click.self="finish(false)" @keydown="onKeydown">
     <div
       class="modal ui-confirm-dialog"
       role="alertdialog"
@@ -43,7 +43,7 @@ onMounted(() => {
         </div>
       </div>
       <div class="modal-actions">
-        <UiButton @click="finish(false)">{{ props.request.cancel }}</UiButton>
+        <UiButton v-if="props.request.cancel !== false" @click="finish(false)">{{ props.request.cancel }}</UiButton>
         <UiButton
           ref="primaryButton"
           :variant="props.request.danger ? 'danger' : 'primary'"

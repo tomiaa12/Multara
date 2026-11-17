@@ -838,6 +838,16 @@ pub struct AgentActivityRecord {
     pub project_id: Option<String>,
 }
 
+/// 启动时灌进前端 runStates，用来直接统计「运行中 / 排队」而不靠加减计数。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveRun {
+    pub id: String,
+    pub session_id: String,
+    pub agent_id: String,
+    pub status: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxItem {

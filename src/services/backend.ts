@@ -700,6 +700,19 @@ export async function listAgentRuns(agentId: string): Promise<AgentActivityRecor
   return invoke<AgentActivityRecord[]>("list_agent_runs", { agentId });
 }
 
+export type ActiveRun = {
+  id: string;
+  sessionId: string;
+  agentId: string;
+  status: "queued" | "running";
+};
+
+/** 启动时灌进 runStates，让「运行中 / 排队」直接从状态数出来 */
+export async function listActiveRuns(): Promise<ActiveRun[]> {
+  if (!hasBackend()) return [];
+  return invoke<ActiveRun[]>("list_active_runs");
+}
+
 /** a：可读可切；b：可切但字段可能变；c：快照提供商配置；d：只能看状态和去终端登录 */
 export type RuntimeAccountTier = "a" | "b" | "c" | "d";
 

@@ -2094,6 +2094,7 @@ const catalog: MessageCatalog = {
   "scm.searchCompare.help.beforeDetail": "before: date または until: date",
 
   "common.ok": "OK",
+  "common.gotIt": "了解",
   "common.confirm": "確認",
   "common.listSep": ", ",
   "common.joinAnd": ", and ",

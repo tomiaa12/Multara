@@ -36,6 +36,16 @@ const title = computed(() =>
 async function confirmRemove(choice: WorkspaceDeleteChoice) {
   const workspace = props.workspaces.find((item) => item.id === choice.workspaceId);
   if (!workspace || busyId.value) return;
+  if (store.projectHasActiveRuns(props.projectId)) {
+    error.value = t("dashboard.deleteBlockedRunning");
+    await confirmDialog(t("dashboard.deleteBlockedRunning"), {
+      type: "warning",
+      primary: t("common.gotIt"),
+      cancel: false,
+    });
+    return;
+  }
+  error.value = "";
   const row = panel.value?.rows.find((item) => item.workspace.id === workspace.id);
   const dirtyCount = row ? (row.dirty ? row.changeCount : 0) : null;
   const sharedCheckout = (store.data?.workspaces ?? []).some(

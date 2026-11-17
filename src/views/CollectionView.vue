@@ -615,8 +615,8 @@ function runtimeSubtitle(runtime: Runtime) {
 
     <div v-else-if="kind === 'stats'" class="ds-stat-grid">
       <div class="ds-stat"><span>{{ t("collection.stat.completedToday") }}</span><strong>{{ store.data?.stats.completedToday ?? 0 }}</strong></div>
-      <div class="ds-stat"><span>{{ t("collection.stat.running") }}</span><strong>{{ store.data?.stats.running ?? 0 }}</strong></div>
-      <div class="ds-stat"><span>{{ t("collection.stat.queued") }}</span><strong>{{ store.data?.stats.queued ?? 0 }}</strong></div>
+      <div class="ds-stat"><span>{{ t("collection.stat.running") }}</span><strong>{{ store.runningCount }}</strong></div>
+      <div class="ds-stat"><span>{{ t("collection.stat.queued") }}</span><strong>{{ store.queuedCount }}</strong></div>
       <div class="ds-stat"><span>{{ t("collection.stat.failedToday") }}</span><strong>{{ store.data?.stats.failedToday ?? 0 }}</strong></div>
     </div>
 

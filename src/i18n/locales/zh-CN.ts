@@ -2093,6 +2093,7 @@ const catalog: MessageCatalog = {
   "scm.searchCompare.help.before": "在日期之前搜索",
   "scm.searchCompare.help.beforeDetail": "before: date 或 until: date",
   "common.ok": "好",
+  "common.gotIt": "了解",
   "common.confirm": "确定",
   "common.listSep": "、",
   "common.joinAnd": "，并",
