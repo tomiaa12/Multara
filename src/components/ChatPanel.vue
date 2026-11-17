@@ -744,7 +744,9 @@ const sessionListVisible = computed(() =>
   sessionListEnabled.value
   && (sessionListMode.value === "side" ? sessionListPrefs.value.open : sessionDrawerOpen.value),
 );
-const sessionListWidth = computed(() => clampSessionListWidth(sessionListPrefs.value.width, panelWidth.value));
+const sessionListWidth = computed(() =>
+  clampSessionListWidth(sessionListPrefs.value.width, panelWidth.value, sessionListMode.value),
+);
 const sessionListRef = ref<{ focusSearch: () => void } | null>(null);
 let panelResize: ResizeObserver | null = null;
 
@@ -825,8 +827,9 @@ function startSessionListResize(event: PointerEvent) {
   handle.setPointerCapture(event.pointerId);
   const startX = event.clientX;
   const startWidth = sessionListWidth.value;
+  const layout = sessionListMode.value;
   const onMove = (move: PointerEvent) => {
-    const width = clampSessionListWidth(startWidth + startX - move.clientX, panelWidth.value);
+    const width = clampSessionListWidth(startWidth + startX - move.clientX, panelWidth.value, layout);
     sessionListPrefs.value = { ...sessionListPrefs.value, width };
   };
   const onUp = () => {
@@ -1904,7 +1907,7 @@ defineExpose({
       'has-session-side': sessionListVisible && sessionListMode === 'side',
       'is-sticky-user-turn': stickyUserTurn,
     }"
-    :style="sessionListVisible && sessionListMode === 'side' ? { '--chat-session-list-width': `${sessionListWidth}px` } : undefined"
+    :style="sessionListVisible ? { '--chat-session-list-width': `${sessionListWidth}px` } : undefined"
     tabindex="-1"
     @pointerdown="onChatPointerDown"
     @keydown="onChatKeydown"
@@ -2246,7 +2249,6 @@ defineExpose({
       @keydown="onSessionListKeydown"
     >
       <div
-        v-if="sessionListMode === 'side'"
         class="chat-session-sash"
         role="separator"
         aria-orientation="vertical"

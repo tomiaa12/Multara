@@ -7,6 +7,13 @@ import ChatPanel from "./ChatPanel.vue";
 import { dictationService } from "../dictation/dictation-service";
 import { useAppStore } from "../stores/app";
 import { escapeClosesDialog } from "./ui/dialog-escape";
+import { readStorage, writeStorage } from "../utils/safe-storage";
+
+const FLOAT_WIDTH_KEY = "multara.chat.floatWidth";
+const FLOAT_MIN_WIDTH = 360;
+const FLOAT_DEFAULT_WIDTH = 480;
+const FLOAT_EXPANDED_WIDTH = 720;
+const FLOAT_MAX_WIDTH = 960;
 
 const props = defineProps<{
   /** 需求工作台等自带聊天时隐藏，但保持挂载以免丢会话 */
@@ -16,7 +23,64 @@ const props = defineProps<{
 const store = useAppStore();
 const route = useRoute();
 const projectId = computed(() => typeof route.params.projectId === "string" ? route.params.projectId : null);
-const expanded = ref(false);
+
+function clampFloatWidth(width: number) {
+  const max = Math.max(FLOAT_MIN_WIDTH, Math.min(FLOAT_MAX_WIDTH, window.innerWidth));
+  return Math.round(Math.min(max, Math.max(FLOAT_MIN_WIDTH, width)));
+}
+
+function loadFloatWidth() {
+  const raw = Number(readStorage(FLOAT_WIDTH_KEY));
+  return Number.isFinite(raw) && raw > 0 ? clampFloatWidth(raw) : FLOAT_DEFAULT_WIDTH;
+}
+
+const panelWidth = ref(loadFloatWidth());
+/** 加宽前的窄宽度，点还原时回到这里 */
+const narrowWidth = ref(
+  panelWidth.value < FLOAT_EXPANDED_WIDTH ? panelWidth.value : FLOAT_DEFAULT_WIDTH,
+);
+const expanded = computed(() => panelWidth.value >= FLOAT_EXPANDED_WIDTH);
+
+function persistFloatWidth(width: number) {
+  panelWidth.value = clampFloatWidth(width);
+  writeStorage(FLOAT_WIDTH_KEY, String(panelWidth.value));
+}
+
+function toggleExpand() {
+  if (expanded.value) {
+    persistFloatWidth(narrowWidth.value);
+    return;
+  }
+  narrowWidth.value = panelWidth.value;
+  persistFloatWidth(FLOAT_EXPANDED_WIDTH);
+}
+
+function startResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const handle = event.currentTarget as HTMLElement;
+  handle.setPointerCapture(event.pointerId);
+  const startX = event.clientX;
+  const startWidth = panelWidth.value;
+  document.body.classList.add("is-resizing-panels");
+  const onMove = (move: PointerEvent) => {
+    // 左边缘往左拖 = 加宽
+    const next = clampFloatWidth(startWidth + startX - move.clientX);
+    panelWidth.value = next;
+    if (next < FLOAT_EXPANDED_WIDTH) narrowWidth.value = next;
+  };
+  const onUp = () => {
+    handle.removeEventListener("pointermove", onMove);
+    handle.removeEventListener("pointerup", onUp);
+    handle.removeEventListener("pointercancel", onUp);
+    document.body.classList.remove("is-resizing-panels");
+    persistFloatWidth(panelWidth.value);
+  };
+  handle.addEventListener("pointermove", onMove);
+  handle.addEventListener("pointerup", onUp);
+  handle.addEventListener("pointercancel", onUp);
+}
+
 /** 首次打开后再常驻，避免启动就 ensureSession；收起/切页不再拆掉 */
 const retained = ref(false);
 watch(
@@ -77,9 +141,18 @@ function onKeydown(event: KeyboardEvent) {
   close();
 }
 
-onMounted(() => document.addEventListener("keydown", onKeydown));
+function onWindowResize() {
+  persistFloatWidth(panelWidth.value);
+}
+
+onMounted(() => {
+  document.addEventListener("keydown", onKeydown);
+  window.addEventListener("resize", onWindowResize);
+});
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("resize", onWindowResize);
+  document.body.classList.remove("is-resizing-panels");
   window.clearTimeout(closeTimer);
 });
 </script>
@@ -97,10 +170,18 @@ onBeforeUnmount(() => {
     <section
       ref="panelEl"
       class="floating-chat"
-      :class="{ open: panelOpen, closing: closing && !panelOpen, expanded }"
+      :class="{ open: panelOpen, closing: closing && !panelOpen }"
+      :style="{ width: `${panelWidth}px` }"
       :aria-hidden="!panelOpen"
       @animationend="onPanelAnimationEnd"
     >
+      <div
+        class="floating-chat-sash"
+        role="separator"
+        aria-orientation="vertical"
+        :aria-valuenow="panelWidth"
+        @pointerdown="startResize"
+      />
       <ChatPanel
         v-if="retained"
         :key="projectId ?? 'global'"
@@ -110,7 +191,7 @@ onBeforeUnmount(() => {
         :show-editing-bar="false"
       >
         <template #header-actions>
-          <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="expanded = !expanded">
+          <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="toggleExpand">
             <Minimize2 v-if="expanded" :size="15" />
             <Maximize2 v-else :size="15" />
           </UiButton>

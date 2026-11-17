@@ -26,8 +26,16 @@ export function sessionListLayout(panelWidth: number): SessionListLayout {
   return panelWidth >= SESSION_LIST_DEFAULT_WIDTH + CHAT_MIN_WIDTH ? "side" : "drawer";
 }
 
-export function clampSessionListWidth(width: number, panelWidth: number) {
-  const max = Math.max(SESSION_LIST_MIN_WIDTH, Math.min(SESSION_LIST_MAX_WIDTH, panelWidth - CHAT_MIN_WIDTH));
+export function clampSessionListWidth(
+  width: number,
+  panelWidth: number,
+  layout: SessionListLayout = "side",
+) {
+  // 抽屉盖在聊天上，不跟聊天区抢最小宽度；并排时才给聊天留 CHAT_MIN_WIDTH
+  const maxByPanel = layout === "drawer"
+    ? Math.floor(panelWidth * 0.85)
+    : panelWidth - CHAT_MIN_WIDTH;
+  const max = Math.max(SESSION_LIST_MIN_WIDTH, Math.min(SESSION_LIST_MAX_WIDTH, maxByPanel));
   return Math.round(Math.min(max, Math.max(SESSION_LIST_MIN_WIDTH, width)));
 }
 
