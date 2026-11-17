@@ -147,10 +147,16 @@ function floatHost() {
   return document.querySelector(".inbox-detail.chat-surface");
 }
 
+function floatHeader(host: HTMLElement) {
+  const direct = host.querySelector(":scope > .chat-surface-header");
+  if (direct instanceof HTMLElement) return direct;
+  const nested = host.querySelector(".chat-surface-header");
+  if (nested instanceof HTMLElement) return nested;
+  return null;
+}
+
 function headerOffset(host: HTMLElement) {
-  const header = host.querySelector(":scope > .chat-surface-header");
-  if (!(header instanceof HTMLElement)) return 0;
-  return header.offsetHeight;
+  return floatHeader(host)?.offsetHeight ?? 0;
 }
 
 function clampFloatTop(top: number, host: HTMLElement, nav: HTMLElement) {
@@ -229,8 +235,8 @@ function watchFloatHost() {
   if (!(host instanceof HTMLElement)) return;
   floatHostObserver = new ResizeObserver(() => keepFloatInside());
   floatHostObserver.observe(host);
-  const header = host.querySelector(":scope > .chat-surface-header");
-  if (header instanceof HTMLElement) floatHostObserver.observe(header);
+  const header = floatHeader(host);
+  if (header) floatHostObserver.observe(header);
   keepFloatInside();
 }
 
