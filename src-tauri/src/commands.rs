@@ -3572,6 +3572,7 @@ pub fn list_active_runs(state: State<'_, AppState>) -> Result<Vec<ActiveRun>, St
     Ok(rows)
 }
 
+#[tauri::command]
 pub fn list_agent_runs(
     agent_id: String,
     state: State<'_, AppState>,

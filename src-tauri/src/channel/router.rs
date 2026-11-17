@@ -82,7 +82,7 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
         }
         return;
     }
-    if (message.sender_name.is_none()) {
+    if message.sender_name.is_none() {
         message.sender_name = saved_sender_name(allowed.as_ref())
             .or_else(|| remember_sender_name(app, installation, &message.sender_id));
     }
