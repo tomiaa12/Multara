@@ -67,6 +67,16 @@ export const useAppStore = defineStore("app", () => {
   const runtimesReady = ref(false);
   const error = ref("");
   const chatOpen = ref(false);
+  /** 全局「新建任务」弹窗（侧栏按钮 / Alt+C / 任务页共用） */
+  const taskCreateOpen = ref(false);
+  const taskCreateStatus = ref<TaskStatus>("todo");
+  function openTaskCreate(status: TaskStatus = "todo") {
+    taskCreateStatus.value = status;
+    taskCreateOpen.value = true;
+  }
+  function closeTaskCreate() {
+    taskCreateOpen.value = false;
+  }
   const activeSessionId = ref("welcome");
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
   const activeInboxSessionId = ref<string | null>(null);
@@ -1784,6 +1794,10 @@ export const useAppStore = defineStore("app", () => {
     runtimesReady,
     error,
     chatOpen,
+    taskCreateOpen,
+    taskCreateStatus,
+    openTaskCreate,
+    closeTaskCreate,
     activeSessionId,
     queuedMessages,
     composerContexts,

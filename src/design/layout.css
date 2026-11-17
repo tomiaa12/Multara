@@ -332,6 +332,30 @@ a.titlebar-crumb:hover {
   margin-left: auto;
   flex-shrink: 0;
 }
+.nav-item-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.nav-item:has(.nav-badge) > .nav-item-action {
+  margin-left: 0;
+}
+.nav-item-action:hover,
+.nav-item-action:focus-visible {
+  background: var(--color-surface-active);
+  color: var(--color-text-strong);
+  outline: none;
+}
 .sidebar-footer {
   margin-top: auto;
 }

@@ -24,8 +24,6 @@ import { readStorage, writeStorage } from "../utils/safe-storage";
 import { sharedRequirementCategories } from "./dashboard/requirement-categories";
 import { moveTask, orderColumn, relativeTime, TASK_COLUMNS, taskCodeMap } from "./task-board";
 import { readTaskMeta } from "./task-meta";
-import TaskCreateDialog from "./TaskCreateDialog.vue";
-
 const ORDER_KEY = "multara.task-board-order";
 const DISPLAY_KEY = "multara.task-board-display";
 const store = useAppStore();
@@ -38,8 +36,6 @@ const tagFilters = ref<string[]>([]);
 const showDone = ref(loadDisplay().showDone);
 const showCancelled = ref(loadDisplay().showCancelled);
 const displayOpen = ref(false);
-const createOpen = ref(false);
-const createStatus = ref<TaskStatus>("todo");
 const requirementCategories = sharedRequirementCategories();
 const categories = computed(() => requirementCategories.value.categories);
 const error = ref("");
@@ -212,9 +208,8 @@ function agentFor(agentId: string) {
 }
 
 function openCreate(status: TaskStatus = "todo") {
-  createStatus.value = status;
-  createOpen.value = true;
   columnMenu.value = null;
+  store.openTaskCreate(status);
 }
 
 function openTask(task: Task) {
@@ -361,6 +356,9 @@ function onColumnMenu(id: string) {
     <header class="task-toolbar">
       <div class="task-toolbar-title">
         <h1>{{ t("tasks.title") }}</h1>
+        <UiButton variant="primary" size="small" :tip="t('tasks.createShortcut')" @click="openCreate()">
+          <Plus :size="14" /> {{ t("tasks.create") }}
+        </UiButton>
         <nav class="ds-segmented" :aria-label="t('tasks.scope')">
           <button type="button" :class="{ active: scope === 'all' }" @click="setScope('all')">{{ t("tasks.scope.all") }}</button>
           <button type="button" :class="{ active: scope === 'agent' }" @click="setScope('agent')">{{ t("tasks.scope.agent") }}</button>
@@ -403,7 +401,6 @@ function onColumnMenu(id: string) {
           <i class="ds-dot" :data-tone="workingCount ? 'success' : undefined" />
           {{ t("tasks.working", { n: workingCount }) }}
         </span>
-        <UiButton variant="primary" size="small" @click="openCreate()"><Plus :size="14" /> {{ t("tasks.create") }}</UiButton>
       </div>
     </header>
     <div v-if="scope === 'agent'" class="task-agent-scopes">
@@ -501,7 +498,6 @@ function onColumnMenu(id: string) {
         </div>
       </section>
     </div>
-    <TaskCreateDialog v-if="createOpen" :initial-status="createStatus" @close="createOpen = false" />
     <ContextMenu
       v-if="cardMenu"
       :x="cardMenu.x"

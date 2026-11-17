@@ -655,6 +655,7 @@ const catalog: MessageCatalog = {
   "inbox.filter.project": "Project",
   "tasks.title": "Tasks",
   "tasks.create": "New task",
+  "tasks.createShortcut": "New task (Alt+C)",
   "tasks.empty": "No tasks yet",
   "automation.title": "Automation",
   "scm.title": "Source Control",
