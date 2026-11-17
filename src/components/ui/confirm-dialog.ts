@@ -4,7 +4,8 @@ export type ConfirmDialogRequest = {
   message: string;
   detail?: string;
   primary?: string;
-  cancel?: string;
+  /** false 时只显示主按钮（如「了解」），不显示取消 */
+  cancel?: string | false;
   type?: "warning" | "info";
   danger?: boolean;
 };
@@ -43,7 +44,7 @@ export function confirmDialog(
     type: options.type ?? (danger ? "warning" : "info"),
     danger,
     primary: options.primary ?? (danger ? t("common.delete") : t("common.confirm")),
-    cancel: options.cancel ?? t("common.cancel"),
+    cancel: options.cancel === false ? false : (options.cancel ?? t("common.cancel")),
   };
   return new Promise((resolve) => {
     pending = { request, resolve };

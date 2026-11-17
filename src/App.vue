@@ -677,8 +677,8 @@ onBeforeUnmount(() => {
         </UiTooltip>
         <TerminalActivity />
         <span class="statusbar-running">
-          <i class="ds-dot" :data-tone="(store.data?.stats.running ?? 0) > 0 ? 'success' : undefined" />
-          {{ t("app.runningCount", { n: store.data?.stats.running ?? 0 }) }}
+          <i class="ds-dot" :data-tone="store.runningCount > 0 ? 'success' : undefined" />
+          {{ t("app.runningCount", { n: store.runningCount }) }}
         </span>
       </div>
     </footer>

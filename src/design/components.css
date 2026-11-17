@@ -1837,6 +1837,10 @@ button.ds-stat.is-on {
   background: var(--color-overlay);
   animation: ds-fade-in var(--motion-duration-normal) var(--motion-ease);
 }
+/* 确认框叠在其他弹窗之上，避免「项目」管理弹窗里点删除时确认被挡住、像没反应 */
+.modal-backdrop.is-confirm {
+  z-index: calc(var(--z-modal) + 20);
+}
 .modal,
 .ds-modal {
   display: grid;

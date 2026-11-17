@@ -16,8 +16,8 @@ use crate::{
     database::AppState,
     diff_state_db, executor, files, git as git_manager, hook_runtime,
     models::{
-        Agent, AgentActivityRecord, AgentInput, Automation, AutomationInput, AutomationRun,
-        BootstrapData, ChatMessage, ChatSession, ChatSessionInput, CustomRuntimeForm,
+        ActiveRun, Agent, AgentActivityRecord, AgentInput, Automation, AutomationInput,
+        AutomationRun, BootstrapData, ChatMessage, ChatSession, ChatSessionInput, CustomRuntimeForm,
         CustomRuntimeInput, DashboardStats, FileContent, FileEntry, GitCommitFile, GitCommitInput,
         GitCompareRefs, GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus,
         GlobalResource, InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
@@ -3547,6 +3547,31 @@ pub fn update_task(
 }
 
 #[tauri::command]
+pub fn list_active_runs(state: State<'_, AppState>) -> Result<Vec<ActiveRun>, String> {
+    let _span = crate::diag::span("list_active_runs");
+    let db = state.lock_db()?;
+    let mut statement = db
+        .prepare(
+            "SELECT id, session_id, agent_id, status FROM agent_runs
+             WHERE status IN ('queued', 'running')
+             ORDER BY created_at",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(ActiveRun {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                agent_id: row.get(2)?,
+                status: row.get(3)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    Ok(rows)
+}
+
 pub fn list_agent_runs(
     agent_id: String,
     state: State<'_, AppState>,

@@ -2093,6 +2093,7 @@ Who is this for? Any constraints?
   "scm.searchCompare.help.before": "Search before date",
   "scm.searchCompare.help.beforeDetail": "before: date or until: date",
   "common.ok": "OK",
+  "common.gotIt": "Got it",
   "common.confirm": "Confirm",
   "common.listSep": ", ",
   "common.joinAnd": ", and ",

@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
-import { computed, getCurrentScope, ref, type ComputedRef } from "vue";
+import { computed, getCurrentScope, ref, watch, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
-import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, Squad, TaskInput, TaskStatus } from "../domain/types";
+import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, RunStatus, Squad, TaskInput, TaskStatus } from "../domain/types";
 import { visiblePromptText } from "../components/chat/composer-content";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
@@ -133,6 +133,47 @@ export const useAppStore = defineStore("app", () => {
       )
       .map((event) => event.runId),
   );
+
+  function isLiveRunStatus(status: RunStatus) {
+    return status === "queued" || status === "running";
+  }
+
+  function countLiveRuns(status: "queued" | "running") {
+    return Object.values(runStates.value).filter(
+      (event) => event.status === status && !event.runId.startsWith("pending:"),
+    ).length;
+  }
+
+  /** 右下角 / 统计页「运行中」「排队」直接听 runStates，不再手加减 */
+  const runningCount = computed(() => countLiveRuns("running"));
+  const queuedCount = computed(() => countLiveRuns("queued"));
+  watch([runningCount, queuedCount], ([running, queued]) => {
+    if (!data.value) return;
+    data.value.stats.running = running;
+    data.value.stats.queued = queued;
+  });
+
+  async function seedActiveRuns() {
+    try {
+      const active = await backend.listActiveRuns();
+      for (const run of active) {
+        if (!isLiveRunStatus(run.status)) continue;
+        if (runStates.value[run.id]) continue;
+        runStates.value[run.id] = {
+          runId: run.id,
+          sessionId: run.sessionId,
+          agentId: run.agentId,
+          status: run.status,
+          chunk: null,
+          error: null,
+          timelineItem: null,
+          elapsedMs: null,
+        };
+      }
+    } catch (cause) {
+      console.error("[app] seed active runs failed", cause);
+    }
+  }
   function sessionProcessing(sessionId: string) {
     return sendingSessions.value.has(sessionId)
       || pendingRunSessions.value.has(sessionId)
@@ -195,6 +236,7 @@ export const useAppStore = defineStore("app", () => {
       applyLanguageSetting(data.value.settings.language);
       setFileIconTheme(data.value.settings.fileIconTheme);
       await registerRunEvents();
+      await seedActiveRuns();
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
         activeSessionId.value = data.value.sessions[0]?.id ?? "";
       }
@@ -280,11 +322,8 @@ export const useAppStore = defineStore("app", () => {
       }
       let surfacesRefresh: Promise<void> | undefined;
       if (data.value) {
-        if (payload.status === "running" && previous?.status !== "running") {
-          data.value.stats.running += 1;
-        }
+        // running / queued 由 runStates 计算属性同步；这里只累计「今日」指标
         if (["completed", "failed", "stopped"].includes(payload.status) && previous?.status === "running") {
-          data.value.stats.running = Math.max(0, data.value.stats.running - 1);
           if (payload.status === "completed") data.value.stats.completedToday += 1;
           if (payload.status === "failed") data.value.stats.failedToday += 1;
         }
@@ -693,9 +732,8 @@ export const useAppStore = defineStore("app", () => {
       delete messages.value[task.sessionId];
       for (const [runId, event] of Object.entries(runStates.value)) {
         if (event.sessionId !== task.sessionId) continue;
-        if (event.status === "queued" || event.status === "running") {
-          runStates.value[runId] = { ...event, status: "stopped", chunk: null };
-        }
+        if (event.status !== "queued" && event.status !== "running") continue;
+        runStates.value[runId] = { ...event, status: "stopped", chunk: null };
       }
     }
   }
@@ -706,6 +744,20 @@ export const useAppStore = defineStore("app", () => {
       && (event.status === "queued" || event.status === "running")
       && !event.runId.startsWith("pending:")
     );
+  }
+
+  /** 该需求下是否有排队 / 运行中的智能体（删需求或卸项目前先拦） */
+  function projectHasActiveRuns(projectId: string) {
+    const sessions = data.value?.sessions ?? [];
+    for (const event of Object.values(runStates.value)) {
+      if (event.status !== "queued" && event.status !== "running") continue;
+      if (event.runId.startsWith("pending:")) continue;
+      const session = sessions.find((item) => item.id === event.sessionId);
+      if (!session) continue;
+      if (session.projectId === projectId) return true;
+      if ((session.projectIds ?? []).includes(projectId)) return true;
+    }
+    return false;
   }
 
   function isTaskRunningDeleteError(cause: unknown) {
@@ -1811,6 +1863,8 @@ export const useAppStore = defineStore("app", () => {
     processingMessage,
     sessionProcessing,
     activeRunIds,
+    runningCount,
+    queuedCount,
     activeSession,
     initialize,
     refreshRuntimes,
@@ -1845,6 +1899,7 @@ export const useAppStore = defineStore("app", () => {
     startTask,
     deleteTask,
     confirmDeleteTask,
+    projectHasActiveRuns,
     saveAutomation,
     deleteAutomation,
     runAutomation,

@@ -33,6 +33,7 @@ import OverflowSummary, {
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
+import { confirmDialog } from "../components/ui/confirm-dialog";
 import { useAppStore } from "../stores/app";
 import {
   buildHomeIndex,
@@ -306,10 +307,14 @@ const deleteWorkspaces = computed(() =>
   (store.data?.workspaces ?? []).filter((item) => item.projectId === deleteTarget.value?.id),
 );
 
-function askRemoveProject(projectId: string, projectName: string) {
-  const row = rows.value.find((item) => item.id === projectId);
-  if (row?.filters.includes("running")) {
-    error.value = t("dashboard.deleteBlockedRunning");
+async function askRemoveProject(projectId: string, projectName: string) {
+  if (store.projectHasActiveRuns(projectId) || rows.value.find((item) => item.id === projectId)?.filters.includes("running")) {
+    // 弹层确认，避免只写页面顶部 error 用户看不到
+    await confirmDialog(t("dashboard.deleteBlockedRunning"), {
+      type: "warning",
+      primary: t("common.gotIt"),
+      cancel: false,
+    });
     return;
   }
   error.value = "";
