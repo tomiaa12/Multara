@@ -90,7 +90,7 @@ fn deliver(app: &AppHandle, session_id: &str) {
 
 /// 投递当前所有待发记录；没有可投递的（或会话还在运行）时返回 false。
 fn deliver_pending(app: &AppHandle, session_id: &str) -> bool {
-    let (deliveries, content) = {
+    let groups = {
         let state = app.state::<AppState>();
         let Ok(db) = state.lock_db() else {
             return false;
@@ -113,33 +113,246 @@ fn deliver_pending(app: &AppHandle, session_id: &str) -> bool {
         if deliveries.is_empty() {
             return false;
         }
-        let content: Option<String> = db
-            .query_row(
-                "SELECT content FROM messages
-                 WHERE session_id=?1 AND role='assistant'
-                   AND COALESCE(message_kind, 'message') != 'channel_outbound'
-                 ORDER BY created_at DESC, rowid DESC LIMIT 1",
-                [session_id],
-                |row| row.get(0),
-            )
-            .ok();
-        (deliveries, content)
+        group_deliveries(deliveries)
+            .into_iter()
+            .map(|group| {
+                let run_ids: Vec<String> = group.iter().map(|item| item.run_id.clone()).collect();
+                let content = collect_turn_replies(&db, session_id, &run_ids);
+                (group, content)
+            })
+            .collect::<Vec<_>>()
     };
 
     // 有记录没能标记成功就不再进下一轮，否则会对同一条记录反复发送
     let mut all_marked = true;
-    for delivery in deliveries {
-        let result = send_one(app, &delivery, content.as_deref());
+    for (group, content) in groups {
+        let Some(primary) = group.first() else {
+            continue;
+        };
+        for delivery in &group {
+            clear_typing(app, delivery);
+        }
+        let result = send_one(app, primary, content.as_deref());
         let state = app.state::<AppState>();
-        let marked = state.lock_db().is_ok_and(|db| match &result {
-            Ok(()) => store::mark_delivery(&db, &delivery.run_id, "sent", None).is_ok(),
-            Err(error) => {
-                store::mark_delivery(&db, &delivery.run_id, "failed", Some(error)).is_ok()
+        let marked = state.lock_db().is_ok_and(|db| {
+            let mut ok = true;
+            for delivery in &group {
+                let marked = match &result {
+                    Ok(()) => store::mark_delivery(&db, &delivery.run_id, "sent", None).is_ok(),
+                    Err(error) => {
+                        store::mark_delivery(&db, &delivery.run_id, "failed", Some(error)).is_ok()
+                    }
+                };
+                ok &= marked;
             }
+            ok
         });
         all_marked &= marked;
     }
     all_marked
+}
+
+/// 同一入站触发的多条 pending 合成一次回发，避免每人各发一遍同一段组合正文。
+fn group_deliveries(deliveries: Vec<store::Delivery>) -> Vec<Vec<store::Delivery>> {
+    let mut groups: HashMap<String, Vec<store::Delivery>> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for delivery in deliveries {
+        let key = format!(
+            "{}|{}|{}|{}",
+            delivery.installation_id,
+            delivery.chat_id,
+            delivery.reply_to_message_id.as_deref().unwrap_or(""),
+            delivery.thread_id.as_deref().unwrap_or("")
+        );
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(delivery);
+    }
+    order
+        .into_iter()
+        .filter_map(|key| groups.remove(&key))
+        .collect()
+}
+
+/// 把本轮（同一 turn / 同一运行树）里各智能体的助手回复按时间拼成一段再回飞书。
+fn collect_turn_replies(
+    db: &rusqlite::Connection,
+    session_id: &str,
+    run_ids: &[String],
+) -> Option<String> {
+    if run_ids.is_empty() {
+        return None;
+    }
+    let tree_ids = run_tree_ids(db, run_ids);
+    let turn_ids = turn_ids_for_runs(db, &tree_ids);
+    let parts = if turn_ids.is_empty() {
+        assistant_parts_for_runs(db, session_id, &tree_ids)
+    } else {
+        let mut parts = assistant_parts_for_turns(db, session_id, &turn_ids);
+        if parts.is_empty() {
+            parts = assistant_parts_for_runs(db, session_id, &tree_ids);
+        }
+        parts
+    };
+    join_reply_parts(&parts)
+}
+
+fn run_tree_ids(db: &rusqlite::Connection, run_ids: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut queue = run_ids.to_vec();
+    while let Some(id) = queue.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        out.push(id.clone());
+        let Ok(mut statement) = db.prepare("SELECT id FROM agent_runs WHERE parent_run_id=?1") else {
+            continue;
+        };
+        let Ok(rows) = statement.query_map([&id], |row| row.get::<_, String>(0)) else {
+            continue;
+        };
+        for child in rows.filter_map(Result::ok) {
+            queue.push(child);
+        }
+    }
+    out
+}
+
+fn turn_ids_for_runs(db: &rusqlite::Connection, run_ids: &[String]) -> Vec<String> {
+    let mut turns = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for run_id in run_ids {
+        let Ok(turn_id) = db.query_row(
+            "SELECT turn_id FROM agent_runs
+             WHERE id=?1 AND turn_id IS NOT NULL AND trim(turn_id) != ''",
+            [run_id],
+            |row| row.get::<_, String>(0),
+        ) else {
+            continue;
+        };
+        if seen.insert(turn_id.clone()) {
+            turns.push(turn_id);
+        }
+    }
+    turns
+}
+
+fn assistant_parts_for_turns(
+    db: &rusqlite::Connection,
+    session_id: &str,
+    turn_ids: &[String],
+) -> Vec<(String, String)> {
+    if turn_ids.is_empty() {
+        return Vec::new();
+    }
+    let placeholders = turn_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT m.content, COALESCE(a.name, '')
+         FROM messages m
+         LEFT JOIN agents a ON a.id = m.agent_id
+         WHERE m.session_id=?1
+           AND m.role='assistant'
+           AND COALESCE(m.message_kind, 'message') NOT IN ('channel_outbound', 'assignment', 'no_response')
+           AND m.turn_id IN ({placeholders})
+           AND trim(m.content) != ''
+         ORDER BY m.created_at ASC, m.rowid ASC"
+    );
+    let Ok(mut statement) = db.prepare(&sql) else {
+        return Vec::new();
+    };
+    let mut params: Vec<rusqlite::types::Value> = vec![session_id.to_string().into()];
+    params.extend(turn_ids.iter().map(|id| id.clone().into()));
+    let Ok(rows) = statement.query_map(rusqlite::params_from_iter(params), |row| {
+        Ok((row.get::<_, String>(1)?, row.get::<_, String>(0)?))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(Result::ok)
+        .filter(|(_, content)| !content.trim().is_empty())
+        .collect()
+}
+
+fn assistant_parts_for_runs(
+    db: &rusqlite::Connection,
+    session_id: &str,
+    run_ids: &[String],
+) -> Vec<(String, String)> {
+    if run_ids.is_empty() {
+        return Vec::new();
+    }
+    let placeholders = run_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT m.content, COALESCE(a.name, '')
+         FROM messages m
+         LEFT JOIN agents a ON a.id = m.agent_id
+         WHERE m.session_id=?1
+           AND m.role='assistant'
+           AND COALESCE(m.message_kind, 'message') NOT IN ('channel_outbound', 'assignment', 'no_response')
+           AND m.run_id IN ({placeholders})
+           AND trim(m.content) != ''
+         ORDER BY m.created_at ASC, m.rowid ASC"
+    );
+    let Ok(mut statement) = db.prepare(&sql) else {
+        return Vec::new();
+    };
+    let mut params: Vec<rusqlite::types::Value> = vec![session_id.to_string().into()];
+    params.extend(run_ids.iter().map(|id| id.clone().into()));
+    let Ok(rows) = statement.query_map(rusqlite::params_from_iter(params), |row| {
+        Ok((row.get::<_, String>(1)?, row.get::<_, String>(0)?))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(Result::ok)
+        .filter(|(_, content)| !content.trim().is_empty())
+        .collect()
+}
+
+fn join_reply_parts(parts: &[(String, String)]) -> Option<String> {
+    if parts.is_empty() {
+        return None;
+    }
+    let named = parts
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .filter(|name| !name.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    let multi_agent = named.len() > 1;
+    let text = parts
+        .iter()
+        .map(|(name, content)| {
+            if multi_agent && !name.is_empty() {
+                format!("**{name}**\n{content}")
+            } else {
+                content.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let trimmed = text.trim().to_string();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn clear_typing(app: &AppHandle, delivery: &store::Delivery) {
+    let Some(reaction) = delivery.typing_reaction_id.as_deref() else {
+        return;
+    };
+    let Some(message_id) = delivery.reply_to_message_id.as_deref() else {
+        return;
+    };
+    let Ok((_, api)) = api_for(app, &delivery.installation_id) else {
+        return;
+    };
+    api.remove_typing(message_id, reaction);
 }
 
 fn send_one(
@@ -148,6 +361,7 @@ fn send_one(
     content: Option<&str>,
 ) -> Result<(), String> {
     let (installation, api) = api_for(app, &delivery.installation_id)?;
+    // typing 表情在 deliver_pending 分组时已清过；这里再清一次无伤
     if let Some(reaction) = delivery.typing_reaction_id.as_deref() {
         if let Some(message_id) = delivery.reply_to_message_id.as_deref() {
             api.remove_typing(message_id, reaction);
@@ -157,7 +371,8 @@ fn send_one(
         return Err(tr!("运行没有产生可回发的文本"));
     };
     let (body, questions) = split_questions(content);
-    let body = strip_genui(&body, &tr!("（此处有一个界面块，请在 Multara 中查看）"));
+    // IM 渲不了 GenUI：把界面块转成可读文字（与前端 to-text 同思路），截图回传另做。
+    let body = expand_genui(&body);
     let text = format_outbound(&installation, delivery, &body);
     let chunks = split_message(&text, OUTBOUND_CHUNK_CHARS);
     let mut first = true;
@@ -268,15 +483,17 @@ fn send_one(
     Ok(())
 }
 
-/// IM 渠道渲染不了 ```multara-ui 界面块：整块换成一行提示，前后文字原样保留。
+/// IM 渠道渲染不了 ```multara-ui：把界面块转成纯文字，前后正文保留。
 /// 只认行首的围栏；嵌在其它代码块里的（例如演示协议）不动。
-fn strip_genui(content: &str, placeholder: &str) -> String {
+fn expand_genui(content: &str) -> String {
     if !content.contains("multara-ui") {
         return content.to_string();
     }
-    let mut out: Vec<&str> = Vec::new();
+    let placeholder = tr!("（此处有一个界面块，请在 Multara 中查看）");
+    let mut out: Vec<String> = Vec::new();
     // (围栏字符, 长度, 是否界面块)
     let mut open: Option<(char, usize, bool)> = None;
+    let mut ui_body: Vec<&str> = Vec::new();
     for line in content.split('\n') {
         let trimmed = line.trim_start_matches([' ', '\t']);
         let fence = trimmed
@@ -291,9 +508,9 @@ fn strip_genui(content: &str, placeholder: &str) -> String {
                 let is_ui = info.split_whitespace().next() == Some("multara-ui");
                 open = Some((ch, len, is_ui));
                 if is_ui {
-                    out.push(placeholder);
+                    ui_body.clear();
                 } else {
-                    out.push(line);
+                    out.push(line.to_string());
                 }
             }
             (Some((ch, len, is_ui)), Some((close_ch, close_len)))
@@ -302,15 +519,356 @@ fn strip_genui(content: &str, placeholder: &str) -> String {
                     && trimmed[close_len * ch.len_utf8()..].trim().is_empty() =>
             {
                 open = None;
-                if !is_ui {
-                    out.push(line);
+                if is_ui {
+                    out.push(genui_fence_to_text(&ui_body.join("\n"), &placeholder));
+                    ui_body.clear();
+                } else {
+                    out.push(line.to_string());
                 }
             }
-            (Some((_, _, true)), _) => {}
-            _ => out.push(line),
+            (Some((_, _, true)), _) => ui_body.push(line),
+            _ => out.push(line.to_string()),
         }
     }
+    if open.is_some_and(|(_, _, is_ui)| is_ui) {
+        out.push(genui_fence_to_text(&ui_body.join("\n"), &placeholder));
+    }
     out.join("\n")
+}
+
+fn genui_fence_to_text(raw: &str, placeholder: &str) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw.trim()) else {
+        return placeholder.to_string();
+    };
+    let list = if let Some(blocks) = value.get("blocks").and_then(serde_json::Value::as_array) {
+        blocks.as_slice()
+    } else if let Some(items) = value.as_array() {
+        items.as_slice()
+    } else {
+        std::slice::from_ref(&value)
+    };
+    let mut parts = Vec::new();
+    for item in list {
+        let Some(block_type) = item.get("type").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let title = item
+            .get("title")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty());
+        let props = item.get("props").unwrap_or(item);
+        if let Some(text) = genui_spec_to_text(block_type, title, props) {
+            parts.push(text);
+        }
+    }
+    if parts.is_empty() {
+        placeholder.to_string()
+    } else {
+        parts.join("\n\n")
+    }
+}
+
+fn genui_spec_to_text(
+    block_type: &str,
+    title: Option<&str>,
+    props: &serde_json::Value,
+) -> Option<String> {
+    let body = match block_type {
+        "card" => Some(card_to_text(props)),
+        "stats" => Some(stats_to_text(props)),
+        "table" => Some(table_to_text(props)),
+        "chart" => Some(chart_to_text(props)),
+        "form" => Some(form_to_text(props)),
+        "question" => Some(question_to_text(props)),
+        _ => None,
+    }?;
+    let mut lines = Vec::new();
+    if let Some(title) = title {
+        lines.push(format!("**{title}**"));
+    }
+    if !body.trim().is_empty() {
+        lines.push(body);
+    }
+    if block_type == "form" {
+        lines.push(tr!("（请在 Multara 中填写并提交）"));
+    }
+    let text = lines.join("\n").trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+fn json_cell(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
+        other => other
+            .to_string()
+            .trim_matches('"')
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+fn card_to_text(props: &serde_json::Value) -> String {
+    let mut lines = Vec::new();
+    if let Some(fields) = props.get("fields").and_then(serde_json::Value::as_array) {
+        for field in fields {
+            let label = field
+                .get("label")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let value = field
+                .get("value")
+                .map(json_cell)
+                .unwrap_or_default();
+            if !label.is_empty() {
+                lines.push(format!("{label}: {value}"));
+            }
+        }
+    }
+    if let Some(body) = props
+        .get("body")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(body.to_string());
+    }
+    if let Some(actions) = props.get("actions").and_then(serde_json::Value::as_array) {
+        let labels: Vec<&str> = actions
+            .iter()
+            .filter_map(|action| action.get("label").and_then(serde_json::Value::as_str))
+            .collect();
+        if !labels.is_empty() {
+            lines.push(format!("[{}]", labels.join(" / ")));
+        }
+    }
+    lines.join("\n")
+}
+
+fn stats_to_text(props: &serde_json::Value) -> String {
+    props
+        .get("items")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let label = item.get("label").and_then(serde_json::Value::as_str)?;
+            let value = item.get("value").map(json_cell).unwrap_or_default();
+            let unit = item
+                .get("unit")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let delta = item
+                .get("delta")
+                .and_then(serde_json::Value::as_f64)
+                .map(|delta| {
+                    if delta > 0.0 {
+                        format!(" (+{delta})")
+                    } else {
+                        format!(" ({delta})")
+                    }
+                })
+                .unwrap_or_default();
+            Some(format!("{label}: {value}{unit}{delta}"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn table_to_text(props: &serde_json::Value) -> String {
+    const MAX_ROWS: usize = 20;
+    let columns = props
+        .get("columns")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if columns.is_empty() {
+        return String::new();
+    }
+    let head = columns
+        .iter()
+        .map(|column| {
+            column
+                .get("label")
+                .or_else(|| column.get("key"))
+                .map(json_cell)
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let rows = props
+        .get("rows")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut lines = vec![head];
+    for row in rows.iter().take(MAX_ROWS) {
+        let line = columns
+            .iter()
+            .map(|column| {
+                let key = column
+                    .get("key")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                row.get(key).map(json_cell).unwrap_or_default()
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+        lines.push(line);
+    }
+    if rows.len() > MAX_ROWS {
+        lines.push(format!("… ({})", rows.len()));
+    }
+    lines.join("\n")
+}
+
+fn chart_to_text(props: &serde_json::Value) -> String {
+    let unit = props
+        .get("unit")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let x_key = props
+        .get("xKey")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let data = props
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    props
+        .get("series")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|series| {
+            let key = series.get("key").and_then(serde_json::Value::as_str)?;
+            let label = series
+                .get("label")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(key);
+            let values: Vec<f64> = data
+                .iter()
+                .map(|row| {
+                    row.get(key)
+                        .and_then(serde_json::Value::as_f64)
+                        .or_else(|| {
+                            row.get(key)
+                                .and_then(serde_json::Value::as_str)
+                                .and_then(|text| text.parse().ok())
+                        })
+                        .unwrap_or(0.0)
+                })
+                .collect();
+            let last = data.last();
+            let last_label = last
+                .and_then(|row| row.get(x_key))
+                .map(json_cell)
+                .unwrap_or_default();
+            let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let last_value = values.last().copied().unwrap_or(0.0);
+            Some(format!(
+                "{label}: n={n}, min={min}{unit}, max={max}{unit}, {last_label}={last_value}{unit}",
+                n = values.len()
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn form_to_text(props: &serde_json::Value) -> String {
+    let mut lines = Vec::new();
+    if let Some(fields) = props.get("fields").and_then(serde_json::Value::as_array) {
+        for field in fields {
+            let label = field
+                .get("label")
+                .or_else(|| field.get("name"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if label.is_empty() {
+                continue;
+            }
+            let required = field
+                .get("required")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            let mut line = if required {
+                format!("{label}*")
+            } else {
+                label.to_string()
+            };
+            let default = field.get("default").filter(|value| !value.is_null());
+            if let Some(default) = default {
+                let text = json_cell(default);
+                if !text.is_empty() && text != "[]" && text != "{}" {
+                    line.push_str(": ");
+                    line.push_str(&text);
+                }
+            }
+            if let Some(options) = field.get("options").and_then(serde_json::Value::as_array) {
+                let labels: Vec<String> = options
+                    .iter()
+                    .filter_map(|option| {
+                        option
+                            .get("label")
+                            .or_else(|| option.get("value"))
+                            .map(json_cell)
+                            .filter(|text| !text.is_empty())
+                    })
+                    .collect();
+                if !labels.is_empty() {
+                    line.push_str(&format!(" ({})", labels.join(" / ")));
+                }
+            }
+            lines.push(line);
+        }
+    }
+    if let Some(submit) = props
+        .get("submitLabel")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("[{submit}]"));
+    }
+    lines.join("\n")
+}
+
+fn question_to_text(props: &serde_json::Value) -> String {
+    let questions = if let Some(items) = props.get("questions").and_then(serde_json::Value::as_array)
+    {
+        items.as_slice()
+    } else if let Some(items) = props.as_array() {
+        items.as_slice()
+    } else {
+        std::slice::from_ref(props)
+    };
+    questions
+        .iter()
+        .filter_map(|question| {
+            let text = question
+                .get("question")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())?;
+            let mut lines = vec![text.to_string()];
+            if let Some(options) = question
+                .get("options")
+                .and_then(serde_json::Value::as_array)
+            {
+                for option in options {
+                    if let Some(label) = option
+                        .get("label")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.is_empty())
+                    {
+                        lines.push(format!("- {label}"));
+                    }
+                }
+            }
+            Some(lines.join("\n"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// 从回复里取出 ```multara-questions 代码块，剩余正文照常发送。
@@ -547,26 +1105,60 @@ pub fn recover_pending(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{split_message, split_questions, strip_genui};
+    use super::{expand_genui, join_reply_parts, split_message, split_questions};
 
     #[test]
-    fn replaces_genui_blocks_and_keeps_text() {
-        let text = "前面。\n\n```multara-ui\n{\"type\":\"table\"}\n```\n\n后面。";
-        assert_eq!(strip_genui(text, "[UI]"), "前面。\n\n[UI]\n\n后面。");
+    fn joins_multi_agent_replies_with_names() {
+        let parts = vec![
+            ("Miku".to_string(), "先建仓。".to_string()),
+            ("需求建仓助手".to_string(), "| 仓库 |".to_string()),
+            ("Miku".to_string(), "本轮无产出。".to_string()),
+        ];
+        let text = join_reply_parts(&parts).unwrap();
+        assert!(text.contains("**Miku**\n先建仓。"));
+        assert!(text.contains("**需求建仓助手**\n| 仓库 |"));
+        assert!(text.contains("**Miku**\n本轮无产出。"));
+    }
+
+    #[test]
+    fn joins_single_agent_without_name_prefix() {
+        let parts = vec![("Miku".to_string(), "只有一句。".to_string())];
+        assert_eq!(join_reply_parts(&parts).as_deref(), Some("只有一句。"));
+    }
+
+    #[test]
+    fn expands_table_genui_and_keeps_text() {
+        let text = "前面。\n\n```multara-ui\n{\"type\":\"table\",\"props\":{\"columns\":[{\"key\":\"repo\",\"label\":\"仓库\"}],\"rows\":[{\"repo\":\"pages\"}]}}\n```\n\n后面。";
+        let out = expand_genui(text);
+        assert!(out.contains("前面。"));
+        assert!(out.contains("仓库"));
+        assert!(out.contains("pages"));
+        assert!(out.contains("后面。"));
+        assert!(!out.contains("multara-ui"));
+    }
+
+    #[test]
+    fn expands_form_genui_with_multara_hint() {
+        let text = "```multara-ui\n{\"type\":\"form\",\"title\":\"建仓确认\",\"props\":{\"submitLabel\":\"下一步\",\"fields\":[{\"name\":\"repos\",\"label\":\"仓库\",\"kind\":\"multiselect\",\"options\":[{\"value\":\"pages\",\"label\":\"pages\"}]}]}}\n```";
+        let out = expand_genui(text);
+        assert!(out.contains("**建仓确认**"));
+        assert!(out.contains("仓库"));
+        assert!(out.contains("pages"));
+        assert!(out.contains("[下一步]"));
+        assert!(out.contains("请在 Multara 中填写并提交"));
     }
 
     #[test]
     fn keeps_genui_demo_inside_other_fence() {
         let text = "````markdown\n```multara-ui\n{}\n```\n````";
-        assert_eq!(strip_genui(text, "[UI]"), text);
+        assert_eq!(expand_genui(text), text);
     }
 
     #[test]
-    fn drops_unclosed_genui_block() {
-        assert_eq!(
-            strip_genui("看这里：\n```multara-ui\n{\"type\"", "[UI]"),
-            "看这里：\n[UI]"
-        );
+    fn unclosed_invalid_genui_falls_back_to_placeholder() {
+        let out = expand_genui("看这里：\n```multara-ui\n{\"type\"");
+        assert!(out.contains("看这里："));
+        assert!(out.contains("请在 Multara 中查看"));
     }
 
     #[test]

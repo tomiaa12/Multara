@@ -1,5 +1,5 @@
 // 界面块转成纯文字：给只认文字的地方用（IM 渠道、复制为文字）。
-// 前端版本；后端 IM 出站目前只剥掉界面块，以后要在 Rust 里实现同样的规则。
+// 前端版本；后端 IM 出站在 channel/outbound.rs 的 expand_genui 里按同样规则展开。
 import type { CardProps, ChartProps, FormProps, StatsProps, TableProps } from "./schema";
 
 const MAX_TEXT_ROWS = 20;
