@@ -2,6 +2,7 @@
 import type { Component } from "vue";
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
+import { Plus } from "@lucide/vue";
 import { t } from "../i18n";
 import {
   SETTINGS_NAV_COLLAPSE_THRESHOLD,
@@ -23,6 +24,11 @@ export type SideNavItem = {
   active?: boolean;
   badge?: string | number;
   title?: string;
+  /** 标题右侧快捷操作（如任务旁的新建） */
+  action?: {
+    tip: string;
+    run: () => void;
+  };
   children?: SideNavItem[];
 };
 
@@ -173,6 +179,16 @@ function onResizePointerDown(event: PointerEvent) {
               tone="primary"
               :label="item.badge"
             />
+            <button
+              v-if="item.action && !iconCollapsed"
+              type="button"
+              class="nav-item-action"
+              :aria-label="item.action.tip"
+              :title="item.action.tip"
+              @click.prevent.stop="item.action.run()"
+            >
+              <Plus :size="14" />
+            </button>
           </component>
         </UiTooltip>
       </template>

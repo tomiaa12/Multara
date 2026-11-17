@@ -9118,6 +9118,9 @@ body.is-dragging-workspace-file * {
 .task-toolbar-title h1 {
   font-size: var(--font-size-xl);
 }
+.task-toolbar-title > .ui-button {
+  flex: 0 0 auto;
+}
 .task-toolbar-actions,
 .task-agent-scopes {
   display: flex;

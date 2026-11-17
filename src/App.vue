@@ -66,6 +66,7 @@ import { unreadBadgeLabel, unreadTotal } from "./domain/inbox";
 import SideNav, { type SideNavItem } from "./components/SideNav.vue";
 import TerminalActivity from "./components/workbench/TerminalActivity.vue";
 import { startRunningTerminalWatch } from "./stores/running-terminals";
+import TaskCreateDialog from "./views/TaskCreateDialog.vue";
 
 const store = useAppStore();
 const editorStatus = useEditorStatusStore();
@@ -314,6 +315,15 @@ function onCloseShortcut(event: KeyboardEvent) {
   void handleCloseShortcut();
 }
 
+function onTaskCreateShortcut(event: KeyboardEvent) {
+  if (event.isComposing || !event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
+  if (event.code !== "KeyC") return;
+  const target = event.target;
+  if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true']")) return;
+  event.preventDefault();
+  store.openTaskCreate();
+}
+
 async function closeWindow() {
   if (closing) return;
   closing = true;
@@ -345,7 +355,12 @@ watch(
 const primary = computed(() => [
   { to: projectsNavTo.value, match: "/projects", label: t("nav.projects"), icon: FolderKanban },
   { to: "/inbox", label: t("nav.inbox"), icon: Inbox },
-  { to: "/tasks", label: t("nav.tasks"), icon: ListTodo },
+  {
+    to: "/tasks",
+    label: t("nav.tasks"),
+    icon: ListTodo,
+    action: { tip: t("tasks.createShortcut"), run: () => store.openTaskCreate() },
+  },
   { to: "/automation", label: t("nav.automation"), icon: Workflow },
   { to: "/agents", label: t("nav.agents"), icon: Bot },
   { to: "/squads", label: t("nav.squads"), icon: Users },
@@ -370,6 +385,7 @@ const navGroups = computed(() => [
       active: isNavActive(item),
       badge: item.to === "/inbox" && inboxUnread.value ? unreadBadgeLabel(inboxUnread.value) : undefined,
       title: sidebarCollapsed.value ? item.label : undefined,
+      action: "action" in item ? item.action : undefined,
     })),
   },
   {
@@ -420,6 +436,7 @@ onMounted(async () => {
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   window.addEventListener("beforeunload", onPageUnload);
   window.addEventListener("keydown", onCloseShortcut, true);
+  window.addEventListener("keydown", onTaskCreateShortcut);
   stopUnsavedPrompt = onUnsavedPromptChange(() => {
     unsavedPrompt.value = getUnsavedPrompt();
   });
@@ -474,6 +491,7 @@ onBeforeUnmount(() => {
   themeObserver?.disconnect();
   window.removeEventListener("beforeunload", onPageUnload);
   window.removeEventListener("keydown", onCloseShortcut, true);
+  window.removeEventListener("keydown", onTaskCreateShortcut);
   stopUnsavedPrompt?.();
   stopConfirmDialog?.();
   stopMenuClose?.();
@@ -600,6 +618,11 @@ onBeforeUnmount(() => {
       v-if="confirmRequest"
       :request="confirmRequest"
       @resolve="finishConfirmDialog"
+    />
+    <TaskCreateDialog
+      v-if="store.taskCreateOpen"
+      :initial-status="store.taskCreateStatus"
+      @close="store.closeTaskCreate()"
     />
     <footer class="statusbar">
       <div class="statusbar-end">

@@ -655,6 +655,7 @@ const catalog: MessageCatalog = {
   "inbox.filter.project": "요구사항",
   "tasks.title": "작업",
   "tasks.create": "새 작업",
+  "tasks.createShortcut": "새 작업 (Alt+C)",
   "tasks.empty": "작업이 없습니다",
   "automation.title": "자동화",
   "scm.title": "소스 제어",

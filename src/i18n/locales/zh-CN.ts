@@ -655,6 +655,7 @@ const catalog: MessageCatalog = {
   "inbox.filter.project": "需求",
   "tasks.title": "任务",
   "tasks.create": "新建任务",
+  "tasks.createShortcut": "新建任务 (Alt+C)",
   "tasks.empty": "还没有任务",
   "automation.title": "自动化",
   "scm.title": "源代码管理",
