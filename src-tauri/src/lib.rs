@@ -27,6 +27,7 @@ pub mod git;
 pub mod git_merge;
 pub mod hook_runtime;
 pub mod http_client;
+pub mod inbox_browser;
 pub mod lsp;
 pub mod mcp_app;
 pub mod mcp_launch;
@@ -520,6 +521,11 @@ pub fn run() {
             resolve_permission,
             load_attachment_preview,
             open_external_url,
+            inbox_browser::inbox_browser_set,
+            inbox_browser::inbox_browser_back,
+            inbox_browser::inbox_browser_forward,
+            inbox_browser::inbox_browser_reload,
+            inbox_browser::inbox_browser_destroy,
             dictation_environment,
             open_message_attachment,
             save_pasted_attachment,
@@ -570,6 +576,7 @@ fn stop_children_once(app: &tauri::AppHandle) {
             let _ = executor::stop(app, &run_id);
         }
         commands::close_open_terminals();
+        inbox_browser::destroy(app);
         lsp::stop_all();
     });
 }

@@ -401,6 +401,30 @@
     "ja": "開けるのは http(s) リンクのみです",
     "ko": "http(s) 링크만 열 수 있습니다"
   },
+  "无效链接：{error}": {
+    "en": "Invalid link: {error}",
+    "zh-TW": "無效連結：{error}",
+    "ja": "無効なリンク：{error}",
+    "ko": "잘못된 링크: {error}"
+  },
+  "主窗口不存在": {
+    "en": "Main window is missing",
+    "zh-TW": "主視窗不存在",
+    "ja": "メインウィンドウがありません",
+    "ko": "메인 창이 없습니다"
+  },
+  "请先输入地址": {
+    "en": "Enter an address first",
+    "zh-TW": "請先輸入地址",
+    "ja": "先にアドレスを入力してください",
+    "ko": "먼저 주소를 입력하세요"
+  },
+  "浏览器未打开": {
+    "en": "Browser is not open",
+    "zh-TW": "瀏覽器未開啟",
+    "ja": "ブラウザが開いていません",
+    "ko": "브라우저가 열려 있지 않습니다"
+  },
   "链接包含不允许的字符": {
     "en": "The link contains disallowed characters",
     "zh-TW": "連結包含不允許的字元",
