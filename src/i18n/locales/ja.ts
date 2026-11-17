@@ -914,6 +914,7 @@ const catalog: MessageCatalog = {
   "inbox.filter.unread": "未読",
   "inbox.filter.waiting": "対応待ち",
   "inbox.filter.chat": "チャット",
+  "inbox.filter.channel": "連携",
   "common.all": "すべて",
   "common.open": "開く",
   "common.copy": "コピー",

@@ -36,7 +36,7 @@ const stageWidth = computed(() => (stageContent.value ? stagePanelWidth.value : 
 const items = computed(() =>
   [...(store.data?.inbox ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 );
-type InboxSource = "all" | "unread" | "waiting" | "project" | "task" | "chat";
+type InboxSource = "all" | "unread" | "waiting" | "project" | "task" | "chat" | "channel";
 const SOURCE_TABS = computed(() => [
   { id: "all" as const, label: t("inbox.filter.all") },
   { id: "unread" as const, label: t("inbox.filter.unread") },
@@ -44,6 +44,7 @@ const SOURCE_TABS = computed(() => [
   { id: "project" as const, label: t("inbox.filter.project") },
   { id: "task" as const, label: t("nav.tasks") },
   { id: "chat" as const, label: t("inbox.filter.chat") },
+  { id: "channel" as const, label: t("inbox.filter.channel") },
 ]);
 const sourceFilter = ref<InboxSource>("all");
 
@@ -51,7 +52,18 @@ const sourceFilter = ref<InboxSource>("all");
  * 通知来源：挂了任务 → 任务；只挂需求 → 需求工作台里的对话；
  * 两者都没有 → 右下角浮动聊天发起的对话。
  */
-function sourceOf(item: InboxItem): "project" | "task" | "chat" {
+function isChannel(item: InboxItem) {
+  return item.channelType === "feishu" || item.channelType === "lark";
+}
+
+function sourceOf(item: InboxItem): "project" | "task" | "chat" | "channel" {
+  if (isChannel(item)) return "channel";
+  if (item.taskId) return "task";
+  if (item.projectId) return "project";
+  return "chat";
+}
+
+function railKind(item: InboxItem): "project" | "task" | "chat" {
   if (item.taskId) return "task";
   if (item.projectId) return "project";
   return "chat";
@@ -59,25 +71,27 @@ function sourceOf(item: InboxItem): "project" | "task" | "chat" {
 
 /** 按类型筛过时列表里已经是同一类，不再重复打来源标签。 */
 const showSourceTag = computed(
-  () => sourceFilter.value !== "project" && sourceFilter.value !== "task" && sourceFilter.value !== "chat",
+  () => sourceFilter.value !== "project" && sourceFilter.value !== "task" && sourceFilter.value !== "chat" && sourceFilter.value !== "channel",
 );
 
 function sourceLabel(item: InboxItem) {
   const source = sourceOf(item);
+  if (source === "channel") return t("inbox.filter.channel");
   if (source === "project") return t("inbox.filter.project");
   if (source === "task") return t("nav.tasks");
   return t("inbox.filter.chat");
 }
 
-function sourceTone(item: InboxItem): "primary" | "accent" | "purple" {
+function sourceTone(item: InboxItem): "primary" | "accent" | "purple" | "success" {
   const source = sourceOf(item);
+  if (source === "channel") return "success";
   if (source === "project") return "primary";
   if (source === "task") return "accent";
   return "purple";
 }
 
 const sourceCounts = computed(() => {
-  const counts: Record<InboxSource, number> = { all: 0, unread: 0, waiting: 0, project: 0, task: 0, chat: 0 };
+  const counts: Record<InboxSource, number> = { all: 0, unread: 0, waiting: 0, project: 0, task: 0, chat: 0, channel: 0 };
   for (const item of items.value) {
     counts.all += 1;
     if (!item.read) counts.unread += 1;
@@ -379,7 +393,7 @@ onUnmounted(() => {
       :workspaces="toolWorkspaces"
       :workspace-id="activeWorkspace?.id ?? ''"
       :session-id="selected.sessionId"
-      :kind="sourceOf(selected)"
+      :kind="railKind(selected)"
       :task-id="selected.taskId"
       @pick-workspace="pickedWorkspaceId = $event"
       @layout="onToolLayout"

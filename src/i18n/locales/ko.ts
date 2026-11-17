@@ -914,6 +914,7 @@ const catalog: MessageCatalog = {
   "inbox.filter.unread": "읽지 않음",
   "inbox.filter.waiting": "대기 중",
   "inbox.filter.chat": "채팅",
+  "inbox.filter.channel": "통합",
   "common.all": "전체",
   "common.open": "열기",
   "common.copy": "복사",

@@ -914,6 +914,7 @@ const catalog: MessageCatalog = {
   "inbox.filter.unread": "Unread",
   "inbox.filter.waiting": "Waiting",
   "inbox.filter.chat": "Chat",
+  "inbox.filter.channel": "Integrations",
   "common.all": "All",
   "common.open": "Open",
   "common.copy": "Copy",

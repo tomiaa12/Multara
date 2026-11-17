@@ -760,6 +760,8 @@ export interface InboxItem {
   unreadCount: number;
   createdAt: string;
   archivedAt?: string | null;
+  /** feishu / lark。渠道会话才有。 */
+  channelType?: string | null;
 }
 
 export interface InboxInput {
