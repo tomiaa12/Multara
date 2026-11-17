@@ -75,4 +75,10 @@ describe("layout", () => {
     expect(clampSessionListWidth(400, 1200)).toBe(320);
     expect(clampSessionListWidth(300, 600)).toBe(260);
   });
+
+  test("drawer clamp ignores the chat minimum because it overlays", () => {
+    expect(clampSessionListWidth(300, 480, "drawer")).toBe(300);
+    expect(clampSessionListWidth(400, 480, "drawer")).toBe(320);
+    expect(clampSessionListWidth(100, 480, "drawer")).toBe(168);
+  });
 });
