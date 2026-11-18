@@ -705,7 +705,14 @@ export function withLeadingContext(lines: DiffLine[]): DiffLine[] {
 }
 
 function looksLikeUnifiedDiff(text: string): boolean {
-  return text.includes("@@") || text.startsWith("diff ") || text.startsWith("---");
+  const trimmed = text.trimStart();
+  // Cursor Edit 结果是 JSON 信封，里面虽嵌 diffString，不能整段当 patch 解析。
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
+  return /^(?:diff |--- |\+\+\+ |@@ )/m.test(trimmed.slice(0, 240));
+}
+
+function isTruncatedToolPayload(text: string): boolean {
+  return text.includes("…（内容已截断）") || text.includes("…（diff 过长已省略");
 }
 
 function diffFromResult(result?: TimelineItem): DiffLine[] {
@@ -717,11 +724,15 @@ function diffFromResult(result?: TimelineItem): DiffLine[] {
     const success = asRecord(root.success);
     const diff = stringField(success, ["diffString", "diff_string", "diff", "patch"])
       || stringField(root, ["diffString", "diff_string", "diff", "patch"]);
-    if (diff) return withLeadingContext(parseUnifiedDiff(diff));
+    if (diff && !isTruncatedToolPayload(diff) && looksLikeUnifiedDiff(diff)) {
+      return withLeadingContext(parseUnifiedDiff(diff));
+    }
+    return [];
   } catch {
+    // 被 32k 截断的 JSON 常夹着半截 diffString；再当 unified diff 会解析出乱码行。
+    if (output.trimStart().startsWith("{") || isTruncatedToolPayload(output)) return [];
     if (looksLikeUnifiedDiff(output)) return withLeadingContext(parseUnifiedDiff(output));
   }
-  if (looksLikeUnifiedDiff(output)) return withLeadingContext(parseUnifiedDiff(output));
   return [];
 }
 

@@ -4268,9 +4268,7 @@ fn cursor_nested_tool_event(value: &Value) -> Option<NormalizedEvent> {
             tool: Some(parts.name),
             content: None,
             input: parts.args,
-            output: parts
-                .result
-                .map(|result| truncate_and_redact(&json_preview(&result), 32_000)),
+            output: parts.result.as_ref().map(tool_result_output_text),
             replaces_final_text: false,
             parent_call_id: None,
             status: None,
@@ -4373,6 +4371,59 @@ fn json_preview(value: &Value) -> String {
         Value::String(text) => text.clone(),
         other => other.to_string(),
     }
+}
+
+const TOOL_OUTPUT_CHARS: usize = 32_000;
+/// diffString 单独预算：留出 success 信封空间，避免整段 JSON 被截断成非法结构。
+const TOOL_DIFF_FIELD_CHARS: usize = 24_000;
+const DIFF_OMITTED: &str = "…（diff 过长已省略，请在文件中查看）";
+
+fn looks_like_unified_diff(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.starts_with("diff ")
+        || trimmed.starts_with("--- ")
+        || trimmed.starts_with("+++ ")
+        || trimmed.starts_with("@@ ")
+        || trimmed.contains("\n@@ ")
+}
+
+fn shrink_string_fields(value: &mut Value, keys: &[&str], max_chars: usize) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    for key in keys {
+        let Some(text) = object.get(*key).and_then(Value::as_str) else {
+            continue;
+        };
+        if text.chars().count() <= max_chars {
+            continue;
+        }
+        let next = if looks_like_unified_diff(text) {
+            DIFF_OMITTED.to_string()
+        } else {
+            let cut: String = text.chars().take(max_chars).collect();
+            format!("{cut}\n…（内容已截断）")
+        };
+        object.insert((*key).to_string(), Value::String(next));
+    }
+}
+
+/// Cursor Edit/Write 结果常带整文件 diffString，直接截断会切断 JSON，前端再误解析成乱码 diff。
+fn tool_result_output_text(result: &Value) -> String {
+    let mut owned = result.clone();
+    if let Some(success) = owned.get_mut("success") {
+        shrink_string_fields(
+            success,
+            &["diffString", "diff_string", "diff", "patch", "content"],
+            TOOL_DIFF_FIELD_CHARS,
+        );
+    }
+    shrink_string_fields(
+        &mut owned,
+        &["diffString", "diff_string", "diff", "patch", "content"],
+        TOOL_DIFF_FIELD_CHARS,
+    );
+    truncate_and_redact(&json_preview(&owned), TOOL_OUTPUT_CHARS)
 }
 
 fn is_codex_cli_noise(line: &str) -> bool {
@@ -4919,7 +4970,13 @@ fn tool_result_event(value: &Value) -> NormalizedEvent {
         tool: text_at(value, &["/name", "/tool", "/tool_name", "/command"]),
         content: None,
         input: None,
-        output: raw_output.map(|text| truncate_and_redact(&text, 32_000)),
+        output: raw_output.map(|text| {
+            if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                tool_result_output_text(&parsed)
+            } else {
+                truncate_and_redact(&text, TOOL_OUTPUT_CHARS)
+            }
+        }),
         replaces_final_text: false,
         parent_call_id: None,
         status: Some(if failed { "error" } else { "ok" }.to_string()),
@@ -5187,9 +5244,9 @@ mod tests {
     use super::{
         claude_control_response, merge_timeline_item, normalize_runtime_line, push_tail,
         remember_claude_block, replace_assignment, runtime_stdin_payload, sanitize_value,
-        should_merge_timeline, stamp_claude_tool_delta, timeline_item, tool_use_event,
-        truncate_and_redact, NormalizedEvent, PendingStream, ToolErrorActor, ToolErrorTracker,
-        MAX_CONSECUTIVE_TOOL_ERRORS,
+        should_merge_timeline, stamp_claude_tool_delta, timeline_item, tool_result_output_text,
+        tool_use_event, truncate_and_redact, DIFF_OMITTED, NormalizedEvent, PendingStream,
+        ToolErrorActor, ToolErrorTracker, MAX_CONSECUTIVE_TOOL_ERRORS,
     };
     use serde_json::{json, Value};
 
@@ -5835,6 +5892,28 @@ mod tests {
             .as_deref(),
             Some("ses-1")
         );
+    }
+
+    #[test]
+    fn omits_oversized_edit_diff_string_instead_of_breaking_json() {
+        let huge_diff = format!(
+            "--- a/zh-HK.json\n+++ b/zh-HK.json\n@@ -1,1 +1,2 @@\n {}\n",
+            "x".repeat(40_000)
+        );
+        let result = serde_json::json!({
+            "success": {
+                "path": "/tmp/zh-HK.json",
+                "linesAdded": 1,
+                "linesRemoved": 0,
+                "diffString": huge_diff,
+            }
+        });
+        let text = tool_result_output_text(&result);
+        let parsed: Value = serde_json::from_str(&text).expect("output must stay valid JSON");
+        assert_eq!(parsed["success"]["path"], "/tmp/zh-HK.json");
+        assert_eq!(parsed["success"]["linesAdded"], 1);
+        assert_eq!(parsed["success"]["diffString"], DIFF_OMITTED);
+        assert!(!text.contains("…（内容已截断）"));
     }
 
     #[test]

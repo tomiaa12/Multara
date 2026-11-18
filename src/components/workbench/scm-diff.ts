@@ -25,7 +25,36 @@ export type ScmDiffContent = {
 
 type RevisionText = { content: string; binary: boolean };
 
+/** 工作区读文件：图片等媒体是 data URL，不能当文本 diff。 */
+export type ScmWorktreeText = {
+  content: string;
+  language: string;
+  binary?: boolean;
+  media?: string;
+};
+
 const SHORT_HASH_LEN = 7;
+
+function isMediaKind(media: string | undefined) {
+  return media === "image" || media === "audio" || media === "video";
+}
+
+/** 工作区侧是否应按二进制处理（含媒体预览 data URL）。 */
+export function isBinaryWorktree(file: Pick<ScmWorktreeText, "content" | "binary" | "media">) {
+  if (file.binary) return true;
+  if (isMediaKind(file.media?.trim())) return true;
+  if (/^data:(?:image|audio|video)\//i.test(file.content)) return true;
+  if (file.content.includes("\0")) return true;
+  return false;
+}
+
+/** 扩展名已能判断是媒体时，不必再 readWorkspaceFile（大图 data URL 会卡死）。 */
+const MEDIA_PATH_RE =
+  /\.(?:png|jpe?g|jpe|gif|webp|bmp|ico|avif|svg|mp3|wav|ogg|m4a|aac|flac|mp4|webm|mov|m4v)$/i;
+
+export function isMediaPath(path: string) {
+  return MEDIA_PATH_RE.test(path);
+}
 
 function shortRev(rev: string) {
   return rev.slice(0, SHORT_HASH_LEN);
@@ -113,20 +142,27 @@ export function scmDiffPlan(
 
 type ScmDiffSide = ScmDiffPlan["original"] | ScmDiffPlan["modified"];
 
+type ScmDiffIo = {
+  readWorktree: (path: string) => Promise<ScmWorktreeText | null>;
+  readIndex: (path: string) => Promise<RevisionText>;
+  readRevision: (revision: string, path: string) => Promise<RevisionText>;
+};
+
 async function readSide(
   side: ScmDiffSide,
   path: string,
-  io: {
-    readWorktree: (path: string) => Promise<{ content: string; language: string } | null>;
-    readIndex: (path: string) => Promise<RevisionText>;
-    readRevision: (revision: string, path: string) => Promise<RevisionText>;
-  },
+  io: ScmDiffIo,
 ): Promise<{ content: string; binary: boolean; language?: string }> {
   if (side === "empty") return { content: "", binary: false };
   if (side === "worktree") {
     const file = await io.readWorktree(path);
     if (!file) return { content: "", binary: false };
-    return { content: file.content, binary: false, language: file.language };
+    const binary = isBinaryWorktree(file);
+    return {
+      content: binary ? "" : file.content,
+      binary,
+      language: file.language,
+    };
   }
   if (side === "index") return io.readIndex(path);
   if (side === "head") return io.readRevision("HEAD", path);
@@ -135,21 +171,19 @@ async function readSide(
 
 export async function loadScmDiff(
   target: ScmOpenTarget,
-  io: {
-    readWorktree: (path: string) => Promise<{ content: string; language: string } | null>;
-    readIndex: (path: string) => Promise<RevisionText>;
-    readRevision: (revision: string, path: string) => Promise<RevisionText>;
-  },
+  io: ScmDiffIo,
 ): Promise<ScmDiffContent> {
   const plan = scmDiffPlan(target);
   const [original, modified] = await Promise.all([
     readSide(plan.original, target.path, io),
     readSide(plan.modified, target.path, io),
   ]);
+  const binary = original.binary || modified.binary;
   return {
-    original: original.binary ? "" : original.content,
-    modified: modified.binary ? "" : modified.content,
-    binary: original.binary || modified.binary,
+    // 任一侧是二进制/媒体时两侧都清空，避免 data URL 进 Monaco。
+    original: binary ? "" : original.content,
+    modified: binary ? "" : modified.content,
+    binary,
     language: modified.language || original.language || languageFromFilePath(target.path),
     label: plan.label,
     short: plan.short,

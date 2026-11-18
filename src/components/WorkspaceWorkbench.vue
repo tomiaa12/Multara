@@ -4306,11 +4306,11 @@ async function openSourceControlChange(target: ScmOpenTarget, opts?: { activate?
       readWorktree: async (path) => {
         if (props.preview) {
           const file = previewFileContent(path, target.workspaceId);
-          return { content: file.content, language: file.language };
+          return { content: file.content, language: file.language, media: file.media };
         }
         try {
           const file = await backend.readWorkspaceFile(target.workspaceId, path);
-          return { content: file.content, language: file.language };
+          return { content: file.content, language: file.language, media: file.media };
         } catch (cause) {
           if (cause instanceof backend.FileMissingError) return null;
           throw cause;
@@ -4428,11 +4428,11 @@ async function openSourceControlChanges(payload: ScmOpenChangesPayload) {
           readWorktree: async (path) => {
             if (props.preview) {
               const file = previewFileContent(path, target.workspaceId);
-              return { content: file.content, language: file.language };
+              return { content: file.content, language: file.language, media: file.media };
             }
             try {
               const file = await backend.readWorkspaceFile(target.workspaceId, path);
-              return { content: file.content, language: file.language };
+              return { content: file.content, language: file.language, media: file.media };
             } catch (cause) {
               if (cause instanceof backend.FileMissingError) return null;
               throw cause;

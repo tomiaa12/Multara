@@ -30,6 +30,7 @@ const emit = defineEmits<{
   archive: [id: string, archived: boolean];
   remove: [id: string, name: string];
   "add-workspace": [id: string];
+  "manage-workspaces": [row: HomeProject];
   layout: [payload: { content: boolean; files: boolean; width: number; terminal: boolean }];
   rail: [width: number];
 }>();
@@ -88,10 +89,13 @@ const menuItems = computed<ContextMenuItem[]>(() => {
   const row = menu.value?.row;
   if (!row) return [];
   const openable = row.workspaces.length > 0 && !store.isProjectPreparing(row.id);
+  // 与编码模式「项目」列一致：有项目或有正在准备的项目才能打开管理弹窗
+  const hasProjects = row.workspaces.length > 0 || store.workspaceJobs.some((job) => job.projectId === row.id);
   return [
     { id: "open", label: t("dashboard.menu.openWorkbench"), disabled: !openable },
     { type: "sep" },
     { id: "edit", label: t("dashboard.edit") },
+    { id: "manage", label: t("dashboard.menu.manageProjects"), disabled: !hasProjects },
     { id: "add", label: t("dashboard.menu.addProject") },
     { id: "archive", label: row.archived ? t("dashboard.unarchive") : t("dashboard.menu.archive") },
     { type: "sep" },
@@ -120,6 +124,7 @@ function onMenu(id: string) {
   if (!row) return;
   if (id === "open") emit("open", row);
   if (id === "edit") emit("edit", row.id, row.name, row.note);
+  if (id === "manage") emit("manage-workspaces", row);
   if (id === "add") emit("add-workspace", row.id);
   if (id === "archive") emit("archive", row.id, row.archived);
   if (id === "delete") emit("remove", row.id, row.name);

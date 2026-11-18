@@ -26,6 +26,7 @@ import swift from "highlight.js/lib/languages/swift";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
+import { languageFromFilePath } from "../../monaco-language";
 
 /** 聊天代码块按需注册的语言；未注册的按纯文本显示，无语言标注的只在这些语言里自动识别。 */
 export const HIGHLIGHT_LANGUAGES = {
@@ -60,6 +61,39 @@ export const HIGHLIGHT_LANGUAGES = {
 
 export const PLAINTEXT_LANGUAGE = "plaintext";
 
+/** monaco / 路径语言 id → highlight.js 语言名 */
+const MONACO_TO_HLJS: Record<string, string> = {
+  html: "xml",
+  shell: "bash",
+  jsonc: "json",
+  yml: "yaml",
+  less: "css",
+  graphql: "plaintext",
+};
+
 for (const [name, language] of Object.entries(HIGHLIGHT_LANGUAGES)) hljs.registerLanguage(name, language);
+
+export function highlightLanguageForPath(path: string): string {
+  const monacoId = languageFromFilePath(path);
+  const candidate = MONACO_TO_HLJS[monacoId] ?? monacoId;
+  return hljs.getLanguage(candidate) ? candidate : PLAINTEXT_LANGUAGE;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+/** 单行代码着色；空行用空格占位，避免行高塌掉。 */
+export function highlightCodeLine(text: string, language: string): string {
+  const source = text.length ? text : " ";
+  try {
+    return hljs.highlight(source, { language, ignoreIllegals: true }).value;
+  } catch {
+    return escapeHtml(source);
+  }
+}
 
 export { hljs };

@@ -2,7 +2,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } from "vitest";
 import type { TimelineItem } from "../../domain/types";
 import { subAgentFailureLine, subAgentStatus, subAgentSummary, subAgentTallyLabel } from "./subagent-display";
-import { groupTimeline, liveWorkLabel, shellTranscript, shellResultText, type TimelineBlock } from "./timeline-display";
+import {
+  editDiff,
+  groupTimeline,
+  liveWorkLabel,
+  shellTranscript,
+  shellResultText,
+  type TimelineBlock,
+} from "./timeline-display";
 
 function item(
   eventType: TimelineItem["eventType"],
@@ -157,6 +164,37 @@ describe("groupTimeline", () => {
       },
     ]);
     expect(blocks[0]).toMatchObject({ type: "plan" });
+  });
+});
+
+describe("editDiff", () => {
+  test("does not parse truncated Cursor Edit JSON as a unified diff", () => {
+    const truncated = [
+      '{"success":{"path":"/tmp/zh-HK.json","linesAdded":1,"linesRemoved":0,"diffString":"--- a/zh-HK.json\\n+++ b/zh-HK.json\\n@@ -1,3 +1,4 @@\\n {\\n',
+      '  \\"missingInfoMessage\\": \\"未獲取「智方便」的賬戶數據',
+      "\n…（内容已截断）",
+    ].join("");
+    const lines = editDiff({
+      use: { ...item("tool_use", "Edit", { path: "/tmp/zh-HK.json" }), callId: "e1" },
+      result: { ...item("tool_result", "Edit"), callId: "e1", output: truncated, status: "ok" },
+    });
+    expect(lines).toEqual([]);
+  });
+
+  test("still reads a valid Cursor Edit diffString", () => {
+    const output = JSON.stringify({
+      success: {
+        path: "/tmp/a.ts",
+        linesAdded: 1,
+        linesRemoved: 0,
+        diffString: "--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,3 @@\n keep\n+added\n end\n",
+      },
+    });
+    const lines = editDiff({
+      use: { ...item("tool_use", "Edit", { path: "/tmp/a.ts" }), callId: "e2" },
+      result: { ...item("tool_result", "Edit"), callId: "e2", output, status: "ok" },
+    });
+    expect(lines.some((line) => line.kind === "add" && line.text === "added")).toBe(true);
   });
 });
 

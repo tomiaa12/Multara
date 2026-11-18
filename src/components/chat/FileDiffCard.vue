@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { ChevronDown } from "@lucide/vue";
 import type { DiffLine, PairedTool } from "./timeline-display";
 import { DIFF_COLLAPSE_LINES, diffStats, editDiff, fileName, fileRevealTarget, toolPath } from "./timeline-display";
+import { highlightCodeLine, highlightLanguageForPath } from "./highlight";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
 import { translate, useI18n } from "../../i18n";
 import { useAppStore } from "../../stores/app";
@@ -81,6 +82,11 @@ const stats = computed(() => diffStats(lines.value));
 const folded = computed(() => !expanded.value && lines.value.length > DIFF_COLLAPSE_LINES);
 const scrollable = computed(() => !folded.value && lines.value.length > DIFF_COLLAPSE_LINES);
 const visibleLines = computed(() => folded.value ? lines.value.slice(0, DIFF_COLLAPSE_LINES) : lines.value);
+const highlightLanguage = computed(() => highlightLanguageForPath(fullPath.value || path.value));
+
+function lineHtml(text: string): string {
+  return highlightCodeLine(text, highlightLanguage.value);
+}
 
 function openFile() {
   const target = fileRevealTarget(props.item.use) ?? fileRevealTarget(props.item.result ?? props.item.use);
@@ -141,7 +147,7 @@ async function undoFile() {
       >
         <span class="diff-num">{{ line.oldLine ?? line.newLine ?? "" }}</span>
         <span class="diff-mark">{{ line.kind === "add" ? "+" : line.kind === "del" ? "-" : "" }}</span>
-        <code>{{ line.text }}</code>
+        <code class="hljs" v-html="lineHtml(line.text)"></code>
       </div>
       <UiTooltip
         v-if="lines.length > DIFF_COLLAPSE_LINES"
