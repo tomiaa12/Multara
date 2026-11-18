@@ -8,6 +8,7 @@ import type {
   Workspace,
 } from "../../domain/types";
 import { t } from "../../i18n";
+import { isWorkflowNodeSession } from "../../domain/workflow";
 
 export type HomeFilter = "all" | "running" | "archived";
 export type HomePill = "running" | "ready" | "setup";
@@ -146,7 +147,8 @@ export function buildHomeIndex(data: BootstrapData, runStates: Record<string, Ru
   return {
     // 会话专属工作区（例如解决冲突用的临时合并 Worktree）不算需求关联的项目
     workspaces: groupByProject(data.workspaces.filter((item) => !item.sessionId)),
-    sessions: groupByProject(data.sessions),
+    // wf-node: 工作流节点会话只在运行视图里查看，不进需求的会话列表
+    sessions: groupByProject(data.sessions.filter((item) => !isWorkflowNodeSession(item.id))),
     sessionById: new Map(data.sessions.map((item) => [item.id, item])),
     activity,
     activeAgents,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isWorkflowNodeSession } from "../domain/workflow";
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { t } from "../i18n";
 import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
@@ -167,7 +168,9 @@ const sessions = computed(() =>
   store.data?.sessions.filter((session) =>
     props.sessionId
       ? session.id === props.sessionId
-      : session.projectId === props.projectId && !taskSessionIds.value.has(session.id),
+      : session.projectId === props.projectId
+        && !taskSessionIds.value.has(session.id)
+        && !isWorkflowNodeSession(session.id),
   ) ?? [],
 );
 const previewTabs = ref<Array<{ id: string; title: string }>>([{ id: "preview", title: t("chat.previewTab") }]);

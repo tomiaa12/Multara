@@ -26,6 +26,7 @@ import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unans
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t, translate } from "../i18n";
+import { isWorkflowNodeSession } from "../domain/workflow";
 
 // 跳过的提问按消息 id 记在本地，刷新后卡片不会再弹出来；只留最近 200 条
 const RUN_STATE_HISTORY_LIMIT = 30;
@@ -238,7 +239,7 @@ export const useAppStore = defineStore("app", () => {
       await registerRunEvents();
       await seedActiveRuns();
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
-        activeSessionId.value = data.value.sessions[0]?.id ?? "";
+        activeSessionId.value = data.value.sessions.find((session) => !isWorkflowNodeSession(session.id))?.id ?? "";
       }
       // 当前会话消息和 diff 数据后台补齐，不挡首屏
       if (activeSessionId.value) {
@@ -1103,7 +1104,7 @@ export const useAppStore = defineStore("app", () => {
 
   function projectSessionIds(projectId: string | null | undefined) {
     return (data.value?.sessions ?? [])
-      .filter((session) => session.projectId === projectId)
+      .filter((session) => session.projectId === projectId && !isWorkflowNodeSession(session.id))
       .map((session) => session.id);
   }
 
@@ -1135,6 +1136,17 @@ export const useAppStore = defineStore("app", () => {
       [tabScope(projectId)]: openedSessionIds(projectId).filter((id) => !closing.has(id)),
     };
     persistOpenSessionTabs();
+  }
+
+  /**
+   * 嵌入式查看一个不在会话列表里的会话（如运行视图里的 `wf-node:` 节点会话）：
+   * 会话行不在 store 里时先刷新一次，再加载消息。不会把它设为 activeSessionId。
+   */
+  async function ensureSessionLoaded(sessionId: string) {
+    if (!data.value?.sessions.some((item) => item.id === sessionId)) {
+      await refreshTaskInboxSurfaces().catch(() => undefined);
+    }
+    await loadMessages(sessionId);
   }
 
   async function selectSession(sessionId: string) {
@@ -1931,6 +1943,7 @@ export const useAppStore = defineStore("app", () => {
     compactSession,
     resolvePermission,
     selectSession,
+    ensureSessionLoaded,
     openSessionTabs,
     hasOpenSessionTabs,
     openedSessionIds,

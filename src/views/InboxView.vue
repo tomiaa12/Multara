@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Archive, ArrowRight, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
+import { Archive, ArrowRight, GitBranch, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import ChatPanel from "../components/ChatPanel.vue";
+import WorkflowRunBar from "../components/workflow/WorkflowRunBar.vue";
+import { isWorkflowRunSession } from "../domain/workflow";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import { firstUnreadMessageId, plainInboxLine, unreadBadgeLabel, unreadTotal } from "../domain/inbox";
 import UiCountBadge from "../components/ui/UiCountBadge.vue";
@@ -295,6 +297,7 @@ onUnmounted(() => {
             <span>
               <strong>
                 <i v-if="item.unreadCount" class="inbox-unread-dot" />
+                <GitBranch v-if="isWorkflowRunSession(item.sessionId)" :size="12" class="inbox-workflow-icon" :aria-label="t('workflow.link.run')" />
                 <span v-if="showSourceTag" class="ds-badge" :data-tone="sourceTone(item)">{{ sourceLabel(item) }}</span>
                 <span class="inbox-item-title">{{ item.title }}</span>
               </strong>
@@ -341,6 +344,7 @@ onUnmounted(() => {
         <UiButton variant="ghost" size="icon" :tip="t('common.archive')" @click="store.archiveInboxItem(selected.id)"><Archive :size="14" /></UiButton>
         <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="store.deleteInboxItem(selected.id)"><Trash2 :size="14" /></UiButton>
       </header>
+      <WorkflowRunBar v-if="isWorkflowRunSession(selected.sessionId)" :session-id="selected.sessionId" />
       <TaskActivity
         v-if="selected.taskId"
         :key="selected.id"
@@ -400,3 +404,10 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.inbox-workflow-icon {
+  flex: none;
+  color: var(--color-text-tertiary);
+}
+</style>

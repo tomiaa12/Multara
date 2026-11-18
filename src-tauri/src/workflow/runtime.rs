@@ -458,7 +458,25 @@ fn shell_command(shell: &str, command: &str) -> std::process::Command {
     }
 }
 
+type LogSink = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
+
 fn run_script(app: &AppHandle, job: &Job, inputs: &Value) -> JobResult {
+    let slots: Vec<(String, String)> = {
+        let state = app.state::<AppState>();
+        let slots = match state.lock_db() {
+            Ok(db) => store::run_workspaces(&db, &job.run_id).unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+        slots.into_iter().map(|slot| (slot.slot_key, slot.path)).collect()
+    };
+    let emitter = app.clone();
+    let sink: LogSink = Arc::new(move |node_run_id: &str, stream: &str, chunk: &str| {
+        let _ = emitter.emit("workflow-node-log", json!({ "nodeRunId": node_run_id, "stream": stream, "chunk": chunk }));
+    });
+    execute_script(job, inputs, &slots, sink)
+}
+
+pub(crate) fn execute_script(job: &Job, inputs: &Value, slots: &[(String, String)], sink: LogSink) -> JobResult {
     let spec = &job.spec;
     let command = spec["command"].as_str().unwrap_or("").to_string();
     let shell = spec["shell"].as_str().unwrap_or("default").to_string();
@@ -497,16 +515,8 @@ fn run_script(app: &AppHandle, job: &Job, inputs: &Value) -> JobResult {
             }
         }
     }
-    let slots = {
-        let state = app.state::<AppState>();
-        let slots = match state.lock_db() {
-            Ok(db) => store::run_workspaces(&db, &job.run_id).unwrap_or_default(),
-            Err(_) => Vec::new(),
-        };
-        slots
-    };
-    for slot in slots {
-        cmd.env(format!("WF_WS_{}", slot.slot_key.to_uppercase()), slot.path);
+    for (key, path) in slots {
+        cmd.env(format!("WF_WS_{}", key.to_uppercase()), path);
     }
     for (key, value) in &job.secret_env {
         cmd.env(key, value);
@@ -531,7 +541,7 @@ fn run_script(app: &AppHandle, job: &Job, inputs: &Value) -> JobResult {
     };
     let log = Arc::new(Mutex::new(std::fs::File::create(&log_path).ok()));
     let reader = |stream: Option<Box<dyn Read + Send>>, name: &'static str| {
-        let app = app.clone();
+        let sink = sink.clone();
         let log = log.clone();
         let node_run_id = job.node_run_id.clone();
         thread::spawn(move || {
@@ -557,13 +567,13 @@ fn run_script(app: &AppHandle, job: &Job, inputs: &Value) -> JobResult {
                 }
                 pending.push_str(&String::from_utf8_lossy(&line));
                 if last_emit.elapsed() > Duration::from_millis(100) || pending.len() > 16 * 1024 {
-                    let _ = app.emit("workflow-node-log", json!({ "nodeRunId": node_run_id, "stream": name, "chunk": pending }));
+                    sink(&node_run_id, name, &pending);
                     pending.clear();
                     last_emit = Instant::now();
                 }
             }
             if !pending.is_empty() {
-                let _ = app.emit("workflow-node-log", json!({ "nodeRunId": node_run_id, "stream": name, "chunk": pending }));
+                sink(&node_run_id, name, &pending);
             }
             collected
         })
@@ -889,4 +899,104 @@ fn channel_decide(app: &AppHandle, installation_id: &str, chat_id: &str, command
         }
         Err(tr!("这个聊天里没有等待审批的工作流。"))
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn job(command: &str, dir: &Path, extra: Value) -> Job {
+        let mut spec = json!({
+            "command": command, "shell": "sh", "successExitCodes": [0], "failOnNonZero": true,
+            "parseStdout": "none", "maxOutputKB": 64
+        });
+        if let Some(map) = extra.as_object() {
+            for (k, v) in map {
+                spec[k] = v.clone();
+            }
+        }
+        let mut secret_env = BTreeMap::new();
+        secret_env.insert("API_TOKEN".to_string(), "tok-1234567890".to_string());
+        Job {
+            node_run_id: format!("nr-{}", uuid::Uuid::new_v4()),
+            run_id: "run".into(),
+            node_id: "test".into(),
+            kind: NodeKind::Script,
+            spec,
+            secret_env,
+            cwd: Some(dir.to_string_lossy().to_string()),
+            input_dir: Some(dir.join("in")),
+            output_dir: Some(dir.join("out")),
+            timeout_minutes: Some(1),
+        }
+    }
+
+    fn sink() -> LogSink {
+        Arc::new(|_: &str, _: &str, _: &str| {})
+    }
+
+    #[test]
+    fn runs_script_with_env_inputs_and_output_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let command = r#"echo "in=$WF_IN_NAME ws=$WF_WS_APP tok=${#API_TOKEN}"; printf '{"a":1}' > "$WF_OUTPUT_DIR/data.json"; echo hello > "$WF_OUTPUT_DIR/note.txt""#;
+        let result = execute_script(&job(command, dir.path(), json!({})), &json!({ "name": "ada" }), &[("app".into(), "/repo".into())], sink());
+        assert!(result.error.is_none(), "{:?}", result.error);
+        assert_eq!(result.outputs["exit_code"], json!(0));
+        assert!(result.outputs["stdout"].as_str().unwrap().contains("in=ada ws=/repo tok=14"));
+        assert_eq!(result.outputs["data"], json!({ "a": 1 }));
+        assert_eq!(result.outputs["note"], json!("hello"));
+        assert_eq!(result.outputs["$result"]["ok"], json!(true));
+        assert!(std::path::Path::new(result.outputs["log"].as_str().unwrap()).exists());
+    }
+
+    #[test]
+    fn non_zero_exit_is_error_or_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let failing = execute_script(&job("echo boom >&2; exit 3", dir.path(), json!({})), &json!({}), &[], sink());
+        assert_eq!(failing.error.as_ref().map(|e| e.0.as_str()), Some("script_exit"));
+        assert_eq!(failing.outputs["exit_code"], json!(3));
+        let tolerated = execute_script(&job("exit 3", dir.path(), json!({ "failOnNonZero": false })), &json!({}), &[], sink());
+        assert!(tolerated.error.is_none());
+        assert_eq!(tolerated.outputs["ok"], json!(false));
+    }
+
+    #[test]
+    fn parses_json_stdout() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = execute_script(&job(r#"echo '{"n": 2}'"#, dir.path(), json!({ "parseStdout": "json" })), &json!({}), &[], sink());
+        assert_eq!(result.outputs["parsed"], json!({ "n": 2 }));
+        let bad = execute_script(&job("echo nope", dir.path(), json!({ "parseStdout": "json" })), &json!({}), &[], sink());
+        assert_eq!(bad.error.as_ref().map(|e| e.0.as_str()), Some("output_invalid"));
+    }
+
+    #[test]
+    fn kill_job_stops_a_running_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let job = job("sleep 30", dir.path(), json!({}));
+        let id = job.node_run_id.clone();
+        let handle = std::thread::spawn(move || execute_script(&job, &json!({}), &[], sink()));
+        for _ in 0..50 {
+            if jobs().lock().unwrap().contains_key(&id) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let started = Instant::now();
+        kill_job(&id);
+        let result = handle.join().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert_ne!(result.outputs["exit_code"], json!(0));
+    }
+
+    #[test]
+    fn git_commit_and_head_work_in_a_real_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        git_output("git", &path, &["init", "-q"]).unwrap();
+        assert_eq!(git_commit_all("git", &path, "empty", true).unwrap(), None);
+        std::fs::write(dir.path().join("a.txt"), "1").unwrap();
+        let head = git_commit_all("git", &path, "wf: first", true).unwrap();
+        assert!(head.is_some());
+        assert_eq!(git_head("git", &path), head);
+    }
 }

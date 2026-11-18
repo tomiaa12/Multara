@@ -1,6 +1,13 @@
 import type { MessageCatalog } from "../types";
 
+import { workflowMessages } from "../workflow";
+
 const catalog: MessageCatalog = {
+  ...workflowMessages("en"),
+  "nav.workflows": "Workflows",
+  "route.workflowEditor": "Workflow editor",
+  "route.workflowRuns": "Runs",
+  "route.workflowRun": "Run",
   "chat.thinking": "Thinking…",
   "chat.waiting": "Waiting",
   "chat.queued": "Queued",

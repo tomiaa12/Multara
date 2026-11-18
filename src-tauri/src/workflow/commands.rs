@@ -65,6 +65,8 @@ pub fn list_workflows(state: State<'_, AppState>) -> Result<Vec<WorkflowSummary>
 pub struct WorkflowDetail {
     pub workflow: store::Workflow,
     pub draft: WorkflowDef,
+    /// 最新发布版本的定义（子流程、自动化按它对齐端口）
+    pub published: Option<WorkflowDef>,
     pub versions: Vec<store::VersionMeta>,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -72,8 +74,14 @@ pub struct WorkflowDetail {
 fn detail(db: &Connection, id: &str) -> Result<WorkflowDetail, String> {
     let draft = store::draft(db, id)?;
     let diagnostics = validate::validate(&draft, &DbLookup(db));
+    let workflow = store::workflow(db, id)?;
+    let published = match workflow.published_version {
+        Some(version) => Some(store::definition(db, id, version)?),
+        None => None,
+    };
     Ok(WorkflowDetail {
-        workflow: store::workflow(db, id)?,
+        workflow,
+        published,
         draft,
         versions: store::versions(db, id)?,
         diagnostics,

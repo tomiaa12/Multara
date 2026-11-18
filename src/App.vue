@@ -27,6 +27,7 @@ import {
   Square,
   Sun,
   Users,
+  GitBranch,
   Workflow,
   X,
 } from "@lucide/vue";
@@ -387,6 +388,7 @@ const primary = computed(() => [
     icon: ListTodo,
     action: { tip: t("tasks.createShortcut"), run: () => store.openTaskCreate() },
   },
+  { to: "/workflows", label: t("nav.workflows"), icon: GitBranch },
   { to: "/automation", label: t("nav.automation"), icon: Workflow },
   { to: "/agents", label: t("nav.agents"), icon: Bot },
   { to: "/squads", label: t("nav.squads"), icon: Users },

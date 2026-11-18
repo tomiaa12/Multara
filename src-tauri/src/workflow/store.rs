@@ -177,7 +177,7 @@ pub fn save_draft(
         .ok_or_else(|| tr!("工作流不存在"))?;
     if let Some(expected) = expected_updated_at {
         if expected != current {
-            return Err(tr!("工作流已在别处修改，请刷新后再保存"));
+            return Err(format!("[conflict] {}", tr!("工作流已在别处修改，请刷新后再保存")));
         }
     }
     let raw = serde_json::to_string(def).map_err(|error| error.to_string())?;

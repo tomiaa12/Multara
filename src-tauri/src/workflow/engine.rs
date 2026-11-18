@@ -1329,6 +1329,7 @@ fn start_gate(db: &Connection, host: &dyn Host, run: &Run, def: &WorkflowDef, no
     }
     let mut state = Map::new();
     state.insert("title".into(), json!(title));
+    state.insert("body".into(), json!(body));
     store::set_node_field(db, &nr.id, "state_json", Some(&Value::Object(state).to_string()))?;
     store::set_node_status(db, &nr.id, "waiting_human", &now)?;
     if node.timeout_minutes.is_some() {
