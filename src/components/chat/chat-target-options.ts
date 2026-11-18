@@ -20,6 +20,14 @@ export function agentListDescription(agent: Agent) {
   return agent.description || t("common.noDescription");
 }
 
+/** 新建会话 / 空聊天默认执行者：优先 Miku，否则第一个智能体，再否则第一个小队。 */
+export function defaultChatTargetValue(agents: Agent[], squads: Squad[]): string {
+  const miku = agents.find((agent) => isMiku(agent)) ?? agents[0];
+  if (miku) return `agent:${miku.id}`;
+  const squad = squads[0];
+  return squad ? `squad:${squad.id}` : "";
+}
+
 export function buildChatTargetOptions(
   agents: Agent[],
   squads: Squad[],

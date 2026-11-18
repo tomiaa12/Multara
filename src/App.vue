@@ -31,7 +31,6 @@ import {
   X,
 } from "@lucide/vue";
 import { startOsFileDrop } from "./components/chat/os-file-drop";
-import { titlebarDetail } from "./stores/titlebar";
 import { backTarget, crumbs, markMenuNavigation } from "./stores/breadcrumbs";
 import FloatingChat from "./components/FloatingChat.vue";
 import CanvasFrameHost from "./components/CanvasFrameHost.vue";
@@ -97,6 +96,33 @@ const eolMenuItems: ContextMenuItem[] = [
   { id: "CRLF", label: "CRLF" },
 ];
 const backCrumb = computed(() => backTarget());
+const workbenchProjectId = computed(() => {
+  const match = route.path.match(/^\/projects\/([^/]+)/);
+  return match?.[1] ?? null;
+});
+const projectSwitchOptions = computed(() => {
+  const projects = store.data?.projects ?? [];
+  const currentId = workbenchProjectId.value;
+  const active = projects.filter((item) => !item.archivedAt);
+  const current = currentId ? projects.find((item) => item.id === currentId) : undefined;
+  const list = current && current.archivedAt && !active.some((item) => item.id === current.id)
+    ? [...active, current]
+    : active;
+  return [...list]
+    .sort((a, b) => (b.openedAt || b.createdAt).localeCompare(a.openedAt || a.createdAt))
+    .map((item) => ({
+      value: item.id,
+      label: item.name || t("workbench.projectFallback"),
+      description: item.archivedAt ? t("dashboard.archivedBadge") : undefined,
+    }));
+});
+
+function switchWorkbenchProject(projectId: string) {
+  if (!projectId || projectId === workbenchProjectId.value) return;
+  const target = `/projects/${projectId}`;
+  markMenuNavigation(router, target);
+  void router.push(target);
+}
 
 function goBack() {
   if (backCrumb.value) void router.push(backCrumb.value.fullPath);
@@ -514,34 +540,39 @@ onBeforeUnmount(() => {
   >
     <header class="titlebar" data-tauri-drag-region>
       <div class="titlebar-drag" data-tauri-drag-region @dblclick="toggleMaximizeWindow" />
-      <nav class="titlebar-crumbs" data-tauri-drag-region :aria-label="t('nav.breadcrumb')">
-        <UiTooltip :content="backCrumb ? t('nav.backTo', { label: backCrumb.label }) : undefined"><button
-          type="button"
-          class="titlebar-action titlebar-back"
-          :disabled="!backCrumb"
-         
-          :aria-label="t('nav.back')"
-          @click="goBack"
-        >
-          <ChevronLeft :size="16" />
-        </button></UiTooltip>
-        <template v-for="(crumb, index) in crumbs" :key="crumb.path">
-          <ChevronRight v-if="index > 0" class="titlebar-crumb-sep" :size="13" aria-hidden="true" />
-          <span v-if="index === crumbs.length - 1" class="titlebar-crumb is-current" aria-current="page">{{ crumb.label }}</span>
-          <RouterLink v-else :to="crumb.fullPath" class="titlebar-crumb">{{ crumb.label }}</RouterLink>
+      <div class="titlebar-left" data-tauri-drag-region>
+        <nav class="titlebar-crumbs" data-tauri-drag-region :aria-label="t('nav.breadcrumb')">
+          <UiTooltip :content="backCrumb ? t('nav.backTo', { label: backCrumb.label }) : undefined"><button
+            type="button"
+            class="titlebar-action titlebar-back"
+            :disabled="!backCrumb"
+            :aria-label="t('nav.back')"
+            @click="goBack"
+          >
+            <ChevronLeft :size="16" />
+          </button></UiTooltip>
+          <template v-for="(crumb, index) in crumbs" :key="crumb.path">
+            <ChevronRight v-if="index > 0" class="titlebar-crumb-sep" :size="13" aria-hidden="true" />
+            <span v-if="index === crumbs.length - 1" class="titlebar-crumb is-current" aria-current="page">{{ crumb.label }}</span>
+            <RouterLink v-else :to="crumb.fullPath" class="titlebar-crumb">{{ crumb.label }}</RouterLink>
+          </template>
+        </nav>
+        <template v-if="workbenchProjectId">
+          <ChevronRight class="titlebar-crumb-sep" :size="13" aria-hidden="true" />
+          <UiSelect
+            class="titlebar-project-switch"
+            variant="ghost"
+            size="sm"
+            :model-value="workbenchProjectId"
+            :options="projectSwitchOptions"
+            :aria-label="t('workbench.switchProject')"
+            searchable
+            @update:model-value="switchWorkbenchProject"
+          />
         </template>
-      </nav>
-      <!-- 面包屑已表明当前页面；中间只在需求工作台展示写入的详情（需求名 + 项目数） -->
-      <span class="titlebar-title" data-tauri-drag-region>
-        <template v-if="titlebarDetail && route.path.startsWith('/projects/')">
-          <UiTooltip :content="titlebarDetail.title">
-            <strong>{{ titlebarDetail.title }}</strong>
-          </UiTooltip>
-          <UiTooltip v-if="titlebarDetail.summary" :content="titlebarDetail.summary">
-            <small>{{ titlebarDetail.summary }}</small>
-          </UiTooltip>
-        </template>
-      </span>
+      </div>
+      <!-- 三列网格占位，保持右侧按钮居右 -->
+      <span class="titlebar-title" data-tauri-drag-region />
       <div class="titlebar-right">
         <UiTooltip :content="documentTheme === 'light' ? t('nav.themeDark') : t('nav.themeLight')"><button
           type="button"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, Squad } from "../../domain/types";
-import { buildChatTargetOptions, groupChatTargetOptions } from "./chat-target-options";
+import { buildChatTargetOptions, defaultChatTargetValue, groupChatTargetOptions } from "./chat-target-options";
 
 const agents: Agent[] = [
   {
@@ -39,6 +39,20 @@ const squads: Squad[] = [
     memberAgentIds: ["leader", "member"],
   },
 ];
+
+describe("defaultChatTargetValue", () => {
+  it("优先选 systemKey 为 miku 的智能体", () => {
+    const withMiku: Agent[] = [
+      agents[0]!,
+      { ...agents[1]!, id: "miku", name: "Miku", systemKey: "miku" },
+    ];
+    expect(defaultChatTargetValue(withMiku, squads)).toBe("agent:miku");
+  });
+
+  it("没有 miku 时退回第一个智能体", () => {
+    expect(defaultChatTargetValue(agents, squads)).toBe("agent:leader");
+  });
+});
 
 describe("buildChatTargetOptions", () => {
   it("小队用小队标识头像，不用队长头像", () => {

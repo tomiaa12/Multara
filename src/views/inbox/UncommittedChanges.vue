@@ -7,7 +7,7 @@ import Codicon from "../../components/ui/Codicon.vue";
 import ContextMenu, { type ContextMenuItem } from "../../components/ui/ContextMenu.vue";
 import FileTypeIcon from "../../components/FileTypeIcon.vue";
 import UiButton from "../../components/ui/UiButton.vue";
-import { loadScmDiff } from "../../components/workbench/scm-diff";
+import { isMediaPath, loadScmDiff } from "../../components/workbench/scm-diff";
 import { scmGroups, scmResourceLetter, type ScmGroupId } from "../../components/workbench/scm-groups";
 import { fileNameOf } from "../../components/workbench/workspace-mode";
 
@@ -98,14 +98,41 @@ const rows = computed<FileRow[]>(() => {
   return treeRows(files.value);
 });
 
+/** 无更改时不拆文件列表栏，避免主区与侧栏各显示一遍空状态。 */
+const showFilesPane = computed(() => filesOpen.value && files.value.length > 0);
+
+const DIFF_LOAD_CONCURRENCY = 4;
+let loadTicket = 0;
+
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(items[index]);
+    }
+  }
+  const workers = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
+}
+
 async function load() {
   if (!props.projectId) {
     files.value = [];
     return;
   }
+  const ticket = ++loadTicket;
   loading.value = true;
   try {
     const repos = await backend.listProjectGitStatus(props.projectId);
+    if (ticket !== loadTicket) return;
     const targets: Array<{ workspaceId: string; path: string; group: ScmGroupId; status: string }> = [];
     const seen = new Set<string>();
     for (const repo of repos ?? []) {
@@ -124,11 +151,39 @@ async function load() {
         }
       }
     }
-    const loaded = await Promise.all(targets.map(async (target) => {
+    // 先亮出路径列表，再限流拉 diff，避免 Promise.all 打爆后端卡死界面。
+    files.value = targets.map((target) => ({
+      path: target.path,
+      status: target.status,
+      original: "",
+      modified: "",
+      language: "plaintext",
+      binary: isMediaPath(target.path),
+    }));
+    const loaded = await mapPool(targets, DIFF_LOAD_CONCURRENCY, async (target) => {
+      if (isMediaPath(target.path)) {
+        return {
+          path: target.path,
+          status: target.status,
+          original: "",
+          modified: "",
+          language: "plaintext",
+          binary: true,
+        } satisfies CommitDiffFile;
+      }
       const diff = await loadScmDiff(target, {
         readWorktree: async (path) => {
-          const file = await backend.readWorkspaceFile(target.workspaceId, path);
-          return { content: file.content, language: file.language };
+          try {
+            const file = await backend.readWorkspaceFile(target.workspaceId, path);
+            return {
+              content: file.content,
+              language: file.language,
+              media: file.media,
+            };
+          } catch (cause) {
+            if (cause instanceof backend.FileMissingError) return null;
+            throw cause;
+          }
         },
         readIndex: async (path) => {
           const file = await backend.gitIndexFile(target.workspaceId, path);
@@ -147,12 +202,14 @@ async function load() {
         language: diff.language,
         binary: diff.binary,
       } satisfies CommitDiffFile;
-    }));
+    });
+    if (ticket !== loadTicket) return;
     files.value = loaded;
   } catch {
+    if (ticket !== loadTicket) return;
     files.value = [];
   } finally {
-    loading.value = false;
+    if (ticket === loadTicket) loading.value = false;
   }
 }
 
@@ -208,10 +265,12 @@ onMounted(() => {
 watch(() => props.projectId, () => {
   void load();
 });
+
+defineExpose({ refresh: load });
 </script>
 
 <template>
-  <section class="uncommitted-changes" :class="{ 'files-left': filesOpen && filesPos === 'left' }">
+  <section class="uncommitted-changes" :class="{ 'files-left': showFilesPane && filesPos === 'left' }">
     <header class="uncommitted-changes-bar">
       <strong>{{ t("inbox.tool.uncommitted") }}</strong>
       <UiButton variant="ghost" size="icon" :tip="t('inbox.changes.menu')" @click="openMenu">
@@ -233,8 +292,7 @@ watch(() => props.projectId, () => {
           :focus-path="focusPath"
         />
       </div>
-      <aside v-if="filesOpen" class="uncommitted-changes-files vs-scroll">
-        <p v-if="!files.length" class="tree-empty">{{ loading ? t("scm.loadingStatus") : t("inbox.changes.empty") }}</p>
+      <aside v-if="showFilesPane" class="uncommitted-changes-files vs-scroll">
         <button
           v-for="row in rows"
           :key="row.key"

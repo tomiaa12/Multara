@@ -185,9 +185,13 @@ function setViewMode(next: "list" | "tree") {
 let refreshTicket = 0;
 let refreshQueued = false;
 let refreshPromise: Promise<void> | null = null;
+/** 排队刷新时是否需要抬 historyEpoch（提交图 / 可视化历史 / 矩形图）。 */
+let refreshHistoryPending = false;
 
 async function performRefresh() {
   const ticket = ++refreshTicket;
+  const bumpHistory = refreshHistoryPending;
+  refreshHistoryPending = false;
   const showLoading = repositories.value.length === 0;
   if (showLoading) loading.value = true;
   if (!hookFailure.value) error.value = "";
@@ -196,6 +200,7 @@ async function performRefresh() {
       repositories.value = [previewGitRepository, previewGitRepositoryB];
       syncPreparedCommitMessages(repositories.value);
       emit("updated", repositories.value);
+      if (bumpHistory) historyEpoch.value += 1;
       return;
     }
     const repositoriesForProject = await backend.listProjectGitStatus(props.projectId);
@@ -206,7 +211,9 @@ async function performRefresh() {
       : repositoriesForProject;
     syncPreparedCommitMessages(repositories.value);
     emit("updated", repositories.value);
-    historyEpoch.value += 1;
+    // 工作区文件变动只刷新更改列表；提交历史相关面板很重（每提交一次 git_commit_files），
+    // 仅在真正可能改到历史时抬 epoch，避免保留改动 / 切执行模式时卡死。
+    if (bumpHistory) historyEpoch.value += 1;
   } catch (cause) {
     if (!hookFailure.value) {
       error.value = cause instanceof Error ? cause.message : String(cause);
@@ -230,7 +237,10 @@ function syncPreparedCommitMessages(list: GitRepositoryStatus[]) {
   }
 }
 
-function refresh(): Promise<void> {
+type SourceControlRefreshOptions = { history?: boolean };
+
+function refresh(options?: SourceControlRefreshOptions): Promise<void> {
+  if (options?.history) refreshHistoryPending = true;
   refreshQueued = true;
   if (!refreshPromise) {
     refreshPromise = (async () => {
@@ -250,6 +260,7 @@ async function run(
   key: string,
   action: () => Promise<unknown>,
   plan?: { workspaceId: string; kind: HookPlanKind },
+  refreshOptions?: SourceControlRefreshOptions,
 ) {
   busy.value = key;
   error.value = "";
@@ -258,7 +269,7 @@ async function run(
   hookPlan.value = null;
   try {
     await action();
-    await refresh();
+    await refresh({ history: refreshOptions?.history ?? true });
   } catch (cause) {
     const parsed = parseGitHookFailure(cause);
     if (parsed && plan) {
@@ -275,10 +286,10 @@ async function run(
 
 function stage(workspaceId: string, paths: string[], staged: boolean, all = false) {
   if (all) {
-    return run(`stage:${workspaceId}`, () => backend.gitStageRepository(workspaceId, staged));
+    return run(`stage:${workspaceId}`, () => backend.gitStageRepository(workspaceId, staged), undefined, { history: false });
   }
   if (!paths.length) return;
-  return run(`stage:${workspaceId}`, () => backend.gitStageFiles(workspaceId, paths, staged));
+  return run(`stage:${workspaceId}`, () => backend.gitStageFiles(workspaceId, paths, staged), undefined, { history: false });
 }
 
 function discard(workspaceId: string, files: { path: string; worktreeStatus: string }[]) {
@@ -295,7 +306,7 @@ function confirmDiscard() {
   return run(`discard:${ask.workspaceId}`, async () => {
     await backend.gitDiscardFiles(ask.workspaceId, ask.files.map((file) => file.path));
     emit("worktreeChanged", ask.workspaceId, ask.files.map((file) => file.path));
-  });
+  }, undefined, { history: false });
 }
 
 function openGitSettings(section: string) {
@@ -401,7 +412,7 @@ async function switchBranch(
 }
 
 function onMerged() {
-  void refresh();
+  void refresh({ history: true });
 }
 
 function pullMerge(workspace: Workspace) {
@@ -540,7 +551,7 @@ defineExpose({ refresh, revealCommit });
           <Codicon v-if="viewMode === 'list'" name="list-tree" />
           <Codicon v-else name="list-flat" />
         </UiButton>
-        <UiButton variant="ghost" size="icon" :tip="t('scm.refresh')" :disabled="Boolean(busy)" @click="refresh()">
+        <UiButton variant="ghost" size="icon" :tip="t('scm.refresh')" :disabled="Boolean(busy)" @click="refresh({ history: true })">
           <Codicon name="refresh" />
         </UiButton>
       </template>
@@ -589,7 +600,7 @@ defineExpose({ refresh, revealCommit });
       @push="item.repository && pushRepo(item.workspace)"
       @generate="generateMessage(item.workspace.id)"
       @open-settings="openGitSettings"
-      @refresh="refresh()"
+      @refresh="refresh({ history: true })"
       @toggle-view="setViewMode(viewMode === 'list' ? 'tree' : 'list')"
       @switch-branch="(branch, create, from, detach) => item.repository && switchBranch(item.workspace, branch, create, from, detach)"
       @rename-branch="(branch, renameRemote) => item.repository && renameBranch(item.workspace, item.repository, branch, renameRemote)"
@@ -615,7 +626,7 @@ defineExpose({ refresh, revealCommit });
       @open="emit('openChange', $event)"
       @open-changes="emit('openChanges', $event)"
       @error="error = $event"
-      @updated="refresh()"
+      @updated="refresh({ history: true })"
     />
 
     <!-- GitLens Inspect：搜索与比较 + 行/文件历史 + 可视化历史 + 矩形图 -->

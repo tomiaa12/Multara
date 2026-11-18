@@ -14,3 +14,8 @@ src-tauri/codeoss/
 
 *.key
 *.pem
+
+# Local MCP / editor secrets — never commit tokens
+.cursor/mcp.json
+.cursor/mcp.json.*
+.cursor/*.json.bak

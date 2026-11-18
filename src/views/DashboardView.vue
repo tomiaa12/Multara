@@ -249,8 +249,8 @@ function projectCountLabel(row: HomeProject) {
   return t("overflowSummary.count", { n, unit: t("dashboard.unit.project") });
 }
 
-function openManageWorkspaces(row: HomeProject, event: MouseEvent) {
-  event.stopPropagation();
+function openManageWorkspaces(row: HomeProject, event?: MouseEvent) {
+  event?.stopPropagation();
   if (!row.workspaces.length && !projectJobs(row.id).length) return;
   manageWorkspacesTarget.value = { id: row.id, name: row.name };
 }
@@ -404,6 +404,7 @@ const runShellStyle = computed(() => {
       @archive="toggleArchive"
       @remove="askRemoveProject"
       @add-workspace="openWorkspacePicker"
+      @manage-workspaces="openManageWorkspaces"
       @layout="onRunLayout"
       @rail="onRunRail"
     />

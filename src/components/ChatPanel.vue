@@ -15,7 +15,7 @@ import UiFrame from "./UiFrame.vue";
 import { formatUiContexts, registerComposerFiller } from "./chat/ui-outbound";
 import { useCanvasStore } from "../stores/canvas";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
-import { buildChatTargetOptions } from "./chat/chat-target-options";
+import { buildChatTargetOptions, defaultChatTargetValue } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
 import { carriedMentions, feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
 import ReshuffleModal from "./chat/ReshuffleModal.vue";
@@ -310,12 +310,8 @@ async function showEarlierGroups() {
   element.scrollTop = top + (element.scrollHeight - before);
   expandingEarlier = false;
 }
-const attachments = computed(() =>
-  session.value ? pendingAttachments.value[session.value.id] ?? [] : [],
-);
-const pastedImages = computed(() =>
-  session.value ? pendingPastes.value[session.value.id] ?? [] : [],
-);
+const attachments = computed(() => pendingAttachments.value[composerStateKey()] ?? []);
+const pastedImages = computed(() => pendingPastes.value[composerStateKey()] ?? []);
 const sessionQueue = computed(() =>
   !session.value
     ? []
@@ -331,13 +327,37 @@ const targetOptions = computed(() =>
     store.data?.runtimes ?? [],
   ),
 );
+/** 无打开 tab 时的草稿执行者；默认 Miku，发第一条消息才建会话。 */
+const pendingTargetValue = ref("");
+function preferredTargetValue() {
+  return defaultChatTargetValue(store.data?.agents ?? [], store.data?.squads ?? [])
+    || targetOptions.value[0]?.value
+    || "";
+}
+watch(
+  () => [preferredTargetValue(), pendingTargetValue.value, targetOptions.value.map((item) => item.value).join("\n")] as const,
+  () => {
+    const preferred = preferredTargetValue();
+    if (!preferred) {
+      pendingTargetValue.value = "";
+      return;
+    }
+    if (pendingTargetValue.value && targetOptions.value.some((item) => item.value === pendingTargetValue.value)) {
+      return;
+    }
+    pendingTargetValue.value = preferred;
+  },
+  { immediate: true },
+);
 const targetValue = computed({
-  get: () => session.value ? `${session.value.targetType}:${session.value.targetId}` : "",
+  get: () => session.value
+    ? `${session.value.targetType}:${session.value.targetId}`
+    : pendingTargetValue.value,
   set: (value: string) => {
     if (props.preview) return;
-    // 标签全关掉时没有当前会话，但下拉仍可选：此时用所选执行者开一个新对话，而不是静默丢弃
+    // 无 tab 时只记草稿执行者，等发出第一条消息再建会话，避免空 tab 顶栏
     if (!session.value) {
-      if (!props.sessionId) void store.createChatSession(props.projectId ?? null, value);
+      pendingTargetValue.value = value;
       return;
     }
     void store.setSessionTarget(session.value.id, value);
@@ -357,7 +377,7 @@ const resolvedPlaceholderPlace = computed(() => {
 });
 const composerPlaceholder = computed(() => {
   if (props.placeholder) return props.placeholder;
-  if (!session.value) return t("chat.pickTargetFirst");
+  if (!session.value && !targetValue.value) return t("chat.pickTargetFirst");
   const key = `chat.placeholder.${resolvedPlaceholderPlace.value}` as const;
   return t(key, { name: targetLabel.value });
 });
@@ -366,6 +386,10 @@ const targetAvatar = computed(() =>
     ? "M"
     : targetOptions.value.find((option) => option.value === targetValue.value)?.avatar ?? "M",
 );
+/** 无会话时草稿挂在这个 key 上，首条发送再建会话并迁过去。 */
+function composerStateKey() {
+  return session.value?.id ?? `pending:${props.projectId ?? "global"}`;
+}
 const workingAgents = computed(() => {
   if (props.preview) {
     return props.previewBusy
@@ -451,14 +475,17 @@ watch(sessionProcessing, (active) => {
 }, { immediate: true });
 
 const canCreateSession = computed(() => !props.sessionId);
-const composerDraft = computed(() => session.value ? drafts.value[session.value.id] ?? [] : []);
+const composerDraft = computed(() => drafts.value[composerStateKey()] ?? []);
 const composerLocked = computed(() =>
   reshuffleOpen.value || dirtyRollbackOpen.value || rollbackFailureOpen.value,
 );
 /** 收件箱里不能回复时锁住底部输入框。任务线程不走这里，回复框保持可编辑。 */
 const composerReadOnly = computed(() => props.historyViewOnly);
 const canSend = computed(() =>
-  composerHasContent() && Boolean(session.value) && !composerLocked.value && !composerReadOnly.value,
+  composerHasContent()
+  && (Boolean(session.value) || (!props.sessionId && Boolean(targetValue.value)))
+  && !composerLocked.value
+  && !composerReadOnly.value,
 );
 const canStop = computed(() => sessionProcessing.value);
 // 运行中停止按钮一直在；没有草稿时只显示停止，有草稿时再并排显示「加入队列」。
@@ -524,22 +551,17 @@ const pendingFailure = computed(() => {
 async function ensureSession() {
   if (props.preview) return;
   const visible = displaySessions.value;
-  if (visible.length) {
-    if (!visible.some((item) => item.id === store.activeSessionId)) {
-      await store.selectSession(visible[visible.length - 1].id);
-    }
-    return;
-  }
-  if (!sessions.value.length && !props.sessionId && targetOptions.value.length) {
-    await store.createChatSession(props.projectId, targetOptions.value[0].value);
+  if (!visible.length) return;
+  // 有打开的 tab 才选中；全部关掉时保持空欢迎态，等发出第一条再建会话
+  if (!visible.some((item) => item.id === store.activeSessionId)) {
+    await store.selectSession(visible[visible.length - 1].id);
   }
 }
 
 function currentComposerNodes(): ComposerNode[] {
   const live = composerInput.value?.snapshot();
   if (live) return live.map((node) => ({ ...node }));
-  const id = session.value?.id;
-  return (id ? drafts.value[id] ?? [] : []).map((node) => ({ ...node }));
+  return (drafts.value[composerStateKey()] ?? []).map((node) => ({ ...node }));
 }
 
 function keepComposerDraft(sessionId: string, nodes: ComposerNode[]) {
@@ -562,11 +584,8 @@ async function createSession(options?: { copyDraft?: boolean }) {
     return;
   }
   if (!targetOptions.value.length) return;
-  const preferred =
-    (targetValue.value.startsWith("agent:") ? targetValue.value : "")
-    || targetOptions.value.find((item) => item.value.startsWith("agent:"))?.value
-    || targetValue.value
-    || targetOptions.value[0].value;
+  const preferred = targetValue.value || preferredTargetValue();
+  if (!preferred) return;
   const created = await store.createChatSession(props.projectId, preferred, { activate: false });
   if (!created) return;
   if (copyDraft) {
@@ -914,14 +933,14 @@ function onChatPointerDown(event: PointerEvent) {
   chatRoot.value?.focus({ preventScroll: true });
 }
 
-function submit() {
+async function submit() {
   if (props.preview) {
     const serialized = composerInput.value?.serialize() ?? { text: "", nodes: [] as ComposerNode[] };
     namePreviewTab(formatAgentPrompt(serialized.nodes, { directMentions: true }) || serialized.text);
     if (!props.previewInteractive) return;
     return;
   }
-  if (!canSend.value || !session.value) return;
+  if (!canSend.value) return;
   if (reaskTarget.value) {
     return;
   }
@@ -930,27 +949,37 @@ function submit() {
     directMentions: true,
     workspaces: projectWorkspaces(),
   });
-  // 页面挂上来的上下文随这条消息带上，带来源头（是数据，不是用户指令）
-  const contextBlock = formatUiContexts(canvas.takeContexts(session.value.id));
-  const content = contextBlock ? `${typed}\n\n${contextBlock}` : typed;
   const selectedAttachments = [
     ...attachments.value,
     ...pastedImages.value.map(({ previewUrl: _previewUrl, ...attachment }) => attachment),
   ];
   for (const image of pastedImages.value) URL.revokeObjectURL(image.previewUrl);
+  const draftKey = composerStateKey();
+  const targetForSend = targetValue.value || preferredTargetValue();
   composerInput.value?.clear();
-  drafts.value[session.value.id] = [];
-  pendingAttachments.value[session.value.id] = [];
-  pendingPastes.value[session.value.id] = [];
+  drafts.value[draftKey] = [];
+  pendingAttachments.value[draftKey] = [];
+  pendingPastes.value[draftKey] = [];
   seenChipIds.value = new Set();
   store.clearComposerContexts();
   composerEmpty.value = true;
   composerError.value = "";
   store.clearComposerNotice();
   followBottom.value = true;
-  const carried = carriedMentions(serialized.nodes, targetValue.value);
+
+  let sessionId = session.value?.id;
+  if (!sessionId) {
+    if (props.sessionId || !targetForSend) return;
+    const created = await store.createChatSession(props.projectId ?? null, targetForSend);
+    if (!created) return;
+    sessionId = created.id;
+  }
+
+  // 页面挂上来的上下文随这条消息带上，带来源头（是数据，不是用户指令）
+  const contextBlock = formatUiContexts(canvas.takeContexts(sessionId));
+  const content = contextBlock ? `${typed}\n\n${contextBlock}` : typed;
+  const carried = carriedMentions(serialized.nodes, targetForSend);
   if (carried.length) {
-    const sessionId = session.value.id;
     drafts.value[sessionId] = carried;
     composerEmpty.value = false;
     void nextTick(() => {
@@ -963,14 +992,14 @@ function submit() {
   }));
   const command = content.trim();
   if (props.sessionCommands && command === "/compact") {
-    void store.compactSession(session.value.id);
+    void store.compactSession(sessionId);
     return;
   }
   if (props.sessionCommands && command === "/fork") {
-    void store.forkSession(session.value.id);
+    void store.forkSession(sessionId);
     return;
   }
-  store.send(content, session.value.id, selectedAttachments, {
+  store.send(content, sessionId, selectedAttachments, {
     ...replyPriority(),
     ...(recipients.length ? { feishuRecipients: recipients } : {}),
   });
@@ -1057,11 +1086,13 @@ const ATTACHMENT_MIME: Record<string, string> = {
 };
 
 function addExternalAttachment(path: string, name: string) {
-  if (!session.value || !path) return;
+  if (!path) return;
+  if (!session.value && props.sessionId) return;
+  const key = composerStateKey();
   const extension = name.split(".").pop()?.toLowerCase() ?? "";
-  const current = pendingAttachments.value[session.value.id] ?? [];
+  const current = pendingAttachments.value[key] ?? [];
   if (current.some((item) => item.path === path)) return;
-  pendingAttachments.value[session.value.id] = [
+  pendingAttachments.value[key] = [
     ...current,
     { name: name || "附件", path, mimeType: ATTACHMENT_MIME[extension] ?? "application/octet-stream", size: 0 },
   ].slice(0, 10);
@@ -1182,7 +1213,7 @@ async function attachOsFiles(entries: OsDroppedEntry[]) {
 }
 
 function onComposerChange(nodes: ComposerNode[]) {
-  if (session.value) drafts.value[session.value.id] = nodes;
+  if (session.value || !props.sessionId) drafts.value[composerStateKey()] = nodes;
   composerEmpty.value = !nodes.some((node) =>
     node.type === "chip" || (node.type === "text" && node.value.replace(/\u00a0/g, " ").trim()),
   );
@@ -1198,9 +1229,11 @@ function onComposerChange(nodes: ComposerNode[]) {
 }
 
 async function pasteImages(files: File[]) {
-  if (!canEditComposer() || !session.value) return;
+  if (!canEditComposer()) return;
+  if (!session.value && props.sessionId) return;
   composerError.value = "";
-  const current = pendingPastes.value[session.value.id] ?? [];
+  const key = composerStateKey();
+  const current = pendingPastes.value[key] ?? [];
   const next = [...current];
   const room = Math.max(0, MAX_ATTACHMENTS - attachmentCount());
   const accepted = files.slice(0, room);
@@ -1231,19 +1264,21 @@ async function pasteImages(files: File[]) {
       composerError.value = error instanceof Error ? error.message : t("chat.pasteFailed");
     }
   }
-  pendingPastes.value[session.value.id] = next.slice(0, 10);
+  pendingPastes.value[key] = next.slice(0, 10);
 }
 
 function removePastedImage(path: string) {
-  if (!session.value) return;
-  const current = pendingPastes.value[session.value.id] ?? [];
+  if (!session.value && props.sessionId) return;
+  const key = composerStateKey();
+  const current = pendingPastes.value[key] ?? [];
   const target = current.find((item) => item.path === path);
   if (target) URL.revokeObjectURL(target.previewUrl);
-  pendingPastes.value[session.value.id] = current.filter((item) => item.path !== path);
+  pendingPastes.value[key] = current.filter((item) => item.path !== path);
 }
 
 async function chooseAttachments() {
-  if (!canEditComposer() || !session.value) return;
+  if (!canEditComposer()) return;
+  if (!session.value && props.sessionId) return;
   if (props.preview) {
     addPreviewAttachment("notes.md", "text/markdown");
     return;
@@ -1258,8 +1293,8 @@ async function chooseAttachments() {
 }
 
 function removeAttachment(path: string) {
-  if (!session.value) return;
-  pendingAttachments.value[session.value.id] = attachments.value.filter((item) => item.path !== path);
+  if (!session.value && props.sessionId) return;
+  pendingAttachments.value[composerStateKey()] = attachments.value.filter((item) => item.path !== path);
 }
 
 /** 程序化滚底时忽略 scroll 事件，避免误关 followBottom。 */
@@ -1919,7 +1954,7 @@ defineExpose({
       @click="closeSessionDrawer"
     />
     <section class="chat-surface">
-      <header v-if="!embedded" class="chat-surface-header is-tabs">
+      <header v-if="!embedded && (preview || displaySessions.length > 0)" class="chat-surface-header is-tabs">
         <div class="chat-session-bar">
           <div ref="sessionTabs" class="chat-session-tabs vs-scroll">
             <template v-for="item in displaySessions" :key="item.id">

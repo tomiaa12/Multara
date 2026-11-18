@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, test } from "vitest";
 import { applyLanguageSetting } from "../../i18n";
-import { loadScmDiff, scmCommitDiffTabName, scmDiffPlan, scmOpensAsFile } from "./scm-diff";
+import {
+  isBinaryWorktree,
+  isMediaPath,
+  loadScmDiff,
+  scmCommitDiffTabName,
+  scmDiffPlan,
+  scmOpensAsFile,
+} from "./scm-diff";
 
 beforeEach(() => {
   applyLanguageSetting("zh-CN");
@@ -73,6 +80,22 @@ describe("scmCommitDiffTabName", () => {
   });
 });
 
+describe("isBinaryWorktree", () => {
+  test("treats media previews and data URLs as binary", () => {
+    expect(isBinaryWorktree({ content: "hi", media: "image" })).toBe(true);
+    expect(isBinaryWorktree({ content: "data:image/png;base64,aaa" })).toBe(true);
+    expect(isBinaryWorktree({ content: "hello\n" })).toBe(false);
+  });
+});
+
+describe("isMediaPath", () => {
+  test("detects common media extensions", () => {
+    expect(isMediaPath("shot.png")).toBe(true);
+    expect(isMediaPath("a/b/photo.JPEG")).toBe(true);
+    expect(isMediaPath("src/app.ts")).toBe(false);
+  });
+});
+
 describe("loadScmDiff", () => {
   test("uses an empty modified side when the worktree file is gone", async () => {
     const loaded = await loadScmDiff(
@@ -87,5 +110,20 @@ describe("loadScmDiff", () => {
     expect(loaded.modified).toBe("");
     expect(loaded.language).toBe("typescript");
     expect(loaded.binary).toBe(false);
+  });
+
+  test("does not open image worktree content as a text diff", async () => {
+    const dataUrl = `data:image/png;base64,${"A".repeat(2000)}`;
+    const loaded = await loadScmDiff(
+      { workspaceId: "w", path: "shot.png", group: "changes" },
+      {
+        readWorktree: async () => ({ content: dataUrl, language: "plaintext", media: "image" }),
+        readIndex: async () => ({ content: "", binary: false }),
+        readRevision: async () => ({ content: "", binary: false }),
+      },
+    );
+    expect(loaded.binary).toBe(true);
+    expect(loaded.original).toBe("");
+    expect(loaded.modified).toBe("");
   });
 });

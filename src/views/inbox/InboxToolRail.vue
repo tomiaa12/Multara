@@ -4,8 +4,11 @@ import type { FileContent, Workspace } from "../../domain/types";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
 import type { TerminalProfile } from "../../services/backend";
+import * as explorerBackend from "../../services/explorer-backend";
 import { detectIndent } from "../../editor/eol";
 import { currentDocumentTheme, monacoThemeName } from "../../editor/monaco-workspace";
+import { parseExplorerSettings } from "../../components/workbench/explorer/explorer-settings";
+import { createRefreshScheduler } from "../../components/workbench/refresh-scheduler";
 import SourceControlPanel from "../../components/SourceControlPanel.vue";
 import ScmHistoryListView from "../../components/scm/ScmHistoryListView.vue";
 import UiPaneView from "../../components/ui/UiPaneView.vue";
@@ -163,6 +166,36 @@ const indent = computed(() => detectIndent(activeEditor.value?.content || filePr
 const gitIndent = computed(() => detectIndent(gitPreview.value?.content ?? ""));
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
 const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
+
+/** 与编码模式一致：磁盘变更后刷新右侧 Git / 更改。 */
+type GitRefreshable = { refresh: () => Promise<void> };
+const sourceControlPanel = ref<GitRefreshable | null>(null);
+const uncommittedChanges = ref<GitRefreshable | null>(null);
+/** 组件在 surfaces 的 v-for 里，用函数 ref 避免 Vue 3.5 把 ref 收成数组。 */
+function bindSourceControlPanel(el: unknown) {
+  sourceControlPanel.value = (el as GitRefreshable | null) ?? null;
+}
+function bindUncommittedChanges(el: unknown) {
+  uncommittedChanges.value = (el as GitRefreshable | null) ?? null;
+}
+const gitWatchOwner = `inbox-git-${Math.random().toString(36).slice(2)}`;
+const watcherExcludes = computed(() =>
+  Object.entries(parseExplorerSettings(store.data?.settings.explorerSettings).watcherExclude)
+    .filter(([, enabled]) => enabled === true)
+    .map(([pattern]) => pattern)
+    .sort(),
+);
+
+async function refreshGitViews() {
+  await Promise.all([
+    sourceControlPanel.value?.refresh() ?? Promise.resolve(),
+    uncommittedChanges.value?.refresh() ?? Promise.resolve(),
+  ]);
+}
+
+const gitChangeRefreshScheduler = createRefreshScheduler(refreshGitViews);
+let gitWatchUnlisten: (() => void) | null = null;
+let gitWatchDisposed = false;
 
 const FLOAT_EDGE = 0;
 const FLOAT_DRAG_THRESHOLD = 4;
@@ -535,7 +568,7 @@ async function previewInFiles(workspaceId: string, path: string) {
 async function readSide(workspaceId: string, path: string) {
   try {
     const file = await backend.readWorkspaceFile(workspaceId, path);
-    return { content: file.content, language: file.language };
+    return { content: file.content, language: file.language, media: file.media };
   } catch (cause) {
     if (cause instanceof backend.FileMissingError) return null;
     throw cause;
@@ -573,6 +606,27 @@ async function showGitFile(workspaceId: string, path: string) {
     file = await backend.readWorkspaceFile(workspaceId, path);
   } catch {
     file = { workspaceId, path, content: "", language: "plaintext", size: 0, readOnly: true };
+  }
+  const media = file.media === "image" || file.media === "audio" || file.media === "video";
+  // 媒体文件不要塞进 Monaco，否则 data URL 当文本会卡死。
+  if (media) {
+    gitPreview.value = {
+      workspaceId,
+      path,
+      language: file.language,
+      content: "",
+      readOnly: true,
+      diff: {
+        id: `${workspaceId}:media:${path}`,
+        original: "",
+        modified: "",
+        binary: true,
+        language: file.language,
+      },
+      commitFiles: null,
+      commitId: "",
+    };
+    return;
   }
   gitPreview.value = {
     workspaceId,
@@ -910,6 +964,33 @@ watch(() => props.workspaces.map((item) => item.id).join("\n"), () => {
   openWorkspaceIds.value = next;
 }, { immediate: true });
 
+watch(
+  [
+    () => props.workspaces.map((item) => item.id).join("\0"),
+    () => watcherExcludes.value.join("\0"),
+  ],
+  ([ids, excludes]) => {
+    void explorerBackend.watchWorkspaces(
+      gitWatchOwner,
+      ids ? ids.split("\0") : [],
+      excludes ? excludes.split("\0") : [],
+    ).catch(() => undefined);
+  },
+  { immediate: true },
+);
+
+void explorerBackend
+  .onFsChanged((change) => {
+    if (!props.workspaces.some((item) => item.id === change.workspaceId)) return;
+    if (change.git || change.overflow || change.paths.length > 0) {
+      gitChangeRefreshScheduler.request();
+    }
+  })
+  .then((stop) => {
+    if (gitWatchDisposed) stop();
+    else gitWatchUnlisten = stop;
+  });
+
 watch(() => props.sessionId, () => {
   editorTabs.value = [];
   activeEditorKey.value = "";
@@ -966,6 +1047,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  gitWatchDisposed = true;
+  gitWatchUnlisten?.();
+  gitWatchUnlisten = null;
+  gitChangeRefreshScheduler.dispose();
+  void explorerBackend.watchWorkspaces(gitWatchOwner, [], watcherExcludes.value).catch(() => undefined);
   fileCursor?.dispose();
   fileCursor = null;
   window.removeEventListener("keydown", onKeydown);
@@ -1069,6 +1155,7 @@ onBeforeUnmount(() => {
           />
           <UncommittedChanges
             v-else-if="tab.kind === 'uncommitted'"
+            :ref="bindUncommittedChanges"
             :project-id="workspace?.projectId ?? ''"
             :theme="theme"
           />
@@ -1126,6 +1213,7 @@ onBeforeUnmount(() => {
             </div>
             <aside v-if="gitBarOpen || !gitPreview" class="inbox-git-bar">
               <SourceControlPanel
+                :ref="bindSourceControlPanel"
                 :project-id="workspace?.projectId ?? ''"
                 :workspaces="workspaces"
                 :show-file-history="false"

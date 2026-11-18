@@ -2352,6 +2352,7 @@ button.chat-editing-overview-open {
   display: inline-flex;
   flex: 1;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
   padding: 0;
   border: 0;
@@ -2831,6 +2832,18 @@ textarea:not(.inputarea) {
 .shared-chat-panel.compact .chat-welcome {
   padding: 64px 16px 20px;
 }
+/* 执行模式 / 收件箱：欢迎文案与消息同宽靠左，跟列表响应对齐 */
+.inbox-detail .chat-welcome {
+  box-sizing: border-box;
+  width: min(720px, 100%);
+  max-width: 720px;
+  margin-left: 0;
+  margin-right: auto;
+  padding-left: 0;
+  padding-right: 0;
+  justify-items: start;
+  text-align: left;
+}
 .composer-actions {
   display: flex;
   align-items: center;
@@ -3071,14 +3084,22 @@ button.read-row-line.is-clickable:hover .read-row-text {
   width: 100%;
   padding: 7px 10px;
   gap: 7px;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.4;
+  color: var(--color-text);
 }
 .diff-file {
-  color: var(--color-text);
   border: 0;
   background: transparent;
   padding: 0;
+  color: inherit;
   font: inherit;
   cursor: pointer;
+}
+.shell-card > .shell-summary .shell-title {
+  color: inherit;
+  font: inherit;
 }
 .diff-file:hover {
   color: var(--color-text-strong);
@@ -3169,16 +3190,17 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .diff-line[data-kind="add"] {
   background: color-mix(in srgb, var(--color-success) 20%, transparent);
 }
-.diff-line[data-kind="add"] .diff-mark,
-.diff-line[data-kind="add"] code {
+.diff-line[data-kind="add"] .diff-mark {
   color: var(--color-success);
 }
 .diff-line[data-kind="del"] {
   background: color-mix(in srgb, var(--color-error) 20%, transparent);
 }
-.diff-line[data-kind="del"] .diff-mark,
-.diff-line[data-kind="del"] code {
+.diff-line[data-kind="del"] .diff-mark {
   color: var(--color-error);
+}
+.diff-line code.hljs {
+  background: transparent;
 }
 .diff-card-empty {
   display: flex;
@@ -10739,6 +10761,11 @@ body.is-resizing-panels .inbox-files-resize::after {
   flex: 0 0 28px;
   width: 28px;
   height: 28px;
+}
+/* 头像堆叠 / 运行状态里的小头像按自身 size 显示；上面的 28px flex 基准会把它们横向拉长 */
+.inbox-list .ds-avatar-stack .agent-avatar,
+.inbox-list .agent-live-status .agent-avatar {
+  flex: none;
 }
 .inbox-list strong {
   display: flex;
