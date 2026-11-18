@@ -1434,7 +1434,7 @@ pub fn handle_overview_message(db: &Connection, host: &dyn Host, session_id: &st
     Ok(Some(vec![Action::SessionChanged(session_id.to_string())]))
 }
 
-fn waiting_gates(db: &Connection, run_id: &str) -> Result<Vec<NodeRun>, String> {
+pub fn waiting_gates(db: &Connection, run_id: &str) -> Result<Vec<NodeRun>, String> {
     let mut found: Vec<NodeRun> = store::current_node_runs(db, run_id)?
         .into_values()
         .filter(|item| item.kind == "gate" && item.status == "waiting_human")

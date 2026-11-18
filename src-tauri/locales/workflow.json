@@ -1342,5 +1342,53 @@
     "zh-TW": "有問題？",
     "ja": "問題あり？",
     "ko": "문제 있음?"
+  },
+  "用法：/flow 工作流名 内容": {
+    "en": "Usage: /flow <workflow name> <content>",
+    "zh-TW": "用法：/flow 工作流程名稱 內容",
+    "ja": "使い方：/flow ワークフロー名 内容",
+    "ko": "사용법: /flow 워크플로이름 내용"
+  },
+  "没有找到已发布的工作流「{name}」": {
+    "en": "No published workflow named \"{name}\"",
+    "zh-TW": "沒有找到已發布的工作流程「{name}」",
+    "ja": "公開済みのワークフロー「{name}」が見つかりません",
+    "ko": "게시된 워크플로 \"{name}\"을(를) 찾을 수 없습니다"
+  },
+  "工作流「{name}」已有运行在进行，这次没有启动。": {
+    "en": "Workflow \"{name}\" already has a run in progress, so this one was not started.",
+    "zh-TW": "工作流程「{name}」已有執行在進行，這次沒有啟動。",
+    "ja": "ワークフロー「{name}」はすでに実行中のため、今回は開始しませんでした。",
+    "ko": "워크플로 \"{name}\"이(가) 이미 실행 중이라 이번에는 시작하지 않았습니다."
+  },
+  "已开始工作流「{name}」。需要审批时回复 /approve、/changes 原因 或 /reject。": {
+    "en": "Started workflow \"{name}\". When it needs approval, reply /approve, /changes <reason> or /reject.",
+    "zh-TW": "已開始工作流程「{name}」。需要審批時回覆 /approve、/changes 原因 或 /reject。",
+    "ja": "ワークフロー「{name}」を開始しました。承認が必要になったら /approve、/changes 理由、/reject のいずれかで返信してください。",
+    "ko": "워크플로 \"{name}\"을(를) 시작했습니다. 승인이 필요하면 /approve, /changes 사유, /reject 중 하나로 답하세요."
+  },
+  "这个关卡没有对应的选项，可选：{labels}": {
+    "en": "This approval has no matching option. Options: {labels}",
+    "zh-TW": "這個關卡沒有對應的選項，可選：{labels}",
+    "ja": "この承認に該当する選択肢がありません。選択肢：{labels}",
+    "ko": "이 승인에는 해당하는 옵션이 없습니다. 옵션: {labels}"
+  },
+  "已记录审批。": {
+    "en": "Approval recorded.",
+    "zh-TW": "已記錄審批。",
+    "ja": "承認を記録しました。",
+    "ko": "승인을 기록했습니다."
+  },
+  "这个聊天里没有等待审批的工作流。": {
+    "en": "No workflow in this chat is waiting for approval.",
+    "zh-TW": "這個聊天裡沒有等待審批的工作流程。",
+    "ja": "このチャットで承認待ちのワークフローはありません。",
+    "ko": "이 대화에서 승인을 기다리는 워크플로가 없습니다."
+  },
+  "/flow <工作流名> <内容> 启动工作流\n/approve、/changes <原因>、/reject 审批工作流": {
+    "en": "/flow <workflow name> <content> start a workflow\n/approve, /changes <reason>, /reject answer a workflow approval",
+    "zh-TW": "/flow <工作流程名稱> <內容> 啟動工作流程\n/approve、/changes <原因>、/reject 審批工作流程",
+    "ja": "/flow <ワークフロー名> <内容> ワークフローを開始\n/approve、/changes <理由>、/reject ワークフローを承認",
+    "ko": "/flow <워크플로이름> <내용> 워크플로 시작\n/approve, /changes <사유>, /reject 워크플로 승인"
   }
 }

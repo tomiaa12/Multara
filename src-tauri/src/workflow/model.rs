@@ -757,6 +757,9 @@ pub fn effective_outputs(node: &NodeDef, workflow: &WorkflowDef) -> Vec<PortDef>
         }
         _ => {}
     }
+    if node.workspaces.iter().any(|usage| usage.fork) {
+        add("fork_branch", PortType::Text);
+    }
     for port in branch_ports(node) {
         let port_type = if node.kind == NodeKind::Gate {
             PortType::Json

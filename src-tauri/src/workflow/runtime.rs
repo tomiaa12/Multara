@@ -321,6 +321,18 @@ fn notify_feishu(app: &AppHandle, session_id: &str, text: &str) {
     let bindings: Vec<(String, String)> = {
         let state = app.state::<AppState>();
         let Ok(db) = state.lock_db() else { return };
+        // 从飞书 /flow 启动的运行：发回发起的那个聊天
+        let origin = store::run_by_overview_session(&db, session_id).ok().flatten().and_then(|run| {
+            let channel = run.extra.get("channel")?;
+            Some((channel.get("installationId")?.as_str()?.to_string(), channel.get("chatId")?.as_str()?.to_string()))
+        });
+        if let Some(origin) = origin {
+            drop(db);
+            if let Ok((_, api)) = crate::channel::feishu::api_for(app, &origin.0) {
+                let _ = api.send_text(&origin.1, text);
+            }
+            return;
+        }
         let Ok(mut statement) = db.prepare(
             "SELECT installation_id, chat_id FROM channel_session_bindings WHERE session_id=?1 AND retired_at IS NULL",
         ) else {
@@ -775,4 +787,106 @@ pub fn set_secret(app: &AppHandle, name: &str, value: &str) -> Result<(), String
 
 pub fn delete_secret(app: &AppHandle, name: &str) {
     crate::channel::secret::delete(app, &format!("{SECRET_PREFIX}{name}"));
+}
+
+// ---------- 渠道指令 ----------
+
+/// 飞书里的 `/flow 工作流名 内容`、`/approve`、`/changes 原因`、`/reject`。返回要回复的文字；不是工作流指令时返回 None。
+pub fn channel_command(app: &AppHandle, installation_id: &str, chat_id: &str, command: &str, argument: &str) -> Option<String> {
+    match command {
+        "/flow" | "/workflow" => Some(channel_start(app, installation_id, chat_id, argument).unwrap_or_else(|error| error)),
+        "/approve" | "/changes" | "/reject" => Some(channel_decide(app, installation_id, chat_id, command, argument).unwrap_or_else(|error| error)),
+        _ => None,
+    }
+}
+
+fn channel_start(app: &AppHandle, installation_id: &str, chat_id: &str, argument: &str) -> Result<String, String> {
+    let (name, content) = match argument.split_once(char::is_whitespace) {
+        Some((name, rest)) => (name.trim(), rest.trim()),
+        None => (argument.trim(), ""),
+    };
+    if name.is_empty() {
+        return Err(tr!("用法：/flow 工作流名 内容"));
+    }
+    with_engine(app, |db, host| {
+        let workflow_id: String = db
+            .query_row(
+                "SELECT id FROM workflows WHERE (name=?1 OR slug=?1) AND enabled=1 AND published_version IS NOT NULL
+                 ORDER BY updated_at DESC LIMIT 1",
+                [name],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| tr!("没有找到已发布的工作流「{name}」", name = name))?;
+        let version = store::latest_version(db, &workflow_id)?.ok_or_else(|| tr!("工作流还没有发布，请先发布"))?;
+        let def = store::definition(db, &workflow_id, version)?;
+        let mut inputs = Map::new();
+        if let Some(port) = def.inputs.iter().find(|port| port.primary).or_else(|| def.inputs.first()) {
+            inputs.insert(port.name.clone(), json!(content));
+        }
+        let (run_id, acts) = engine::start_run(db, host, engine::StartRun {
+            workflow_id: &workflow_id,
+            version: None,
+            inputs: Value::Object(inputs),
+            source: "channel",
+            trigger_ref: Some(chat_id),
+            parent_node_run_id: None,
+            map_index: None,
+            extra: json!({ "channel": { "installationId": installation_id, "chatId": chat_id } }),
+            untrusted: true,
+        })?;
+        let run = store::run(db, &run_id)?;
+        let text = if run.status == "skipped" {
+            tr!("工作流「{name}」已有运行在进行，这次没有启动。", name = name)
+        } else {
+            tr!("已开始工作流「{name}」。需要审批时回复 /approve、/changes 原因 或 /reject。", name = name)
+        };
+        Ok((text, acts))
+    })
+}
+
+fn channel_decide(app: &AppHandle, installation_id: &str, chat_id: &str, command: &str, comment: &str) -> Result<String, String> {
+    with_engine(app, |db, host| {
+        let mut statement = db
+            .prepare(
+                "SELECT id FROM workflow_runs
+                 WHERE json_extract(extra_json, '$.channel.chatId')=?1
+                   AND json_extract(extra_json, '$.channel.installationId')=?2
+                   AND status IN ('running','waiting')
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|error| error.to_string())?;
+        let runs = statement
+            .query_map(params![chat_id, installation_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| error.to_string())?;
+        drop(statement);
+        for run_id in runs {
+            let Some(gate) = engine::waiting_gates(db, &run_id)?.into_iter().next() else { continue };
+            let run = store::run(db, &gate.run_id)?;
+            let def = store::definition(db, &run.workflow_id, run.version)?;
+            let node = def.node(&gate.node_id).ok_or_else(|| tr!("节点不存在"))?;
+            let cfg: super::model::GateConfig = super::model::config(node)?;
+            let decisions = cfg.effective_decisions();
+            let port = match command {
+                "/approve" => decisions.iter().find(|d| d.primary).or_else(|| decisions.iter().find(|d| d.port == "approve")),
+                "/changes" => decisions.iter().find(|d| d.port == "changes" || d.require_comment),
+                _ => decisions.iter().find(|d| d.port == "reject"),
+            }
+            .map(|d| d.port.clone())
+            .ok_or_else(|| {
+                let labels: Vec<String> = decisions.iter().map(|d| d.label.clone()).collect();
+                tr!("这个关卡没有对应的选项，可选：{labels}", labels = labels.join(" / "))
+            })?;
+            let mut acts = engine::decide_gate(db, host, &gate.id, &port, comment, Value::Null, "feishu")?;
+            acts.extend(engine::advance(db, host, &gate.run_id)?);
+            if gate.run_id != run_id {
+                acts.extend(engine::advance(db, host, &run_id)?);
+            }
+            return Ok((tr!("已记录审批。"), acts));
+        }
+        Err(tr!("这个聊天里没有等待审批的工作流。"))
+    })
 }
