@@ -943,11 +943,22 @@ fn is_stopped(app: &AppHandle, run_id: &str) -> bool {
 fn kill_process_group(pid: u32) {
     #[cfg(unix)]
     {
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
+        // procps 的 kill 会把 `-<pid>` 当成选项而不报错，要加 `--` 才会杀进程组；
+        // 不认识 `--` 的实现（少数 BSD）退回原来的写法
+        let group = format!("-{pid}");
+        let killed = Command::new("kill")
+            .args(["-KILL", "--", &group])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status();
+            .status()
+            .is_ok_and(|status| status.success());
+        if !killed {
+            let _ = Command::new("kill")
+                .args(["-KILL", &group])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
     }
 }
 

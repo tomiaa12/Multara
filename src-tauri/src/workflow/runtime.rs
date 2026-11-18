@@ -975,12 +975,17 @@ mod tests {
         let job = job("sleep 30", dir.path(), json!({}));
         let id = job.node_run_id.clone();
         let handle = std::thread::spawn(move || execute_script(&job, &json!({}), &[], sink()));
-        for _ in 0..50 {
+        let mut registered = false;
+        for _ in 0..600 {
             if jobs().lock().unwrap().contains_key(&id) {
+                registered = true;
                 break;
             }
             std::thread::sleep(Duration::from_millis(50));
         }
+        assert!(registered, "script never started");
+        // 进程刚起来时可能还没 exec 到 sleep，稍等一下再杀
+        std::thread::sleep(Duration::from_millis(300));
         let started = Instant::now();
         kill_job(&id);
         let result = handle.join().unwrap();
