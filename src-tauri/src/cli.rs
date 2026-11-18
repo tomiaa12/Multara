@@ -224,6 +224,9 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         resource,
         verb,
     )?;
+    if resource == "node" || resource == "workflow" {
+        return crate::workflow::cli::execute(args, db);
+    }
     match (resource, verb) {
         ("task", "list") => {
             ops::task::settle_finished(db)?;
@@ -592,6 +595,9 @@ fn ensure_write_allowed(
         ("channel", "enable"),
         ("channel", "disable"),
         ("session", "resume"),
+        ("node", "output"),
+        ("node", "fail"),
+        ("workflow", "run"),
     ];
     if !WRITE_COMMANDS.contains(&(resource, verb)) {
         return Ok(());

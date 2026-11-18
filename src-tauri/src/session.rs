@@ -126,6 +126,10 @@ pub fn session_workspaces(db: &Connection, session_id: &str) -> Result<Vec<Works
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
+    // 工作流节点只能看到节点声明的工作区槽位，不再补上需求的原始目录
+    if session_id.starts_with(crate::workflow::WF_NODE_PREFIX) && !workspaces.is_empty() {
+        return Ok(workspaces);
+    }
     let mut statement = db
         .prepare(
             "SELECT id, project_id, session_id, source_workspace_id, name, kind,
@@ -242,7 +246,7 @@ pub fn complete_turn(app: &AppHandle, turn_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn workspace_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
+pub(crate) fn workspace_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
     let kind: String = row.get(5)?;
     let isolation_mode: String = row.get(9)?;
     Ok(Workspace {

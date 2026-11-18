@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -761,6 +761,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;
     migrate_run_event_types(db)?;
+    migrate_automation_workflow_target(db)?;
+    crate::workflow::migrate(db)?;
     db.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
          CREATE INDEX IF NOT EXISTS idx_messages_run ON messages(run_id);
@@ -1066,6 +1068,64 @@ fn migrate_optional_automation_project(db: &Connection) -> rusqlite::Result<()> 
          FROM automations;
          DROP TABLE automations;
          ALTER TABLE automations_optional_project RENAME TO automations;",
+    )
+}
+
+/// 自动化可以触发工作流：target_type 放开 'workflow'，并加入参映射列。CHECK 改不了，只能按现有结构重建。
+fn migrate_automation_workflow_target(db: &Connection) -> rusqlite::Result<()> {
+    let has_inputs: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('automations') WHERE name = 'inputs_template')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_inputs {
+        db.execute_batch("ALTER TABLE automations ADD COLUMN inputs_template TEXT NOT NULL DEFAULT ''")?;
+    }
+    let sql: Option<String> = db
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'automations'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(sql) = sql else {
+        return Ok(());
+    };
+    if sql.contains("'workflow'") {
+        return Ok(());
+    }
+    let pattern = regex::Regex::new(r"CHECK\s*\(\s*target_type\s+IN\s*\(\s*'agent'\s*,\s*'squad'\s*\)\s*\)")
+        .expect("valid regex");
+    if !pattern.is_match(&sql) {
+        return Ok(());
+    }
+    let replaced = pattern
+        .replace(&sql, "CHECK(target_type IN ('agent', 'squad', 'workflow'))")
+        .to_string();
+    let create = regex::Regex::new(r#"^CREATE TABLE\s+("?)automations("?)"#)
+        .expect("valid regex")
+        .replace(&replaced, "CREATE TABLE automations_with_workflow")
+        .to_string();
+    let columns: Vec<String> = {
+        let mut statement = db.prepare("SELECT name FROM pragma_table_info('automations')")?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+    let list = columns
+        .iter()
+        .map(|name| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    rebuild_without_foreign_keys(
+        db,
+        &format!(
+            "{create};
+             INSERT INTO automations_with_workflow ({list}) SELECT {list} FROM automations;
+             DROP TABLE automations;
+             ALTER TABLE automations_with_workflow RENAME TO automations;"
+        ),
     )
 }
 

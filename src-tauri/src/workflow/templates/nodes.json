@@ -1,0 +1,226 @@
+[
+  {
+    "id": "builtin.read_prd",
+    "category": "requirement",
+    "name": "读取需求文档",
+    "description": "读取需求文档链接，整理成结构化需求，并找出其中的 Figma 链接",
+    "recommends": { "skills": ["lark-doc-get"], "mcp": [] },
+    "nodes": [{
+      "id": "prd", "kind": "agent", "title": "读取需求文档",
+      "inputs": [{ "name": "url", "type": "url", "required": true, "description": "需求文档地址" }],
+      "outputs": [
+        { "name": "spec", "type": "json", "required": true, "schema": { "$ref": "builtin:prd-spec" }, "description": "结构化需求" },
+        { "name": "figma_links", "type": "json", "schema": { "$ref": "builtin:string-list" }, "description": "文档里出现的 Figma 链接" },
+        { "name": "open_questions", "type": "markdown", "description": "文档没写清楚、需要确认的问题" }
+      ],
+      "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+        "prompt": "阅读需求文档 {{ inputs.url }}，整理成结构化需求（标题、背景、目标、用户故事、验收标准、不做的范围、涉及的接口和页面）。文档里出现的 Figma 链接放进 figma_links，没写清楚的地方写进 open_questions。" }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.read_figma",
+    "category": "design",
+    "name": "读取 Figma 设计",
+    "description": "读取 Figma 设计稿，整理页面、组件和设计变量",
+    "recommends": { "skills": [], "mcp": ["figma"] },
+    "nodes": [{
+      "id": "design", "kind": "agent", "title": "读取 Figma 设计",
+      "inputs": [
+        { "name": "links", "type": "json", "description": "Figma 链接列表" },
+        { "name": "spec", "type": "json", "description": "结构化需求" }
+      ],
+      "outputs": [{ "name": "design", "type": "json", "required": true, "description": "页面、组件、设计变量",
+        "schema": { "type": "object", "required": ["pages"], "properties": { "pages": { "type": "array" } } } }],
+      "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+        "prompt": "{% if inputs.links %}读取这些设计稿：{{ inputs.links | tojson }}，按页面整理组件结构、关键尺寸和设计变量。{% else %}没有设计稿，输出 {\"pages\": []}。{% endif %}" }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.tech_plan",
+    "category": "plan",
+    "name": "技术方案",
+    "description": "规划模式：先给出技术方案和任务拆分，在节点会话里批准后再继续",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "plan", "kind": "agent", "title": "技术方案",
+      "inputs": [{ "name": "spec", "type": "json", "required": true }, { "name": "design", "type": "json" }],
+      "outputs": [
+        { "name": "plan", "type": "markdown", "required": true },
+        { "name": "tasks", "type": "json", "schema": { "type": "array", "items": { "type": "object", "required": ["title"] } } }
+      ],
+      "workspaces": [{ "slot": "app", "access": "read" }],
+      "config": { "target": { "type": "agent", "id": "" }, "mode": "plan", "maxRepairTurns": 2,
+        "prompt": "阅读代码仓，为下面的需求写技术方案：改哪些文件、怎么改、风险和测试方式，并拆成任务列表。\n需求：{{ inputs.spec | tojson }}" }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.write_code",
+    "category": "code",
+    "name": "编写代码",
+    "description": "在工作区里实现需求；反馈端口接测试失败或人工打回的意见，形成循环",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "code", "kind": "agent", "title": "编写代码",
+      "workspaces": [{ "slot": "app", "access": "write" }],
+      "inputs": [
+        { "name": "spec", "type": "json", "required": true },
+        { "name": "plan", "type": "markdown" },
+        { "name": "design", "type": "json" },
+        { "name": "feedback", "type": "any", "multi": true, "description": "上一轮的测试失败日志或审批意见" }
+      ],
+      "outputs": [
+        { "name": "summary", "type": "markdown", "required": true, "description": "改了什么" },
+        { "name": "changed_files", "type": "json", "schema": { "$ref": "builtin:string-list" } }
+      ],
+      "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 1, "continueSession": "same_node",
+        "prompt": "按需求实现功能。{% if inputs.plan %}技术方案：\n{{ inputs.plan }}\n{% endif %}{% if iteration > 0 %}这是第 {{ iteration + 1 }} 轮，先处理上一轮的反馈：{{ inputs.feedback | tojson }}{% endif %}" },
+      "retry": { "maxAttempts": 2, "backoffSeconds": 30, "on": ["failed"] }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.code_review",
+    "category": "review",
+    "name": "代码评审",
+    "description": "独立评审改动；建议选和编码不同的智能体",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "review", "kind": "agent", "title": "代码评审",
+      "workspaces": [{ "slot": "app", "access": "read" }],
+      "inputs": [{ "name": "spec", "type": "json", "required": true }, { "name": "diff", "type": "file", "required": true }],
+      "outputs": [{ "name": "verdict", "type": "json", "required": true, "schema": { "$ref": "builtin:review-verdict" } }],
+      "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+        "prompt": "对照需求评审这次改动（diff 文件：{{ inputs.diff }}）。只报真实问题，按严重程度标注。\n需求：{{ inputs.spec | tojson }}" }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.unit_test",
+    "category": "test",
+    "name": "单元测试",
+    "description": "运行测试命令；退出码交给下游分支判断",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "test", "kind": "script", "title": "单元测试",
+      "workspaces": [{ "slot": "app", "access": "read" }],
+      "inputs": [], "outputs": [],
+      "config": { "command": "pnpm test", "shell": "default", "cwd": { "slot": "app" }, "env": {},
+        "successExitCodes": [0], "failOnNonZero": false, "parseStdout": "none", "maxOutputKB": 256 }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.test_switch",
+    "category": "control",
+    "name": "测试结果判断",
+    "description": "退出码为 0 走「通过」，否则走「失败」（可连回边到编写代码）",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "check", "kind": "switch", "title": "测试通过？",
+      "inputs": [{ "name": "value", "type": "json", "required": true }],
+      "outputs": [],
+      "config": { "value": "{ 'exit_code': inputs.value.exit_code, 'log': inputs.value.stdout | truncate(6000), 'stderr': inputs.value.stderr | truncate(3000) }",
+        "cases": [{ "port": "pass", "when": "inputs.value.exit_code == 0" }], "defaultPort": "fail", "mode": "first" }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.git_diff",
+    "category": "git",
+    "name": "生成改动 diff",
+    "description": "输出从运行开始到现在的改动",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{ "id": "diff", "kind": "git", "title": "生成改动", "inputs": [], "outputs": [], "config": { "slot": "app", "op": "diff" } }],
+    "edges": []
+  },
+  {
+    "id": "builtin.accept",
+    "category": "control",
+    "name": "人工验收",
+    "description": "在收件箱等待审批：通过 / 打回修改 / 拒绝",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "accept", "kind": "gate", "title": "人工验收",
+      "inputs": [{ "name": "summary", "type": "markdown" }, { "name": "verdict", "type": "json" }],
+      "outputs": [],
+      "config": { "title": "验收：{{ workflow.name }}",
+        "body": "## 改动说明\n{{ inputs.summary }}\n{% if inputs.verdict %}\n## 评审结论\n{{ inputs.verdict | tojson }}{% endif %}",
+        "decisions": [
+          { "port": "approve", "label": "通过", "primary": true },
+          { "port": "changes", "label": "打回修改", "requireComment": true },
+          { "port": "reject", "label": "拒绝" }
+        ],
+        "showDiffOf": ["app"], "notify": { "feishu": true } }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.squash_push",
+    "category": "git",
+    "name": "压缩提交并推送",
+    "description": "把工作流的自动提交压成一个，然后推送到远端",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [
+      { "id": "squash", "kind": "git", "title": "压缩提交", "inputs": [{ "name": "message", "type": "text" }], "outputs": [],
+        "config": { "slot": "app", "op": "squash", "message": "{{ inputs.message or workflow.name }}" } },
+      { "id": "push", "kind": "git", "title": "推送", "inputs": [], "outputs": [],
+        "config": { "slot": "app", "op": "push", "setUpstream": true } }
+    ],
+    "edges": [{ "id": "e1", "source": "squash", "sourcePort": "$out", "target": "push", "targetPort": "$in" }]
+  },
+  {
+    "id": "builtin.create_mr",
+    "category": "git",
+    "name": "创建 MR / PR",
+    "description": "用 glab 或 gh 创建合并请求，输出链接",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "mr", "kind": "script", "title": "创建 MR",
+      "workspaces": [{ "slot": "app", "access": "read" }],
+      "inputs": [{ "name": "title", "type": "text" }],
+      "outputs": [{ "name": "url", "type": "url", "required": true }],
+      "config": { "command": "glab mr create --fill --yes --title {{ inputs.title or workflow.name }} | grep -Eo 'https?://[^ ]+' | tail -n1 > \"$WF_OUTPUT_DIR/url.txt\"",
+        "shell": "default", "cwd": { "slot": "app" }, "env": {}, "successExitCodes": [0], "failOnNonZero": true, "parseStdout": "none", "maxOutputKB": 64 }
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.deploy",
+    "category": "deploy",
+    "name": "部署",
+    "description": "运行部署脚本；建议前面接人工关卡",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "deploy", "kind": "script", "title": "部署",
+      "workspaces": [{ "slot": "app", "access": "read" }],
+      "inputs": [], "outputs": [],
+      "config": { "command": "./deploy.sh", "shell": "default", "cwd": { "slot": "app" }, "env": {},
+        "successExitCodes": [0], "failOnNonZero": true, "parseStdout": "none", "maxOutputKB": 256 },
+      "timeoutMinutes": 60
+    }],
+    "edges": []
+  },
+  {
+    "id": "builtin.http_request",
+    "category": "integration",
+    "name": "HTTP 请求",
+    "description": "调用外部接口；请求头里可以用 secret('NAME')",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{ "id": "http", "kind": "http", "title": "HTTP 请求", "inputs": [], "outputs": [],
+      "config": { "method": "GET", "url": "https://example.com/api", "headers": {}, "bodyType": "none", "expectStatus": [], "responseType": "json" } }],
+    "edges": []
+  },
+  {
+    "id": "builtin.feishu_notify",
+    "category": "integration",
+    "name": "飞书通知",
+    "description": "在总览会话里发一条消息，并推送到绑定的飞书会话",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{ "id": "notify", "kind": "notify", "title": "飞书通知", "inputs": [{ "name": "text", "type": "markdown" }], "outputs": [],
+      "config": { "channel": "feishu", "text": "{{ inputs.text }}" } }],
+    "edges": []
+  }
+]

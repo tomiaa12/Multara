@@ -1,0 +1,184 @@
+[
+  {
+    "id": "flow.requirement_to_release",
+    "name": "需求到上线",
+    "description": "读需求 → 读设计 → 写代码 → 单测（失败最多回改 3 轮）→ 评审 → 人工验收（可打回）→ 压缩提交、推送、建 MR",
+    "definition": {
+      "schemaVersion": 1,
+      "inputs": [
+        { "name": "doc_url", "type": "url", "required": true, "label": "需求文档地址", "primary": true },
+        { "name": "project", "type": "text", "required": true, "label": "需求（Multara 需求 id）" }
+      ],
+      "outputs": [{ "name": "mr_url", "type": "url" }],
+      "workspaces": [{ "key": "app", "label": "代码仓", "project": "{{ run.inputs.project }}", "isolation": "worktree_new", "autoCommit": true }],
+      "nodes": [
+        { "id": "start", "kind": "trigger", "title": "开始", "config": { "sources": ["manual", "automation", "channel"] }, "position": { "x": 0, "y": 160 } },
+        { "id": "prd", "kind": "agent", "title": "读取需求文档", "templateId": "builtin.read_prd", "position": { "x": 260, "y": 160 },
+          "inputs": [{ "name": "url", "type": "url", "required": true }],
+          "outputs": [
+            { "name": "spec", "type": "json", "required": true, "schema": { "$ref": "builtin:prd-spec" } },
+            { "name": "figma_links", "type": "json", "schema": { "$ref": "builtin:string-list" } }
+          ],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+            "prompt": "阅读需求文档 {{ inputs.url }}，整理成结构化需求；文档中出现的 Figma 链接放进 figma_links。" } },
+        { "id": "design", "kind": "agent", "title": "读取 Figma", "templateId": "builtin.read_figma", "position": { "x": 520, "y": 40 },
+          "inputs": [{ "name": "links", "type": "json" }, { "name": "spec", "type": "json", "required": true }],
+          "outputs": [{ "name": "design", "type": "json", "required": true }],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+            "prompt": "{% if inputs.links %}读取这些设计稿：{{ inputs.links | tojson }}{% else %}没有设计稿，输出 {\"pages\": []}。{% endif %}" } },
+        { "id": "code", "kind": "agent", "title": "编写代码", "templateId": "builtin.write_code", "position": { "x": 800, "y": 160 },
+          "workspaces": [{ "slot": "app", "access": "write" }],
+          "inputs": [
+            { "name": "spec", "type": "json", "required": true },
+            { "name": "design", "type": "json" },
+            { "name": "feedback", "type": "any", "multi": true }
+          ],
+          "outputs": [{ "name": "summary", "type": "markdown", "required": true }],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 1, "continueSession": "same_node",
+            "prompt": "按需求实现功能。{% if iteration > 0 %}这是第 {{ iteration + 1 }} 轮，先处理反馈：{{ inputs.feedback | tojson }}{% endif %}" },
+          "retry": { "maxAttempts": 2, "backoffSeconds": 30, "on": ["failed"] } },
+        { "id": "test", "kind": "script", "title": "单元测试", "position": { "x": 1060, "y": 160 },
+          "workspaces": [{ "slot": "app", "access": "read" }],
+          "config": { "command": "pnpm install --frozen-lockfile && pnpm test", "shell": "default", "cwd": { "slot": "app" },
+            "env": {}, "successExitCodes": [0], "failOnNonZero": false, "parseStdout": "none", "maxOutputKB": 256 } },
+        { "id": "check", "kind": "switch", "title": "测试通过？", "position": { "x": 1300, "y": 160 },
+          "inputs": [{ "name": "value", "type": "json", "required": true }],
+          "config": { "value": "{ 'exit_code': inputs.value.exit_code, 'log': inputs.value.stdout | truncate(6000) }",
+            "cases": [{ "port": "pass", "when": "inputs.value.exit_code == 0" }], "defaultPort": "fail", "mode": "first" } },
+        { "id": "diff", "kind": "git", "title": "生成改动", "position": { "x": 1540, "y": 160 }, "config": { "slot": "app", "op": "diff" } },
+        { "id": "review", "kind": "agent", "title": "代码评审", "position": { "x": 1780, "y": 160 },
+          "workspaces": [{ "slot": "app", "access": "read" }],
+          "inputs": [{ "name": "spec", "type": "json", "required": true }, { "name": "diff", "type": "file", "required": true }],
+          "outputs": [{ "name": "verdict", "type": "json", "required": true, "schema": { "$ref": "builtin:review-verdict" } }],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+            "prompt": "对照需求评审改动（diff 文件：{{ inputs.diff }}）。只报真实问题。" } },
+        { "id": "accept", "kind": "gate", "title": "人工验收", "position": { "x": 2020, "y": 160 },
+          "inputs": [{ "name": "summary", "type": "markdown" }, { "name": "verdict", "type": "json" }],
+          "config": { "title": "验收：{{ run.inputs.doc_url }}",
+            "body": "## 改动说明\n{{ inputs.summary }}\n\n## 评审\n{{ inputs.verdict | tojson }}",
+            "decisions": [
+              { "port": "approve", "label": "通过", "primary": true },
+              { "port": "changes", "label": "打回修改", "requireComment": true },
+              { "port": "reject", "label": "拒绝" }
+            ],
+            "showDiffOf": ["app"], "notify": { "feishu": true } } },
+        { "id": "squash", "kind": "git", "title": "压缩提交", "position": { "x": 2260, "y": 100 },
+          "config": { "slot": "app", "op": "squash", "message": "feat: {{ nodes.prd.outputs.spec.title }}" } },
+        { "id": "push", "kind": "git", "title": "推送", "position": { "x": 2500, "y": 100 }, "config": { "slot": "app", "op": "push", "setUpstream": true } },
+        { "id": "mr", "kind": "script", "title": "创建 MR", "position": { "x": 2740, "y": 100 },
+          "workspaces": [{ "slot": "app", "access": "read" }],
+          "outputs": [{ "name": "url", "type": "url", "required": true }],
+          "config": { "command": "glab mr create --fill --yes | grep -Eo 'https?://[^ ]+' | tail -n1 > \"$WF_OUTPUT_DIR/url.txt\"",
+            "shell": "default", "cwd": { "slot": "app" }, "env": {}, "successExitCodes": [0], "failOnNonZero": true, "parseStdout": "none", "maxOutputKB": 64 } },
+        { "id": "done", "kind": "output", "title": "完成", "position": { "x": 2980, "y": 100 }, "inputs": [{ "name": "mr_url", "type": "url" }] }
+      ],
+      "edges": [
+        { "id": "e1", "source": "start", "sourcePort": "doc_url", "target": "prd", "targetPort": "url" },
+        { "id": "e2", "source": "prd", "sourcePort": "figma_links", "target": "design", "targetPort": "links" },
+        { "id": "e3", "source": "prd", "sourcePort": "spec", "target": "design", "targetPort": "spec" },
+        { "id": "e4", "source": "prd", "sourcePort": "spec", "target": "code", "targetPort": "spec" },
+        { "id": "e5", "source": "design", "sourcePort": "design", "target": "code", "targetPort": "design" },
+        { "id": "e6", "source": "code", "sourcePort": "$out", "target": "test", "targetPort": "$in" },
+        { "id": "e7", "source": "test", "sourcePort": "$result", "target": "check", "targetPort": "value" },
+        { "id": "e8", "source": "check", "sourcePort": "fail", "target": "code", "targetPort": "feedback", "maxIterations": 3 },
+        { "id": "e9", "source": "check", "sourcePort": "pass", "target": "diff", "targetPort": "$in" },
+        { "id": "e10", "source": "diff", "sourcePort": "diff", "target": "review", "targetPort": "diff" },
+        { "id": "e11", "source": "prd", "sourcePort": "spec", "target": "review", "targetPort": "spec" },
+        { "id": "e12", "source": "code", "sourcePort": "summary", "target": "accept", "targetPort": "summary" },
+        { "id": "e13", "source": "review", "sourcePort": "verdict", "target": "accept", "targetPort": "verdict" },
+        { "id": "e14", "source": "accept", "sourcePort": "changes", "target": "code", "targetPort": "feedback", "maxIterations": 5 },
+        { "id": "e15", "source": "accept", "sourcePort": "approve", "target": "squash", "targetPort": "$in" },
+        { "id": "e16", "source": "squash", "sourcePort": "$out", "target": "push", "targetPort": "$in" },
+        { "id": "e17", "source": "push", "sourcePort": "$out", "target": "mr", "targetPort": "$in" },
+        { "id": "e18", "source": "mr", "sourcePort": "url", "target": "done", "targetPort": "mr_url" }
+      ],
+      "settings": { "ownerAgentId": "miku", "maxParallelNodes": 4, "concurrency": "queue" }
+    }
+  },
+  {
+    "id": "flow.fix_bug",
+    "name": "修 Bug",
+    "description": "定位 → 修复 → 单测（失败最多回改 3 轮）→ 人工验收",
+    "definition": {
+      "schemaVersion": 1,
+      "inputs": [
+        { "name": "issue", "type": "markdown", "required": true, "label": "问题描述或链接", "primary": true },
+        { "name": "project", "type": "text", "required": true, "label": "需求（Multara 需求 id）" }
+      ],
+      "outputs": [],
+      "workspaces": [{ "key": "app", "label": "代码仓", "project": "{{ run.inputs.project }}", "isolation": "worktree_new", "autoCommit": true }],
+      "nodes": [
+        { "id": "start", "kind": "trigger", "title": "开始", "config": { "sources": ["manual", "automation", "channel"] }, "position": { "x": 0, "y": 120 } },
+        { "id": "locate", "kind": "agent", "title": "复现定位", "position": { "x": 260, "y": 120 },
+          "workspaces": [{ "slot": "app", "access": "read" }],
+          "inputs": [{ "name": "issue", "type": "markdown", "required": true }],
+          "outputs": [{ "name": "analysis", "type": "markdown", "required": true }],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2, "fallbackTextPort": "analysis",
+            "prompt": "分析这个问题的根因，指出相关文件和修复思路，不要改代码：\n{{ inputs.issue }}" } },
+        { "id": "fix", "kind": "agent", "title": "修复", "position": { "x": 520, "y": 120 },
+          "workspaces": [{ "slot": "app", "access": "write" }],
+          "inputs": [{ "name": "analysis", "type": "markdown", "required": true }, { "name": "feedback", "type": "any", "multi": true }],
+          "outputs": [{ "name": "summary", "type": "markdown", "required": true }],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 1, "continueSession": "same_node", "fallbackTextPort": "summary",
+            "prompt": "按分析修复问题，并补上能复现这个问题的测试。\n{{ inputs.analysis }}{% if iteration > 0 %}\n上一轮反馈：{{ inputs.feedback | tojson }}{% endif %}" } },
+        { "id": "test", "kind": "script", "title": "单元测试", "position": { "x": 780, "y": 120 },
+          "workspaces": [{ "slot": "app", "access": "read" }],
+          "config": { "command": "pnpm test", "shell": "default", "cwd": { "slot": "app" }, "env": {}, "successExitCodes": [0], "failOnNonZero": false, "parseStdout": "none", "maxOutputKB": 256 } },
+        { "id": "check", "kind": "switch", "title": "测试通过？", "position": { "x": 1020, "y": 120 },
+          "inputs": [{ "name": "value", "type": "json", "required": true }],
+          "config": { "cases": [{ "port": "pass", "when": "inputs.value.exit_code == 0" }], "defaultPort": "fail", "mode": "first" } },
+        { "id": "accept", "kind": "gate", "title": "人工验收", "position": { "x": 1260, "y": 120 },
+          "inputs": [{ "name": "summary", "type": "markdown" }],
+          "config": { "title": "修复验收", "body": "{{ inputs.summary }}", "showDiffOf": ["app"],
+            "decisions": [{ "port": "approve", "label": "通过", "primary": true }, { "port": "changes", "label": "打回修改", "requireComment": true }] } }
+      ],
+      "edges": [
+        { "id": "e1", "source": "start", "sourcePort": "issue", "target": "locate", "targetPort": "issue" },
+        { "id": "e2", "source": "locate", "sourcePort": "analysis", "target": "fix", "targetPort": "analysis" },
+        { "id": "e3", "source": "fix", "sourcePort": "$out", "target": "test", "targetPort": "$in" },
+        { "id": "e4", "source": "test", "sourcePort": "$result", "target": "check", "targetPort": "value" },
+        { "id": "e5", "source": "check", "sourcePort": "fail", "target": "fix", "targetPort": "feedback", "maxIterations": 3 },
+        { "id": "e6", "source": "check", "sourcePort": "pass", "target": "accept", "targetPort": "$in" },
+        { "id": "e7", "source": "fix", "sourcePort": "summary", "target": "accept", "targetPort": "summary" },
+        { "id": "e8", "source": "accept", "sourcePort": "changes", "target": "fix", "targetPort": "feedback", "maxIterations": 5 }
+      ],
+      "settings": { "ownerAgentId": "miku", "maxParallelNodes": 4, "concurrency": "allow" }
+    }
+  },
+  {
+    "id": "flow.daily_check",
+    "name": "每日巡检",
+    "description": "拉取数据 → 智能体分析 → 有问题才发飞书通知",
+    "definition": {
+      "schemaVersion": 1,
+      "inputs": [{ "name": "url", "type": "url", "required": true, "label": "数据接口地址", "primary": true }],
+      "outputs": [],
+      "workspaces": [],
+      "nodes": [
+        { "id": "start", "kind": "trigger", "title": "开始", "config": { "sources": ["manual", "automation"] }, "position": { "x": 0, "y": 120 } },
+        { "id": "fetch", "kind": "http", "title": "拉取数据", "position": { "x": 260, "y": 120 },
+          "inputs": [{ "name": "url", "type": "url", "required": true }],
+          "config": { "method": "GET", "url": "{{ inputs.url }}", "headers": {}, "bodyType": "none", "expectStatus": [], "responseType": "json" } },
+        { "id": "analyze", "kind": "agent", "title": "分析", "position": { "x": 520, "y": 120 },
+          "inputs": [{ "name": "data", "type": "json", "required": true }],
+          "outputs": [{ "name": "report", "type": "json", "required": true,
+            "schema": { "type": "object", "required": ["has_issue", "summary"], "properties": { "has_issue": { "type": "boolean" }, "summary": { "type": "string" } } } }],
+          "config": { "target": { "type": "agent", "id": "" }, "mode": "auto", "maxRepairTurns": 2,
+            "prompt": "分析下面的数据，判断有没有需要人处理的异常，给出一段简短总结。" } },
+        { "id": "need", "kind": "switch", "title": "有问题？", "position": { "x": 780, "y": 120 },
+          "inputs": [{ "name": "value", "type": "json", "required": true }],
+          "config": { "cases": [{ "port": "yes", "when": "inputs.value.has_issue" }], "defaultPort": "no", "mode": "first" } },
+        { "id": "notify", "kind": "notify", "title": "飞书通知", "position": { "x": 1020, "y": 60 },
+          "inputs": [{ "name": "report", "type": "json" }],
+          "config": { "channel": "feishu", "text": "巡检发现问题：{{ inputs.report.summary }}" } }
+      ],
+      "edges": [
+        { "id": "e1", "source": "start", "sourcePort": "url", "target": "fetch", "targetPort": "url" },
+        { "id": "e2", "source": "fetch", "sourcePort": "body", "target": "analyze", "targetPort": "data" },
+        { "id": "e3", "source": "analyze", "sourcePort": "report", "target": "need", "targetPort": "value" },
+        { "id": "e4", "source": "need", "sourcePort": "yes", "target": "notify", "targetPort": "report" }
+      ],
+      "settings": { "ownerAgentId": "miku", "maxParallelNodes": 4, "concurrency": "skip_if_running" }
+    }
+  }
+]

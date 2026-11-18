@@ -951,7 +951,7 @@ fn kill_process_group(pid: u32) {
     }
 }
 
-fn kill_process(process: &mut Child) {
+pub(crate) fn kill_process(process: &mut Child) {
     let pid = process.id();
     kill_process_group(pid);
     #[cfg(windows)]
@@ -1386,6 +1386,9 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     |row| row.get::<_, String>(0),
                 ) {
                     command.env("MULTARA_TASK_ID", task_id);
+                }
+                if let Ok(Some(node_run)) = crate::workflow::store::node_run_by_session(&db, &run.session_id) {
+                    command.env("MULTARA_NODE_RUN_ID", node_run.id);
                 }
             }
             if let Ok(data_dir) = app.path().app_data_dir() {
@@ -2495,7 +2498,8 @@ fn finish(
                 &completed_at.to_rfc3339(),
             );
         }
-        if status == "completed" {
+        // 工作流里单个智能体节点的回答不解析 @ 派活，避免串到流程外
+        if status == "completed" && !crate::workflow::is_plain_agent_node_session(&db, &run.session_id) {
             let now = completed_at.to_rfc3339();
             if let Ok(created) = dispatch_mentions(&db, &run.id, output, &now) {
                 member_runs = created;
@@ -2606,6 +2610,7 @@ fn finish(
     }
     crate::channel::outbound::on_run_finished(app, &run.session_id);
     crate::channel::feishu_send::notify_sends(app, &run.id);
+    crate::workflow::runtime::on_agent_run_finished(app, &run.session_id);
     dispatch(app.clone());
 }
 

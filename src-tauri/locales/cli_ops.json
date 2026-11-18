@@ -412,5 +412,65 @@
     "zh-TW": "不能把任務掛到它自己的子任務底下",
     "ja": "タスクを自身のサブタスクの下に置くことはできません",
     "ko": "작업을 자신의 하위 작업 아래에 둘 수 없습니다"
+  },
+  "缺少 --project": {
+    "en": "Missing --project",
+    "zh-TW": "缺少 --project",
+    "ja": "--project がありません",
+    "ko": "--project가 없습니다"
+  },
+  "缺少 --path": {
+    "en": "Missing --path",
+    "zh-TW": "缺少 --path",
+    "ja": "--path がありません",
+    "ko": "--path가 없습니다"
+  },
+  "这个目录里有多个仓库，请分别传入其中一个路径：\n{listed}": {
+    "en": "This folder contains several repositories. Pass one of these paths instead:\n{listed}",
+    "zh-TW": "這個目錄裡有多個儲存庫，請分別傳入其中一個路徑：\n{listed}",
+    "ja": "このフォルダーには複数のリポジトリがあります。次のいずれかのパスを指定してください：\n{listed}",
+    "ko": "이 폴더에 저장소가 여러 개 있습니다. 다음 경로 중 하나를 지정하세요:\n{listed}"
+  },
+  "普通文件夹不能迁出 Worktree，请改用 --mode current": {
+    "en": "A plain folder cannot check out a worktree. Use --mode current instead.",
+    "zh-TW": "一般資料夾不能遷出 Worktree，請改用 --mode current",
+    "ja": "通常のフォルダーでは Worktree をチェックアウトできません。--mode current を使ってください",
+    "ko": "일반 폴더에서는 Worktree를 체크아웃할 수 없습니다. --mode current를 쓰세요"
+  },
+  "迁出已有分支需要 --branch": {
+    "en": "Checking out an existing branch needs --branch",
+    "zh-TW": "遷出已有分支需要 --branch",
+    "ja": "既存ブランチのチェックアウトには --branch が必要です",
+    "ko": "기존 브랜치를 체크아웃하려면 --branch가 필요합니다"
+  },
+  "普通文件夹不能新建 Worktree，请改用 --mode current": {
+    "en": "A plain folder cannot create a worktree. Use --mode current instead.",
+    "zh-TW": "一般資料夾不能新建 Worktree，請改用 --mode current",
+    "ja": "通常のフォルダーでは Worktree を作成できません。--mode current を使ってください",
+    "ko": "일반 폴더에서는 Worktree를 만들 수 없습니다. --mode current를 쓰세요"
+  },
+  "新建 Worktree 需要 --branch": {
+    "en": "Creating a worktree needs --branch",
+    "zh-TW": "新建 Worktree 需要 --branch",
+    "ja": "Worktree の作成には --branch が必要です",
+    "ko": "Worktree를 만들려면 --branch가 필요합니다"
+  },
+  "--mode 只能是 worktree-new、worktree-existing 或 current": {
+    "en": "--mode must be worktree-new, worktree-existing or current",
+    "zh-TW": "--mode 只能是 worktree-new、worktree-existing 或 current",
+    "ja": "--mode は worktree-new、worktree-existing、current のいずれかです",
+    "ko": "--mode는 worktree-new, worktree-existing, current 중 하나여야 합니다"
+  },
+  "找不到 {kind}：{name}": {
+    "en": "Cannot find {kind}: {name}",
+    "zh-TW": "找不到 {kind}：{name}",
+    "ja": "{kind} が見つかりません：{name}",
+    "ko": "{kind}을(를) 찾을 수 없습니다: {name}"
+  },
+  "找到多个 {kind}「{name}」，请改用完整 id：{ids}": {
+    "en": "Found several {kind} named \"{name}\". Use the full id instead: {ids}",
+    "zh-TW": "找到多個 {kind}「{name}」，請改用完整 id：{ids}",
+    "ja": "{kind}「{name}」が複数見つかりました。完全な id を指定してください：{ids}",
+    "ko": "{kind} \"{name}\"이(가) 여러 개 있습니다. 전체 id를 쓰세요: {ids}"
   }
 }
