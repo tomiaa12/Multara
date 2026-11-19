@@ -164,7 +164,9 @@ async function load() {
     if (props.mode !== "commits") return;
     const span = periodToMs(period.value);
     const sinceMs = span == null ? null : Date.now() - span;
-    const freq = await loadCommitFrequencies(props.workspaceId, sinceMs);
+    const freq = await loadCommitFrequencies(props.workspaceId, sinceMs, {
+      isCancelled: () => id !== ticket,
+    });
     if (id !== ticket) return;
     applyTree(files, freq, false);
     await nextTick();
@@ -405,7 +407,10 @@ watch(host, (el) => {
   nextTick(() => paint());
 });
 
-onBeforeUnmount(() => resizeObs?.disconnect());
+onBeforeUnmount(() => {
+  ticket += 1;
+  resizeObs?.disconnect();
+});
 </script>
 
 <template>
