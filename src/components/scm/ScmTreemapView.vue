@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import Codicon from "../ui/Codicon.vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import UiButton from "../ui/UiButton.vue";
@@ -407,8 +407,18 @@ watch(host, (el) => {
   nextTick(() => paint());
 });
 
-onBeforeUnmount(() => {
+function stopInspectLoads() {
   ticket += 1;
+  loading.value = false;
+}
+
+// keep-alive 停用不会走 unmount；不抬 ticket 的话旧 gitCommitFiles 会继续打满进程。
+onDeactivated(stopInspectLoads);
+onActivated(() => {
+  void load();
+});
+onBeforeUnmount(() => {
+  stopInspectLoads();
   resizeObs?.disconnect();
 });
 </script>

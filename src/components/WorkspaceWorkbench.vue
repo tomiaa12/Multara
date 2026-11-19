@@ -5753,10 +5753,19 @@ watch(dirty, (isDirty) => {
 
 watch(projectId, async (id, previous) => {
   if (!previous || previous === id) return;
-  // 项目已经切换无法撤回；用户取消时保留标签，避免丢掉未保存修改。
-  if (!(await confirmDirtyEditorTabs())) return;
+  // 路由 beforeEach 已拦过未保存离开；这里只清本实例残留（共用 keep-alive 槽时会原地换需求）。
+  if (dirtyEditorTabs().length && !(await confirmDirtyEditorTabs())) return;
   clearEditorTabs();
   externalChangePending.value = false;
+  workspaceRoots.value = {};
+  directoryChildren.value = {};
+  expandedDirectories.value = new Set();
+  loadingDirectories.value = new Set();
+  detachedWorkspaceIds.value = new Set();
+  leftTab.value = "files";
+  if (!props.preview) {
+    terminalOpen.value = readProjectTerminalOpen("workbench", id);
+  }
 });
 
 watch(
