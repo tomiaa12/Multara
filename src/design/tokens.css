@@ -71,10 +71,23 @@
   --layout-card-gap: 12px;
   --layout-section-gap: 32px;
 
-  /* ── Motion ─────────────────────────────────────────────────── */
+  /* ── Motion ─────────────────────────────────────────────────────
+   * 预设与用法见 src/design/motion.css、src/ui/motion.ts。
+   * instant：hover / 按压；fast：菜单、提示、图标互换；normal：弹窗、折叠；
+   * slow：抽屉、页面、列表归位。退场一律比入场短（exit）。 */
+  --motion-duration-instant: 80ms;
   --motion-duration-fast: 120ms;
   --motion-duration-normal: 180ms;
+  --motion-duration-slow: 260ms;
+  --motion-duration-exit: 120ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* 入场：快起慢停；退场：慢起快走；spring：轻回弹（勾选、徽标） */
+  --motion-ease-out: cubic-bezier(0, 0, 0, 1);
+  --motion-ease-in: cubic-bezier(0.3, 0, 1, 1);
+  --motion-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  /* 位移幅度：浮层 4px，抽屉 / 页面 16px */
+  --motion-distance-sm: 4px;
+  --motion-distance-md: 16px;
   /* 悬停提示：停一会儿再出现，避免鼠标划过就闪一下 */
   --tooltip-show-delay: 500ms;
 

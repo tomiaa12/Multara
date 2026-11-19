@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import { playEnter } from "./ui/motion";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -71,6 +72,18 @@ import TaskCreateDialog from "./views/TaskCreateDialog.vue";
 const store = useAppStore();
 const editorStatus = useEditorStatusStore();
 const route = useRoute();
+
+/* 切侧栏菜单：新页面淡入。不用 <Transition> 包 keep-alive —— 多根节点的页面在 out-in 下会白屏 */
+const mainEl = ref<HTMLElement | null>(null);
+watch(
+  () => route.path,
+  () =>
+    void nextTick(() => {
+      for (const child of mainEl.value?.children ?? []) {
+        if (child instanceof HTMLElement && !child.className.startsWith("vs-overlay")) playEnter(child, "page");
+      }
+    }),
+);
 const router = useRouter();
 const languageButton = ref<HTMLButtonElement | null>(null);
 const languagePickerOpen = ref(false);
@@ -636,7 +649,7 @@ onBeforeUnmount(() => {
       </template>
     </SideNav>
 
-    <main class="main-content vs-scroll">
+    <main ref="mainEl" class="main-content vs-scroll">
       <div v-if="store.loading" class="empty">{{ t("app.loading") }}</div>
       <div v-else-if="store.error" class="error-card">{{ store.error }}</div>
       <RouterView v-else v-slot="{ Component }">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { vDetailsMotion } from "../ui/motion";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
@@ -96,7 +97,7 @@ function submit() {
     />
   </label>
   <label>{{ t("runtime.field.name") }}<UiInput v-model="name" required /></label>
-  <details class="runtime-advanced" :open="advanced" @toggle="advanced = ($event.target as HTMLDetailsElement).open">
+  <details v-details-motion class="runtime-advanced" :open="advanced" @toggle="advanced = ($event.target as HTMLDetailsElement).open">
     <summary>{{ t("runtime.advanced") }}</summary>
     <label>{{ t("runtime.field.commandLine") }}
       <UiInput v-model="commandLine" required :placeholder="spec.command" spellcheck="false" />

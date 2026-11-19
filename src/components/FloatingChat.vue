@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { t } from "../i18n";
 import { Maximize2, MessageCircle, Minimize2, Minus } from "@lucide/vue";
 import { useRoute } from "vue-router";
@@ -136,7 +137,7 @@ function onKeydown(event: KeyboardEvent) {
   // 工作台/收件箱里气泡只是隐藏挂载，不能抢 Esc；有 modal 时留给弹层
   if (props.hidden || !store.chatOpen) return;
   if (!escapeClosesDialog(event)) return;
-  if (document.querySelector(".modal-backdrop")) return;
+  if (document.querySelector(".modal-backdrop:not(.ds-motion-ghost)")) return;
   event.preventDefault();
   close();
 }
@@ -209,7 +210,7 @@ onBeforeUnmount(() => {
       @click="store.chatOpen = true"
     >
       <MessageCircle :size="22" />
-      <span v-if="pendingPlan" class="chat-fab-dot" aria-hidden="true" />
+      <span v-motion="'scale'" v-if="pendingPlan" class="chat-fab-dot" aria-hidden="true" />
     </UiButton>
   </div>
 </template>

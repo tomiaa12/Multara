@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { Minus, Plus, RotateCcw, X } from "@lucide/vue";
 import { t } from "../../i18n";
 import { nextPopupZIndex } from "./popup-z-index";
@@ -151,6 +152,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
 <template>
   <Teleport to="body">
     <div
+      v-motion="'fade'"
       class="image-preview-lightbox"
       role="dialog"
       aria-modal="true"

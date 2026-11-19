@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import UiCollapse from "../ui/UiCollapse.vue";
 import type { Workspace } from "../../domain/types";
 import { t } from "../../i18n";
 import FileTypeIcon from "../FileTypeIcon.vue";
@@ -413,44 +414,48 @@ async function readFile(workspaceId: string, path: string) {
           </span>
         </label>
       </div>
-      <div v-if="showReplace" class="search-row">
-        <span class="search-toggle" />
-        <label class="search-input">
-          <input v-model="replacement" :placeholder="t('search.replacePlaceholder')" :aria-label="t('search.replacePlaceholder')" spellcheck="false" />
-          <span class="search-input-actions">
-            <UiTooltip :content="t('search.preserveCase')"><button type="button" :class="{ active: options.preserveCase }" @click="options.preserveCase = !options.preserveCase">AB</button></UiTooltip>
-          </span>
-        </label>
-        <UiTooltip :content="t('search.replaceAll')"><button type="button" class="search-outside" :disabled="!matches.length" @click="replaceAll">
-          <Codicon name="replace-all" :size="16" />
-        </button></UiTooltip>
-      </div>
+      <UiCollapse>
+        <div v-if="showReplace" class="search-row">
+          <span class="search-toggle" />
+          <label class="search-input">
+            <input v-model="replacement" :placeholder="t('search.replacePlaceholder')" :aria-label="t('search.replacePlaceholder')" spellcheck="false" />
+            <span class="search-input-actions">
+              <UiTooltip :content="t('search.preserveCase')"><button type="button" :class="{ active: options.preserveCase }" @click="options.preserveCase = !options.preserveCase">AB</button></UiTooltip>
+            </span>
+          </label>
+          <UiTooltip :content="t('search.replaceAll')"><button type="button" class="search-outside" :disabled="!matches.length" @click="replaceAll">
+            <Codicon name="replace-all" :size="16" />
+          </button></UiTooltip>
+        </div>
+      </UiCollapse>
       <div class="search-details-bar">
         <span>{{ showDetails ? "" : t('search.includeFiles') }}</span>
         <UiTooltip :content="t('search.details')"><button type="button" :aria-expanded="showDetails" @click="showDetails = !showDetails">
           <Codicon name="ellipsis" :size="16" />
         </button></UiTooltip>
       </div>
-      <div v-if="showDetails" class="search-details">
-        <label class="search-file-pattern">
-          <span>{{ t('search.includeFiles') }}</span>
-          <input v-model="options.include" :placeholder="t('search.includePlaceholder')" :aria-label="t('search.includeFiles')" spellcheck="false" />
-        </label>
-        <label class="search-file-pattern">
-          <span>{{ t('search.excludeFiles') }}</span>
-          <span class="search-pattern-input">
-            <input v-model="options.exclude" :placeholder="t('search.excludePlaceholder')" :aria-label="t('search.excludeFiles')" spellcheck="false" />
-            <UiTooltip :content="t('search.useExclude')"><button
-              type="button"
+      <UiCollapse>
+        <div v-if="showDetails" class="search-details">
+          <label class="search-file-pattern">
+            <span>{{ t('search.includeFiles') }}</span>
+            <input v-model="options.include" :placeholder="t('search.includePlaceholder')" :aria-label="t('search.includeFiles')" spellcheck="false" />
+          </label>
+          <label class="search-file-pattern">
+            <span>{{ t('search.excludeFiles') }}</span>
+            <span class="search-pattern-input">
+              <input v-model="options.exclude" :placeholder="t('search.excludePlaceholder')" :aria-label="t('search.excludeFiles')" spellcheck="false" />
+              <UiTooltip :content="t('search.useExclude')"><button
+                type="button"
              
-              :class="{ active: options.useExcludeSettings }"
-              @click="options.useExcludeSettings = !options.useExcludeSettings"
-            >
-              <Codicon name="book" :size="14" />
-            </button></UiTooltip>
-          </span>
-        </label>
-      </div>
+                :class="{ active: options.useExcludeSettings }"
+                @click="options.useExcludeSettings = !options.useExcludeSettings"
+              >
+                <Codicon name="book" :size="14" />
+              </button></UiTooltip>
+            </span>
+          </label>
+        </div>
+      </UiCollapse>
     </div>
     <p v-if="searching" class="search-status">{{ t('search.searching') }}</p>
     <p v-else-if="error" class="search-status is-error">{{ error }}</p>

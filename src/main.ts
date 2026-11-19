@@ -76,12 +76,14 @@ import UiNotice from "./components/ui/UiNotice.vue";
 import UiModal from "./components/ui/UiModal.vue";
 import UiTextarea from "./components/ui/UiTextarea.vue";
 import UiSwitch from "./components/ui/UiSwitch.vue";
+import UiCollapse from "./components/ui/UiCollapse.vue";
 import { router } from "./router";
 import { overlayScrollPlugin } from "./ui/overlay-scroll";
 import { applyThemeSetting, THEME_STORAGE_KEY } from "./theme";
 import "./design/tokens.css";
 import "./design/base.css";
 import "./design/components.css";
+import "./design/motion.css";
 import "./design/layout.css";
 import "./styles.css";
 import "./assets/diff-overlay.css";
@@ -116,6 +118,7 @@ createApp(App)
   .component("UiTextarea", UiTextarea)
   .component("UiNotice", UiNotice)
   .component("UiModal", UiModal)
+  .component("UiCollapse", UiCollapse)
   .use(createPinia())
   .use(router)
   .mount("#app");

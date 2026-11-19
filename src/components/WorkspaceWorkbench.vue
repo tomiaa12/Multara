@@ -14,6 +14,7 @@ import {
   watchEffect,
 } from "vue";
 import { useRoute } from "vue-router";
+import { vMotion } from "../ui/motion";
 import { confirmDialog } from "./ui/confirm-dialog";
 import { registerCloseSurface } from "./close-surface";
 import { t } from "../i18n";
@@ -6125,7 +6126,7 @@ defineExpose({
           </UiButton>
           </template>
         <div class="explorer-folders">
-        <div v-if="explorerFindOpen" class="explorer-find">
+        <div v-motion="'fade'" v-if="explorerFindOpen" class="explorer-find">
           <input
             v-model="explorerFindQuery"
             class="explorer-find-input"
@@ -6538,7 +6539,7 @@ defineExpose({
             </button>
           </UiTooltip>
         </div>
-        <div v-if="pendingDiffFiles.length" class="chat-editor-overlay-widget">
+        <div v-motion="'dropdown'" v-if="pendingDiffFiles.length" class="chat-editor-overlay-widget">
           <UiButton
             variant="ghost"
             size="icon"
@@ -6727,7 +6728,7 @@ defineExpose({
         @close="closeQuickOpen"
         @open="openQuickOpenFile"
       />
-      <div
+      <div v-motion="'dropdown'"
         v-if="terminalPick"
         ref="terminalPickEl"
         class="quick-pick"

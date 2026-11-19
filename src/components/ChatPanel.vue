@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { t } from "../i18n";
 import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
 import AgentAvatar from "./AgentAvatar.vue";
@@ -2081,7 +2082,7 @@ defineExpose({
               @pick-action="sendStarter"
             />
           </template>
-          <div
+          <div v-motion="{ enter: 'fade' }"
             v-if="showWorking && group.id === lastGroupId"
             class="assistant-working"
             aria-live="polite"
@@ -2213,7 +2214,7 @@ defineExpose({
           :images="pastedImages.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
           @remove="removePastedImage"
         />
-        <div v-if="attachments.length" class="composer-attachments vs-scroll">
+        <TransitionGroup tag="div" name="ds-list-x" v-if="attachments.length" class="composer-attachments ds-list-host vs-scroll">
           <div v-for="attachment in attachments" :key="attachment.path" class="composer-attachment">
             <FileText :size="15" />
             <span>{{ attachment.name }}</span>
@@ -2221,9 +2222,9 @@ defineExpose({
               <X :size="12" />
             </UiButton>
           </div>
-        </div>
+        </TransitionGroup>
         <!-- 页面经 __multara/context 挂上来的数据：下一条消息带上，来源单独标出 -->
-        <div v-if="uiContexts.length" class="composer-attachments vs-scroll">
+        <TransitionGroup tag="div" name="ds-list-x" v-if="uiContexts.length" class="composer-attachments ds-list-host vs-scroll">
           <div v-for="item in uiContexts" :key="item.id" class="composer-attachment ui-context-chip">
             <Codicon name="dashboard" :size="12" />
             <span>{{ uiContextChipLabel(item) }}</span>
@@ -2231,7 +2232,7 @@ defineExpose({
               <X :size="10" />
             </UiButton>
           </div>
-        </div>
+        </TransitionGroup>
         <p v-if="composerError || sessionComposerNotice" class="composer-error">
           <span>{{ composerError || sessionComposerNotice?.message }}</span>
           <span class="composer-error-actions">
@@ -2279,7 +2280,7 @@ defineExpose({
       </ChatComposer>
       </div>
     </section>
-    <aside
+    <aside v-motion="'slide-right'"
       v-if="sessionListVisible"
       class="chat-session-pane"
       :class="sessionListMode === 'side' ? 'is-side' : 'is-drawer'"
