@@ -3,7 +3,8 @@
 //! - 应用启动时在 `127.0.0.1:0` 起端点；每个 run 一个 128 位以上随机 token，登记
 //!   `token → { run_id, session_id, agent_id }`，注入 `MULTARA_CTL=http://127.0.0.1:<port>/<token>`。
 //!   run 结束即注销（R9）。端口和 token 不写盘、不进日志。
-//! - 只接受 `POST /<token>/canvas.<method>`；会话从 token 推出，忽略请求体里的会话 id。
+//! - 接受 `POST /<token>/canvas.<method>` 与 `POST /<token>/terminal.<method>`；
+//!   会话从 token 推出，忽略请求体里的会话 id。
 
 use std::{
     collections::HashMap,
@@ -23,6 +24,7 @@ use crate::{
     canvas_bridge,
     database::AppState,
     ops::canvas::{self as ops, Caller, CanvasError, OpenRequest},
+    terminal_ctl,
 };
 
 const MAX_BODY: usize = 1024 * 1024;
@@ -146,12 +148,17 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
             json!({ "ok": false, "code": "canvas.forbidden", "message": tr!("控制通道 token 无效或运行已结束") }),
         );
     };
-    let Some(method) = method.strip_prefix("canvas.").map(str::to_string) else {
-        return respond(
-            request,
-            404,
-            json!({ "ok": false, "code": "canvas.unknown_method" }),
-        );
+    let (namespace, method) = match method.split_once('.') {
+        Some((namespace, method)) if !namespace.is_empty() && !method.is_empty() => {
+            (namespace.to_string(), method.to_string())
+        }
+        _ => {
+            return respond(
+                request,
+                404,
+                json!({ "ok": false, "code": "canvas.unknown_method" }),
+            )
+        }
     };
     let mut body = Vec::new();
     if request
@@ -181,10 +188,16 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
             }
         }
     };
-    let result = dispatch(app, &ctx, &method, &args);
-    let body = match result {
-        Ok(value) => value,
-        Err(error) => error.to_json(),
+    let body = match namespace.as_str() {
+        "canvas" => match dispatch_canvas(app, &ctx, &method, &args) {
+            Ok(value) => value,
+            Err(error) => error.to_json(),
+        },
+        "terminal" => match terminal_ctl::dispatch(app, &ctx, &method, &args) {
+            Ok(value) => value,
+            Err(error) => error.to_json(),
+        },
+        _ => json!({ "ok": false, "code": "canvas.unknown_method" }),
     };
     respond(request, 200, body);
 }
@@ -208,7 +221,7 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, CanvasError> {
 }
 
 /// 在应用进程里执行一个 canvas 方法。会话一律取自 token。
-pub fn dispatch(
+pub fn dispatch_canvas(
     app: &AppHandle,
     ctx: &RunCtx,
     method: &str,

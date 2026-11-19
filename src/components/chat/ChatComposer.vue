@@ -704,6 +704,8 @@ const field = ref<{
 } | null>(null);
 
 async function onSubmit() {
+  // 发送时强制关掉 @/#/ 浮层（清空输入有时来不及触发 change，Teleport 会留在 body）
+  closeSuggest();
   if (showDictation.value) {
     await dictationService.stopBeforeSubmit(dictationTargetId);
   }
@@ -730,7 +732,10 @@ function isSquadTargetOption(option: SelectOption | null | undefined) {
 defineExpose({
   focus: () => field.value?.focus(),
   focusEnd: () => field.value?.focusEnd(),
-  clear: () => field.value?.clear(),
+  clear: () => {
+    closeSuggest();
+    field.value?.clear();
+  },
   insertChip: (item: EditorSelectionContext) => field.value?.insertChip(item),
   insertMissing: (items: EditorSelectionContext[]) => field.value?.insertMissing(items),
   insertText: (value: string) => field.value?.insertText(value),

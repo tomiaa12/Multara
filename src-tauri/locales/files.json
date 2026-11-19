@@ -239,6 +239,72 @@
     "ja": "ターミナル内にポート {port} をリッスンしているプロセスはありません",
     "ko": "터미널에서 포트 {port}을(를) 수신 대기 중인 프로세스가 없습니다"
   },
+  "当前会话没有可打开的工作区终端": {
+    "en": "This session has no workspace terminal to open",
+    "zh-TW": "目前工作階段沒有可開啟的工作區終端機",
+    "ja": "このセッションには開けるワークスペース端末がありません",
+    "ko": "이 세션에서 열 수 있는 작업 영역 터미널이 없습니다"
+  },
+  "工作区不在当前会话里：{id}": {
+    "en": "Workspace is not in this session: {id}",
+    "zh-TW": "工作區不在目前工作階段裡：{id}",
+    "ja": "ワークスペースがこのセッションにありません：{id}",
+    "ko": "작업 영역이 이 세션에 없습니다: {id}"
+  },
+  "cwd 不在当前会话的工作区内": {
+    "en": "cwd is outside this session's workspaces",
+    "zh-TW": "cwd 不在目前工作階段的工作區內",
+    "ja": "cwd がこのセッションのワークスペース外です",
+    "ko": "cwd가 이 세션의 작업 영역 밖에 있습니다"
+  },
+  "界面没有在时限内打开终端": {
+    "en": "The UI did not open a terminal in time",
+    "zh-TW": "介面沒有在時限內開啟終端機",
+    "ja": "UI が制限時間内にターミナルを開けませんでした",
+    "ko": "제한 시간 안에 UI가 터미널을 열지 못했습니다"
+  },
+  "打开集成终端失败": {
+    "en": "Couldn't open the integrated terminal",
+    "zh-TW": "開啟整合終端機失敗",
+    "ja": "統合ターミナルを開けませんでした",
+    "ko": "통합 터미널을 열지 못했습니다"
+  },
+  "缺少 --command": {
+    "en": "Missing --command",
+    "zh-TW": "缺少 --command",
+    "ja": "--command がありません",
+    "ko": "--command가 없습니다"
+  },
+  "缺少终端 id": {
+    "en": "Missing terminal id",
+    "zh-TW": "缺少終端機 id",
+    "ja": "ターミナル id がありません",
+    "ko": "터미널 id가 없습니다"
+  },
+  "不认识的子命令：terminal {verb}": {
+    "en": "Unknown subcommand: terminal {verb}",
+    "zh-TW": "不認識的子命令：terminal {verb}",
+    "ja": "不明なサブコマンド：terminal {verb}",
+    "ko": "알 수 없는 하위 명령: terminal {verb}"
+  },
+  "需要 Multara 应用在运行（缺少 MULTARA_CTL）": {
+    "en": "Multara app must be running (MULTARA_CTL is missing)",
+    "zh-TW": "需要 Multara 應用程式在執行（缺少 MULTARA_CTL）",
+    "ja": "Multara アプリが起動している必要があります（MULTARA_CTL がありません）",
+    "ko": "Multara 앱이 실행 중이어야 합니다(MULTARA_CTL 없음)"
+  },
+  "--{name} 要是行号": {
+    "en": "--{name} must be a line number",
+    "zh-TW": "--{name} 要是行號",
+    "ja": "--{name} は行番号である必要があります",
+    "ko": "--{name}은(는) 줄 번호여야 합니다"
+  },
+  "规划模式下不能执行写命令：multara terminal {method}": {
+    "en": "Write commands are blocked in plan mode: multara terminal {method}",
+    "zh-TW": "規劃模式下不能執行寫命令：multara terminal {method}",
+    "ja": "プランモードでは書き込みコマンドを実行できません：multara terminal {method}",
+    "ko": "계획 모드에서는 쓰기 명령을 실행할 수 없습니다: multara terminal {method}"
+  },
   "语言服务器已退出": {
     "en": "Language server has exited",
     "zh-TW": "語言伺服器已結束",

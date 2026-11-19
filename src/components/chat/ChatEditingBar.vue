@@ -108,6 +108,7 @@ async function keep(workspaceId: string, filePath: string) {
   try {
     const content = contents.value.get(fileKey(workspaceId, filePath));
     await diffStore.acceptAllChunks(workspaceId, filePath, content);
+    await refreshContents();
   } finally {
     busy.value = false;
   }
@@ -142,7 +143,9 @@ async function keepAll() {
   if (busy.value || !rows.value.length) return;
   busy.value = true;
   try {
-    for (const row of rows.value) {
+    // 拷一份：保留过程中若写入完成刷出新文件，不会漏掉本轮已展示的项，也不会中途改迭代集合。
+    const pending = rows.value.slice();
+    for (const row of pending) {
       const key = fileKey(row.workspaceId, row.filePath);
       if (diffStore.missingFiles.has(key)) {
         await diffStore.acceptMissingFile(row.workspaceId, row.filePath);
@@ -150,6 +153,7 @@ async function keepAll() {
         await diffStore.acceptAllChunks(row.workspaceId, row.filePath, contents.value.get(key));
       }
     }
+    await refreshContents();
   } finally {
     busy.value = false;
   }
@@ -185,7 +189,7 @@ async function undoAll() {
         <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
         <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
       </span>
-      <span v-else class="chat-editing-overview-actions" @click.stop>
+      <span class="chat-editing-overview-actions" @click.stop>
         <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
         <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepAllTitle')" :disabled="busy" @click="keepAll">{{ t('chat.editingKeepAll') }}</UiButton>
       </span>

@@ -17,7 +17,7 @@ import { useCanvasStore } from "../stores/canvas";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions, defaultChatTargetValue } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
-import { carriedMentions, feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
+import { feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
 import ReshuffleModal from "./chat/ReshuffleModal.vue";
 import { countMessagesFrom, reaskTouchesFiles } from "../stores/reask";
 import { useDiffStore } from "../stores/diff";
@@ -488,7 +488,7 @@ const canSend = computed(() =>
   && !composerReadOnly.value,
 );
 const canStop = computed(() => sessionProcessing.value);
-// 运行中停止按钮一直在；没有草稿时只显示停止，有草稿时再并排显示「加入队列」。
+// 运行中：有草稿只显示发送（入队），没草稿只显示停止。两者不同时出现。
 const showComposerStop = computed(() => canStop.value && !composerHasContent());
 
 function userTurnRunning(message: ChatMessage) {
@@ -978,14 +978,6 @@ async function submit() {
   // 页面挂上来的上下文随这条消息带上，带来源头（是数据，不是用户指令）
   const contextBlock = formatUiContexts(canvas.takeContexts(sessionId));
   const content = contextBlock ? `${typed}\n\n${contextBlock}` : typed;
-  const carried = carriedMentions(serialized.nodes, targetForSend);
-  if (carried.length) {
-    drafts.value[sessionId] = carried;
-    composerEmpty.value = false;
-    void nextTick(() => {
-      if (session.value?.id === sessionId) composerInput.value?.restore(carried);
-    });
-  }
   const recipients = feishuRecipients(serialized.nodes).map((item) => ({
     installationId: item.installationId,
     openId: item.openId,
@@ -1971,7 +1963,7 @@ defineExpose({
                   @contextmenu="openTabMenu(item.id, $event)"
                 >
                   <MessageSquare :size="13" />
-                  <span>{{ item.title }}</span>
+                  <span class="chat-session-tab-title">{{ item.title }}</span>
                   <UiTooltip :content="t('chat.closeTab')">
                     <span class="tab-close" @click="closeSessionTab(item.id, $event)">
                       <X :size="12" />
@@ -2116,6 +2108,8 @@ defineExpose({
         </div>
       </div>
 
+      <div class="chat-editing-dock">
+      <!-- 跟 dock / 输入框同宽同对齐，再在该宽度内居中（执行模式靠左 720、气泡全宽等） -->
       <div v-if="!followBottom" class="scroll-to-bottom-row">
         <UiButton
           class="scroll-to-bottom"
@@ -2124,8 +2118,6 @@ defineExpose({
           @click="scrollToBottom()"
         ><ArrowDown :size="14" />{{ t("chat.scrollToBottom") }}</UiButton>
       </div>
-
-      <div class="chat-editing-dock">
       <ChatQuestionCarousel
         v-if="pendingQuestion"
         :key="pendingQuestion.messageId"
@@ -2177,7 +2169,7 @@ defineExpose({
         @open="emit('review-file', $event)"
       />
       <ChatComposer
-        :key="session?.id ?? 'none'"
+        :key="composerStateKey()"
         ref="composerInput"
         dictation
         allow-file-picker
@@ -2258,14 +2250,14 @@ defineExpose({
               <Plus :size="16" />
             </UiButton>
             <UiButton
-              v-if="canStop"
+              v-if="showComposerStop"
               type="button"
               class="icon-button"
               :tip="t('chat.stopTaskShortcut')"
               @click="stopAgent"
             ><Square :size="14" /></UiButton>
             <UiButton
-              v-if="!showComposerStop"
+              v-else
               class="ds-send-button send-button"
               type="submit"
               :disabled="!canSend"

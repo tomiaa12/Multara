@@ -1204,8 +1204,11 @@ export async function closeCanvas(sessionId: string, instanceId: string): Promis
   await invoke("close_canvas", { sessionId, instanceId });
 }
 
-/** 前端处理完 `ui-outbound` 事件（页面要填输入框）后的应答 */
-export async function resolveUiOutbound(requestId: string, result: { ok: boolean; reason?: string }): Promise<void> {
+/** 前端处理完 `ui-outbound` / `terminal-ctl` 等控制通道请求后的应答 */
+export async function resolveUiOutbound(
+  requestId: string,
+  result: { ok: boolean; reason?: string; message?: string; value?: unknown },
+): Promise<void> {
   if (!hasBackend()) return;
   await invoke("resolve_ui_outbound", { requestId, result });
 }

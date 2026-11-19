@@ -417,15 +417,11 @@ export const useDiffStore = defineStore("diff", () => {
   async function acceptAllChunks(
     workspaceId: string,
     filePath: string,
-    currentContent?: string,
+    _currentContent?: string,
   ) {
     await enqueueReview(workspaceId, filePath, async () => {
-      const current = currentContent ?? await readFileContent(workspaceId, filePath);
       if (baselineContent(workspaceId, filePath) === undefined) return;
-      if (baselineContent(workspaceId, filePath) === current) {
-        await removeBaseline(workspaceId, filePath);
-        return;
-      }
+      // 无论磁盘是否已与基线一致都清基线并 bump：改动条靠 diskEpoch 重读 contents。
       await removeBaseline(workspaceId, filePath);
       diskEpoch.value += 1;
     });

@@ -225,7 +225,7 @@ pub fn drop_instance(session_id: &str, instance_id: &str) {
     }
 }
 
-/// 前端对 `ui-outbound` 的应答（`fillComposerFromUi` 的结果）
+/// 前端对 `ui-outbound` / `terminal-ctl` 等请求的应答
 pub fn resolve_outbound(request_id: &str, result: Value) {
     if let Ok(mut bridge) = bridge().lock() {
         if let Some(sender) = bridge.outbound.remove(request_id) {
@@ -234,7 +234,13 @@ pub fn resolve_outbound(request_id: &str, result: Value) {
     }
 }
 
-fn wait_outbound(app: &AppHandle, payload: Value) -> Value {
+/// 向前端发一次带 `requestId` 的事件并等待回执（控制通道与 Canvas 共用）。
+pub fn request_frontend(
+    app: &AppHandle,
+    event: &str,
+    payload: Value,
+    timeout: Duration,
+) -> Value {
     let request_id = uuid::Uuid::new_v4().simple().to_string();
     let (sender, receiver) = mpsc::channel();
     if let Ok(mut bridge) = bridge().lock() {
@@ -242,14 +248,18 @@ fn wait_outbound(app: &AppHandle, payload: Value) -> Value {
     }
     let mut payload = payload;
     payload["requestId"] = json!(request_id);
-    let _ = app.emit("ui-outbound", payload);
+    let _ = app.emit(event, payload);
     let result = receiver
-        .recv_timeout(OUTBOUND_REPLY_TIMEOUT)
+        .recv_timeout(timeout)
         .unwrap_or_else(|_| json!({ "ok": false, "reason": "session_closed" }));
     if let Ok(mut bridge) = bridge().lock() {
         bridge.outbound.remove(&request_id);
     }
     result
+}
+
+fn wait_outbound(app: &AppHandle, payload: Value) -> Value {
+    request_frontend(app, "ui-outbound", payload, OUTBOUND_REPLY_TIMEOUT)
 }
 
 fn bad(message: impl Into<String>) -> HostResponse {

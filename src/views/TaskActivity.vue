@@ -14,7 +14,7 @@ import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { resolveQuestionStates } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
-import { carriedMentions, feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
@@ -118,6 +118,12 @@ const sessionRunning = computed(() =>
   ),
 );
 const sessionProcessing = computed(() => store.sessionProcessing(props.sessionId));
+const lastUserMessageId = computed(() => {
+  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+    if (messages.value[index]?.role === "user") return messages.value[index]!.id;
+  }
+  return "";
+});
 const workingAgents = computed(() => {
   const seen = new Set<string>();
   const agents: Array<{ id: string; name: string; avatar: string }> = [];
@@ -404,11 +410,6 @@ function submit() {
   pastes.value = [];
   composer.value?.clear();
   draftEmpty.value = true;
-  const carried = carriedMentions(nodes, targetValue.value);
-  if (carried.length) {
-    composer.value?.restore(carried);
-    draftEmpty.value = false;
-  }
 }
 
 function stop() {
@@ -486,7 +487,7 @@ watch(
           :view-only="historyViewOnly"
           :restore-nonce="restoreNonce"
           :restore-message-id="restoreMessageId"
-          :running="!historyViewOnly && sessionProcessing"
+          :running="!historyViewOnly && sessionProcessing && message.id === lastUserMessageId"
           @start-reask="startReask"
           @stop="stop"
         />

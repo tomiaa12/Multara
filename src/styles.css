@@ -574,14 +574,24 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
-.chat-session-tab {
+/* UiTooltip 包一层 trigger；max-width 落在 trigger 上，避免标题省略时关闭按钮挤出 tab */
+.chat-session-tabs > .ds-tooltip-trigger {
   display: flex;
   flex: 0 0 auto;
+  max-width: 188px;
+  min-width: 0;
+}
+.chat-session-tab {
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 6px;
-  max-width: 188px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 35px;
   padding: 0 6px 0 12px;
+  overflow: hidden;
   border: 0;
   border-right: 1px solid var(--color-border-light);
   border-radius: 0;
@@ -591,10 +601,19 @@
   text-align: left;
   white-space: nowrap;
 }
-.chat-session-tab > span:not(.tab-close) {
+.chat-session-tab > svg {
+  flex: 0 0 auto;
+}
+.chat-session-tab > .chat-session-tab-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.chat-session-tab > .ds-tooltip-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
 }
 .chat-session-tab:hover {
   background: var(--color-surface-raised);
@@ -746,6 +765,24 @@
 .user-prompt {
   width: 100%;
 }
+/* 折叠态：停止钮浮在右上角；聚焦展开后 footer 自带停止，浮钮藏起避免重复 */
+.chat-composer.user-prompt.is-running {
+  padding-right: 36px;
+}
+.chat-composer.user-prompt > .user-prompt-stop {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}
+.chat-composer.user-prompt.is-expanded > .user-prompt-stop,
+.chat-composer.user-prompt:focus-within > .user-prompt-stop {
+  display: none;
+}
+.chat-composer.user-prompt.is-expanded,
+.chat-composer.user-prompt:focus-within {
+  padding-right: 6px;
+}
 .reask-banner {
   display: flex;
   align-items: center;
@@ -783,10 +820,6 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-}
-.user-prompt button.composer-attachment {
-  justify-content: flex-start;
-  background: var(--color-bg-tertiary);
 }
 .user-prompt-text {
   white-space: pre-wrap;
@@ -1341,13 +1374,21 @@
  * 提问 + 队列同时存在时：提问卡片限高滚动，队列可折叠，总高度不挤掉聊天区。
  */
 .chat-queue {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  width: 100%;
   margin-bottom: 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg-tertiary);
   overflow: hidden;
+}
+/* 跟输入框同宽：宽度由 .chat-editing-dock 统一约束，队列不再单独再缩一圈 */
+.chat-editing-dock > .chat-queue {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 .chat-queue.under-question {
   margin-top: -2px;
@@ -1365,6 +1406,7 @@
   justify-content: flex-start;
   gap: 6px;
   width: 100%;
+  min-width: 0;
   height: 28px;
   padding: 0 10px;
   border: 0;
@@ -1379,10 +1421,21 @@
   background: var(--color-surface-hover);
   color: var(--color-text);
 }
+.chat-queue-heading > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chat-queue-heading small {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
+  overflow: hidden;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat-queue.is-held .chat-queue-heading small {
   color: var(--color-warning);
@@ -1425,34 +1478,41 @@
   border: 1.5px solid var(--color-text-tertiary);
   border-radius: 50%;
 }
+/* UiTooltip 包一层 trigger：flex/省略要落在 trigger 上，文字才能真正 … */
+.chat-queue-item > .ds-tooltip-trigger {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
 .chat-queue-text {
-  flex: 1;
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--color-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 操作只在悬停 / 键盘聚焦时浮在右侧，平时不占宽度，文字能显示得更长 */
-.chat-queue-item {
-  position: relative;
-}
+/* 操作占文档流：悬停时展开，文字同步缩短出省略号，不盖在字上面 */
 .chat-queue-actions {
-  position: absolute;
-  top: 50%;
-  right: 4px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 2px;
-  padding-left: 16px;
-  background: linear-gradient(to right, transparent, var(--color-surface-hover) 16px);
+  max-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-50%);
-  transition: opacity var(--motion-duration-fast) var(--motion-ease);
+  transition:
+    max-width var(--motion-duration-fast) var(--motion-ease),
+    opacity var(--motion-duration-fast) var(--motion-ease);
 }
 .chat-queue-item:hover .chat-queue-actions,
 .chat-queue-item:focus-within .chat-queue-actions {
+  max-width: 12rem;
   opacity: 1;
   pointer-events: auto;
 }
@@ -1922,12 +1982,8 @@ body:has(.canvas-modal) .canvas-frame-host {
   opacity: 0.55;
 }
 /* 输入框上方的 Canvas 栏：和「已修改的文件」一样贴在输入框上（同宽、无底边、只有上圆角），
-   行的样式沿用 .chat-queue，这里只补按钮复位和状态文字。
-   选择器加上 .chat-editing-dock：要压过浮动聊天给队列卡片留边距的 .compact .chat-queue { width } */
-.chat-editing-dock > .chat-queue.canvas-bar,
-.shared-chat-panel.compact .chat-editing-dock > .chat-queue.canvas-bar {
-  box-sizing: border-box;
-  width: 100%;
+   行的样式沿用 .chat-queue，宽度已由 .chat-editing-dock > .chat-queue 统一为 100%。 */
+.chat-editing-dock > .chat-queue.canvas-bar {
   margin: 0;
   border: 1px solid var(--color-field-border);
   border-bottom: none;
@@ -1964,8 +2020,10 @@ body:has(.canvas-modal) .canvas-frame-host {
   outline: 1px solid var(--color-focus);
 }
 .canvas-bar-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .canvas-bar-status {
   flex: 0 0 auto;
@@ -2036,6 +2094,52 @@ body:has(.canvas-modal) .canvas-frame-host {
 .genui-title {
   color: var(--color-text-strong);
   font-weight: 600;
+}
+.genui-table-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+.genui-table-head .genui-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+}
+.genui-table-head-spacer {
+  flex: 1;
+  min-width: 0;
+}
+.genui-copy-split {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.genui-copy-split .genui-copy-main,
+.genui-copy-split .genui-copy-caret {
+  border: 0;
+  border-radius: 0;
+}
+.genui-copy-split .genui-copy-main {
+  padding-inline: 8px;
+}
+.genui-copy-split .genui-copy-caret {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  border-left: 1px solid var(--color-border);
+}
+.genui-copy-split .genui-copy-main:hover,
+.genui-copy-split .genui-copy-caret:hover {
+  background: var(--color-surface-hover);
 }
 .genui-skeleton {
   min-height: 72px;
@@ -2785,9 +2889,6 @@ textarea:not(.inputarea) {
 .shared-chat-panel.compact .chat-surface > .chat-editing-dock {
   width: calc(100% - 20px);
   margin-bottom: 10px;
-}
-.shared-chat-panel.compact .chat-queue {
-  width: calc(100% - 20px);
 }
 /* 右下角浮动聊天：提问卡再压矮，多题只展示当前题，给消息区让位 */
 .shared-chat-panel.compact .chat-question-card {
@@ -4155,9 +4256,12 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .shared-chat-panel.compact .composer-field {
   max-height: calc(var(--composer-line-height) * 11);
 }
+/* 宽度跟 .chat-editing-dock 走，各环境输入框怎么对齐，按钮就在那一列上居中 */
 .scroll-to-bottom-row {
   display: flex;
   justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
   margin: 0 0 var(--spacing-1-5);
 }
 .scroll-to-bottom {
@@ -4929,6 +5033,9 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   line-height: 1.55;
 }
 .scm-direct-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 8px 8px 0;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
@@ -4936,6 +5043,15 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-warning);
   font-size: var(--font-size-xs);
   line-height: 1.45;
+}
+.scm-direct-warn > p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.scm-direct-warn > .ui-button {
+  flex: 0 0 auto;
+  color: inherit;
 }
 .scm-sync {
   display: flex;
@@ -13433,8 +13549,8 @@ label.settings-row:hover {
   min-width: 0;
   max-width: 100%;
 }
-/* 没人在跑时不占位（编码表是「—」，侧栏更紧） */
-.req-run .req-run-workers:not(:has(.agent-live-status.is-live)) {
+/* 无人可展示时不占位（只有「—」）；运行中 / 空闲头像+相对时间都保留 */
+.req-run .req-run-workers:has(> .avatar-stack-empty) {
   display: none;
 }
 .req-run .req-run-workers .agent-live-label {
