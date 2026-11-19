@@ -13,23 +13,25 @@ use crate::database::AppState;
 pub const TOGGLE_DEVTOOLS_ID: &str = "toggle-devtools";
 /// 查看 → 自动换行（对齐 VS Code `editor.action.toggleWordWrap` / ⌥Z）。
 pub const TOGGLE_WORD_WRAP_ID: &str = "toggle-word-wrap";
+/// 编辑 → 失焦时自动保存（对齐 VS Code `files.autoSave: onFocusChange`）。
+pub const TOGGLE_AUTO_SAVE_ON_FOCUS_LOSS_ID: &str = "toggle-auto-save-on-focus-loss";
 /// 文件 → 关闭。不走系统关窗口，交给界面按焦点关聊天或编辑器标签。
 pub const CLOSE_SURFACE_ID: &str = "close-surface";
 
 static WORD_WRAP: AtomicBool = AtomicBool::new(false);
+static AUTO_SAVE_ON_FOCUS_LOSS: AtomicBool = AtomicBool::new(false);
 
-fn word_wrap_from_db<R: Runtime>(app: &AppHandle<R>) -> bool {
+fn setting_bool_from_db<R: Runtime>(app: &AppHandle<R>, key: &str) -> bool {
     let Some(state) = app.try_state::<AppState>() else {
         return false;
     };
     let Ok(db) = state.lock_db() else {
         return false;
     };
-    setting_value(&db, "wordWrap", "false") == "true"
+    setting_value(&db, key, "false") == "true"
 }
 
-fn set_word_wrap_checked<R: Runtime>(app: &AppHandle<R>, checked: bool) {
-    WORD_WRAP.store(checked, Ordering::Relaxed);
+fn set_check_menu_item<R: Runtime>(app: &AppHandle<R>, id: &str, checked: bool) {
     let Some(menu) = app.menu() else {
         return;
     };
@@ -37,7 +39,7 @@ fn set_word_wrap_checked<R: Runtime>(app: &AppHandle<R>, checked: bool) {
         let Some(sub) = item.as_submenu() else {
             continue;
         };
-        let Some(kind) = sub.get(TOGGLE_WORD_WRAP_ID) else {
+        let Some(kind) = sub.get(id) else {
             continue;
         };
         if let Some(check) = kind.as_check_menuitem() {
@@ -47,9 +49,24 @@ fn set_word_wrap_checked<R: Runtime>(app: &AppHandle<R>, checked: bool) {
     }
 }
 
+fn set_word_wrap_checked<R: Runtime>(app: &AppHandle<R>, checked: bool) {
+    WORD_WRAP.store(checked, Ordering::Relaxed);
+    set_check_menu_item(app, TOGGLE_WORD_WRAP_ID, checked);
+}
+
+fn set_auto_save_on_focus_loss_checked<R: Runtime>(app: &AppHandle<R>, checked: bool) {
+    AUTO_SAVE_ON_FOCUS_LOSS.store(checked, Ordering::Relaxed);
+    set_check_menu_item(app, TOGGLE_AUTO_SAVE_ON_FOCUS_LOSS_ID, checked);
+}
+
 /// 设置页等非菜单路径改了 wordWrap 时，同步菜单勾选。
 pub fn sync_word_wrap<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
     set_word_wrap_checked(app, enabled);
+}
+
+/// 设置页等非菜单路径改了 autoSaveOnFocusLoss 时，同步菜单勾选。
+pub fn sync_auto_save_on_focus_loss<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+    set_auto_save_on_focus_loss_checked(app, enabled);
 }
 
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
@@ -69,6 +86,11 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
             let next = !WORD_WRAP.load(Ordering::Relaxed);
             set_word_wrap_checked(app, next);
             let _ = app.emit("menu-word-wrap", next);
+        }
+        TOGGLE_AUTO_SAVE_ON_FOCUS_LOSS_ID => {
+            let next = !AUTO_SAVE_ON_FOCUS_LOSS.load(Ordering::Relaxed);
+            set_auto_save_on_focus_loss_checked(app, next);
+            let _ = app.emit("menu-auto-save-on-focus-loss", next);
         }
         CLOSE_SURFACE_ID => {
             let _ = app.emit("menu-close", ());
@@ -122,6 +144,16 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )?;
     let file_menu = Submenu::with_items(app, &tr!("文件"), true, &[&close_surface])?;
 
+    let auto_save_on_focus_loss = setting_bool_from_db(app, "autoSaveOnFocusLoss");
+    AUTO_SAVE_ON_FOCUS_LOSS.store(auto_save_on_focus_loss, Ordering::Relaxed);
+    let toggle_auto_save_on_focus_loss = CheckMenuItem::with_id(
+        app,
+        TOGGLE_AUTO_SAVE_ON_FOCUS_LOSS_ID,
+        &tr!("失焦时自动保存"),
+        true,
+        auto_save_on_focus_loss,
+        None::<&str>,
+    )?;
     let edit_menu = Submenu::with_items(
         app,
         &tr!("编辑"),
@@ -134,10 +166,12 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::copy(app, Some(&tr!("拷贝")))?,
             &PredefinedMenuItem::paste(app, Some(&tr!("粘贴")))?,
             &PredefinedMenuItem::select_all(app, Some(&tr!("全选")))?,
+            &PredefinedMenuItem::separator(app)?,
+            &toggle_auto_save_on_focus_loss,
         ],
     )?;
 
-    let word_wrap = word_wrap_from_db(app);
+    let word_wrap = setting_bool_from_db(app, "wordWrap");
     WORD_WRAP.store(word_wrap, Ordering::Relaxed);
     let toggle_word_wrap = CheckMenuItem::with_id(
         app,
