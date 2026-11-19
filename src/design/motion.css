@@ -1,0 +1,227 @@
+/* ════════════════════════════════════════════════════════════════
+ * Motion：公共动效预设
+ *
+ * 时长 / 缓动 / 位移都取 tokens.css 的 --motion-*。每个预设都成对提供入场和退场：
+ *
+ * 1. Vue <Transition name="ds-xxx">：元素自己的 v-if / v-show 包在 Transition 里时用。
+ *      <Transition name="ds-dropdown"><div v-if="open" class="menu" /></Transition>
+ * 2. v-motion 指令（src/ui/motion.ts）：v-if 在外层组件上、Transition 包不住时用，
+ *    比如 UiModal / ContextMenu 由调用方 v-if 卸载。退场靠「残影」：卸载前克隆一份
+ *    留在原位播 .ds-motion-out-xxx，播完移除。只给 fixed / absolute 的浮层用。
+ *      <div v-if="open" v-motion="'dropdown'" class="menu" />
+ * 3. 折叠展开（高度 0 ↔ auto）走 JS：<UiCollapse>、v-details-motion，不在这里。
+ *
+ * 预设：fade · pop（弹窗）· scale（图标互换 / 徽标）· dropdown / dropup（菜单）
+ *       slide-right / slide-left / slide-up / slide-down（抽屉、侧栏、提示）
+ * 系统「减少动态效果」：base.css 全局把时长压到 0，这里不用再单独处理。
+ * ════════════════════════════════════════════════════════════════ */
+
+/* ── Keyframes ──────────────────────────────────────────────── */
+@keyframes ds-motion-fade-in { from { opacity: 0; } }
+@keyframes ds-motion-fade-out { to { opacity: 0; } }
+
+@keyframes ds-motion-pop-in {
+  from { opacity: 0; transform: translateY(var(--motion-distance-sm)) scale(0.985); }
+}
+@keyframes ds-motion-pop-out {
+  to { opacity: 0; transform: translateY(calc(var(--motion-distance-sm) / 2)) scale(0.985); }
+}
+
+@keyframes ds-motion-scale-in { from { opacity: 0; transform: scale(0.6); } }
+@keyframes ds-motion-scale-out { to { opacity: 0; transform: scale(0.6); } }
+
+@keyframes ds-motion-dropdown-in {
+  from { opacity: 0; transform: translateY(calc(var(--motion-distance-sm) * -1)) scale(0.98); }
+}
+@keyframes ds-motion-dropdown-out {
+  to { opacity: 0; transform: translateY(calc(var(--motion-distance-sm) * -0.5)) scale(0.98); }
+}
+@keyframes ds-motion-dropup-in {
+  from { opacity: 0; transform: translateY(var(--motion-distance-sm)) scale(0.98); }
+}
+@keyframes ds-motion-dropup-out {
+  to { opacity: 0; transform: translateY(calc(var(--motion-distance-sm) * 0.5)) scale(0.98); }
+}
+
+@keyframes ds-motion-slide-right-in { from { opacity: 0; transform: translateX(var(--motion-distance-md)); } }
+@keyframes ds-motion-slide-right-out { to { opacity: 0; transform: translateX(var(--motion-distance-md)); } }
+@keyframes ds-motion-slide-left-in { from { opacity: 0; transform: translateX(calc(var(--motion-distance-md) * -1)); } }
+@keyframes ds-motion-slide-left-out { to { opacity: 0; transform: translateX(calc(var(--motion-distance-md) * -1)); } }
+@keyframes ds-motion-slide-up-in { from { opacity: 0; transform: translateY(var(--motion-distance-md)); } }
+@keyframes ds-motion-slide-up-out { to { opacity: 0; transform: translateY(var(--motion-distance-md)); } }
+@keyframes ds-motion-slide-down-in { from { opacity: 0; transform: translateY(calc(var(--motion-distance-md) * -1)); } }
+@keyframes ds-motion-slide-down-out { to { opacity: 0; transform: translateY(calc(var(--motion-distance-md) * -1)); } }
+
+/* 页面切换：只做入场（旧页直接隐藏，避免 out-in 拖慢切换）。
+ * 只动透明度：页面根上加 transform 会让里面 position:fixed 的元素临时相对页面定位而跳动 */
+@keyframes ds-motion-page-in {
+  from { opacity: 0; }
+}
+/* 数值变化轻跳一下（计数徽标） */
+@keyframes ds-motion-bump {
+  40% { transform: scale(1.18); }
+}
+/* 落位高亮：拖拽放下 / 新增条目轻闪一下底色 */
+@keyframes ds-motion-settle {
+  from { box-shadow: 0 0 0 2px var(--color-focus-ring); }
+}
+
+/* ── v-motion 指令用的类 ────────────────────────────────────── */
+.ds-motion-in-fade { animation: ds-motion-fade-in var(--motion-duration-fast) var(--motion-ease-out) !important; }
+.ds-motion-in-pop { animation: ds-motion-pop-in var(--motion-duration-normal) var(--motion-ease-out) !important; }
+.ds-motion-in-scale { animation: ds-motion-scale-in var(--motion-duration-fast) var(--motion-ease-spring) !important; }
+.ds-motion-in-dropdown { animation: ds-motion-dropdown-in var(--motion-duration-fast) var(--motion-ease-out) !important; transform-origin: top center; }
+.ds-motion-in-dropup { animation: ds-motion-dropup-in var(--motion-duration-fast) var(--motion-ease-out) !important; transform-origin: bottom center; }
+.ds-motion-in-slide-right { animation: ds-motion-slide-right-in var(--motion-duration-slow) var(--motion-ease-out) !important; }
+.ds-motion-in-slide-left { animation: ds-motion-slide-left-in var(--motion-duration-slow) var(--motion-ease-out) !important; }
+.ds-motion-in-slide-up { animation: ds-motion-slide-up-in var(--motion-duration-normal) var(--motion-ease-out) !important; }
+.ds-motion-in-slide-down { animation: ds-motion-slide-down-in var(--motion-duration-normal) var(--motion-ease-out) !important; }
+.ds-motion-in-page { animation: ds-motion-page-in var(--motion-duration-normal) var(--motion-ease-out) !important; }
+
+/* 残影：不可交互、不挡点击；forwards 停在终态，animationend 后由脚本移除。
+ * in / out 类都带 !important：元素自身样式（如 .task-popover 的 ds-pop-in）写在后加载的
+ * styles.css 里，同优先级会盖掉退场动画，残影反而重播一遍入场。 */
+.ds-motion-ghost {
+  pointer-events: none !important;
+  user-select: none !important;
+}
+.ds-motion-ghost * {
+  pointer-events: none !important;
+}
+.ds-motion-out-fade { animation: ds-motion-fade-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; }
+.ds-motion-out-pop { animation: ds-motion-pop-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; }
+.ds-motion-out-scale { animation: ds-motion-scale-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; }
+.ds-motion-out-dropdown { animation: ds-motion-dropdown-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; transform-origin: top center; }
+.ds-motion-out-dropup { animation: ds-motion-dropup-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; transform-origin: bottom center; }
+.ds-motion-out-slide-right { animation: ds-motion-slide-right-out var(--motion-duration-normal) var(--motion-ease-in) forwards !important; }
+.ds-motion-out-slide-left { animation: ds-motion-slide-left-out var(--motion-duration-normal) var(--motion-ease-in) forwards !important; }
+.ds-motion-out-slide-up { animation: ds-motion-slide-up-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; }
+.ds-motion-out-slide-down { animation: ds-motion-slide-down-out var(--motion-duration-exit) var(--motion-ease-in) forwards !important; }
+
+/* ── <Transition name="ds-xxx"> 用的类 ─────────────────────── */
+.ds-fade-enter-active { animation: ds-motion-fade-in var(--motion-duration-fast) var(--motion-ease-out); }
+.ds-fade-leave-active { animation: ds-motion-fade-out var(--motion-duration-exit) var(--motion-ease-in) forwards; }
+.ds-pop-enter-active { animation: ds-motion-pop-in var(--motion-duration-normal) var(--motion-ease-out); }
+.ds-pop-leave-active { animation: ds-motion-pop-out var(--motion-duration-exit) var(--motion-ease-in) forwards; }
+.ds-scale-enter-active { animation: ds-motion-scale-in var(--motion-duration-fast) var(--motion-ease-spring); }
+.ds-scale-leave-active { animation: ds-motion-scale-out var(--motion-duration-exit) var(--motion-ease-in) forwards; }
+.ds-dropdown-enter-active { animation: ds-motion-dropdown-in var(--motion-duration-fast) var(--motion-ease-out); transform-origin: top center; }
+.ds-dropdown-leave-active { animation: ds-motion-dropdown-out var(--motion-duration-exit) var(--motion-ease-in) forwards; transform-origin: top center; }
+.ds-dropup-enter-active { animation: ds-motion-dropup-in var(--motion-duration-fast) var(--motion-ease-out); transform-origin: bottom center; }
+.ds-dropup-leave-active { animation: ds-motion-dropup-out var(--motion-duration-exit) var(--motion-ease-in) forwards; transform-origin: bottom center; }
+.ds-slide-right-enter-active { animation: ds-motion-slide-right-in var(--motion-duration-slow) var(--motion-ease-out); }
+.ds-slide-right-leave-active { animation: ds-motion-slide-right-out var(--motion-duration-normal) var(--motion-ease-in) forwards; }
+.ds-slide-left-enter-active { animation: ds-motion-slide-left-in var(--motion-duration-slow) var(--motion-ease-out); }
+.ds-slide-left-leave-active { animation: ds-motion-slide-left-out var(--motion-duration-normal) var(--motion-ease-in) forwards; }
+.ds-slide-up-enter-active { animation: ds-motion-slide-up-in var(--motion-duration-normal) var(--motion-ease-out); }
+.ds-slide-up-leave-active { animation: ds-motion-slide-up-out var(--motion-duration-exit) var(--motion-ease-in) forwards; }
+.ds-slide-down-enter-active { animation: ds-motion-slide-down-in var(--motion-duration-normal) var(--motion-ease-out); }
+.ds-slide-down-leave-active { animation: ds-motion-slide-down-out var(--motion-duration-exit) var(--motion-ease-in) forwards; }
+
+/* 页面 / 分区切换：<Transition name="ds-page" mode="out-in">，旧内容立即离场 */
+.ds-page-enter-active { animation: ds-motion-page-in var(--motion-duration-normal) var(--motion-ease-out); }
+.ds-page-leave-active { animation: none; }
+
+/* 内容互换（加载 → 内容、空态 → 列表）：叠在同一格里交叉淡入淡出，不跳布局。
+ * 父元素加 .ds-swap，配 <Transition name="ds-swap">。 */
+.ds-swap { display: grid; }
+.ds-swap > * { grid-area: 1 / 1; min-width: 0; }
+.ds-swap-enter-active { animation: ds-motion-fade-in var(--motion-duration-normal) var(--motion-ease-out); }
+.ds-swap-leave-active { animation: ds-motion-fade-out var(--motion-duration-exit) var(--motion-ease-in) forwards; }
+
+/* ── <TransitionGroup name="ds-list">：小列表增删 + 位置移动（FLIP） ──
+ * 离场项 position:absolute 让出位置，其余项才能平滑补位；父元素需 position:relative
+ * （加 .ds-list-host）。大列表（聊天消息、文件树、运行日志）不要用。 */
+.ds-list-host { position: relative; }
+.ds-list-move { transition: transform var(--motion-duration-slow) var(--motion-ease); }
+.ds-list-enter-active { animation: ds-motion-pop-in var(--motion-duration-normal) var(--motion-ease-out); }
+.ds-list-leave-active {
+  position: absolute;
+  animation: ds-motion-fade-out var(--motion-duration-exit) var(--motion-ease-in) forwards;
+  pointer-events: none;
+}
+/* 横排（标签页、附件 chip）：从左侧缩入，不上下跳 */
+.ds-list-x-move { transition: transform var(--motion-duration-normal) var(--motion-ease); }
+.ds-list-x-enter-active { animation: ds-motion-scale-in var(--motion-duration-fast) var(--motion-ease-out); }
+.ds-list-x-leave-active {
+  position: absolute;
+  animation: ds-motion-scale-out var(--motion-duration-exit) var(--motion-ease-in) forwards;
+  pointer-events: none;
+}
+
+/* ── 工具类 ─────────────────────────────────────────────────── */
+/* 统一转圈：替代各处自写的 xxx-spin */
+.ds-spin { animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite; }
+/* 数值变化时重挂 key 或切换类即触发 */
+.ds-bump { animation: ds-motion-bump var(--motion-duration-normal) var(--motion-ease-spring); }
+.ds-settle { animation: ds-motion-settle var(--motion-duration-slow) var(--motion-ease-out); }
+/* 常见悬停过渡：颜色 / 底色 / 边框一起走 fast */
+.ds-transition-colors {
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease),
+    background-color var(--motion-duration-fast) var(--motion-ease),
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    opacity var(--motion-duration-fast) var(--motion-ease);
+}
+
+/* ── 组件联动 ───────────────────────────────────────────────── */
+/* UiModal / UiConfirmDialog：遮罩淡出的同时，弹窗本体轻缩回去 */
+.modal-backdrop.ds-motion-out-fade > .modal,
+.modal-backdrop.ds-motion-out-fade > .ds-modal,
+.modal-backdrop.ds-motion-out-fade > * > .modal {
+  animation: ds-motion-pop-out var(--motion-duration-exit) var(--motion-ease-in) forwards;
+}
+
+/* 按钮按下轻缩：只缩 transform，不影响布局 */
+.ui-button,
+.ds-button {
+  transition-property: background-color, border-color, color, box-shadow, transform;
+}
+.ui-button:active:not(:disabled),
+.ds-button:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: var(--motion-duration-instant);
+}
+
+/* 提示条出现时从上方轻落 */
+.ui-notice {
+  animation: ds-motion-slide-down-in var(--motion-duration-normal) var(--motion-ease-out);
+  --motion-distance-md: 6px;
+}
+
+/* UiPane：展开时内容淡入（v-show 从 display:none 恢复会重新触发动画） */
+.ui-pane:not(.is-collapsed) > .ui-pane-body {
+  animation: ds-motion-fade-in var(--motion-duration-normal) var(--motion-ease-out);
+}
+
+/* 进度条：数值变化时宽度平滑过去 */
+.ds-progress > span {
+  transition: width var(--motion-duration-slow) var(--motion-ease);
+}
+
+/* 悬停才出现的操作区：淡入淡出，不硬切 */
+.tile-actions,
+.tab-close,
+.diff-expand,
+.scm-repository.is-open::before,
+.run-log-zoom,
+.editor-tab.is-dirty .tab-close svg {
+  transition: opacity var(--motion-duration-fast) var(--motion-ease);
+}
+
+/* 空状态 / 加载占位：出现时淡入，避免从内容直接硬切成空白 */
+.ds-empty,
+.usage-loading,
+.main-content > .empty {
+  animation: ds-motion-fade-in var(--motion-duration-normal) var(--motion-ease-out);
+}
+
+/* ── <TransitionGroup name="ds-reorder">：可拖拽排序 / 跨列移动的列表（任务看板） ──
+ * 离场立即消失（卡片被拖走，原位不留残像），其余项平滑补位；落到新位置的项轻弹 + 高亮一下 */
+.ds-reorder-move { transition: transform var(--motion-duration-slow) var(--motion-ease); }
+.ds-reorder-enter-active {
+  animation:
+    ds-motion-pop-in var(--motion-duration-normal) var(--motion-ease-out),
+    ds-motion-settle var(--motion-duration-slow) var(--motion-ease-out);
+}
+.ds-reorder-leave-active { display: none; }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { AlertTriangle, ChevronRight } from "@lucide/vue";
 import type { ChatMessage } from "../../domain/types";
 
@@ -22,7 +23,7 @@ const failureText = computed(() => {
       <AlertTriangle :size="15" />
       <span>{{ failureText }}</span>
     </div>
-    <details v-if="message.failureReason" class="failure-technical">
+    <details v-details-motion v-if="message.failureReason" class="failure-technical">
       <summary><ChevronRight :size="13" />技术详情</summary>
       <pre class="failure-details vs-scroll">{{ message.failureReason }}</pre>
     </details>

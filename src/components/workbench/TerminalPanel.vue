@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { Terminal } from "@xterm/xterm";
 import type { ILink, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -1374,7 +1375,7 @@ defineExpose({
       >
         <template v-for="session in sessions" :key="session.id">
           <UiTooltip :content="tabTooltip(session)">
-            <button
+            <button v-motion="{ enter: 'fade' }"
               type="button"
               class="bottom-panel-tab"
               :class="{
@@ -1444,7 +1445,7 @@ defineExpose({
         @close="findOpen = false; findSearch = null"
       />
       <div v-if="sticky" class="terminal-sticky">{{ sticky }}</div>
-      <div v-if="overlay" class="terminal-size-overlay">{{ overlay }}</div>
+      <div v-motion="'fade'" v-if="overlay" class="terminal-size-overlay">{{ overlay }}</div>
       <div v-if="linkHint" class="terminal-link-hint" :style="{ left: `${linkHint.x}px`, top: `${linkHint.y}px` }">
         {{ mac ? t('terminal.openLinkMac') : t('terminal.openLinkWin') }}
       </div>

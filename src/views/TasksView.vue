@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
+import { vMotion } from "../ui/motion";
 import { useRouter } from "vue-router";
 import {
   Ban,
@@ -364,7 +365,7 @@ function onColumnMenu(id: string) {
             <button type="button" :class="{ active: displayOpen }" @click="displayOpen = !displayOpen">
               <Rows3 :size="14" />{{ t("tasks.display") }}
             </button>
-            <div v-if="displayOpen" class="task-popover task-popover-start">
+            <div v-motion="{ leave: 'dropdown' }" v-if="displayOpen" class="task-popover task-popover-start">
               <label><input v-model="showDone" type="checkbox" @change="persistDisplay" />{{ t("tasks.showDone") }}</label>
               <label><input v-model="showCancelled" type="checkbox" @change="persistDisplay" />{{ t("tasks.showCancelled") }}</label>
             </div>
@@ -439,7 +440,7 @@ function onColumnMenu(id: string) {
             </UiButton>
           </div>
         </header>
-        <div class="task-column-list vs-scroll" data-task-list>
+        <TransitionGroup tag="div" name="ds-reorder" class="task-column-list vs-scroll" data-task-list>
           <article
             v-for="task in columnTasks(column.id)"
             :key="task.id"
@@ -466,8 +467,8 @@ function onColumnMenu(id: string) {
               <small>{{ t("tasks.updatedAt", { time: relativeTime(task.updatedAt) }) }}</small>
             </footer>
           </article>
-          <p v-if="!columnTasks(column.id).length" class="task-column-empty">{{ t("tasks.columnEmpty") }}</p>
-        </div>
+          <p v-if="!columnTasks(column.id).length" key="__empty" class="task-column-empty">{{ t("tasks.columnEmpty") }}</p>
+        </TransitionGroup>
       </section>
     </div>
     <ContextMenu

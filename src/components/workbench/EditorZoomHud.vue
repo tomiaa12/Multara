@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Minus, Plus } from "@lucide/vue";
+import { vMotion } from "../../ui/motion";
 import {
   canZoomIn,
   canZoomOut,
@@ -13,7 +14,7 @@ import { t } from "../../i18n";
 </script>
 
 <template>
-  <div
+  <div v-motion="'fade'"
     v-if="editorZoomHudVisible"
     class="editor-zoom-hud"
     role="status"

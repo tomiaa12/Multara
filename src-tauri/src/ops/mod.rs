@@ -3,6 +3,7 @@ pub mod automation;
 pub mod canvas;
 pub mod chat;
 pub mod inbox;
+pub mod message_queue;
 pub mod project;
 pub mod run;
 pub mod session;

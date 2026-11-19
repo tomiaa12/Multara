@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ArrowUp, Users } from "@lucide/vue";
+import { vMotion } from "../../ui/motion";
+import { ArrowUp } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
+import ChatTargetSelect from "../ChatTargetSelect.vue";
 import MicButton from "../dictation/MicButton.vue";
 import { dictationService } from "../../dictation/dictation-service";
 import { useDictationStore } from "../../stores/dictation";
@@ -27,8 +29,6 @@ import { useCanvasStore } from "../../stores/canvas";
 import { isCanvasEnabled } from "./genui/block";
 import { getCaretClientRect } from "./composer-caret";
 import { replaceSlashToken } from "./skill-slash";
-import { groupChatTargetOptions, type ChatTargetOption } from "./chat-target-options";
-import ProviderLogo from "../ProviderLogo.vue";
 import {
   activeComposerTrigger,
   removeComposerTrigger,
@@ -720,18 +720,6 @@ const selectedTarget = computed({
   get: () => props.targetValue,
   set: (value: string) => emit("target-change", value),
 });
-// 按 value 前缀（agent: / squad:）分组展示；小队标签去掉「小队 · 」前缀，由分组标题说明
-const targetGroups = computed(() =>
-  groupChatTargetOptions(props.targetOptions, { agents: t("nav.agents"), squads: t("nav.squads") }),
-);
-
-function isAgentTargetOption(option: SelectOption | null | undefined): option is ChatTargetOption {
-  return Boolean(option && String(option.value).startsWith("agent:"));
-}
-
-function isSquadTargetOption(option: SelectOption | null | undefined) {
-  return Boolean(option && String(option.value).startsWith("squad:"));
-}
 
 defineExpose({
   focus: () => field.value?.focus(),
@@ -772,7 +760,7 @@ defineExpose({
   >
     <slot />
     <ComposerPlanHint v-if="modeSessionId" :session-id="modeSessionId" />
-    <div v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
+    <div v-motion="'fade'" v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
       <span>{{ t("chat.dropToAttach") }}</span>
     </div>
     <ComposerSuggestMenu
@@ -803,45 +791,14 @@ defineExpose({
     <div class="composer-footer">
       <div class="composer-footer-start">
         <label class="target-picker">
-          <UiSelect
+          <ChatTargetSelect
             v-if="allowTargetChange && targetOptions.length"
             v-model="selectedTarget"
             variant="ghost"
             size="sm"
-            searchable
-            :page-size="5"
+            :options="targetOptions"
             aria-label="选择要询问的智能体或小队"
-            :groups="targetGroups"
-          >
-            <template #option-leading="{ option }">
-              <span v-if="isSquadTargetOption(option)" class="squad-mark target-squad-mark" aria-hidden="true">
-                <Users :size="12" />
-              </span>
-              <AgentAvatar
-                v-else-if="option?.avatar"
-                class="ds-avatar"
-                :value="option.avatar"
-                :size="null"
-              />
-            </template>
-            <template #option-description="{ option, parts }">
-              <span
-                v-if="isAgentTargetOption(option)"
-                class="target-option-runtime"
-              >
-                <ProviderLogo
-                  v-if="option.runtimeProvider"
-                  class="target-option-runtime-logo"
-                  :provider="option.runtimeProvider"
-                  :size="12"
-                />
-                <span v-if="option.runtimeName" class="target-option-runtime-name">{{ option.runtimeName }}</span>
-                <span class="target-option-runtime-model">{{ option.runtimeModel || "auto" }}</span>
-                <span v-if="option.agentDescription" class="target-option-runtime-desc">{{ option.agentDescription }}</span>
-              </span>
-              <template v-else-if="parts">{{ parts[0] }}<mark v-if="parts[1]">{{ parts[1] }}</mark>{{ parts[2] }}</template>
-            </template>
-          </UiSelect>
+          />
           <template v-else>
             <AgentAvatar :value="targetAvatar" :name="targetLabel" :size="22" />
             <span>{{ targetLabel }}</span>

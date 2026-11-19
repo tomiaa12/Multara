@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { useRouter } from "vue-router";
 import { bindDismissableLayer } from "../ui/dismissable-layer";
 import UiButton from "../ui/UiButton.vue";
@@ -115,7 +116,7 @@ onBeforeUnmount(() => {
     <i class="ds-dot" data-tone="success" />
     {{ t('terminal.activity.runningCount', { count: serving.length }) }}
   </button></UiTooltip>
-  <div
+  <div v-motion="'dropup'"
     v-if="open"
     ref="menu"
     class="terminal-activity-popover"

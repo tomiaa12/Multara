@@ -2346,6 +2346,7 @@ const catalog: MessageCatalog = {
   "chat.editingUndoAll": "모두 실행 취소",
   "chat.editingKeepAll": "모두 유지",
   "chat.editingUndoAllTitle": "변경된 모든 파일 실행 취소",
+  "chat.editingUndoAllConfirm": "파일 {count}개의 변경을 모두 실행 취소할까요? 이 작업은 되돌릴 수 없습니다.",
   "chat.editingKeepAllTitle": "변경된 모든 파일 유지",
   "chat.chip.terminal": "터미널 {range}",
   "scm.branchPickerTooltip": "{label}, 브랜치 또는 태그 체크아웃…",

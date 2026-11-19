@@ -3977,6 +3977,8 @@ pub fn create_chat_session(
         created_at: now.clone(),
         updated_at: now,
         default_mode: RunMode::Auto,
+        last_run_agent_id: None,
+        last_run_at: None,
     };
     db.execute(
         "INSERT INTO chat_sessions
@@ -4605,6 +4607,33 @@ fn link_referenced_requirements(
         session::replace_linked_projects(db, session_id, &linked)?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_message_queue(
+    app: AppHandle,
+) -> Result<Vec<ops::message_queue::QueuedMessageRow>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        ops::message_queue::list(&db)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_message_queue(
+    items: Vec<ops::message_queue::QueuedMessageRow>,
+    app: AppHandle,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        ops::message_queue::replace_all(&db, &items)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -6363,7 +6392,17 @@ fn list_sessions(db: &Connection) -> Result<Vec<ChatSession>, String> {
     let mut statement = db
         .prepare(
             "SELECT id, project_id, title, target_type, target_id, created_at, updated_at,
-                    default_mode
+                    default_mode,
+                    (SELECT agent_id FROM agent_runs
+                     WHERE session_id = chat_sessions.id
+                       AND status IN ('completed', 'failed', 'stopped')
+                     ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
+                     LIMIT 1),
+                    (SELECT COALESCE(completed_at, created_at) FROM agent_runs
+                     WHERE session_id = chat_sessions.id
+                       AND status IN ('completed', 'failed', 'stopped')
+                     ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
+                     LIMIT 1)
              FROM chat_sessions ORDER BY updated_at DESC",
         )
         .map_err(|error| error.to_string())?;
@@ -6384,6 +6423,8 @@ fn list_sessions(db: &Connection) -> Result<Vec<ChatSession>, String> {
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
                 default_mode: row.get::<_, String>(7)?.parse().unwrap_or(RunMode::Auto),
+                last_run_agent_id: row.get(8)?,
+                last_run_at: row.get(9)?,
             })
         })
         .map_err(|error| error.to_string())?

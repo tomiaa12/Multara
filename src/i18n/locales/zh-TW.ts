@@ -2345,6 +2345,7 @@ const catalog: MessageCatalog = {
   "chat.editingUndoAll": "撤銷所有",
   "chat.editingKeepAll": "保留所有",
   "chat.editingUndoAllTitle": "撤銷所有改動檔案",
+  "chat.editingUndoAllConfirm": "確定撤銷全部 {count} 個檔案的改動？此操作不可撤銷。",
   "chat.editingKeepAllTitle": "保留所有改動檔案",
   "chat.chip.terminal": "終端機 {range}",
   "scm.branchPickerTooltip": "{label}，簽出分支或標記…",

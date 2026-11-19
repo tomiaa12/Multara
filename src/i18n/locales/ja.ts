@@ -2346,6 +2346,7 @@ const catalog: MessageCatalog = {
   "chat.editingUndoAll": "すべて元に戻す",
   "chat.editingKeepAll": "すべて保持",
   "chat.editingUndoAllTitle": "変更されたすべてのファイルを元に戻す",
+  "chat.editingUndoAllConfirm": "{count} 個のファイルの変更をすべて元に戻しますか？この操作は取り消せません。",
   "chat.editingKeepAllTitle": "変更されたすべてのファイルを保持",
   "chat.chip.terminal": "ターミナル {range}",
   "scm.branchPickerTooltip": "{label}、ブランチまたはタグをチェックアウト…",

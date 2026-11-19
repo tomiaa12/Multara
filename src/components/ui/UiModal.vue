@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useAttrs } from "vue";
 import { escapeClosesDialog } from "./dialog-escape";
+import { vMotion } from "../../ui/motion";
 
 /**
  * 全屏遮罩弹层：Teleport 到 body，避免落在 .vs-scroll（transform）内时
@@ -40,7 +41,7 @@ const backdropAttrs = computed(() =>
 function isTopModal() {
   const el = root.value;
   if (!el) return false;
-  const stack = document.querySelectorAll(".modal-backdrop");
+  const stack = document.querySelectorAll(".modal-backdrop:not(.ds-motion-ghost)");
   return stack[stack.length - 1] === el;
 }
 
@@ -78,7 +79,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
 
 <template>
   <Teleport to="body">
-    <div ref="root" class="modal-backdrop" v-bind="backdropAttrs">
+    <!-- 入场动画在 CSS（ds-fade-in / ds-pop-in）；调用方 v-if 卸载时由 v-motion 留残影播退场 -->
+    <div ref="root" v-motion="{ leave: 'fade' }" class="modal-backdrop" v-bind="backdropAttrs">
       <slot />
     </div>
   </Teleport>

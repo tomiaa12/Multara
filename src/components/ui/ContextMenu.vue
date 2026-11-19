@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { bindDismissableLayer } from "./dismissable-layer";
 import { nextPopupZIndex } from "./popup-z-index";
 
@@ -67,7 +68,7 @@ watch(() => [props.x, props.y], () => nextTick(place));
 <template>
   <!-- Teleport 到 body，避免被 UiPane overflow / 容器裁剪（如 SCM 分支 … 菜单） -->
   <Teleport to="body">
-    <div ref="menuEl" class="context-menu" :class="{ 'is-fit': fit }" :style="style" role="menu">
+    <div ref="menuEl" v-motion="'dropdown'" class="context-menu" :class="{ 'is-fit': fit }" :style="style" role="menu">
       <template v-for="(item, index) in items" :key="index">
         <hr v-if="item.type === 'sep'" />
         <button

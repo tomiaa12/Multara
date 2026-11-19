@@ -9,6 +9,7 @@
  * - 浮层 Teleport 到 body 并使用 fixed 定位，避免被弹窗或 overflow 容器裁剪
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { Check, ChevronDown, Plus, Search, X } from "@lucide/vue";
 import { matchText, pinyinInitial, splitByRange, type MatchRange } from "../../utils/pinyin-match";
 import type { SelectGroup, SelectOption, SelectValue } from "./select-types";
@@ -695,6 +696,7 @@ onBeforeUnmount(() => {
       <div
         v-if="open"
         ref="popoverEl"
+        v-motion="{ leave: placement === 'top' ? 'dropup' : 'dropdown' }"
         class="ds-select-popover is-floating"
         :data-placement="placement"
         :style="popoverStyle"

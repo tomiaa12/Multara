@@ -147,11 +147,6 @@ const meta = computed(() => {
   gap: 4px;
 }
 .spin {
-  animation: runtime-usage-spin 0.8s linear infinite;
-}
-@keyframes runtime-usage-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 </style>

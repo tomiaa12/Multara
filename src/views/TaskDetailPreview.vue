@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { vMotion } from "../ui/motion";
 import { ArrowLeft, ListTodo, PanelRight, ScrollText, Trash2, User } from "@lucide/vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
@@ -186,7 +187,7 @@ function formatDate(iso: string) {
           </div>
         </div>
       </main>
-      <aside v-if="sideOpen" class="task-issue-side vs-scroll">
+      <aside v-motion="'slide-right'" v-if="sideOpen" class="task-issue-side vs-scroll">
         <section>
           <h2>{{ t("tasks.properties") }}</h2>
           <div class="task-prop-row">
