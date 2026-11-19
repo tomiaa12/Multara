@@ -98,23 +98,33 @@
   max-width: 100%;
 }
 .titlebar-crumbs {
+  /* 面包屑不被项目下拉挤没：自身不收缩，空间不够时由下拉省略 */
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-1);
-  width: max-content;
-  max-width: 100%;
   min-width: 0;
-  overflow: hidden;
   white-space: nowrap;
 }
 .titlebar-project-switch {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 72px;
   max-width: 220px;
   -webkit-app-region: no-drag;
 }
 .titlebar-project-switch .ds-select-trigger {
+  width: 100%;
   max-width: 220px;
+  min-width: 0;
+}
+.titlebar-project-switch .ds-select-value,
+.titlebar-project-switch .ds-select-text {
+  min-width: 0;
+}
+/* 与当前面包屑同色，避免挤窄后发灰看不清 */
+.titlebar-project-switch.ds-select[data-variant="ghost"] .ds-select-trigger {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-medium);
 }
 .titlebar-back,
 a.titlebar-crumb {
@@ -133,22 +143,18 @@ a.titlebar-crumb {
   color: var(--color-text-secondary);
 }
 .titlebar-crumb {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
+  flex: 0 0 auto;
   padding: 2px var(--spacing-1);
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
   font-weight: var(--font-weight-medium);
   text-decoration: none;
-  text-overflow: ellipsis;
 }
 a.titlebar-crumb:hover {
   background: var(--color-surface-hover);
   color: var(--color-text-strong);
 }
 .titlebar-crumb.is-current {
-  flex-shrink: 0;
   color: var(--color-text-strong);
 }
 .titlebar-crumb-sep {
