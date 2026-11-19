@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Archive, ArrowRight, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
@@ -20,6 +20,7 @@ const store = useAppStore();
 const route = useRoute();
 const router = useRouter();
 const selectedId = ref<string | null>(null);
+const threadPanel = ref<{ focus: () => void } | null>(null);
 const dividerMessageId = ref<string | null>(null);
 const REVIEW_MIN_WIDTH = 240;
 const REVIEW_DEFAULT_WIDTH = 420;
@@ -192,6 +193,8 @@ async function select(item: InboxItem) {
   }
   if (!same) reviewFile.value = null;
   selectedId.value = item.id;
+  await nextTick();
+  threadPanel.value?.focus();
   if (!wasUnread) return;
   await store.markInboxRead(item.id, ids.at(-1) ?? null);
 }
@@ -350,6 +353,7 @@ onUnmounted(() => {
       <TaskActivity
         v-if="selected.taskId"
         :key="selected.id"
+        ref="threadPanel"
         class="inbox-thread"
         thread
         :session-id="selected.sessionId"
@@ -359,6 +363,7 @@ onUnmounted(() => {
       <ChatPanel
         v-else
         :key="selected.id"
+        ref="threadPanel"
         class="inbox-thread"
         embedded
         :history-view-only="composerHistoryOnly(selected)"

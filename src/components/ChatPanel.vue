@@ -2,9 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { t } from "../i18n";
-import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Trash2, X } from "@lucide/vue";
 import AgentAvatar from "./AgentAvatar.vue";
 import ChatComposer from "./chat/ChatComposer.vue";
+import ChatStopButton from "./chat/ChatStopButton.vue";
 import { chatMessagesKey } from "./chat/context-usage";
 import ChatEditingBar from "./chat/ChatEditingBar.vue";
 import ChatQuestionCarousel from "./chat/ChatQuestionCarousel.vue";
@@ -31,6 +32,7 @@ import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue
 import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
 import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
 import { exportChatDiagnostics } from "./chat/export-session-diagnostics";
+import { resolveSessionLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
@@ -437,18 +439,11 @@ const currentTurnAssistant = computed(() => {
 });
 const liveRunStatus = computed(() => {
   if (props.preview) return props.previewBusy ? "running" as const : null;
-  if (!session.value) return store.processingMessage ? "sending" as const : null;
-  const events = Object.values(store.runStates).filter((event) =>
-    event.sessionId === session.value!.id
-    && (event.status === "queued" || event.status === "running")
-    && !event.runId.startsWith("pending:"),
-  );
-  if (events.some((event) => event.status === "running")) return "running" as const;
-  if (events.some((event) => event.status === "queued")) return "queued" as const;
-  if (sessionProcessing.value) {
-    return "sending" as const;
-  }
-  return null;
+  return resolveSessionLiveWorkStatus({
+    runStates: store.runStates,
+    sessionId: session.value?.id,
+    processing: sessionProcessing.value || store.processingMessage,
+  });
 });
 const liveAnchor = computed(() => {
   const created = Date.parse(currentTurnAssistant.value?.createdAt ?? "");
@@ -2087,13 +2082,13 @@ defineExpose({
             class="assistant-working"
             aria-live="polite"
           >
-            <LoaderCircle :size="14" />
+            <LoaderCircle :size="12" />
             <AgentAvatar
               v-for="agent in workingAgents"
               :key="agent.id"
               :value="agent.avatar"
               :name="agent.name"
-              :size="16"
+              :size="14"
             />
             <span class="assistant-working-lines">
               <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
@@ -2260,13 +2255,7 @@ defineExpose({
             >
               <Plus :size="16" />
             </UiButton>
-            <UiButton
-              v-if="showComposerStop"
-              type="button"
-              class="icon-button"
-              :tip="t('chat.stopTaskShortcut')"
-              @click="stopAgent"
-            ><Square :size="14" /></UiButton>
+            <ChatStopButton v-if="showComposerStop" @click="stopAgent" />
             <UiButton
               v-else
               class="ds-send-button send-button"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AlertTriangle, Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
 import type { ChannelInstallation, ChannelInstallationInput, ChannelUser } from "../domain/types";
@@ -13,6 +13,7 @@ import UiModal from "../components/ui/UiModal.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import UiRelativeTime from "../components/ui/UiRelativeTime.vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import ChatTargetSelect from "../components/ChatTargetSelect.vue";
 
 const store = useAppStore();
 const installations = ref<ChannelInstallation[]>([]);
@@ -33,21 +34,6 @@ const form = reactive({
   groupEnabled: false,
   enabled: true,
 });
-
-const userTargetGroups = computed(() => [
-  {
-    label: "",
-    options: [{ value: "", label: t("channels.userTargetNone") }],
-  },
-  {
-    label: t("channels.agentGroup"),
-    options: (store.data?.agents ?? []).map((agent) => ({ value: `agent:${agent.id}`, label: agent.name })),
-  },
-  {
-    label: t("channels.squadGroup"),
-    options: (store.data?.squads ?? []).map((squad) => ({ value: `squad:${squad.id}`, label: squad.name })),
-  },
-].filter((group) => group.options.length));
 
 function userTargetValue(user: ChannelUser) {
   return user.targetType && user.targetId ? `${user.targetType}:${user.targetId}` : "";
@@ -404,11 +390,11 @@ function projectName(item: ChannelInstallation) {
                 <td>{{ roleLabel(user.role) }}</td>
                 <td class="channel-user-time"><UiRelativeTime :value="user.createdAt" /></td>
                 <td class="channel-user-target">
-                  <UiSelect
+                  <ChatTargetSelect
                     size="sm"
                     :model-value="userTargetValue(user)"
                     :placeholder="t('channels.userTargetNone')"
-                    :groups="userTargetGroups"
+                    :none-label="t('channels.userTargetNone')"
                     :aria-label="t('channels.userTarget')"
                     @update:model-value="(value) => saveUserTarget(usersTarget!, user, String(value ?? ''))"
                   />

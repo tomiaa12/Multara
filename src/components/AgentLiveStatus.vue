@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // 智能体状态格：有智能体在跑时显示「头像 + 轮播动作文案」，多个同时跑时显示堆叠头像 + 「N 个智能体处理中」；
-// 没在跑时：可显示 fallback 头像 + idleLabel（如「3 小时前」），或单个头像 + 名字。需求列表、任务卡片共用。
+// 没在跑时：头像 +「名称 3 小时前」（单人+idleLabel），或多人头像 + 相对时间；仅 showName 时为头像+名称。
 import { computed } from "vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import AgentAvatar from "./AgentAvatar.vue";
 import AvatarStack, { type AvatarStackItem } from "./ui/AvatarStack.vue";
-import { collectLiveRuns, liveRunMessage } from "./agent-live-status";
+import { collectLiveRuns, liveRunMessage, resolveRunLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 
 const props = withDefaults(defineProps<{
@@ -14,9 +14,9 @@ const props = withDefaults(defineProps<{
   sessionIds: string[];
   /** 没有在跑的智能体时展示的人 */
   fallback?: AvatarStackItem[];
-  /** 空闲时头像旁的文案（如相对时间）；有 fallback 时才展示 */
+  /** 空闲相对时间；单人头像时会拼成「名称 + 时间」 */
   idleLabel?: string;
-  /** fallback 只有一个人时，头像后面带名字（与 idleLabel 互斥优先 idleLabel） */
+  /** 无人在跑且无 idleLabel 时，单人头像旁显示名字 */
   showName?: boolean;
   max?: number;
   size?: number;
@@ -50,13 +50,22 @@ const liveLabel = computed(() => {
   const run = runs[0];
   if (!run) return "";
   const timeline = liveRunMessage(store.messages, run)?.timeline ?? [];
-  // 只要阶段文案；已过时间在列表里没有意义
-  return liveWorkParts(timeline, 0, { language: store.data?.settings.language, status: run.status })[0]?.label ?? "";
+  // 与对话内工作行共用展示态：单条 queued 是启动中，真排队才显示排队中
+  const status = resolveRunLiveWorkStatus(run, store.runStates);
+  return liveWorkParts(timeline, 0, { language: store.data?.settings.language, status })[0]?.label ?? "";
 });
 
 const idleText = computed(() => props.idleLabel.trim());
+const idleCaption = computed(() => {
+  const time = idleText.value;
+  const name = props.fallback.length === 1 ? props.fallback[0]?.name?.trim() : "";
+  if (name && time) return `${name} ${time}`;
+  if (time) return time;
+  if (props.showName && name) return name;
+  return "";
+});
 const single = computed(() => (
-  !idleText.value && props.showName && props.fallback.length === 1 ? props.fallback[0] : null
+  !idleCaption.value && props.showName && props.fallback.length === 1 ? props.fallback[0] : null
 ));
 </script>
 
@@ -65,9 +74,9 @@ const single = computed(() => (
     <AvatarStack :items="liveItems" :max="max" :size="size" :dialog-title="dialogTitle" />
     <UiShimmerText class="agent-live-label" :text="liveLabel" rotate />
   </span>
-  <span v-else-if="fallback.length && idleText" class="agent-live-status">
+  <span v-else-if="fallback.length && idleCaption" class="agent-live-status">
     <AvatarStack :items="fallback" :max="max" :size="size" :dialog-title="dialogTitle" />
-    <span class="agent-live-label">{{ idleText }}</span>
+    <span class="agent-live-label">{{ idleCaption }}</span>
   </span>
   <span v-else-if="single" class="agent-live-status">
     <AgentAvatar :value="single.image || ''" :name="single.name" :size="size" />

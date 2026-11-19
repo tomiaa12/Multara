@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "tauri": "node scripts/with-cargo.mjs",
     "tauri:dev": "node scripts/with-cargo.mjs dev",
+    "tauri:dev:stable": "node scripts/with-cargo.mjs dev --no-watch",
     "tauri:build": "node scripts/with-cargo.mjs build",
     "tauri:build:windows": "node scripts/with-cargo.mjs build --target x86_64-pc-windows-msvc --bundles nsis",
     "tauri:build:macos-arm": "node scripts/with-cargo.mjs build --target aarch64-apple-darwin --bundles app,dmg",

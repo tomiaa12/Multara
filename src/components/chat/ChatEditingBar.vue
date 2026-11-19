@@ -8,6 +8,7 @@ import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
 import { t } from "../../i18n";
+import { confirmDialog } from "../ui/confirm-dialog";
 
 const props = defineProps<{
   workspaceIds: string[];
@@ -162,6 +163,11 @@ async function keepAll() {
 
 async function undoAll() {
   if (busy.value || !rows.value.length) return;
+  if (!(await confirmDialog(t("chat.editingUndoAllConfirm", { count: rows.value.length }), {
+    danger: true,
+    type: "warning",
+    primary: t("chat.editingUndoAll"),
+  }))) return;
   busy.value = true;
   try {
     for (const row of rows.value) {
