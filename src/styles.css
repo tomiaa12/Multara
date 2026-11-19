@@ -12986,6 +12986,7 @@ label.settings-row:hover {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
 }
 .settings-log-result {
   overflow-wrap: anywhere;
@@ -13108,6 +13109,15 @@ label.settings-row:hover {
   flex-wrap: wrap;
   gap: var(--spacing-2);
   justify-content: flex-end;
+}
+.settings-update-status {
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-4) var(--spacing-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
 }
 /* 内容区窄于 600px 时（如窗口较窄或侧栏展开），输入类控件下沉到说明下方，开关保持在行尾 */
 @container (max-width: 600px) {

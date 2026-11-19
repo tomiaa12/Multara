@@ -567,6 +567,7 @@ const catalog: MessageCatalog = {
   "settings.updates.checking": "正在檢查更新…",
   "settings.updates.latest": "目前已是最新版本",
   "settings.updates.checkFailed": "檢查更新失敗：{error}",
+  "settings.updates.checkFailedNetwork": "無法連線更新伺服器，請檢查網路或在上方設定更新代理",
   "settings.updates.downloading": "發現 {version}，正在背景下載…",
   "settings.updates.downloadProgress": "發現 {version}，正在下載 {percent}%（{downloaded} / {total}）",
   "settings.updates.ready": "新版本 {version} 已下載，下次啟動將自動安裝，也可立即更新",

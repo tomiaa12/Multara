@@ -567,6 +567,7 @@ const catalog: MessageCatalog = {
   "settings.updates.checking": "Checking for updates…",
   "settings.updates.latest": "You already have the latest version",
   "settings.updates.checkFailed": "Update check failed: {error}",
+  "settings.updates.checkFailedNetwork": "업데이트 서버에 연결할 수 없습니다. 네트워크를 확인하거나 위에서 업데이트 프록시를 설정하세요.",
   "settings.updates.downloading": "Found {version}, downloading in the background…",
   "settings.updates.downloadProgress": "Found {version}, downloading {percent}% ({downloaded} / {total})",
   "settings.updates.ready": "Version {version} downloaded — installs on next launch, or update now",
