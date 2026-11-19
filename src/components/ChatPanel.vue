@@ -972,7 +972,7 @@ async function submit() {
   store.clearComposerContexts();
   composerEmpty.value = true;
   composerError.value = "";
-  store.clearComposerNotice();
+  store.clearComposerNotice(session.value?.id);
   followBottom.value = true;
 
   let sessionId = session.value?.id;
@@ -1007,14 +1007,16 @@ async function submit() {
 
 const continuedFailureIds = ref(new Set<string>());
 
+const sessionComposerNotice = computed(() => store.composerNoticeFor(session.value?.id));
+
 function dismissComposerMessage() {
   composerError.value = "";
-  store.clearComposerNotice();
+  store.clearComposerNotice(session.value?.id);
 }
 
 function searchMissingFile() {
-  const query = store.composerNoticeQuery;
-  store.clearComposerNotice();
+  const query = sessionComposerNotice.value?.searchQuery ?? "";
+  store.clearComposerNotice(session.value?.id);
   if (query) store.requestQuickOpen(query);
 }
 
@@ -2230,11 +2232,11 @@ defineExpose({
             </UiButton>
           </div>
         </div>
-        <p v-if="composerError || store.composerNotice" class="composer-error">
-          <span>{{ composerError || store.composerNotice }}</span>
+        <p v-if="composerError || sessionComposerNotice" class="composer-error">
+          <span>{{ composerError || sessionComposerNotice?.message }}</span>
           <span class="composer-error-actions">
             <UiButton
-              v-if="store.composerNoticeQuery"
+              v-if="sessionComposerNotice?.searchQuery"
               type="button"
               size="small"
               variant="ghost"

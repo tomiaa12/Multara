@@ -43,7 +43,7 @@ describe("previewFromTimelineItem", () => {
     ).toEqual({ type: "browser", url: "https://example.com/path" });
   });
 
-  test("opens file after write/edit tool_result", () => {
+  test("does not open editor after write/edit tool_result", () => {
     expect(
       previewFromTimelineItem(
         item({
@@ -52,7 +52,28 @@ describe("previewFromTimelineItem", () => {
           input: { path: "src/App.vue", contents: "x" },
         }),
       ),
-    ).toEqual({ type: "file", path: "src/App.vue" });
+    ).toBeNull();
+    expect(
+      previewFromTimelineItem(
+        item({
+          eventType: "tool_result",
+          tool: "Edit",
+          input: { path: "src/App.vue", old_string: "a", new_string: "b" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("opens file for intentional Open/Reveal tools", () => {
+    expect(
+      previewFromTimelineItem(
+        item({
+          eventType: "tool_result",
+          tool: "OpenFile",
+          input: { path: "src/App.vue", start_line: 12 },
+        }),
+      ),
+    ).toEqual({ type: "file", path: "src/App.vue", startLine: 12, endLine: 12 });
   });
 
   test("ignores read tools", () => {

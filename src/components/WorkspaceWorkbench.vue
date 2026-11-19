@@ -4760,13 +4760,13 @@ async function finishTreeDrag(
     return;
   }
   explorer.endDrag();
-  if (zone) store.reportComposerNotice(t("workbench.composerDropHint"));
+  if (zone) store.reportComposerNotice(t("workbench.composerDropHint"), "", store.activeSessionId);
 }
 
 function insertPathInTerminal(workspaceId: string, path: string) {
   const tab = terminalTabs.value.find((item) => item.id === activeTerminalId.value);
   if (!tab?.live) {
-    store.reportComposerNotice(t("workbench.openTerminalFirst"));
+    store.reportComposerNotice(t("workbench.openTerminalFirst"), "", store.activeSessionId);
     return;
   }
   const workspace = workspaceById(workspaceId);
@@ -5214,7 +5214,7 @@ function addSelectionToChat(
     : selection;
   const text = model.getValueInRange(range);
   if (!text.trim()) {
-    store.reportComposerNotice(t("workbench.emptyLineReference"));
+    store.reportComposerNotice(t("workbench.emptyLineReference"), "", store.activeSessionId);
     return;
   }
   const oversized = isOversizedInlineSelection(text, range.startLineNumber, range.endLineNumber);
@@ -5460,7 +5460,11 @@ watch(
     if (store.fileReveal?.nonce !== nonce) return;
     if (!matches.length || matches.some((match) => !match.path)) {
       const shown = pathWithoutWorktreeDir(request.path);
-      store.reportComposerNotice(t("workbench.fileNotFound", { path: shown }), shown);
+      store.reportComposerNotice(
+        t("workbench.fileNotFound", { path: shown }),
+        shown,
+        store.activeSessionId,
+      );
       return;
     }
     if (matches.length === 1) {

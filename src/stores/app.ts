@@ -97,8 +97,8 @@ export const useAppStore = defineStore("app", () => {
   const runStates = ref<Record<string, RunEvent>>({});
   const composerContexts = ref<EditorSelectionContext[]>([]);
   const composerFocusNonce = ref(0);
-  const composerNotice = ref("");
-  const composerNoticeQuery = ref("");
+  /** 输入框上方提示按会话隔离，切需求 / 切对话不串台。 */
+  const composerNotices = ref<Record<string, { message: string; searchQuery: string }>>({});
   const quickOpenRequest = ref<{ query: string; nonce: number } | null>(null);
   const sendFailure = ref<{
     nonce: number;
@@ -309,15 +309,10 @@ export const useAppStore = defineStore("app", () => {
         useDiffStore().onFileDeleted(payload.filePath, payload.workspaceId ?? "");
         return;
       }
-      // 快照在 tool_use（写入前）拍；写入完成后靠 affectedFile 再刷一次，否则改动条会晚一拍才出现。
+      // 快照在 tool_use（写入前）拍；写入完成后靠 affectedFile 再刷一次改动条。
+      // 不在这里打开编辑器：Write/Edit 只改磁盘，需要看文件时由用户点卡片或 AI 明确打开。
       if (payload.affectedFile) {
         useDiffStore().notifyDiskChanged();
-        revealWorkspaceFile(
-          payload.affectedFile,
-          undefined,
-          undefined,
-          payload.workspaceId ?? undefined,
-        );
       }
       dispatchAgentPreview(payload);
       const previous = runStates.value[payload.runId];
@@ -1661,14 +1656,30 @@ export const useAppStore = defineStore("app", () => {
     composerContexts.value = [];
   }
 
-  function reportComposerNotice(message: string, searchQuery = "") {
-    composerNotice.value = message;
-    composerNoticeQuery.value = searchQuery;
+  function composerNoticeKey(sessionId?: string | null) {
+    return (sessionId || activeSessionId.value || "").trim();
   }
 
-  function clearComposerNotice() {
-    composerNotice.value = "";
-    composerNoticeQuery.value = "";
+  function composerNoticeFor(sessionId?: string | null) {
+    const key = composerNoticeKey(sessionId);
+    return key ? composerNotices.value[key] ?? null : null;
+  }
+
+  function reportComposerNotice(message: string, searchQuery = "", sessionId?: string | null) {
+    const key = composerNoticeKey(sessionId);
+    if (!key || !message.trim()) return;
+    composerNotices.value = {
+      ...composerNotices.value,
+      [key]: { message: message.trim(), searchQuery: searchQuery.trim() },
+    };
+  }
+
+  function clearComposerNotice(sessionId?: string | null) {
+    const key = composerNoticeKey(sessionId);
+    if (!key || !composerNotices.value[key]) return;
+    const next = { ...composerNotices.value };
+    delete next[key];
+    composerNotices.value = next;
   }
 
   function requestQuickOpen(query: string) {
@@ -1704,15 +1715,12 @@ export const useAppStore = defineStore("app", () => {
     const preview = previewFromTimelineItem(payload.timelineItem);
     if (!preview) return;
     if (preview.type === "file") {
-      // affectedFile 已带更准的相对路径；时间线路径可能是绝对路径，作补充。
-      if (!payload.affectedFile) {
-        revealWorkspaceFile(
-          preview.path,
-          preview.startLine,
-          preview.endLine,
-          payload.workspaceId ?? undefined,
-        );
-      }
+      revealWorkspaceFile(
+        preview.path,
+        preview.startLine,
+        preview.endLine,
+        payload.workspaceId ?? undefined,
+      );
       return;
     }
     if (preview.type === "browser") {
@@ -1940,8 +1948,7 @@ export const useAppStore = defineStore("app", () => {
     queuedMessages,
     composerContexts,
     composerFocusNonce,
-    composerNotice,
-    composerNoticeQuery,
+    composerNoticeFor,
     quickOpenRequest,
     sendFailure,
     fileReveal,
