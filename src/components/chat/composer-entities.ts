@@ -38,7 +38,10 @@ export function activeComposerTrigger(text: string): ComposerTrigger | null {
   const match = text.match(/(?:^|\s)([@/#])([^\s]*)$/);
   if (!match) return null;
   const symbol = match[1] as ComposerTrigger["symbol"];
-  return { symbol, category: TRIGGER_CATEGORIES[symbol], query: match[2] ?? "" };
+  const query = match[2] ?? "";
+  // `/foo/bar` 这类路径不是 slash skill；查询里再出现 / 或 \ 就不当触发
+  if (symbol === "/" && /[/\\]/.test(query)) return null;
+  return { symbol, category: TRIGGER_CATEGORIES[symbol], query };
 }
 
 export function filterComposerEntities(items: ComposerEntityItem[], query: string) {

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
+import { vDetailsMotion } from "../ui/motion";
 import { BarChart3, Check, ListTodo, Save, Trash2, Wrench } from "@lucide/vue";
 import { useRoute, useRouter } from "vue-router";
 import type { Agent, AgentActivityRecord, RunStatistics, UsageDay } from "../domain/types";
@@ -335,7 +337,7 @@ function openRun(run: AgentActivityRecord) {
       </button>
     </nav>
 
-    <div v-if="section === 'overview'" class="agent-detail-body vs-scroll">
+    <div v-if="section === 'overview'" v-motion="{ enter: 'page' }" class="agent-detail-body vs-scroll">
       <div class="agent-overview">
         <div class="agent-run-column">
           <section>
@@ -403,7 +405,7 @@ function openRun(run: AgentActivityRecord) {
       </div>
     </div>
 
-    <div v-else-if="section === 'stats'" class="agent-detail-body vs-scroll">
+    <div v-else-if="section === 'stats'" v-motion="{ enter: 'page' }" class="agent-detail-body vs-scroll">
       <div class="agent-stats">
         <div class="usage-toolbar">
           <label>
@@ -464,7 +466,7 @@ function openRun(run: AgentActivityRecord) {
       </div>
     </div>
 
-    <div v-else-if="section === 'tasks'" class="agent-detail-body vs-scroll">
+    <div v-else-if="section === 'tasks'" v-motion="{ enter: 'page' }" class="agent-detail-body vs-scroll">
       <div class="agent-task-list">
         <div v-if="!tasks.length" class="ds-empty">
           <span class="ds-empty-icon"><ListTodo :size="18" /></span>
@@ -530,7 +532,7 @@ function openRun(run: AgentActivityRecord) {
               <UiTextarea v-model="draft.instructions" :rows="isChief ? 8 : 14" :readonly="isChief" :placeholder="t('agent.instructionsPlaceholder')" />
             </label>
             <!-- 平台层的运行说明对所有智能体都会附加，只读展示，让用户知道模型实际收到了什么 -->
-            <details v-if="showPlatformBrief && systemContext" class="agent-system-brief">
+            <details v-details-motion v-if="showPlatformBrief && systemContext" class="agent-system-brief">
               <summary>{{ t("agent.platformBrief") }} <small>{{ t("agent.platformBriefHint") }}</small></summary>
               <UiTextarea :model-value="systemContext.runtimeBrief" rows="16" readonly />
             </details>

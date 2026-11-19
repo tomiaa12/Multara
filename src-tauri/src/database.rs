@@ -315,6 +315,8 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           display_name TEXT,
           role TEXT NOT NULL DEFAULT 'owner',
           created_at TEXT NOT NULL,
+          target_type TEXT,
+          target_id TEXT,
           PRIMARY KEY (installation_id, channel_user_id)
         );
         CREATE TABLE IF NOT EXISTS channel_session_bindings (
@@ -471,6 +473,31 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     )?;
     let columns = ColumnCache::new(db);
     ensure_column(&columns, "channel_allowed_users", "note", "TEXT")?;
+    // 按用户绑定智能体/小队：旧版目标挂在安装上，升级时把已有授权用户回填到用户行。
+    let users_had_target = columns
+        .load("channel_allowed_users")?
+        .contains("target_id");
+    ensure_column(&columns, "channel_allowed_users", "target_type", "TEXT")?;
+    ensure_column(&columns, "channel_allowed_users", "target_id", "TEXT")?;
+    if !users_had_target {
+        db.execute_batch(
+            "UPDATE channel_allowed_users
+             SET target_type = (
+                   SELECT target_type FROM channel_installations
+                   WHERE id = channel_allowed_users.installation_id
+                 ),
+                 target_id = (
+                   SELECT target_id FROM channel_installations
+                   WHERE id = channel_allowed_users.installation_id
+                 )
+             WHERE IFNULL(target_id, '') = ''
+               AND EXISTS (
+                 SELECT 1 FROM channel_installations
+                 WHERE id = channel_allowed_users.installation_id
+                   AND IFNULL(target_id, '') != ''
+               );",
+        )?;
+    }
     ensure_column(&columns, "agent_runs", "started_at", "TEXT")?;
     ensure_column(&columns, "agent_runs", "completed_at", "TEXT")?;
     ensure_column(
@@ -764,7 +791,22 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     migrate_automation_workflow_target(db)?;
     crate::workflow::migrate(db)?;
     db.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
+        "CREATE TABLE IF NOT EXISTS session_message_queue (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+          position INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          attachments_json TEXT NOT NULL DEFAULT '[]',
+          requested_mode TEXT,
+          priority INTEGER NOT NULL DEFAULT 0,
+          immediate INTEGER NOT NULL DEFAULT 0,
+          source_json TEXT,
+          feishu_recipients_json TEXT,
+          created_at TEXT NOT NULL
+        );
+         CREATE INDEX IF NOT EXISTS idx_session_message_queue_session
+           ON session_message_queue(session_id, position);
+         CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
          CREATE INDEX IF NOT EXISTS idx_messages_run ON messages(run_id);
          CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(session_id);
          CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
@@ -1248,9 +1290,9 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
         ("shareDiagnostics", "false"),
         ("runTimeoutMinutes", "0"),
         ("webhookPort", "43127"),
-        ("formatOnSave", "false"),
         ("stickyScroll", "true"),
         ("wordWrap", "false"),
+        ("autoSaveOnFocusLoss", "false"),
     ] {
         db.execute(
             "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?1, ?2)",

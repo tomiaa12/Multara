@@ -2,14 +2,16 @@ import { defineStore } from "pinia";
 import { computed, getCurrentScope, ref, watch, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, RunStatus, Squad, TaskInput, TaskStatus } from "../domain/types";
-import { visiblePromptText } from "../components/chat/composer-content";
+import { titleSeedText } from "../components/chat/composer-content";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
 import * as backend from "../services/backend";
 import {
   clearLegacyDismissed,
+  loadActiveTabsMap,
   loadLegacyDismissed,
   loadOpenTabsMap,
+  persistActiveTabsMap,
   persistOpenTabsMap,
   tabScope,
 } from "./chat-open-tabs";
@@ -22,6 +24,7 @@ import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
 import { hasAwaitingQuestion } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
+import { previewFromTimelineItem } from "../components/chat/agent-preview";
 import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unanswered-turn";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
 import { confirmDialog } from "../components/ui/confirm-dialog";
@@ -81,9 +84,22 @@ export const useAppStore = defineStore("app", () => {
   const activeSessionId = ref("welcome");
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
   const activeInboxSessionId = ref<string | null>(null);
-  /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它 */
-  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean; source?: MessageSourceInput; feishuRecipients?: FeishuRecipientInput[] };
+  /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它；id/createdAt 用于落库恢复 */
+  type QueuedMessage = {
+    id: string;
+    sessionId: string;
+    content: string;
+    attachments: MessageAttachmentInput[];
+    requestedMode?: RunMode;
+    priority?: boolean;
+    immediate?: boolean;
+    source?: MessageSourceInput;
+    feishuRecipients?: FeishuRecipientInput[];
+    createdAt: string;
+  };
   const queuedMessages = ref<QueuedMessage[]>([]);
+  let queuePersistTimer = 0;
+  let queuePersistInFlight: Promise<void> | null = null;
   const dismissedQuestions = ref(new Set<string>(readDismissedQuestions()));
   const sendingSessions = ref(new Set<string>());
   const pendingRunSessions = ref(new Set<string>());
@@ -95,8 +111,8 @@ export const useAppStore = defineStore("app", () => {
   const runStates = ref<Record<string, RunEvent>>({});
   const composerContexts = ref<EditorSelectionContext[]>([]);
   const composerFocusNonce = ref(0);
-  const composerNotice = ref("");
-  const composerNoticeQuery = ref("");
+  /** 输入框上方提示按会话隔离，切需求 / 切对话不串台。 */
+  const composerNotices = ref<Record<string, { message: string; searchQuery: string }>>({});
   const quickOpenRequest = ref<{ query: string; nonce: number } | null>(null);
   const sendFailure = ref<{
     nonce: number;
@@ -115,8 +131,13 @@ export const useAppStore = defineStore("app", () => {
     endLine?: number;
     nonce: number;
   } | null>(null);
+  /** 执行模式右侧浏览器：AI 导航到某 URL 时主动打开。 */
+  const browserReveal = ref<{ url: string; nonce: number } | null>(null);
+  /** 执行/编码模式集成终端：控制通道或预览请求主动展开。 */
+  const terminalReveal = ref<{ workspaceId?: string; terminalId?: string; nonce: number } | null>(null);
   const workspaceJobs = ref<WorkspacePrepJob[]>([]);
   const openSessionTabs = ref<Record<string, string[]>>(loadOpenTabsMap());
+  const activeSessionTabs = ref<Record<string, string>>(loadActiveTabsMap());
   let eventsReady = false;
   let taskInboxRefresh: Promise<void> | undefined;
   let taskInboxRefreshQueued = false;
@@ -238,6 +259,7 @@ export const useAppStore = defineStore("app", () => {
       setFileIconTheme(data.value.settings.fileIconTheme);
       await registerRunEvents();
       await seedActiveRuns();
+      await restoreMessageQueue();
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
         activeSessionId.value = data.value.sessions.find((session) => !isWorkflowNodeSession(session.id))?.id ?? "";
       }
@@ -302,6 +324,12 @@ export const useAppStore = defineStore("app", () => {
         useDiffStore().onFileDeleted(payload.filePath, payload.workspaceId ?? "");
         return;
       }
+      // 快照在 tool_use（写入前）拍；写入完成后靠 affectedFile 再刷一次改动条。
+      // 不在这里打开编辑器：Write/Edit 只改磁盘，需要看文件时由用户点卡片或 AI 明确打开。
+      if (payload.affectedFile) {
+        useDiffStore().notifyDiskChanged();
+      }
+      dispatchAgentPreview(payload);
       const previous = runStates.value[payload.runId];
       const terminal = ["completed", "failed", "stopped"];
       if (
@@ -421,6 +449,16 @@ export const useAppStore = defineStore("app", () => {
         await surfacesRefresh;
         await reloadPersistedMessages(payload.sessionId);
         pruneRunStates();
+        // 空闲态「谁 / 多久前」：surfaces 合并后再写，避免后端尚未带上 lastRun 时被 merge 冲掉
+        const finishedSession = data.value?.sessions.find((item) => item.id === payload.sessionId);
+        if (finishedSession && payload.agentId) {
+          const endedAt = new Date().toISOString();
+          const prevAt = finishedSession.lastRunAt ? Date.parse(finishedSession.lastRunAt) : 0;
+          if (!finishedSession.lastRunAt || prevAt <= Date.parse(endedAt)) {
+            finishedSession.lastRunAgentId = payload.agentId;
+            finishedSession.lastRunAt = endedAt;
+          }
+        }
         if (previous?.status === "running") {
           await captureInboxNotice(payload);
         }
@@ -1094,6 +1132,22 @@ export const useAppStore = defineStore("app", () => {
     persistOpenTabsMap(openSessionTabs.value);
   }
 
+  function persistActiveSessionTabs() {
+    persistActiveTabsMap(activeSessionTabs.value);
+  }
+
+  function rememberActiveSessionTab(projectId: string | null | undefined, sessionId: string) {
+    if (!sessionId) return;
+    const scope = tabScope(projectId);
+    if (activeSessionTabs.value[scope] === sessionId) return;
+    activeSessionTabs.value = { ...activeSessionTabs.value, [scope]: sessionId };
+    persistActiveSessionTabs();
+  }
+
+  function lastActiveSessionId(projectId: string | null | undefined) {
+    return activeSessionTabs.value[tabScope(projectId)] ?? "";
+  }
+
   function hasOpenSessionTabs(projectId: string | null | undefined) {
     return Object.prototype.hasOwnProperty.call(openSessionTabs.value, tabScope(projectId));
   }
@@ -1151,6 +1205,8 @@ export const useAppStore = defineStore("app", () => {
 
   async function selectSession(sessionId: string) {
     activeSessionId.value = sessionId;
+    const session = data.value?.sessions.find((item) => item.id === sessionId);
+    if (session) rememberActiveSessionTab(session.projectId, sessionId);
     await loadMessages(sessionId);
   }
 
@@ -1180,7 +1236,10 @@ export const useAppStore = defineStore("app", () => {
     messages.value[session.id] = [];
     addOpenSessionTab(projectId, session.id);
     // 调用方要先写入草稿再切换，避免新输入框挂载时读到空内容。
-    if (options?.activate !== false) activeSessionId.value = session.id;
+    if (options?.activate !== false) {
+      activeSessionId.value = session.id;
+      rememberActiveSessionTab(projectId, session.id);
+    }
     return session;
   }
 
@@ -1204,6 +1263,8 @@ export const useAppStore = defineStore("app", () => {
     if (/^与 .+ 对话$/.test(trimmed)) return true;
     // 旧逻辑会把协议头截进标题，仍允许自动改名覆盖
     if (/^\[(实体引用|指派要求|代码引用|文件|文件夹|终端)\]/.test(trimmed)) return true;
+    // 文件夹 chip 曾把 UUID 目录名截成标题（如 1a39df9c-6690-48a9），仍允许自动改名
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}(-[0-9a-f]{4}){0,3}(-[0-9a-f]{1,12})?$/i.test(trimmed)) return true;
     return false;
   }
 
@@ -1261,8 +1322,8 @@ export const useAppStore = defineStore("app", () => {
         }
       }
       try {
-        // 给模型看可见正文，不要把 [实体引用] 协议头喂进去
-        const plainForModel = visiblePromptText(content).trim() || content;
+        // 给模型看人文正文（无正文时才带 chip 标签），不要把协议头喂进去
+        const plainForModel = titleSeedText(content).trim() || content;
         const generated = (await backend.generateChatSessionTitle(plainForModel)).trim();
         if (!generated || generated === fallback) return;
         if (task) {
@@ -1376,6 +1437,40 @@ export const useAppStore = defineStore("app", () => {
     })();
   }
 
+  function persistMessageQueue() {
+    window.clearTimeout(queuePersistTimer);
+    queuePersistTimer = window.setTimeout(() => {
+      const snapshot = queuedMessages.value.map((item) => ({ ...item }));
+      queuePersistInFlight = backend.saveMessageQueue(snapshot).catch((cause) => {
+        console.error("[app] persist message queue failed", cause);
+      });
+    }, 80);
+  }
+
+  async function restoreMessageQueue() {
+    try {
+      const rows = await backend.listMessageQueue();
+      const known = new Set((data.value?.sessions ?? []).map((session) => session.id));
+      queuedMessages.value = rows
+        .filter((row) => known.has(row.sessionId))
+        .map((row) => ({
+          id: row.id,
+          sessionId: row.sessionId,
+          content: row.content,
+          attachments: row.attachments ?? [],
+          createdAt: row.createdAt || new Date().toISOString(),
+          ...(row.requestedMode ? { requestedMode: row.requestedMode } : {}),
+          ...(row.priority ? { priority: true } : {}),
+          ...(row.immediate ? { immediate: true } : {}),
+          ...(row.source ? { source: row.source } : {}),
+          ...(row.feishuRecipients?.length ? { feishuRecipients: row.feishuRecipients } : {}),
+        }));
+      if (queuedMessages.value.length) void drainMessageQueue();
+    } catch (cause) {
+      console.error("[app] restore message queue failed", cause);
+    }
+  }
+
   function send(
     content: string,
     sessionId = activeSessionId.value,
@@ -1386,16 +1481,19 @@ export const useAppStore = defineStore("app", () => {
     if (!text && !attachments.length) return;
     if (!sessionId) return;
     const item: QueuedMessage = {
+      id: crypto.randomUUID(),
       sessionId,
       content: text,
       attachments,
       requestedMode: options.mode ?? sessionMode(sessionId),
       priority: options.priority,
+      createdAt: new Date().toISOString(),
       ...(options.source ? { source: options.source } : {}),
       ...(options.feishuRecipients?.length ? { feishuRecipients: options.feishuRecipients } : {}),
     };
     if (options.priority) queuedMessages.value.unshift(item);
     else queuedMessages.value.push(item);
+    persistMessageQueue();
     void drainMessageQueue();
   }
 
@@ -1470,9 +1568,14 @@ export const useAppStore = defineStore("app", () => {
 
   function mergeResolvePrompt(merge: MergeSession) {
     const target = merge.targetRemote ? `${merge.targetRemote}/${merge.targetBranch}` : merge.targetBranch;
+    const workPath = data.value?.workspaces.find((item) => item.id === merge.workspaceId)?.workPath;
     return [
-      `请帮我解决合并冲突：把 \`${merge.sourceLabel}\` 合并到 \`${target}\`。`,
-      "当前工作区是专门为这次合并创建的临时 Worktree，已经处于合并中状态，下面这些文件有冲突：",
+      `请帮我解决合并冲突：把 \`${merge.sourceLabel}\` 合并到 \`${target}\`（方向是来源 → 目标，不要反过来）。`,
+      workPath
+        ? `唯一可写目录是临时合并 Worktree：\`${workPath}\`。不要改其他 worktree / 原开发分支目录。`
+        : "当前工作区是专门为这次合并创建的临时 Worktree。",
+      `该目录已 checkout 在目标侧 \`${target}\` 上，并且 \`git merge\` 已开始（存在 MERGE_HEAD）。HEAD 是目标，MERGE_HEAD 是 \`${merge.sourceLabel}\`。不要再执行 git merge / pull / checkout / switch。`,
+      "下面这些文件有冲突：",
       ...merge.conflicts.map((file) => `- ${file}`),
       "",
       "要求：",
@@ -1537,6 +1640,7 @@ export const useAppStore = defineStore("app", () => {
     // 重放沿用该条消息当时的模式，不跟随会话当前默认模式
     const replayMode = messages.value[sessionId]?.find((item) => item.id === messageId)?.requestedMode ?? undefined;
     queuedMessages.value = queuedMessages.value.filter((item) => item.sessionId !== sessionId);
+    persistMessageQueue();
     await stopSessionRuns(sessionId);
     const diffStore = useDiffStore();
     const result = await executeReask({
@@ -1626,14 +1730,30 @@ export const useAppStore = defineStore("app", () => {
     composerContexts.value = [];
   }
 
-  function reportComposerNotice(message: string, searchQuery = "") {
-    composerNotice.value = message;
-    composerNoticeQuery.value = searchQuery;
+  function composerNoticeKey(sessionId?: string | null) {
+    return (sessionId || activeSessionId.value || "").trim();
   }
 
-  function clearComposerNotice() {
-    composerNotice.value = "";
-    composerNoticeQuery.value = "";
+  function composerNoticeFor(sessionId?: string | null) {
+    const key = composerNoticeKey(sessionId);
+    return key ? composerNotices.value[key] ?? null : null;
+  }
+
+  function reportComposerNotice(message: string, searchQuery = "", sessionId?: string | null) {
+    const key = composerNoticeKey(sessionId);
+    if (!key || !message.trim()) return;
+    composerNotices.value = {
+      ...composerNotices.value,
+      [key]: { message: message.trim(), searchQuery: searchQuery.trim() },
+    };
+  }
+
+  function clearComposerNotice(sessionId?: string | null) {
+    const key = composerNoticeKey(sessionId);
+    if (!key || !composerNotices.value[key]) return;
+    const next = { ...composerNotices.value };
+    delete next[key];
+    composerNotices.value = next;
   }
 
   function requestQuickOpen(query: string) {
@@ -1650,24 +1770,59 @@ export const useAppStore = defineStore("app", () => {
     endLine?: number,
     workspaceId?: string,
   ) {
-    fileReveal.value = { path, startLine, endLine, workspaceId, nonce: Date.now() };
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    fileReveal.value = { path: trimmed, startLine, endLine, workspaceId, nonce: Date.now() };
+  }
+
+  function revealBrowser(url: string) {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    browserReveal.value = { url: trimmed, nonce: Date.now() };
+  }
+
+  function revealTerminal(workspaceId?: string, terminalId?: string) {
+    terminalReveal.value = { workspaceId, terminalId, nonce: Date.now() };
+  }
+
+  function dispatchAgentPreview(payload: RunEvent) {
+    const preview = previewFromTimelineItem(payload.timelineItem);
+    if (!preview) return;
+    if (preview.type === "file") {
+      revealWorkspaceFile(
+        preview.path,
+        preview.startLine,
+        preview.endLine,
+        payload.workspaceId ?? undefined,
+      );
+      return;
+    }
+    if (preview.type === "browser") {
+      revealBrowser(preview.url);
+      return;
+    }
+    // shell 工具仍只在聊天卡片里跑；长跑服务请用 `multara terminal run` 进集成终端。
   }
 
   function removeQueuedMessage(index: number) {
     if (index < 0 || index >= queuedMessages.value.length) return;
     queuedMessages.value.splice(index, 1);
+    persistMessageQueue();
   }
 
   /** 取出一条排队消息（编辑时放回输入框） */
   function takeQueuedMessage(index: number) {
     if (index < 0 || index >= queuedMessages.value.length) return null;
-    return queuedMessages.value.splice(index, 1)[0] ?? null;
+    const item = queuedMessages.value.splice(index, 1)[0] ?? null;
+    if (item) persistMessageQueue();
+    return item;
   }
 
   function promoteQueuedMessage(index: number) {
     const item = takeQueuedMessage(index);
     if (!item) return;
     queuedMessages.value.unshift({ ...item, priority: true, immediate: true });
+    persistMessageQueue();
     drainMessageQueue();
   }
 
@@ -1679,14 +1834,17 @@ export const useAppStore = defineStore("app", () => {
       && (item.immediate || !sessionProcessing(item.sessionId))
       && (item.priority || !awaitingAnswer(item.sessionId)),
     );
+    let changed = false;
     for (const item of ready) {
       if (sendingSessions.value.has(item.sessionId)) continue;
       const index = queuedMessages.value.indexOf(item);
       if (index < 0) continue;
       queuedMessages.value.splice(index, 1);
+      changed = true;
       sendingSessions.value.add(item.sessionId);
       void sendQueuedMessage(item);
     }
+    if (changed) persistMessageQueue();
   }
 
   function sendQueued(next: QueuedMessage) {
@@ -1871,11 +2029,12 @@ export const useAppStore = defineStore("app", () => {
     queuedMessages,
     composerContexts,
     composerFocusNonce,
-    composerNotice,
-    composerNoticeQuery,
+    composerNoticeFor,
     quickOpenRequest,
     sendFailure,
     fileReveal,
+    browserReveal,
+    terminalReveal,
     runStates,
     processingMessage,
     sessionProcessing,
@@ -1947,6 +2106,8 @@ export const useAppStore = defineStore("app", () => {
     openSessionTabs,
     hasOpenSessionTabs,
     openedSessionIds,
+    lastActiveSessionId,
+    rememberActiveSessionTab,
     seedOpenSessionTabs,
     addOpenSessionTab,
     closeOpenSessionTabs,
@@ -1970,6 +2131,8 @@ export const useAppStore = defineStore("app", () => {
     clearComposerNotice,
     dismissSendFailure,
     revealWorkspaceFile,
+    revealBrowser,
+    revealTerminal,
     removeQueuedMessage,
     takeQueuedMessage,
     promoteQueuedMessage,

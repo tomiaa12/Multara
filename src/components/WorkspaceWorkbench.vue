@@ -14,6 +14,7 @@ import {
   watchEffect,
 } from "vue";
 import { useRoute } from "vue-router";
+import { vMotion } from "../ui/motion";
 import { confirmDialog } from "./ui/confirm-dialog";
 import { registerCloseSurface } from "./close-surface";
 import { t } from "../i18n";
@@ -162,6 +163,7 @@ import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
 import { activeTerminalSessionId, terminalSessions } from "../stores/terminal-sessions";
+import { readProjectTerminalOpen, writeProjectTerminalOpen } from "../stores/terminal-layout";
 import { useAppStore } from "../stores/app";
 import { useCanvasStore } from "../stores/canvas";
 import UiFrame from "./UiFrame.vue";
@@ -208,16 +210,14 @@ const workspaces = computed(() => {
   const source = props.preview
     ? [previewWorkspace, previewWorkspaceB]
     : (() => {
-        const projectWorkspaces =
+        const shared =
           store.data?.workspaces.filter(
-            (item) => item.projectId === projectId.value,
+            (item) => item.projectId === projectId.value && !item.sessionId,
           ) ?? [];
-        const dedicated = projectWorkspaces.filter(
-          (item) => item.sessionId === store.activeSessionId,
-        );
-        return dedicated.length
-          ? dedicated
-          : projectWorkspaces.filter((item) => !item.sessionId);
+        if (!store.activeSessionId) return shared;
+        const session = store.data?.sessions.find((item) => item.id === store.activeSessionId);
+        if (session?.projectId !== projectId.value) return shared;
+        return store.sessionWorkspaces(store.activeSessionId);
       })();
   return source.filter((item) => !detachedWorkspaceIds.value.has(item.id));
 });
@@ -323,12 +323,20 @@ const searchView = ref<{
   findIn: (workspaceId: string, include: string) => void;
   focusSearch: () => void;
 } | null>(null);
-const terminalOpen = ref(false);
+const terminalOpen = ref(
+  props.preview ? false : readProjectTerminalOpen("workbench", props.projectId ?? ""),
+);
 const terminalHeight = ref(Number(localStorage.getItem("multara.panel.terminalHeight")) || 240);
 const previewTerminals = ref<TerminalTab[]>([]);
 const previewActiveTerminalId = ref("");
 const terminalTabs = props.preview ? previewTerminals : terminalSessions;
 const activeTerminalId = props.preview ? previewActiveTerminalId : activeTerminalSessionId;
+/** 只展示当前需求工作区的终端；其它需求的会话留在 store 里，切回去还能接着用。 */
+const visibleTerminalTabs = computed(() => {
+  if (props.preview) return previewTerminals.value;
+  const ids = new Set(workspaces.value.map((item) => item.id));
+  return terminalSessions.value.filter((item) => ids.has(item.workspaceId));
+});
 const terminalProfiles = ref<backend.TerminalProfile[]>([]);
 const defaultTerminalProfile = ref(localStorage.getItem("multara.terminal.defaultProfile") || "");
 const pendingTerminalProfile = ref<string | undefined>();
@@ -528,6 +536,7 @@ const workspaceSummary = computed(() => {
 const workbenchActive = ref(true);
 onActivated(() => {
   workbenchActive.value = true;
+  syncActiveTerminalToVisible();
 });
 onDeactivated(() => {
   workbenchActive.value = false;
@@ -791,9 +800,9 @@ const dirty = computed(() =>
     activeFile.value && activeFile.value.content !== originalContent.value,
   ),
 );
-const formatOnSave = computed(() => store.data?.settings.formatOnSave === "true");
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
 const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
+const autoSaveOnFocusLoss = computed(() => store.data?.settings.autoSaveOnFocusLoss === "true");
 const activeEditorOptions = computed(() => {
   const file = activeFile.value;
   if (!file) return { insertSpaces: true, tabSize: 4, eol: "LF" as EditorEol };
@@ -2537,9 +2546,8 @@ const markdownToggleVisible = computed(() =>
 const markdownMode = computed(() => {
   const file = activeFile.value;
   if (!file || !markdownToggleVisible.value) return "source";
-  // HTML 默认直接看渲染效果，Markdown 默认看源码。
-  return markdownModes.value[editorLanguageKey(file.workspaceId, file.path)]
-    ?? (isHtmlFile(file) ? "preview" : "source");
+  // HTML / Markdown 默认都看源码，可手动切到 Preview。
+  return markdownModes.value[editorLanguageKey(file.workspaceId, file.path)] ?? "source";
 });
 
 function setMarkdownMode(mode: "preview" | "source") {
@@ -2834,7 +2842,20 @@ async function goPendingDiffFile(delta: number) {
 }
 
 function activateEditorTab(tab: EditorTab) {
+  const previous = activeEditorTab();
   flushActiveEditorTab();
+  // 切标签时 Monaco 往往不 blur；对齐 VS Code onFocusChange，离开当前编辑器就落盘。
+  if (
+    autoSaveOnFocusLoss.value
+    && !props.preview
+    && previous
+    && tabKey(previous) !== tabKey(tab)
+    && !isVirtualTab(previous)
+    && !previous.file.readOnly
+    && isEditorTabDirty(previous)
+  ) {
+    void saveTab(previous);
+  }
   ignoreDirtyPin.value = true;
   const key = tabKey(tab);
   activeEditorKey.value = key;
@@ -3166,6 +3187,37 @@ function closeAllEditorTabs() {
 async function saveAllOpenEditors() {
   for (const tab of [...dirtyEditorTabs()]) {
     if (!(await saveTab(tab))) return;
+  }
+}
+
+let autoSaveFocusTimer = 0;
+let autoSaveInFlight: Promise<void> | null = null;
+
+function scheduleAutoSaveOnFocusLoss() {
+  if (!autoSaveOnFocusLoss.value || props.preview) return;
+  window.clearTimeout(autoSaveFocusTimer);
+  autoSaveFocusTimer = window.setTimeout(() => {
+    void runAutoSaveOnFocusLoss();
+  }, 50);
+}
+
+async function runAutoSaveOnFocusLoss() {
+  if (!autoSaveOnFocusLoss.value || props.preview || autoSaveInFlight) return;
+  const tabs = dirtyEditorTabs().filter((tab) => !isVirtualTab(tab));
+  if (!tabs.length) return;
+  autoSaveInFlight = (async () => {
+    for (const tab of tabs) {
+      if (!(await saveTab(tab))) break;
+    }
+  })().finally(() => {
+    autoSaveInFlight = null;
+  });
+  await autoSaveInFlight;
+}
+
+function onWindowFocusLoss() {
+  if (document.visibilityState === "hidden" || !document.hasFocus()) {
+    scheduleAutoSaveOnFocusLoss();
   }
 }
 
@@ -3745,8 +3797,8 @@ async function killTerminal(id: string) {
     }
   }
   if (activeTerminalId.value === id) {
-    activeTerminalId.value = terminalTabs.value.find((item) => !item.pending)?.id
-      ?? terminalTabs.value[0]?.id
+    activeTerminalId.value = visibleTerminalTabs.value.find((item) => !item.pending)?.id
+      ?? visibleTerminalTabs.value[0]?.id
       ?? "";
   }
 }
@@ -3763,28 +3815,32 @@ watch(
   () => {
     const list = workspaces.value;
     if (!list.length) return;
-    const known = new Set(terminalTabs.value.map((tab) => tab.workspaceId));
-    const switched = terminalTabs.value.length > 0 && !list.some((workspace) => known.has(workspace.id));
-    if (switched) {
-      for (const tab of terminalTabs.value) {
-        if (!tab.live) continue;
-        forgetTerminal(tab.id);
-        void backend.terminalClose(tab.id);
-      }
-      terminalTabs.value = [];
-      activeTerminalId.value = "";
-    }
+    // 切换需求时不关其它需求的 PTY：会话留在共享 store，切回去还能接着看。
     for (const workspace of list) {
       if (terminalTabs.value.some((tab) => tab.workspaceId === workspace.id)) continue;
-      terminalTabs.value.push(pendingTerminal(workspace));
+      terminalTabs.value = [...terminalTabs.value, pendingTerminal(workspace)];
     }
-    if (terminalOpen.value && !terminalTabs.value.some((tab) => tab.id === activeTerminalId.value && !tab.pending)) {
-      const first = terminalTabs.value[0];
+    syncActiveTerminalToVisible();
+    const visible = visibleTerminalTabs.value;
+    if (terminalOpen.value && !visible.some((tab) => tab.id === activeTerminalId.value && !tab.pending)) {
+      const first = visible[0];
       if (first) void materializeTerminal(first);
     }
   },
   { immediate: true },
 );
+
+watch(terminalOpen, (open) => {
+  if (props.preview || !projectId.value) return;
+  writeProjectTerminalOpen("workbench", projectId.value, open);
+});
+
+function syncActiveTerminalToVisible() {
+  const visible = visibleTerminalTabs.value;
+  if (!visible.length) return;
+  if (visible.some((tab) => tab.id === activeTerminalId.value)) return;
+  activeTerminalId.value = visible.find((tab) => !tab.pending)?.id ?? visible[0]?.id ?? "";
+}
 
 watch(terminalFocus, (request) => {
   if (!request || props.preview) return;
@@ -3794,6 +3850,26 @@ watch(terminalFocus, (request) => {
   terminalOpen.value = true;
   activeTerminalId.value = tab.id;
   if (tab.pending) void materializeTerminal(tab);
+});
+
+watch(() => store.terminalReveal?.nonce, () => {
+  if (props.preview) return;
+  const request = store.terminalReveal;
+  if (!request) return;
+  const byId = request.terminalId
+    ? terminalTabs.value.find((item) => item.id === request.terminalId)
+    : undefined;
+  const byWorkspace = request.workspaceId
+    ? terminalTabs.value.find((item) => item.workspaceId === request.workspaceId && item.live && !item.pending)
+      ?? terminalTabs.value.find((item) => item.workspaceId === request.workspaceId)
+    : undefined;
+  const tab = byId ?? byWorkspace;
+  if (tab && !workspaces.value.some((workspace) => workspace.id === tab.workspaceId)) return;
+  terminalOpen.value = true;
+  if (!tab) return;
+  activeTerminalId.value = tab.id;
+  if (tab.pending) void materializeTerminal(tab);
+  else void nextTick(() => terminalPanel.value?.focus());
 });
 
 watch(terminalPick, (open) => {
@@ -4159,10 +4235,6 @@ async function saveTab(tab: EditorTab) {
 async function saveFile() {
   const tab = activeEditorTab();
   if (!tab || !activeFile.value || activeFile.value.readOnly) return;
-  if (formatOnSave.value) {
-    const action = codeEditor.value?.getAction("editor.action.formatDocument");
-    if (action) await action.run();
-  }
   flushActiveEditorTab();
   pinEditorTab(tab);
   if (!dirty.value || saving.value) return;
@@ -4689,13 +4761,13 @@ async function finishTreeDrag(
     return;
   }
   explorer.endDrag();
-  if (zone) store.reportComposerNotice(t("workbench.composerDropHint"));
+  if (zone) store.reportComposerNotice(t("workbench.composerDropHint"), "", store.activeSessionId);
 }
 
 function insertPathInTerminal(workspaceId: string, path: string) {
   const tab = terminalTabs.value.find((item) => item.id === activeTerminalId.value);
   if (!tab?.live) {
-    store.reportComposerNotice(t("workbench.openTerminalFirst"));
+    store.reportComposerNotice(t("workbench.openTerminalFirst"), "", store.activeSessionId);
     return;
   }
   const workspace = workspaceById(workspaceId);
@@ -5143,7 +5215,7 @@ function addSelectionToChat(
     : selection;
   const text = model.getValueInRange(range);
   if (!text.trim()) {
-    store.reportComposerNotice(t("workbench.emptyLineReference"));
+    store.reportComposerNotice(t("workbench.emptyLineReference"), "", store.activeSessionId);
     return;
   }
   const oversized = isOversizedInlineSelection(text, range.startLineNumber, range.endLineNumber);
@@ -5201,6 +5273,8 @@ function onEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   codeEditor.value = markRaw(editor);
   bindEditorZoom(editor, monaco);
   editor.onDidChangeCursorPosition(() => syncEditorDocument());
+  // 对齐 VS Code onFocusChange：离开整块编辑器（不是点开查找框）时保存。
+  editor.onDidBlurEditorWidget(() => scheduleAutoSaveOnFocusLoss());
   editor.addAction({
     id: "multara-save",
     label: t("workbench.shortcut.save"),
@@ -5387,7 +5461,11 @@ watch(
     if (store.fileReveal?.nonce !== nonce) return;
     if (!matches.length || matches.some((match) => !match.path)) {
       const shown = pathWithoutWorktreeDir(request.path);
-      store.reportComposerNotice(t("workbench.fileNotFound", { path: shown }), shown);
+      store.reportComposerNotice(
+        t("workbench.fileNotFound", { path: shown }),
+        shown,
+        store.activeSessionId,
+      );
       return;
     }
     if (matches.length === 1) {
@@ -5505,6 +5583,8 @@ onMounted(() => {
   });
   stopUnsavedEditor = registerUnsavedEditor(unsavedEditorOwner);
   window.addEventListener("resize", layoutEditor);
+  window.addEventListener("blur", onWindowFocusLoss);
+  document.addEventListener("visibilitychange", onWindowFocusLoss);
   bindGlobalKeys();
   resizePanel("left", 0);
   resizePanel("right", 0);
@@ -5524,6 +5604,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.clearTimeout(autoSaveFocusTimer);
+  window.removeEventListener("blur", onWindowFocusLoss);
+  document.removeEventListener("visibilitychange", onWindowFocusLoss);
   unregisterCloseSurface?.();
   unregisterCloseSurface = null;
   stopOsHover();
@@ -5671,10 +5754,19 @@ watch(dirty, (isDirty) => {
 
 watch(projectId, async (id, previous) => {
   if (!previous || previous === id) return;
-  // 项目已经切换无法撤回；用户取消时保留标签，避免丢掉未保存修改。
-  if (!(await confirmDirtyEditorTabs())) return;
+  // 路由 beforeEach 已拦过未保存离开；这里只清本实例残留（共用 keep-alive 槽时会原地换需求）。
+  if (dirtyEditorTabs().length && !(await confirmDirtyEditorTabs())) return;
   clearEditorTabs();
   externalChangePending.value = false;
+  workspaceRoots.value = {};
+  directoryChildren.value = {};
+  expandedDirectories.value = new Set();
+  loadingDirectories.value = new Set();
+  detachedWorkspaceIds.value = new Set();
+  leftTab.value = "files";
+  if (!props.preview) {
+    terminalOpen.value = readProjectTerminalOpen("workbench", id);
+  }
 });
 
 watch(
@@ -5956,7 +6048,7 @@ defineExpose({
                 @auxclick="onOpenEditorAux($event, tab)"
                 @contextmenu="openOpenEditorsMenu(tab, $event)"
               >
-                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="15" />
                 <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
                 <span :class="{ 'is-preview-name': !tab.pinned }">{{ editorTabName(tab) }}</span>
                 <i v-if="isEditorTabDirty(tab)" class="ui-pane-dirty" />
@@ -6034,7 +6126,7 @@ defineExpose({
           </UiButton>
           </template>
         <div class="explorer-folders">
-        <div v-if="explorerFindOpen" class="explorer-find">
+        <div v-motion="'fade'" v-if="explorerFindOpen" class="explorer-find">
           <input
             v-model="explorerFindQuery"
             class="explorer-find-input"
@@ -6378,8 +6470,8 @@ defineExpose({
             @close="closeEditorTab(tab, $event)"
             @contextmenu="openTabMenu(tab, $event)"
           >
-            <Codicon v-if="tab.canvas" name="dashboard" :size="16" />
-            <Codicon v-else-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+            <Codicon v-if="tab.canvas" name="dashboard" :size="15" />
+            <Codicon v-else-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="15" />
             <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
           </EditorTabButton>
         </div>
@@ -6447,7 +6539,7 @@ defineExpose({
             </button>
           </UiTooltip>
         </div>
-        <div v-if="pendingDiffFiles.length" class="chat-editor-overlay-widget">
+        <div v-motion="'dropdown'" v-if="pendingDiffFiles.length" class="chat-editor-overlay-widget">
           <UiButton
             variant="ghost"
             size="icon"
@@ -6605,7 +6697,7 @@ defineExpose({
         v-show="terminalOpen"
         :data-open="terminalOpen ? 'true' : 'false'"
         ref="terminalPanel"
-        :sessions="terminalTabs"
+        :sessions="visibleTerminalTabs"
         :active-id="activeTerminalId"
         :height="terminalHeight"
         :new-title="newTerminalTitle"
@@ -6636,7 +6728,7 @@ defineExpose({
         @close="closeQuickOpen"
         @open="openQuickOpenFile"
       />
-      <div
+      <div v-motion="'dropdown'"
         v-if="terminalPick"
         ref="terminalPickEl"
         class="quick-pick"

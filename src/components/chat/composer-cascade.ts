@@ -51,6 +51,10 @@ export function navigateCascade(
         handled: true,
       };
     }
+    // 结果为空时 Enter 不拦截，让输入框正常发送；并关掉浮层
+    if (key === "Enter" && resultCount === 0) {
+      return { state, intent: "close", handled: false };
+    }
     return { state, intent: "activate-result", handled: true };
   }
   return { state, intent: "none", handled: false };

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, provide, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { chatMessagesKey } from "../components/chat/context-usage";
-import { ArrowUp, LoaderCircle, Plus, Square } from "@lucide/vue";
+import { ArrowUp, LoaderCircle, Plus } from "@lucide/vue";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
+import ChatStopButton from "../components/chat/ChatStopButton.vue";
 import ReshuffleModal from "../components/chat/ReshuffleModal.vue";
 import ChatQuestionCarousel from "../components/chat/ChatQuestionCarousel.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
@@ -14,21 +16,29 @@ import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { resolveQuestionStates } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
-import { carriedMentions, feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
-import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
+import {
+  listIsAtBottom,
+  pinLastExchangeToTop,
+  syncStickyExchangeMinHeight,
+  syncStickyUserTurnPush,
+} from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
 import {
   shouldHideAssistantSpeaker,
   speakerForMessage,
   subtaskEmbedForMessage,
 } from "../components/chat/message-speaker";
+import { resolveSessionLiveWorkStatus } from "../components/agent-live-status";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import {
+  classifyClipboardEntry,
   type OsDroppedEntry,
   type WorkspaceFileDragPayload,
 } from "../components/chat/workspace-file-drag";
 import * as backend from "../services/backend";
+import * as explorerBackend from "../services/explorer-backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { useAppStore } from "../stores/app";
@@ -41,13 +51,19 @@ const props = withDefaults(defineProps<{
   sessionId: string;
   agentId: string;
   thread?: boolean;
+  /** 任务详情：自管消息滚动，输入框固定在底部（对齐收件箱 thread）。 */
+  docked?: boolean;
   historyViewOnly?: boolean;
   unreadMessageId?: string | null;
 }>(), {
   thread: false,
+  docked: false,
   historyViewOnly: false,
   unreadMessageId: null,
 });
+
+/** 自管滚动：收件箱 thread 或任务详情 docked。 */
+const selfScroll = computed(() => props.thread || props.docked);
 
 const store = useAppStore();
 const diffStore = useDiffStore();
@@ -59,6 +75,9 @@ const restoreNonce = ref(0);
 const restoreMessageId = ref("");
 let dirtyRollbackResolve: ((allowed: boolean) => void) | null = null;
 const logEl = ref<HTMLElement | null>(null);
+/** 收件箱 thread：主动上滚后断开跟流，避免回答过程中被拽回底部。 */
+const followBottom = ref(true);
+let suppressScrollFollow = false;
 const composer = ref<{
   clear: () => void;
   focus: () => void;
@@ -79,6 +98,21 @@ const pageActive = ref(true);
 
 const messages = computed(() => store.messages[props.sessionId] ?? []);
 provide(chatMessagesKey, messages);
+
+/** 与 ChatPanel 一致：每轮用户提问 + 后续助手回复包成 message-exchange，便于末轮撑满贴顶。 */
+const messageGroups = computed(() => {
+  const groups: Array<{ id: string; messages: typeof messages.value }> = [];
+  for (const message of messages.value) {
+    const current = groups.at(-1);
+    if (message.role === "user" || !current) {
+      groups.push({ id: message.id, messages: [message] });
+    } else {
+      current.messages.push(message);
+    }
+  }
+  return groups;
+});
+const lastGroupId = computed(() => messageGroups.value.at(-1)?.id ?? "");
 const session = computed(() => store.data?.sessions.find((item) => item.id === props.sessionId) ?? null);
 const agent = computed(() => store.data?.agents.find((item) => item.id === props.agentId));
 const projectId = computed(() =>
@@ -118,6 +152,12 @@ const sessionRunning = computed(() =>
   ),
 );
 const sessionProcessing = computed(() => store.sessionProcessing(props.sessionId));
+const lastUserMessageId = computed(() => {
+  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+    if (messages.value[index]?.role === "user") return messages.value[index]!.id;
+  }
+  return "";
+});
 const workingAgents = computed(() => {
   const seen = new Set<string>();
   const agents: Array<{ id: string; name: string; avatar: string }> = [];
@@ -153,17 +193,11 @@ const currentTurnAssistant = computed(() => {
   }
   return null;
 });
-const liveRunStatus = computed(() => {
-  const events = Object.values(store.runStates).filter((event) =>
-    event.sessionId === props.sessionId
-    && (event.status === "queued" || event.status === "running")
-    && !event.runId.startsWith("pending:"),
-  );
-  if (events.some((event) => event.status === "running")) return "running" as const;
-  if (events.some((event) => event.status === "queued")) return "queued" as const;
-  if (sessionProcessing.value) return "sending" as const;
-  return null;
-});
+const liveRunStatus = computed(() => resolveSessionLiveWorkStatus({
+  runStates: store.runStates,
+  sessionId: props.sessionId,
+  processing: sessionProcessing.value,
+}));
 const liveAnchor = computed(() => {
   const created = Date.parse(currentTurnAssistant.value?.createdAt ?? "");
   if (Number.isFinite(created) && created > 0 && created <= liveClock.value + 1000) return created;
@@ -245,8 +279,9 @@ function subtaskEmbed(message: ChatMessage) {
   return subtaskEmbedForMessage(messages.value, index);
 }
 
-function hideSpeaker(message: ChatMessage, index: number) {
-  return shouldHideAssistantSpeaker(messages.value[index - 1], message);
+function hideSpeaker(message: ChatMessage) {
+  const index = messages.value.findIndex((item) => item.id === message.id);
+  return shouldHideAssistantSpeaker(index > 0 ? messages.value[index - 1] : undefined, message);
 }
 
 function messageRunning(message: ChatMessage) {
@@ -273,6 +308,10 @@ function rememberChip(context: EditorSelectionContext) {
   });
 }
 
+defineExpose({
+  focus: () => composer.value?.focus(),
+});
+
 async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
   if (file.workspaceId) {
     rememberChip(await workspacePathChip(file));
@@ -289,7 +328,49 @@ async function onDropWorkspace(file: WorkspaceFileDragPayload) {
 
 async function onDropOs(entries: OsDroppedEntry[]) {
   for (const entry of entries) {
+    if (entry.file?.type.startsWith("image/") && !entry.path) {
+      await pasteImages([entry.file]);
+      continue;
+    }
     const chip = await externalPathChip(entry, workspaces.value);
+    if (!chip) {
+      pasteError.value = t("chat.noRefFiles");
+      continue;
+    }
+    rememberChip(chip);
+  }
+}
+
+/** 剪贴板粘贴：与 ChatPanel 一致，图片走附件，路径走 chip。 */
+async function pasteOsFiles(entries: OsDroppedEntry[]) {
+  if (props.historyViewOnly) return;
+  let list = entries;
+  if (!list.length) {
+    const copied = await explorerBackend.readClipboardFiles().catch(() => []);
+    list = copied.map((file) => ({
+      path: file.path,
+      name: file.name || file.path.split(/[\\/]/).pop() || file.path,
+      isDirectory: file.isDirectory,
+    }));
+  }
+  for (const entry of list) {
+    const action = classifyClipboardEntry(entry, workspaces.value);
+    if (!action) {
+      if (!entry.path && !entry.file) pasteError.value = t("chat.noRefFiles");
+      continue;
+    }
+    if (action.kind === "image") {
+      await pasteImages([action.file]);
+      continue;
+    }
+    if (action.kind === "chip") {
+      rememberChip(await workspacePathChip(action));
+      continue;
+    }
+    const chip = await externalPathChip(
+      { path: action.path, name: action.name, isDirectory: action.kind === "folder" },
+      workspaces.value,
+    );
     if (!chip) {
       pasteError.value = t("chat.noRefFiles");
       continue;
@@ -404,11 +485,6 @@ function submit() {
   pastes.value = [];
   composer.value?.clear();
   draftEmpty.value = true;
-  const carried = carriedMentions(nodes, targetValue.value);
-  if (carried.length) {
-    composer.value?.restore(carried);
-    draftEmpty.value = false;
-  }
 }
 
 function stop() {
@@ -420,20 +496,55 @@ function syncUserTurnPush(root: HTMLElement | null = logEl.value) {
   syncStickyUserTurnPush(root, true);
 }
 
-function onThreadScroll() {
-  if (!props.thread) return;
-  syncUserTurnPush();
+function onDockedScroll() {
+  if (!selfScroll.value) return;
+  const list = logEl.value;
+  if (!list) return;
+  if (!suppressScrollFollow) followBottom.value = listIsAtBottom(list);
+  syncUserTurnPush(list);
 }
 
-function revealThreadScroll() {
+/** 自管滚动：末轮撑满一屏后贴底，提问 sticky 停在视口顶（对齐 ChatPanel）。 */
+function pinDockedLastExchange(force = false) {
   const list = logEl.value;
-  if (!list || !props.thread) return;
+  if (!list || !selfScroll.value) return;
+  if (!force && !followBottom.value) return;
+  suppressScrollFollow = true;
+  const last = syncStickyExchangeMinHeight(list, true);
+  if (!last) {
+    list.scrollTop = list.scrollHeight;
+  } else {
+    pinLastExchangeToTop(list, last);
+  }
+  syncUserTurnPush(list);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      suppressScrollFollow = false;
+    });
+  });
+}
+
+function revealDockedScroll(options: { force?: boolean; fromUserSend?: boolean } = {}) {
+  const list = logEl.value;
+  if (!list || !selfScroll.value) return;
   if (props.unreadMessageId && scrollListToMessage(list, props.unreadMessageId)) {
+    followBottom.value = false;
     syncUserTurnPush(list);
     return;
   }
-  list.scrollTop = list.scrollHeight;
-  syncUserTurnPush(list);
+  if (options.fromUserSend || options.force) followBottom.value = true;
+  if (!followBottom.value) {
+    // 仍刷新末轮 min-height，但不改 scrollTop，避免上滚阅读时被拽走
+    syncStickyExchangeMinHeight(list, true);
+    syncUserTurnPush(list);
+    return;
+  }
+  pinDockedLastExchange(true);
+  // 布局算完 min-height 后再贴一次，避免发送瞬间仍停在底部
+  requestAnimationFrame(() => {
+    pinDockedLastExchange();
+    requestAnimationFrame(() => pinDockedLastExchange());
+  });
 }
 
 onMounted(() => {
@@ -441,97 +552,115 @@ onMounted(() => {
 });
 
 watch(() => props.sessionId, (sessionId) => {
+  followBottom.value = true;
   void store.loadMessages(sessionId);
 });
 
 watch(
-  () => [props.unreadMessageId, messages.value.length] as const,
-  async () => {
-    if (!props.thread) return;
+  () => [props.unreadMessageId, messages.value.length, selfScroll.value] as const,
+  async (current, previous) => {
+    if (!selfScroll.value) return;
+    const lengthBefore = Number(previous?.[1] ?? 0);
+    const lengthAfter = Number(current[1] ?? 0);
+    const fromUserSend = lengthAfter > lengthBefore
+      && messages.value.slice(lengthBefore).some((message) => message.role === "user");
+    const historyFilled = lengthBefore === 0 && lengthAfter > 0;
     await nextTick();
-    requestAnimationFrame(() => revealThreadScroll());
+    requestAnimationFrame(() => {
+      revealDockedScroll({
+        force: historyFilled || !previous,
+        fromUserSend,
+      });
+    });
   },
   { immediate: true },
 );
 </script>
 
 <template>
-  <div class="task-activity" :class="{ 'is-thread': thread }">
-    <!-- 任务详情由外层 task-issue-scroll 负责滚动；仅 inbox thread 自管滚动时挂 vs-scroll -->
+  <div class="task-activity" :class="{ 'is-thread': thread, 'is-docked': docked }">
+    <!-- thread / docked 自管滚动；否则由任务详情外层滚动（旧布局兜底） -->
     <div
       v-if="messages.length"
       ref="logEl"
       class="task-activity-log"
-      :class="{ 'vs-scroll': thread }"
-      @scroll.passive="onThreadScroll"
+      :class="{ 'vs-scroll': selfScroll }"
+      @scroll.passive="onDockedScroll"
     >
-      <template v-for="(message, messageIndex) in messages" :key="message.id">
-        <div
-          v-if="message.id === unreadMessageId"
-          class="chat-new-divider"
-          role="separator"
-          :data-message-id="message.id"
-        >
-          <span>{{ t('chat.newMessages') }}</span>
-        </div>
-        <UserPrompt
-          v-if="message.role === 'user'"
-          :data-message-id="message.id"
-          :message="message"
-          :target-label="agent?.name ?? t('inbox.agentFallback')"
-          :target-avatar="agent?.avatar ?? 'M'"
-          :target-value="agent ? `agent:${agent.id}` : ''"
-          :allow-target-change="false"
-          :enable-replay="!historyViewOnly"
-          :view-only="historyViewOnly"
-          :restore-nonce="restoreNonce"
-          :restore-message-id="restoreMessageId"
-          :running="!historyViewOnly && sessionProcessing"
-          @start-reask="startReask"
-          @stop="stop"
-        />
-        <AssistantMessage
-          v-else
-          :data-message-id="message.id"
-          :message="message"
-          :speaker="speaker(message)"
-          :running="messageRunning(message)"
-          :allow-continue="false"
-          :default-collapse-subagents="thread || historyViewOnly"
-          :hide-speaker="hideSpeaker(message, messageIndex)"
-          :embed-subtask="subtaskEmbed(message)"
-        />
-      </template>
-      <div
-        v-if="showWorking"
-        class="assistant-working"
-        aria-live="polite"
+      <section
+        v-for="group in messageGroups"
+        :key="group.id"
+        class="message-exchange"
       >
-        <LoaderCircle :size="14" />
-        <AgentAvatar
-          v-for="item in workingAgents"
-          :key="item.id"
-          :value="item.avatar"
-          :name="item.name"
-          :size="16"
-        />
-        <span class="assistant-working-lines">
-          <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
-            <UiShimmerText :text="line.label" rotate />
-            <span>· {{ line.elapsed }}</span>
+        <template v-for="(message, messageIndex) in group.messages" :key="message.id">
+          <div
+            v-if="message.id === unreadMessageId"
+            class="chat-new-divider"
+            role="separator"
+            :data-message-id="message.id"
+          >
+            <span>{{ t('chat.newMessages') }}</span>
+          </div>
+          <UserPrompt
+            v-if="message.role === 'user'"
+            :data-message-id="message.id"
+            :message="message"
+            :target-label="agent?.name ?? t('inbox.agentFallback')"
+            :target-avatar="agent?.avatar ?? 'M'"
+            :target-value="agent ? `agent:${agent.id}` : ''"
+            :allow-target-change="false"
+            :enable-replay="!historyViewOnly"
+            :view-only="historyViewOnly"
+            :restore-nonce="restoreNonce"
+            :restore-message-id="restoreMessageId"
+            :running="!historyViewOnly && sessionProcessing && message.id === lastUserMessageId"
+            @start-reask="startReask"
+            @stop="stop"
+          />
+          <AssistantMessage
+            v-else
+            :data-message-id="message.id"
+            :message="message"
+            :speaker="speaker(message)"
+            :running="messageRunning(message)"
+            :allow-continue="false"
+            :default-collapse-subagents="thread || historyViewOnly"
+            :hide-speaker="hideSpeaker(message)"
+            :embed-subtask="subtaskEmbed(message)"
+          />
+        </template>
+        <div
+          v-motion="{ enter: 'fade' }"
+          v-if="showWorking && group.id === lastGroupId"
+          class="assistant-working"
+          aria-live="polite"
+        >
+          <LoaderCircle :size="12" />
+          <AgentAvatar
+            v-for="item in workingAgents"
+            :key="item.id"
+            :value="item.avatar"
+            :name="item.name"
+            :size="14"
+          />
+          <span class="assistant-working-lines">
+            <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
+              <UiShimmerText :text="line.label" rotate />
+              <span>· {{ line.elapsed }}</span>
+            </span>
           </span>
-        </span>
-      </div>
+        </div>
+      </section>
     </div>
     <p v-else-if="showWorking" class="task-activity-empty">
       <span class="assistant-working" aria-live="polite">
-        <LoaderCircle :size="14" />
+        <LoaderCircle :size="12" />
         <AgentAvatar
           v-for="item in workingAgents"
           :key="item.id"
           :value="item.avatar"
           :name="item.name"
-          :size="16"
+          :size="14"
         />
         <span class="assistant-working-lines">
           <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
@@ -572,6 +701,7 @@ watch(
       @change="onChange"
       @submit="submit"
       @paste-image="pasteImages"
+      @paste-os-files="pasteOsFiles"
       @target-change="onTargetChange"
       @drop-workspace-file="onDropWorkspace"
       @drop-os-files="onDropOs"
@@ -595,9 +725,7 @@ watch(
         >
           <Plus :size="16" />
         </UiButton>
-        <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" :tip="t('chat.stop')" @click="stop">
-          <Square :size="14" />
-        </UiButton>
+        <ChatStopButton v-if="sessionRunning && !canSend" @click="stop" />
         <UiButton v-else class="ds-send-button send-button" type="submit" :tip="sessionRunning ? t('chat.enqueue') : t('chat.send')" :disabled="!canSend">
           <ArrowUp :size="16" />
         </UiButton>

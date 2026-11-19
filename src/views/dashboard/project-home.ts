@@ -7,6 +7,7 @@ import type {
   Squad,
   Workspace,
 } from "../../domain/types";
+import { formatRelativeTime } from "../../components/ui/relative-time";
 import { t } from "../../i18n";
 import { isWorkflowNodeSession } from "../../domain/workflow";
 
@@ -36,6 +37,8 @@ export interface HomeProject {
   workerSentence: string;
   workerParts: SentencePart[];
   idleLine: string;
+  /** 空闲时列表旁文案：相对时间；进行中为空（由 AgentLiveStatus 播报动作） */
+  activityLabel: string;
   workers: HomeWorker[];
   /** 这个需求下所有会话；界面据此读实时 run 状态 */
   sessionIds: string[];
@@ -222,27 +225,28 @@ export function buildHomeProject(
   for (const session of sessions) {
     const active = index.activeAgents.get(session.id);
     if (active) {
+      // DB queued 在无人 running 时只是启动占位，与对话内「启动中」一样归入 working；
+      // 真·排队文案由 AgentLiveStatus 按单条 run 判断。
       for (const agentId of active.agentIds) {
-        pushUniqueWorker(
-          active.status === "running" ? working : queued,
-          activeSeen,
-          agentWorker(agentId, index),
-        );
+        pushUniqueWorker(working, activeSeen, agentWorker(agentId, index));
       }
     } else {
       const activity = index.activity.get(session.id);
       if (activity) {
-        pushUniqueWorker(
-          activity === "running" ? working : queued,
-          activeSeen,
-          targetWorker(session, index),
-        );
+        pushUniqueWorker(working, activeSeen, targetWorker(session, index));
       }
     }
   }
 
-  // 历史只收真正跑过 / 回复过的智能体：任务执行者 + 本需求会话里已结束的 run。
-  // 不把「新对话选了谁」的 session.target 算进去。
+  // 历史只收真正跑过 / 回复过的智能体：落库的 lastRun、内存里已结束的 run、任务执行者。
+  // 不把「新对话选了谁」的 session.target 算进去。按 lastRunAt 近→远，最近处理的人排前面。
+  const finishedRuns = sessions
+    .filter((session): session is typeof session & { lastRunAgentId: string; lastRunAt: string } =>
+      Boolean(session.lastRunAgentId && session.lastRunAt))
+    .sort((a, b) => Date.parse(b.lastRunAt) - Date.parse(a.lastRunAt));
+  for (const session of finishedRuns) {
+    pushUniqueWorker(history, historySeen, agentWorker(session.lastRunAgentId, index));
+  }
   for (const event of Object.values(runStates)) {
     if (!projectSessionIds.has(event.sessionId) || !event.agentId) continue;
     if (event.status === "running" || event.status === "queued") continue;
@@ -276,13 +280,22 @@ export function buildHomeProject(
   };
   const workerParts = workerSentenceParts(workerNames.working, workerNames.queued);
   const workerSentence = workerParts.map((part) => part.text).join("");
-  const latest = sessions[0];
-  const idleLine = latest
+  // 空闲时间取最近一次真实跑完的 run，避免新建空对话把「x 小时前」顶掉
+  const idleEndedAt = finishedRuns[0]?.lastRunAt;
+  const idleName = finishedRuns[0]
+    ? agentWorker(finishedRuns[0].lastRunAgentId, index).name
+    : history[0]?.name;
+  const idleLine = idleEndedAt && idleName
     ? t("projectHome.idleLine", {
-      name: targetWorker(latest, index).name,
-      ended: relativeEndedAt(latest.updatedAt, now),
+      name: idleName,
+      ended: relativeEndedAt(idleEndedAt, now),
     })
     : t("projectHome.idlePrefix");
+  const activityLabel = working.length || queued.length
+    ? ""
+    : idleEndedAt
+      ? formatRelativeTime(idleEndedAt, now)
+      : "";
 
   const gitCount = workspaces.filter((item) => item.kind === "git").length;
   const folderCount = workspaces.length - gitCount;
@@ -313,6 +326,7 @@ export function buildHomeProject(
     workerSentence,
     workerParts,
     idleLine,
+    activityLabel,
     workers,
     sessionIds: sessions.map((item) => item.id),
     gitCount,
@@ -338,4 +352,14 @@ export function workspaceKindLabel(gitCount: number, folderCount: number): strin
   if (gitCount) parts.push(t("projectHome.gitCount", { n: gitCount }));
   if (folderCount) parts.push(t("projectHome.folderCount", { n: folderCount }));
   return parts.join(t("projectHome.metaJoiner"));
+}
+
+/** 需求列表 / 编码表：传给 AgentLiveStatus 的 fallback 头像 */
+export function homeWorkerItems(row: HomeProject) {
+  return row.workers.map((worker) => ({
+    key: worker.key,
+    name: worker.name,
+    image: worker.image,
+    title: worker.title,
+  }));
 }

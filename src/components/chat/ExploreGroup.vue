@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { ChevronDown } from "@lucide/vue";
 import type { ExploreEntry, FileRevealTarget, PairedTool } from "./timeline-display";
 import { exploreDetail, exploreTitle, exploreVerb, fileRevealTarget, itemKind } from "./timeline-display";
@@ -32,7 +33,7 @@ function entryKey(entry: ExploreEntry) {
 </script>
 
 <template>
-  <details class="explore-group">
+  <details v-details-motion class="explore-group">
     <summary>
       <span>{{ title }}</span>
       <ChevronDown :size="12" />

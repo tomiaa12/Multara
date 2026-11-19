@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import UiCollapse from "../ui/UiCollapse.vue";
 import { ChevronRight } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import { useDiffStore } from "../../stores/diff";
@@ -7,6 +8,7 @@ import { useAppStore } from "../../stores/app";
 import { fileName } from "./timeline-display";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
 import { t } from "../../i18n";
+import { confirmDialog } from "../ui/confirm-dialog";
 
 const props = defineProps<{
   workspaceIds: string[];
@@ -108,6 +110,7 @@ async function keep(workspaceId: string, filePath: string) {
   try {
     const content = contents.value.get(fileKey(workspaceId, filePath));
     await diffStore.acceptAllChunks(workspaceId, filePath, content);
+    await refreshContents();
   } finally {
     busy.value = false;
   }
@@ -142,7 +145,9 @@ async function keepAll() {
   if (busy.value || !rows.value.length) return;
   busy.value = true;
   try {
-    for (const row of rows.value) {
+    // 拷一份：保留过程中若写入完成刷出新文件，不会漏掉本轮已展示的项，也不会中途改迭代集合。
+    const pending = rows.value.slice();
+    for (const row of pending) {
       const key = fileKey(row.workspaceId, row.filePath);
       if (diffStore.missingFiles.has(key)) {
         await diffStore.acceptMissingFile(row.workspaceId, row.filePath);
@@ -150,6 +155,7 @@ async function keepAll() {
         await diffStore.acceptAllChunks(row.workspaceId, row.filePath, contents.value.get(key));
       }
     }
+    await refreshContents();
   } finally {
     busy.value = false;
   }
@@ -157,6 +163,11 @@ async function keepAll() {
 
 async function undoAll() {
   if (busy.value || !rows.value.length) return;
+  if (!(await confirmDialog(t("chat.editingUndoAllConfirm", { count: rows.value.length }), {
+    danger: true,
+    type: "warning",
+    primary: t("chat.editingUndoAll"),
+  }))) return;
   busy.value = true;
   try {
     for (const row of rows.value) {
@@ -181,32 +192,34 @@ async function undoAll() {
         <ChevronRight class="chat-editing-chevron" :size="12" />
         {{ t('chat.editingFilesCount', { count: rows.length }) }}
       </button>
-      <span v-if="expanded" class="working-set-line-counts">
-        <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
-        <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
-      </span>
-      <span v-else class="chat-editing-overview-actions" @click.stop>
-        <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
+      <span class="chat-editing-overview-actions" @click.stop>
         <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepAllTitle')" :disabled="busy" @click="keepAll">{{ t('chat.editingKeepAll') }}</UiButton>
+        <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
+        <span v-if="expanded" class="working-set-line-counts">
+          <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
+          <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
+        </span>
       </span>
     </header>
-    <div v-if="expanded" class="chat-editing-files vs-scroll">
-      <div v-for="row in rows" :key="fileKey(row.workspaceId, row.filePath)" class="chat-editing-file">
-        <button type="button" class="chat-editing-file-name" @click="open(row.workspaceId, row.filePath)">
-          <FileTypeIcon :name="fileName(row.filePath)" />
-          <UiTooltip :content="fileLabel(row.workspaceId, row.filePath)">
-            <span>{{ fileName(row.filePath) }}</span>
-          </UiTooltip>
-        </button>
-        <span class="working-set-line-counts">
-          <span v-if="row.added" class="working-set-lines-added">+{{ row.added }}</span>
-          <span v-if="row.removed" class="working-set-lines-removed">−{{ row.removed }}</span>
-        </span>
-        <span class="chat-editing-file-actions">
-          <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepTitle')" :disabled="busy" @click="keep(row.workspaceId, row.filePath)">{{ t('chat.editingKeep') }}</UiButton>
-          <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoTitle')" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">{{ t('chat.editingUndo') }}</UiButton>
-        </span>
+    <UiCollapse>
+      <div v-if="expanded" class="chat-editing-files vs-scroll">
+        <div v-for="row in rows" :key="fileKey(row.workspaceId, row.filePath)" class="chat-editing-file">
+          <button type="button" class="chat-editing-file-name" @click="open(row.workspaceId, row.filePath)">
+            <FileTypeIcon :name="fileName(row.filePath)" />
+            <UiTooltip :content="fileLabel(row.workspaceId, row.filePath)">
+              <span>{{ fileName(row.filePath) }}</span>
+            </UiTooltip>
+          </button>
+          <span class="working-set-line-counts">
+            <span v-if="row.added" class="working-set-lines-added">+{{ row.added }}</span>
+            <span v-if="row.removed" class="working-set-lines-removed">−{{ row.removed }}</span>
+          </span>
+          <span class="chat-editing-file-actions">
+            <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepTitle')" :disabled="busy" @click="keep(row.workspaceId, row.filePath)">{{ t('chat.editingKeep') }}</UiButton>
+            <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoTitle')" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">{{ t('chat.editingUndo') }}</UiButton>
+          </span>
+        </div>
       </div>
-    </div>
+    </UiCollapse>
   </section>
 </template>

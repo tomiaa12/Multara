@@ -224,13 +224,13 @@ function handleKeydown(event: KeyboardEvent) {
     props.categories.length,
     navigationEntries.value.length,
   );
+  if (result.intent === "close") emit("close");
   if (!result.handled) return false;
   event.preventDefault();
   event.stopPropagation();
   activePane.value = result.state.pane;
   categoryIndex.value = result.state.categoryIndex;
   activeIndex.value = result.state.resultIndex;
-  if (result.intent === "close") emit("close");
   if (result.intent === "enter-results" && activeCategory.value?.action) {
     emit("category-action", activeCategory.value.action);
     return true;

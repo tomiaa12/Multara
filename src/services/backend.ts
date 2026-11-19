@@ -3,7 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { connectDevBackend, hasBackend, inTauri, invoke } from "./dev-backend";
 
 export { connectDevBackend, hasBackend, inTauri };
-import { visiblePromptText } from "../components/chat/composer-content";
+import { titleSeedText } from "../components/chat/composer-content";
 import { t } from "../i18n";
 import type {
   Diagnostic,
@@ -49,6 +49,7 @@ import type {
   FeishuRecipientInput,
   MessageAttachmentInput,
   MessageSourceInput,
+  PersistedQueuedMessage,
   CanvasDefinition,
   CanvasInstance,
   CanvasListing,
@@ -169,9 +170,9 @@ const previewData: BootstrapData = {
     autoUpdate: "true",
     runTimeoutMinutes: "0",
     webhookPort: "43127",
-    formatOnSave: "false",
     stickyScroll: "true",
     wordWrap: "false",
+    autoSaveOnFocusLoss: "false",
     branchPrefix: "feat",
     branchPrompt: "",
     commitPrompt: "",
@@ -982,8 +983,8 @@ export async function generateChatSessionTitle(prompt: string): Promise<string> 
 }
 
 export function titleFromPrompt(content: string) {
-  // 用可见正文截断，去掉 [实体引用]/[指派要求]/文件围栏等协议串，避免标题变成「[实体引用] agent …」
-  const text = visiblePromptText(content).replace(/\s+/g, " ").trim();
+  // 优先人文文本截断；无正文时才用 chip 标签。避免 UUID 工作区目录名抢占标题。
+  const text = titleSeedText(content).replace(/\s+/g, " ").trim();
   return [...text].slice(0, 18).join("") || t("chat.newChatLabel");
 }
 
@@ -1231,8 +1232,11 @@ export async function closeCanvas(sessionId: string, instanceId: string): Promis
   await invoke("close_canvas", { sessionId, instanceId });
 }
 
-/** 前端处理完 `ui-outbound` 事件（页面要填输入框）后的应答 */
-export async function resolveUiOutbound(requestId: string, result: { ok: boolean; reason?: string }): Promise<void> {
+/** 前端处理完 `ui-outbound` / `terminal-ctl` 等控制通道请求后的应答 */
+export async function resolveUiOutbound(
+  requestId: string,
+  result: { ok: boolean; reason?: string; message?: string; value?: unknown },
+): Promise<void> {
   if (!hasBackend()) return;
   await invoke("resolve_ui_outbound", { requestId, result });
 }
@@ -2231,6 +2235,16 @@ export async function sendMessage(
   });
 }
 
+export async function listMessageQueue(): Promise<PersistedQueuedMessage[]> {
+  if (!hasBackend()) return [];
+  return invoke<PersistedQueuedMessage[]>("list_message_queue");
+}
+
+export async function saveMessageQueue(items: PersistedQueuedMessage[]): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("save_message_queue", { items });
+}
+
 export async function stopRun(runId: string): Promise<void> {
   if (!hasBackend()) return;
   await invoke("stop_run", { runId });
@@ -2359,6 +2373,21 @@ export async function removeChannelAllowedUser(id: string, userId: string): Prom
 export async function setChannelUserNote(id: string, userId: string, note: string): Promise<void> {
   if (!hasBackend()) return;
   await invoke("set_channel_user_note", { id, userId, note });
+}
+
+export async function setChannelUserTarget(
+  id: string,
+  userId: string,
+  targetType: "agent" | "squad" | null,
+  targetId: string | null,
+): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_user_target", {
+    id,
+    userId,
+    targetType,
+    targetId,
+  });
 }
 
 export async function rotateChannelPairingCode(id: string): Promise<string> {

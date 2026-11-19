@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { useRoute, useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Download, FlaskConical, FolderTree, GitBranch, Info, MessageSquare, Mic, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
@@ -84,9 +85,9 @@ const form = reactive({
   branchPrefix: "feat",
   autoUpdate: true,
   updateProxy: "",
-  formatOnSave: false,
   stickyScroll: true,
   wordWrap: false,
+  autoSaveOnFocusLoss: false,
   runTimeoutMinutes: 0,
   permissionMode: "bypass",
   dictationEnabled: true,
@@ -211,9 +212,9 @@ watch(
     gitTestMessage.value = "";
     form.updateProxy = settings.updateProxy ?? "";
     setUpdateProxy(form.updateProxy);
-    form.formatOnSave = settings.formatOnSave === "true";
     form.stickyScroll = settings.stickyScroll !== "false";
     form.wordWrap = settings.wordWrap === "true";
+    form.autoSaveOnFocusLoss = settings.autoSaveOnFocusLoss === "true";
     form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 0);
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
     form.dictationEnabled = settings.dictationEnabled !== "false";
@@ -262,9 +263,9 @@ watch(
     form.branchPrefix,
     form.autoUpdate,
     form.updateProxy,
-    form.formatOnSave,
     form.stickyScroll,
     form.wordWrap,
+    form.autoSaveOnFocusLoss,
     form.runTimeoutMinutes,
     form.permissionMode,
     form.dictationEnabled,
@@ -315,9 +316,9 @@ function settingsPayload() {
     branchPrefix: form.branchPrefix.trim() || "feat",
     autoUpdate: String(form.autoUpdate),
     updateProxy: form.updateProxy.trim(),
-    formatOnSave: String(form.formatOnSave),
     stickyScroll: String(form.stickyScroll),
     wordWrap: String(form.wordWrap),
+    autoSaveOnFocusLoss: String(form.autoSaveOnFocusLoss),
     ...integerSettingEntry("runTimeoutMinutes", form.runTimeoutMinutes, RUN_TIMEOUT_MIN_MINUTES, RUN_TIMEOUT_MAX_MINUTES),
     permissionMode: form.permissionMode,
     dictationEnabled: String(form.dictationEnabled),
@@ -450,6 +451,21 @@ watch(
   },
 );
 
+function isUpdateNetworkError(cause: unknown): boolean {
+  const raw = cause instanceof Error ? cause.message : String(cause);
+  // 网络不可达时 reqwest 会带完整 URL，不能直接展示。
+  return /error sending request|timed?\s*out|connection|dns|network|proxy|failed to lookup|certificate/i.test(
+    raw,
+  );
+}
+
+function formatUpdateError(cause: unknown): string {
+  if (isUpdateNetworkError(cause)) return t("settings.updates.checkFailedNetwork");
+  const raw = cause instanceof Error ? cause.message : String(cause);
+  const trimmed = raw.replace(/\s+/g, " ").trim();
+  return trimmed.length > 160 ? `${trimmed.slice(0, 157)}…` : trimmed;
+}
+
 async function checkUpdate() {
   message.value = t("settings.updates.checking");
   try {
@@ -462,9 +478,9 @@ async function checkUpdate() {
       ? t("settings.updates.ready", { version: found.version })
       : t("settings.updates.downloading", { version: found.version });
   } catch (cause) {
-    message.value = t("settings.updates.checkFailed", {
-      error: cause instanceof Error ? cause.message : String(cause),
-    });
+    message.value = isUpdateNetworkError(cause)
+      ? t("settings.updates.checkFailedNetwork")
+      : t("settings.updates.checkFailed", { error: formatUpdateError(cause) });
   }
 }
 
@@ -473,9 +489,9 @@ async function applyUpdate() {
   try {
     await updater.installNow();
   } catch (cause) {
-    message.value = t("settings.updates.checkFailed", {
-      error: cause instanceof Error ? cause.message : String(cause),
-    });
+    message.value = isUpdateNetworkError(cause)
+      ? t("settings.updates.checkFailedNetwork")
+      : t("settings.updates.checkFailed", { error: formatUpdateError(cause) });
   }
 }
 
@@ -510,7 +526,7 @@ onBeforeUnmount(() => {
           <div v-if="message" class="settings-save" role="status">{{ message }}</div>
         </header>
 
-        <section v-if="section === 'general'" class="settings-card">
+        <section v-if="section === 'general'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row">
             <div><strong>{{ t("settings.language") }}</strong><p>{{ t("settings.languageHint") }}</p></div>
             <UiSelect v-model="form.language" :options="languageOptions" />
@@ -544,8 +560,8 @@ onBeforeUnmount(() => {
             />
           </div>
           <label class="settings-row">
-            <div><strong>{{ t("settings.formatOnSave") }}</strong><p>{{ t("settings.formatOnSaveHint") }}</p></div>
-            <UiInput v-model="form.formatOnSave" class="ds-switch" type="checkbox" />
+            <div><strong>{{ t("settings.autoSaveOnFocusLoss") }}</strong><p>{{ t("settings.autoSaveOnFocusLossHint") }}</p></div>
+            <UiInput v-model="form.autoSaveOnFocusLoss" class="ds-switch" type="checkbox" />
           </label>
           <label class="settings-row">
             <div><strong>{{ t("settings.stickyScroll") }}</strong><p>{{ t("settings.stickyScrollHint") }}</p></div>
@@ -557,7 +573,7 @@ onBeforeUnmount(() => {
           </label>
         </section>
 
-        <section v-else-if="section === 'dictation'" class="settings-card">
+        <section v-else-if="section === 'dictation'" v-motion="{ enter: 'page' }" class="settings-card">
           <p v-if="!dictationStore.supported" class="settings-hint">
             {{ dictationReasonKey ? t(dictationReasonKey) : t("settings.dictation.unsupported") }}
           </p>
@@ -584,7 +600,7 @@ onBeforeUnmount(() => {
           </template>
         </section>
 
-        <section v-else-if="section === 'experimental'" class="settings-card">
+        <section v-else-if="section === 'experimental'" v-motion="{ enter: 'page' }" class="settings-card">
           <label class="settings-row">
             <div><strong>{{ t("settings.experimental.genui") }}</strong><p>{{ t("settings.experimental.genuiHint") }}</p></div>
             <UiInput v-model="form.genuiEnabled" class="ds-switch" type="checkbox" />
@@ -600,7 +616,7 @@ onBeforeUnmount(() => {
           </label>
         </section>
 
-        <section v-else-if="section === 'explorer'" class="settings-card">
+        <section v-else-if="section === 'explorer'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row">
             <div><strong>{{ t("settings.explorer.sort") }}</strong><p>{{ t("settings.explorer.sortHint") }}</p></div>
             <UiSelect
@@ -691,7 +707,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="section === 'git'" class="settings-card">
+        <section v-else-if="section === 'git'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row settings-row-start">
             <div><strong>{{ t("settings.git.executable") }}</strong><p>{{ t("settings.git.executableHint") }}</p></div>
             <div class="settings-inline">
@@ -712,7 +728,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="section === 'branch'" class="settings-card settings-ai-gen">
+        <section v-else-if="section === 'branch'" v-motion="{ enter: 'page' }" class="settings-card settings-ai-gen">
           <div class="settings-row">
             <div><strong>{{ t("settings.branch.prefix") }}</strong><p>{{ t("settings.branch.prefixHint") }}</p></div>
             <UiInput v-model="form.branchPrefix" :placeholder="t('settings.branch.prefixPlaceholder')" spellcheck="false" />
@@ -729,7 +745,7 @@ onBeforeUnmount(() => {
           />
         </section>
 
-        <section v-else-if="section === 'commit'" class="settings-card settings-ai-gen">
+        <section v-else-if="section === 'commit'" v-motion="{ enter: 'page' }" class="settings-card settings-ai-gen">
           <SettingsAiGenBlock
             v-model:mode="form.commitGenMode"
             v-model:agent-id="form.commitAgentId"
@@ -742,7 +758,7 @@ onBeforeUnmount(() => {
           />
         </section>
 
-        <section v-else-if="section === 'automation'" class="settings-card">
+        <section v-else-if="section === 'automation'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row settings-row-start">
             <div>
               <strong>{{ t("settings.automation.port") }}</strong>
@@ -752,9 +768,9 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="section === 'updates'" class="settings-card">
+        <section v-else-if="section === 'updates'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row">
-            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ message || t("settings.about.versionHint") }}</p></div>
+            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ t("settings.about.versionHint") }}</p></div>
             <span class="settings-version">{{ version || "…" }}</span>
           </div>
           <label class="settings-row">
@@ -782,11 +798,12 @@ onBeforeUnmount(() => {
               >{{ t("settings.updates.installNow") }}</UiButton>
             </div>
           </div>
+          <p v-if="message" class="settings-update-status" role="status">{{ message }}</p>
         </section>
 
         <section v-else class="settings-card">
           <div class="settings-row">
-            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ message || t("settings.about.versionHint") }}</p></div>
+            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ t("settings.about.versionHint") }}</p></div>
             <span class="settings-version">{{ version || "…" }}</span>
           </div>
           <div class="settings-row">

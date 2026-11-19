@@ -251,6 +251,9 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   defaultMode?: RunMode;
+  /** 最近一次已结束 run 的执行者；需求列表空闲态用，不依赖内存 runStates */
+  lastRunAgentId?: string | null;
+  lastRunAt?: string | null;
 }
 
 export type TaskStatus =
@@ -455,6 +458,20 @@ export interface MessageAttachmentInput {
 export interface MessageSourceInput {
   sourceType: "genui";
   meta: Record<string, unknown>;
+}
+
+/** 输入框上方排队消息；落库后刷新 / 重启可恢复 */
+export interface PersistedQueuedMessage {
+  id: string;
+  sessionId: string;
+  content: string;
+  attachments: MessageAttachmentInput[];
+  requestedMode?: RunMode;
+  priority?: boolean;
+  immediate?: boolean;
+  source?: MessageSourceInput;
+  feishuRecipients?: FeishuRecipientInput[];
+  createdAt: string;
 }
 
 /** 会话里的一个 Canvas 实例（方案 §5.3）。URL 不入库，由 ensureCanvasHosted 懒托管时给出 */
@@ -871,8 +888,10 @@ export interface ChannelInstallation {
   id: string;
   channelType: ChannelType;
   name: string;
-  targetType: "agent" | "squad";
-  targetId: string;
+  /** @deprecated 改由授权用户各自配置；列表接口仍可能带回历史值 */
+  targetType?: "agent" | "squad" | string;
+  /** @deprecated 同上 */
+  targetId?: string;
   projectId?: string | null;
   appId: string;
   region: "feishu" | "lark";
@@ -891,8 +910,6 @@ export interface ChannelInstallationInput {
   id?: string;
   name: string;
   channelType: ChannelType;
-  targetType: "agent" | "squad";
-  targetId: string;
   projectId?: string | null;
   appId: string;
   appSecret?: string;
@@ -910,4 +927,7 @@ export interface ChannelUser {
   /** 授权（配对成功）时间，ISO 字符串 */
   createdAt: string;
   note?: string | null;
+  /** 该用户绑定的智能体或小队；未设置为空 */
+  targetType?: "agent" | "squad" | null;
+  targetId?: string | null;
 }

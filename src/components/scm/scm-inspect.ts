@@ -34,6 +34,29 @@ export interface InspectContributorRow {
 const LINE_HISTORY_LIMIT = 40;
 /** 提交矩形图采样上限（再按 period 过滤）。过大时 gitCommitFiles 会拖死首屏。 */
 const COMMIT_SAMPLE = 80;
+/** 并行查提交文件数的上限；无上限时切项目会同时打出上百个 git 子进程卡死 UI。 */
+const COMMIT_FILES_CONCURRENCY = 4;
+
+async function mapPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+  isCancelled?: () => boolean,
+): Promise<void> {
+  if (!items.length) return;
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      if (isCancelled?.()) return;
+      const index = next;
+      next += 1;
+      await worker(items[index], index);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => run()),
+  );
+}
 
 export function historyToInspectRows(items: GitHistoryItem[]): InspectHistoryRow[] {
   return items.map((item) => ({
@@ -95,18 +118,23 @@ export function historyToTimelinePoints(items: GitHistoryItem[]): TimelinePoint[
 export async function attachTimelineWeights(
   workspaceId: string,
   points: TimelinePoint[],
+  options?: { concurrency?: number; isCancelled?: () => boolean },
 ): Promise<TimelinePoint[]> {
   if (!workspaceId || !points.length) return points;
   const next = points.map((point) => ({ ...point }));
-  await Promise.all(
-    next.map(async (point) => {
+  await mapPool(
+    next,
+    options?.concurrency ?? COMMIT_FILES_CONCURRENCY,
+    async (point) => {
+      if (options?.isCancelled?.()) return;
       try {
         const files = await backend.gitCommitFiles(workspaceId, point.hash);
         point.weight = Math.max(1, files.length);
       } catch {
         point.weight = 1;
       }
-    }),
+    },
+    options?.isCancelled,
   );
   return next;
 }
@@ -223,6 +251,7 @@ export function treemapLeafValue(node: TreemapInput): number {
 export async function loadCommitFrequencies(
   workspaceId: string,
   sinceMs?: number | null,
+  options?: { concurrency?: number; isCancelled?: () => boolean },
 ): Promise<Map<string, number>> {
   const freq = new Map<string, number>();
   if (!workspaceId) return freq;
@@ -232,14 +261,18 @@ export async function loadCommitFrequencies(
   } catch {
     return freq;
   }
+  if (options?.isCancelled?.()) return freq;
   const items = sinceMs == null
     ? page.items
     : page.items.filter((item) => {
       const at = Date.parse(item.committedAt);
       return Number.isFinite(at) && at >= sinceMs;
     });
-  await Promise.all(
-    items.map(async (item) => {
+  await mapPool(
+    items,
+    options?.concurrency ?? COMMIT_FILES_CONCURRENCY,
+    async (item) => {
+      if (options?.isCancelled?.()) return;
       try {
         const files = await backend.gitCommitFiles(workspaceId, item.hash);
         for (const file of files) {
@@ -248,7 +281,8 @@ export async function loadCommitFrequencies(
       } catch {
         /* ignore single commit */
       }
-    }),
+    },
+    options?.isCancelled,
   );
   return freq;
 }

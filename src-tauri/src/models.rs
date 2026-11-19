@@ -382,6 +382,9 @@ pub struct ChatSession {
     pub created_at: String,
     pub updated_at: String,
     pub default_mode: RunMode,
+    /// 最近一次已结束 run 的执行者；需求列表空闲态用来展示头像，不只靠内存里的 runStates。
+    pub last_run_agent_id: Option<String>,
+    pub last_run_at: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -492,7 +495,7 @@ pub struct MessageAttachment {
     pub size: u64,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageAttachmentInput {
     pub name: String,

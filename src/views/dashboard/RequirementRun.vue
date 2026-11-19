@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Plus, Search } from "@lucide/vue";
 import AgentLiveStatus from "../../components/AgentLiveStatus.vue";
 import ChatPanel from "../../components/ChatPanel.vue";
@@ -9,6 +9,7 @@ import { t } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import InboxToolRail from "../inbox/InboxToolRail.vue";
 import {
+  homeWorkerItems,
   matchesHomeFilter,
   type HomeFilter,
   type HomeProject,
@@ -36,14 +37,14 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
-const toolRail = ref<{ openWorkspaceFile: (workspaceId: string, path: string) => void } | null>(null);
 
 function onReviewFile(file: { workspaceId: string; filePath: string }) {
-  toolRail.value?.openWorkspaceFile(file.workspaceId, file.filePath);
+  store.revealWorkspaceFile(file.filePath, undefined, undefined, file.workspaceId);
 }
 const filter = ref<HomeFilter>("all");
 const query = ref("");
 const selectedId = ref("");
+const chatPanel = ref<{ focus: () => void } | null>(null);
 const pickedWorkspaceId = ref("");
 const menu = ref<{ x: number; y: number; row: HomeProject } | null>(null);
 const railWidth = ref(readRunRail());
@@ -71,15 +72,21 @@ const sessionId = computed(() => {
   const sessions = (store.data?.sessions ?? []).filter(
     (item) => item.projectId === projectId && !taskIds.has(item.id),
   );
-  return sessions.find((item) => item.id === store.activeSessionId)?.id ?? sessions[0]?.id ?? "";
+  if (sessions.some((item) => item.id === store.activeSessionId)) return store.activeSessionId;
+  const remembered = store.lastActiveSessionId(projectId);
+  if (remembered && sessions.some((item) => item.id === remembered)) return remembered;
+  return sessions[0]?.id ?? "";
 });
 
-const toolWorkspaces = computed(() =>
-  (store.data?.workspaces ?? []).filter((item) => {
-    if (item.projectId !== selected.value?.id) return false;
-    return !item.sessionId || item.sessionId === sessionId.value;
-  }),
-);
+// 与编码模式一致：有会话专属 workspace（如合并冲突临时库）时只展示专属，不再并上原工作区。
+const toolWorkspaces = computed(() => {
+  if (!sessionId.value) {
+    return (store.data?.workspaces ?? []).filter(
+      (item) => item.projectId === selected.value?.id && !item.sessionId,
+    );
+  }
+  return store.sessionWorkspaces(sessionId.value);
+});
 
 const activeWorkspace = computed(() =>
   toolWorkspaces.value.find((item) => item.id === pickedWorkspaceId.value) ?? toolWorkspaces.value[0] ?? null,
@@ -111,6 +118,13 @@ watch(visible, (list) => {
 watch(selectedId, () => {
   pickedWorkspaceId.value = "";
 });
+
+/** 用户点列表才聚焦输入框；visible 自动补选首项不抢焦点 */
+async function selectRow(id: string) {
+  selectedId.value = id;
+  await nextTick();
+  chatPanel.value?.focus();
+}
 
 function onRowContext(row: HomeProject, event: MouseEvent) {
   event.preventDefault();
@@ -233,7 +247,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           :class="{ selected: row.id === selectedId }"
-          @click="selectedId = row.id"
+          @click="selectRow(row.id)"
           @contextmenu="onRowContext(row, $event)"
         >
           <span class="req-run-item">
@@ -241,8 +255,10 @@ onBeforeUnmount(() => {
             <span class="req-run-workers">
               <AgentLiveStatus
                 :session-ids="row.sessionIds"
+                :fallback="homeWorkerItems(row)"
+                :idle-label="row.activityLabel"
                 :max="3"
-                :size="18"
+                :size="16"
                 :dialog-title="t('dashboard.col.workers')"
               />
             </span>
@@ -270,7 +286,7 @@ onBeforeUnmount(() => {
   <section class="inbox-detail chat-surface">
     <ChatPanel
       v-if="selected"
-      :key="selected.id"
+      ref="chatPanel"
       class="inbox-thread"
       :project-id="selected.id"
       compact
@@ -284,18 +300,20 @@ onBeforeUnmount(() => {
     </div>
   </section>
 
-  <InboxToolRail
-    v-if="selected"
-    ref="toolRail"
-    :key="selected.id"
-    :workspaces="toolWorkspaces"
-    :workspace-id="activeWorkspace?.id ?? ''"
-    :session-id="sessionId"
-    kind="project"
-    :task-id="null"
-    @pick-workspace="pickedWorkspaceId = $event"
-    @layout="emit('layout', $event)"
-  />
+  <!-- 按需求缓存右侧栏：切走再回来保留打开的文件 / 更改 / 浏览器 / 终端等界面 -->
+  <KeepAlive :max="16">
+    <InboxToolRail
+      v-if="selected"
+      :key="selected.id"
+      :workspaces="toolWorkspaces"
+      :workspace-id="activeWorkspace?.id ?? ''"
+      :session-id="sessionId"
+      kind="project"
+      :task-id="null"
+      @pick-workspace="pickedWorkspaceId = $event"
+      @layout="emit('layout', $event)"
+    />
+  </KeepAlive>
 
   <ContextMenu
     v-if="menu"

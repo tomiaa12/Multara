@@ -13,6 +13,9 @@ pub struct AllowedUser {
     pub created_at: String,
     /// 用户在界面上手填的备注
     pub note: Option<String>,
+    /// 该用户绑定的智能体或小队；空表示还未在 Multara 里配置。
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -157,27 +160,32 @@ pub fn set_config(db: &Connection, id: &str, config: &ChannelConfig) -> Result<(
     Ok(())
 }
 
+fn row_to_allowed_user(row: &rusqlite::Row) -> rusqlite::Result<AllowedUser> {
+    Ok(AllowedUser {
+        installation_id: row.get(0)?,
+        channel_user_id: row.get(1)?,
+        display_name: row.get(2)?,
+        role: row.get(3)?,
+        created_at: row.get(4)?,
+        note: row.get(5)?,
+        target_type: row.get(6)?,
+        target_id: row.get(7)?,
+    })
+}
+
 pub fn list_allowed_users(
     db: &Connection,
     installation_id: &str,
 ) -> Result<Vec<AllowedUser>, String> {
     let mut statement = db
         .prepare(
-            "SELECT installation_id, channel_user_id, display_name, role, created_at, note
+            "SELECT installation_id, channel_user_id, display_name, role, created_at, note,
+                    target_type, target_id
              FROM channel_allowed_users WHERE installation_id=?1 ORDER BY created_at",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([installation_id], |row| {
-            Ok(AllowedUser {
-                installation_id: row.get(0)?,
-                channel_user_id: row.get(1)?,
-                display_name: row.get(2)?,
-                role: row.get(3)?,
-                created_at: row.get(4)?,
-                note: row.get(5)?,
-            })
-        })
+        .query_map([installation_id], row_to_allowed_user)
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())?;
@@ -186,23 +194,24 @@ pub fn list_allowed_users(
 
 pub fn allowed_user(db: &Connection, installation_id: &str, user_id: &str) -> Option<AllowedUser> {
     db.query_row(
-        "SELECT installation_id, channel_user_id, display_name, role, created_at, note
+        "SELECT installation_id, channel_user_id, display_name, role, created_at, note,
+                target_type, target_id
          FROM channel_allowed_users WHERE installation_id=?1 AND channel_user_id=?2",
         params![installation_id, user_id],
-        |row| {
-            Ok(AllowedUser {
-                installation_id: row.get(0)?,
-                channel_user_id: row.get(1)?,
-                display_name: row.get(2)?,
-                role: row.get(3)?,
-                created_at: row.get(4)?,
-                note: row.get(5)?,
-            })
-        },
+        row_to_allowed_user,
     )
     .optional()
     .ok()
     .flatten()
+}
+
+/// 用户是否已配置可跑的智能体/小队。
+pub fn user_has_target(user: &AllowedUser) -> bool {
+    matches!(user.target_type.as_deref(), Some("agent" | "squad"))
+        && user
+            .target_id
+            .as_deref()
+            .is_some_and(|id| !id.trim().is_empty())
 }
 
 pub fn add_allowed_user(
@@ -242,6 +251,26 @@ pub fn set_allowed_user_note(
             "UPDATE channel_allowed_users SET note=?1
              WHERE installation_id=?2 AND channel_user_id=?3",
             params![note, installation_id, user_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 0 {
+        return Err(tr!("授权用户不存在"));
+    }
+    Ok(())
+}
+
+pub fn set_allowed_user_target(
+    db: &Connection,
+    installation_id: &str,
+    user_id: &str,
+    target_type: Option<&str>,
+    target_id: Option<&str>,
+) -> Result<(), String> {
+    let updated = db
+        .execute(
+            "UPDATE channel_allowed_users SET target_type=?1, target_id=?2
+             WHERE installation_id=?3 AND channel_user_id=?4",
+            params![target_type, target_id, installation_id, user_id],
         )
         .map_err(|error| error.to_string())?;
     if updated == 0 {
@@ -600,6 +629,20 @@ mod tests {
         set_allowed_user_note(&db, "inst", "ou_a", None).unwrap();
         assert_eq!(allowed_user(&db, "inst", "ou_a").unwrap().note, None);
         assert!(set_allowed_user_note(&db, "inst", "ou_missing", None).is_err());
+    }
+
+    #[test]
+    fn allowed_user_target_round_trips() {
+        let db = db();
+        add_allowed_user(&db, "inst", "ou_a", None, "owner").unwrap();
+        assert!(!user_has_target(&allowed_user(&db, "inst", "ou_a").unwrap()));
+        set_allowed_user_target(&db, "inst", "ou_a", Some("agent"), Some("a1")).unwrap();
+        let user = allowed_user(&db, "inst", "ou_a").unwrap();
+        assert!(user_has_target(&user));
+        assert_eq!(user.target_type.as_deref(), Some("agent"));
+        assert_eq!(user.target_id.as_deref(), Some("a1"));
+        set_allowed_user_target(&db, "inst", "ou_a", None, None).unwrap();
+        assert!(!user_has_target(&allowed_user(&db, "inst", "ou_a").unwrap()));
     }
 
     #[test]

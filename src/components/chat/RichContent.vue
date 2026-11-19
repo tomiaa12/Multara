@@ -223,7 +223,7 @@ async function revealInFolder(path: string) {
       // 这个工作区里没有这个文件，换下一个。
     }
   }
-  store.reportComposerNotice(`找不到文件：${path}`, path);
+  store.reportComposerNotice(`找不到文件：${path}`, path, store.activeSessionId);
 }
 
 function revealFromDataset(target: HTMLElement) {

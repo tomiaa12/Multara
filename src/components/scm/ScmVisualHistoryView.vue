@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, shallowRef, watch } from "vue";
 import Codicon from "../ui/Codicon.vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import UiButton from "../ui/UiButton.vue";
@@ -149,8 +149,10 @@ async function load() {
     rebuildModel();
     await nextTick();
     paint();
-    // 权重异步补齐；即便失败也保留 weight=1 的可见气泡。
-    const weighted = await attachTimelineWeights(props.workspaceId, base);
+    // 权重异步补齐；即便失败也保留 weight=1 的可见气泡。切项目时靠 ticket 停掉旧请求。
+    const weighted = await attachTimelineWeights(props.workspaceId, base, {
+      isCancelled: () => id !== ticket,
+    });
     if (id !== ticket) return;
     points.value = weighted;
     rebuildModel();
@@ -374,7 +376,18 @@ watch(canvasHost, (host) => {
   resizeObs.observe(host);
 });
 
+function stopInspectLoads() {
+  ticket += 1;
+  loading.value = false;
+}
+
+// keep-alive 停用不会走 unmount；不抬 ticket 的话旧 gitCommitFiles 会继续打满进程。
+onDeactivated(stopInspectLoads);
+onActivated(() => {
+  void load();
+});
 onBeforeUnmount(() => {
+  stopInspectLoads();
   resizeObs?.disconnect();
   if (rafId) cancelAnimationFrame(rafId);
 });

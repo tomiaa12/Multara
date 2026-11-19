@@ -55,6 +55,8 @@ pub mod session_export;
 pub mod snapshot;
 pub mod snapshot_db;
 pub mod terminal;
+pub mod terminal_cli;
+pub mod terminal_ctl;
 pub mod text_search;
 pub mod ui_host;
 pub mod usage;
@@ -89,6 +91,7 @@ use commands::{
     git_switch_workspace_branch, git_sync_workspace, import_skill_from_folder,
     import_skill_from_url, install_mcp, list_active_runs, list_agent_runs, list_agents_and_squads,
     list_automation_runs, list_chat_messages, list_external_directory, list_mcp_tool_cache,
+    list_message_queue,
     list_project_git_status, list_projects_and_workspaces, list_prompt_files,
     list_quick_open_files, list_resource_sources, list_runtime_models, list_runtimes,
     list_skill_directory, list_task_inbox_surfaces, list_task_runs, list_webhook_deliveries,
@@ -98,6 +101,7 @@ use commands::{
     read_external_file, read_skill_file, read_workspace_file, receive_automation_webhook,
     rename_workspace_entry, resolve_permission, reveal_resource, reveal_workspace_path,
     run_automation, save_agent, save_automation, save_custom_runtime, save_file_baseline, save_mcp,
+    save_message_queue,
     save_mcp_inputs, save_pasted_attachment, save_settings, save_squad, scan_resources,
     scan_workspace_candidates, schedule_mcp_tools_refresh, search_catalog, search_workspace,
     send_message, set_automation_enabled, set_mcp_enabled, set_message_feedback,
@@ -375,6 +379,7 @@ pub fn run() {
             channel::commands::remove_channel_allowed_user,
             channel::commands::rotate_channel_pairing_code,
             channel::commands::set_channel_user_note,
+            channel::commands::set_channel_user_target,
             channel::commands::set_channel_group_enabled,
             merge_flow::git_merge_preview,
             merge_flow::git_merge_into_branch,
@@ -543,6 +548,8 @@ pub fn run() {
             runtime_usage::commands::probe_runtime_usages,
             list_task_runs,
             list_chat_messages,
+            list_message_queue,
+            save_message_queue,
             session_export::export_session_diagnostics,
             session_export::save_diagnostic_file,
             diag::export_recent_error_log,

@@ -30,6 +30,17 @@ describe("composer cascade", () => {
     expect(navigateCascade(enter.state, "Enter", 4, 2).intent).toBe("activate-result");
   });
 
+  it("lets Enter submit when the result list is empty", () => {
+    const results: CascadeNavigationState = {
+      pane: "results",
+      categoryIndex: 0,
+      resultIndex: 0,
+    };
+    const empty = navigateCascade(results, "Enter", 4, 0);
+    expect(empty.intent).toBe("close");
+    expect(empty.handled).toBe(false);
+  });
+
   it("filters labels and descriptions without case sensitivity", () => {
     expect(matchesCascadeQuery("Miku", "Auto agent", "mIK")).toBe(true);
     expect(matchesCascadeQuery("产品开发小队", "把需求拆给界面和实现", "界面")).toBe(true);

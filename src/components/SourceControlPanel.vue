@@ -130,6 +130,14 @@ const inspectWorkspaceId = computed(() => {
   if (inspectPinned.value && pinnedInspectWorkspaceId.value) return pinnedInspectWorkspaceId.value;
   return followInspectWorkspaceId.value;
 });
+/** 提交图未固定时跟「更改」选中项；固定后与检查器共用 pinned 工作区。 */
+const graphWorkspaceId = computed(() => {
+  if (inspectPinned.value && pinnedInspectWorkspaceId.value) return pinnedInspectWorkspaceId.value;
+  return selectedWorkspaceId.value;
+});
+const graphRepository = computed(() =>
+  repositories.value.find((item) => item.workspaceId === graphWorkspaceId.value) ?? null,
+);
 const inspectRepository = computed(() =>
   repositories.value.find((item) => item.workspaceId === inspectWorkspaceId.value) ?? null,
 );
@@ -530,7 +538,10 @@ watch(
 const graphView = ref<InstanceType<typeof ScmGraphView> | null>(null);
 
 async function revealCommit(workspaceId: string, hash: string) {
-  if (workspaceId) selectedWorkspaceId.value = workspaceId;
+  if (workspaceId) {
+    selectedWorkspaceId.value = workspaceId;
+    selectInspectWorkspace(workspaceId);
+  }
   await graphView.value?.revealCommit(hash);
 }
 
@@ -618,15 +629,19 @@ defineExpose({ refresh, revealCommit });
       v-if="!readonly && workspaces.some((item) => item.kind === 'git')"
       ref="graphView"
       :workspaces="workspaces"
-      :workspace-id="selectedWorkspaceId"
+      :workspace-id="graphWorkspaceId"
       :epoch="historyEpoch"
       :live="projectId !== PREVIEW_PROJECT_ID"
-      :branch="repositories.find((item) => item.workspaceId === selectedWorkspaceId)?.branch"
-      :upstream="repositories.find((item) => item.workspaceId === selectedWorkspaceId)?.upstream"
+      :branch="graphRepository?.branch"
+      :upstream="graphRepository?.upstream"
+      :repositories="repositories"
+      :pinned="inspectPinned"
       @open="emit('openChange', $event)"
       @open-changes="emit('openChanges', $event)"
       @error="error = $event"
       @updated="refresh({ history: true })"
+      @select-workspace="selectInspectWorkspace"
+      @toggle-pin="toggleInspectPin"
     />
 
     <!-- GitLens Inspect：搜索与比较 + 行/文件历史 + 可视化历史 + 矩形图 -->

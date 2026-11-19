@@ -30,8 +30,8 @@ function item(
 
 describe("liveWorkLabel", () => {
   test("stays on the latest open action and keeps the elapsed clock visible", () => {
-    expect(liveWorkLabel([], 3, { status: "sending", language: "zh-CN" })).toBe("等待响应 · 3 秒");
-    expect(liveWorkLabel([], 3, { status: "running", language: "zh-CN" })).toBe("思考中… · 3 秒");
+    expect(liveWorkLabel([], 3, { status: "sending", language: "zh-CN" })).toBe("启动中 · 3 秒");
+    expect(liveWorkLabel([], 3, { status: "running", language: "zh-CN" })).toBe("启动中 · 3 秒");
     expect(liveWorkLabel([], 3, { status: "queued", language: "zh-CN" })).toBe("排队中 · 3 秒");
     expect(liveWorkLabel([item("thinking")], 8, { status: "running", language: "zh-CN" })).toBe("思考中… · 8 秒");
     expect(liveWorkLabel([item("text")], 8, { status: "running", language: "zh-CN" })).toBe("输入中 · 8 秒");

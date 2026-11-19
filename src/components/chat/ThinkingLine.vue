@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { ChevronRight } from "@lucide/vue";
 import type { TimelineItem } from "../../domain/types";
 import { useAppStore } from "../../stores/app";
@@ -15,7 +16,7 @@ const detail = computed(() => (props.item.content ?? "").trim());
 </script>
 
 <template>
-  <details v-if="detail" class="thinking-line">
+  <details v-details-motion v-if="detail" class="thinking-line">
     <summary>
       <UiShimmerText :text="summary" :active="Boolean(running)" />
       <ChevronRight :size="12" />

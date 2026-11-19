@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import { confirmLeaveUnsavedEditors } from "./components/workbench/unsaved-editor";
 import { installBreadcrumbs } from "./stores/breadcrumbs";
+import { lastAppRoute } from "./views/dashboard/last-app-route";
 import DashboardView from "./views/DashboardView.vue";
 
 const CollectionView = () => import("./views/CollectionView.vue");
@@ -9,7 +10,7 @@ const ProjectWorkspaceView = () => import("./views/ProjectWorkspaceView.vue");
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: "/", redirect: "/projects" },
+    { path: "/", redirect: () => lastAppRoute("/projects") },
     { path: "/projects", component: DashboardView, meta: { titleKey: "nav.projects" } },
     {
       path: "/projects/:projectId",

@@ -110,6 +110,8 @@ describe("buildHomeProject workers", () => {
           targetId: "miku",
           createdAt: "2026-01-01T00:00:00Z",
           updatedAt: "2026-01-01T00:00:00Z",
+          lastRunAgentId: "miku",
+          lastRunAt: "2026-01-01T12:00:00Z",
         },
       ],
       tasks: [
@@ -150,12 +152,66 @@ describe("buildHomeProject workers", () => {
         elapsedMs: 1000,
       },
     };
-    const home = buildHomeProject(project, data, finished);
+    const home = buildHomeProject(
+      project,
+      data,
+      finished,
+      Date.parse("2026-01-02T03:00:00Z"),
+    );
     expect(home.workers.map((item) => item.key)).toEqual([
       "agent:miku",
       "agent:reviewer",
     ]);
     expect(home.workers.find((item) => item.key === "agent:reviewer")?.image).toBe("👀");
+    expect(home.activityLabel).toMatch(/15/);
+  });
+
+  it("新建空对话不顶掉上次处理的人与相对时间", () => {
+    const data = baseData({
+      sessions: [
+        {
+          id: "s-new",
+          projectId: "p1",
+          title: "新对话",
+          targetType: "agent",
+          targetId: "reviewer",
+          createdAt: "2026-01-02T04:00:00Z",
+          updatedAt: "2026-01-02T04:00:00Z",
+        },
+        {
+          id: "s-miku",
+          projectId: "p1",
+          title: "聊 Miku",
+          targetType: "agent",
+          targetId: "miku",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T12:00:00Z",
+          lastRunAgentId: "miku",
+          lastRunAt: "2026-01-01T12:00:00Z",
+        },
+      ],
+      workspaces: [
+        {
+          id: "w1",
+          projectId: "p1",
+          name: "repo",
+          kind: "folder",
+          sourcePath: "/tmp/repo",
+          workPath: "/tmp/repo",
+          branch: null,
+          isolationMode: "direct",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    const home = buildHomeProject(
+      project,
+      data,
+      {},
+      Date.parse("2026-01-02T04:00:00Z"),
+    );
+    expect(home.workers.map((item) => item.key)).toEqual(["agent:miku"]);
+    expect(home.activityLabel).toMatch(/16/);
   });
 
   it("有进行中时只展示进行中的智能体", () => {
@@ -209,5 +265,6 @@ describe("buildHomeProject workers", () => {
     const home = buildHomeProject(project, data, runs);
     expect(home.workers.map((item) => item.key)).toEqual(["agent:miku"]);
     expect(home.filters).toContain("running");
+    expect(home.activityLabel).toBe("");
   });
 });

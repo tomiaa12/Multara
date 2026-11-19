@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { ChartNoAxesColumn, X } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import { bindDismissableLayer } from "../ui/dismissable-layer";
@@ -76,7 +77,7 @@ onBeforeUnmount(() => {
         <ChartNoAxesColumn :size="16" aria-hidden="true" />
       </button>
     </UiTooltip>
-    <div
+    <div v-motion="props.placement === 'down' ? 'dropdown' : 'dropup'"
       v-if="open"
       class="context-usage-popover"
       :class="props.placement === 'down' ? 'is-down' : 'is-up'"

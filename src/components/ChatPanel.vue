@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { isWorkflowNodeSession } from "../domain/workflow";
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { t } from "../i18n";
-import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Square, Trash2, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, ChevronDown, FileText, History, LoaderCircle, MessageSquare, Pencil, Plus, Trash2, X } from "@lucide/vue";
 import AgentAvatar from "./AgentAvatar.vue";
 import ChatComposer from "./chat/ChatComposer.vue";
+import ChatStopButton from "./chat/ChatStopButton.vue";
 import { chatMessagesKey } from "./chat/context-usage";
 import ChatEditingBar from "./chat/ChatEditingBar.vue";
 import ChatQuestionCarousel from "./chat/ChatQuestionCarousel.vue";
@@ -18,7 +20,7 @@ import { useCanvasStore } from "../stores/canvas";
 import ComposerPasteImages from "./chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions, defaultChatTargetValue } from "./chat/chat-target-options";
 import type { ComposerNode } from "./chat/composer-content";
-import { carriedMentions, feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
+import { feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText } from "./chat/composer-content";
 import ReshuffleModal from "./chat/ReshuffleModal.vue";
 import { countMessagesFrom, reaskTouchesFiles } from "../stores/reask";
 import { useDiffStore } from "../stores/diff";
@@ -31,6 +33,7 @@ import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue
 import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
 import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
 import { exportChatDiagnostics } from "./chat/export-session-diagnostics";
+import { resolveSessionLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
@@ -439,18 +442,11 @@ const currentTurnAssistant = computed(() => {
 });
 const liveRunStatus = computed(() => {
   if (props.preview) return props.previewBusy ? "running" as const : null;
-  if (!session.value) return store.processingMessage ? "sending" as const : null;
-  const events = Object.values(store.runStates).filter((event) =>
-    event.sessionId === session.value!.id
-    && (event.status === "queued" || event.status === "running")
-    && !event.runId.startsWith("pending:"),
-  );
-  if (events.some((event) => event.status === "running")) return "running" as const;
-  if (events.some((event) => event.status === "queued")) return "queued" as const;
-  if (sessionProcessing.value) {
-    return "sending" as const;
-  }
-  return null;
+  return resolveSessionLiveWorkStatus({
+    runStates: store.runStates,
+    sessionId: session.value?.id,
+    processing: sessionProcessing.value || store.processingMessage,
+  });
 });
 const liveAnchor = computed(() => {
   const created = Date.parse(currentTurnAssistant.value?.createdAt ?? "");
@@ -491,7 +487,7 @@ const canSend = computed(() =>
   && !composerReadOnly.value,
 );
 const canStop = computed(() => sessionProcessing.value);
-// 运行中停止按钮一直在；没有草稿时只显示停止，有草稿时再并排显示「加入队列」。
+// 运行中：有草稿只显示发送（入队），没草稿只显示停止。两者不同时出现。
 const showComposerStop = computed(() => canStop.value && !composerHasContent());
 
 function userTurnRunning(message: ChatMessage) {
@@ -556,9 +552,17 @@ async function ensureSession() {
   const visible = displaySessions.value;
   if (!visible.length) return;
   // 有打开的 tab 才选中；全部关掉时保持空欢迎态，等发出第一条再建会话
-  if (!visible.some((item) => item.id === store.activeSessionId)) {
-    await store.selectSession(visible[visible.length - 1].id);
+  if (visible.some((item) => item.id === store.activeSessionId)) {
+    store.rememberActiveSessionTab(props.projectId, store.activeSessionId);
+    return;
   }
+  // 切需求时优先恢复该需求上次选中的聊天 tab（编码 / 执行共用）
+  const remembered = store.lastActiveSessionId(props.projectId);
+  const next = (remembered
+    ? visible.find((item) => item.id === remembered)
+    : undefined) ?? visible[visible.length - 1];
+  if (!next) return;
+  await store.selectSession(next.id);
 }
 
 function currentComposerNodes(): ComposerNode[] {
@@ -967,7 +971,7 @@ async function submit() {
   store.clearComposerContexts();
   composerEmpty.value = true;
   composerError.value = "";
-  store.clearComposerNotice();
+  store.clearComposerNotice(session.value?.id);
   followBottom.value = true;
 
   let sessionId = session.value?.id;
@@ -981,14 +985,6 @@ async function submit() {
   // 页面挂上来的上下文随这条消息带上，带来源头（是数据，不是用户指令）
   const contextBlock = formatUiContexts(canvas.takeContexts(sessionId));
   const content = contextBlock ? `${typed}\n\n${contextBlock}` : typed;
-  const carried = carriedMentions(serialized.nodes, targetForSend);
-  if (carried.length) {
-    drafts.value[sessionId] = carried;
-    composerEmpty.value = false;
-    void nextTick(() => {
-      if (session.value?.id === sessionId) composerInput.value?.restore(carried);
-    });
-  }
   const recipients = feishuRecipients(serialized.nodes).map((item) => ({
     installationId: item.installationId,
     openId: item.openId,
@@ -1010,14 +1006,16 @@ async function submit() {
 
 const continuedFailureIds = ref(new Set<string>());
 
+const sessionComposerNotice = computed(() => store.composerNoticeFor(session.value?.id));
+
 function dismissComposerMessage() {
   composerError.value = "";
-  store.clearComposerNotice();
+  store.clearComposerNotice(session.value?.id);
 }
 
 function searchMissingFile() {
-  const query = store.composerNoticeQuery;
-  store.clearComposerNotice();
+  const query = sessionComposerNotice.value?.searchQuery ?? "";
+  store.clearComposerNotice(session.value?.id);
   if (query) store.requestQuickOpen(query);
 }
 
@@ -1973,8 +1971,8 @@ defineExpose({
                   @mousedown.middle.prevent
                   @contextmenu="openTabMenu(item.id, $event)"
                 >
-                  <MessageSquare :size="13" />
-                  <span>{{ item.title }}</span>
+                  <MessageSquare :size="15" />
+                  <span class="chat-session-tab-title">{{ item.title }}</span>
                   <UiTooltip :content="t('chat.closeTab')">
                     <span class="tab-close" @click="closeSessionTab(item.id, $event)">
                       <X :size="12" />
@@ -2082,18 +2080,18 @@ defineExpose({
               @pick-action="sendStarter"
             />
           </template>
-          <div
+          <div v-motion="{ enter: 'fade' }"
             v-if="showWorking && group.id === lastGroupId"
             class="assistant-working"
             aria-live="polite"
           >
-            <LoaderCircle :size="14" />
+            <LoaderCircle :size="12" />
             <AgentAvatar
               v-for="agent in workingAgents"
               :key="agent.id"
               :value="agent.avatar"
               :name="agent.name"
-              :size="16"
+              :size="14"
             />
             <span class="assistant-working-lines">
               <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
@@ -2119,6 +2117,8 @@ defineExpose({
         </div>
       </div>
 
+      <div class="chat-editing-dock">
+      <!-- 跟 dock / 输入框同宽同对齐，再在该宽度内居中（执行模式靠左 720、气泡全宽等） -->
       <div v-if="!followBottom" class="scroll-to-bottom-row">
         <UiButton
           class="scroll-to-bottom"
@@ -2127,8 +2127,6 @@ defineExpose({
           @click="scrollToBottom()"
         ><ArrowDown :size="14" />{{ t("chat.scrollToBottom") }}</UiButton>
       </div>
-
-      <div class="chat-editing-dock">
       <ChatQuestionCarousel
         v-if="pendingQuestion"
         :key="pendingQuestion.messageId"
@@ -2180,7 +2178,7 @@ defineExpose({
         @open="emit('review-file', $event)"
       />
       <ChatComposer
-        :key="session?.id ?? 'none'"
+        :key="composerStateKey()"
         ref="composerInput"
         dictation
         allow-file-picker
@@ -2214,7 +2212,7 @@ defineExpose({
           :images="pastedImages.map((image) => ({ key: image.path, src: image.previewUrl, name: image.name }))"
           @remove="removePastedImage"
         />
-        <div v-if="attachments.length" class="composer-attachments vs-scroll">
+        <TransitionGroup tag="div" name="ds-list-x" v-if="attachments.length" class="composer-attachments ds-list-host vs-scroll">
           <div v-for="attachment in attachments" :key="attachment.path" class="composer-attachment">
             <FileText :size="15" />
             <span>{{ attachment.name }}</span>
@@ -2222,9 +2220,9 @@ defineExpose({
               <X :size="12" />
             </UiButton>
           </div>
-        </div>
+        </TransitionGroup>
         <!-- 页面经 __multara/context 挂上来的数据：下一条消息带上，来源单独标出 -->
-        <div v-if="uiContexts.length" class="composer-attachments vs-scroll">
+        <TransitionGroup tag="div" name="ds-list-x" v-if="uiContexts.length" class="composer-attachments ds-list-host vs-scroll">
           <div v-for="item in uiContexts" :key="item.id" class="composer-attachment ui-context-chip">
             <Codicon name="dashboard" :size="12" />
             <span>{{ uiContextChipLabel(item) }}</span>
@@ -2232,12 +2230,12 @@ defineExpose({
               <X :size="10" />
             </UiButton>
           </div>
-        </div>
-        <p v-if="composerError || store.composerNotice" class="composer-error">
-          <span>{{ composerError || store.composerNotice }}</span>
+        </TransitionGroup>
+        <p v-if="composerError || sessionComposerNotice" class="composer-error">
+          <span>{{ composerError || sessionComposerNotice?.message }}</span>
           <span class="composer-error-actions">
             <UiButton
-              v-if="store.composerNoticeQuery"
+              v-if="sessionComposerNotice?.searchQuery"
               type="button"
               size="small"
               variant="ghost"
@@ -2260,15 +2258,9 @@ defineExpose({
             >
               <Plus :size="16" />
             </UiButton>
+            <ChatStopButton v-if="showComposerStop" @click="stopAgent" />
             <UiButton
-              v-if="canStop"
-              type="button"
-              class="icon-button"
-              :tip="t('chat.stopTaskShortcut')"
-              @click="stopAgent"
-            ><Square :size="14" /></UiButton>
-            <UiButton
-              v-if="!showComposerStop"
+              v-else
               class="ds-send-button send-button"
               type="submit"
               :disabled="!canSend"
@@ -2280,7 +2272,7 @@ defineExpose({
       </ChatComposer>
       </div>
     </section>
-    <aside
+    <aside v-motion="'slide-right'"
       v-if="sessionListVisible"
       class="chat-session-pane"
       :class="sessionListMode === 'side' ? 'is-side' : 'is-drawer'"

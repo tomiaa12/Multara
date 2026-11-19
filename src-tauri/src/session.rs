@@ -112,6 +112,25 @@ fn write_linked_projects(
 }
 
 pub fn session_workspaces(db: &Connection, session_id: &str) -> Result<Vec<Workspace>, String> {
+    // 会话专属工作区（如合并冲突临时 Worktree）优先：有专属时只返回这些，
+    // 与前端 sessionWorkspaces 一致，避免 Agent cwd 落到原开发 worktree。
+    let dedicated = db
+        .prepare(
+            "SELECT id, project_id, session_id, source_workspace_id, name, kind,
+                    source_path, work_path, branch, isolation_mode, created_at
+             FROM workspaces
+             WHERE session_id=?1
+             ORDER BY created_at",
+        )
+        .map_err(|error| error.to_string())?
+        .query_map([session_id], workspace_from_row)
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    if !dedicated.is_empty() {
+        return Ok(dedicated);
+    }
+
     let project_ids = linked_project_ids(db, session_id)?;
     let mut workspaces = db
         .prepare(
@@ -312,6 +331,29 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["w1", "w2"]
         );
+    }
+
+    #[test]
+    fn prefers_dedicated_session_workspaces_over_project_ones() {
+        let db = database();
+        db.execute_batch(
+            "INSERT INTO workspaces
+               (id, project_id, session_id, source_workspace_id, name, kind,
+                source_path, work_path, isolation_mode, created_at)
+             VALUES
+               ('wm', 'p1', 's1', 'w1', '合并临时', 'git', '/p1', '/merge-tmp', 'worktree', '3');",
+        )
+        .unwrap();
+
+        let workspaces = session_workspaces(&db, "s1").unwrap();
+        assert_eq!(
+            workspaces
+                .iter()
+                .map(|workspace| workspace.id.as_str())
+                .collect::<Vec<_>>(),
+            ["wm"]
+        );
+        assert_eq!(workspaces[0].work_path, "/merge-tmp");
     }
 
     #[test]

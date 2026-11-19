@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import UiCollapse from "../ui/UiCollapse.vue";
 import { Check, ChevronDown, ChevronUp, MessageCircleQuestion } from "@lucide/vue";
 import {
   formatAnswers,
@@ -251,82 +252,86 @@ defineExpose({ focus: () => root.value?.focus() });
         <ChevronDown v-else :size="14" />
       </UiButton>
     </header>
-    <div v-show="!collapsed" ref="body" class="chat-question-body vs-scroll">
-      <div
-        v-for="(question, questionIndex) in questions"
-        :key="question.id"
-        :ref="(el) => { if (el) itemEls[questionIndex] = el as HTMLElement; }"
-        class="chat-question-item"
-        :class="{ active: questionIndex === index, answered: isAnswered(answers[question.id]) }"
-        @click="questionIndex !== index && activate(questionIndex, { keepFocus: true })"
-      >
-        <p class="chat-question-text">
-          <span v-if="multiple" class="chat-question-no">{{ questionIndex + 1 }}.</span>
-          <span>
-            <small v-if="question.header" class="chat-question-header">{{ question.header }}</small>
-            {{ question.question }}
-          </span>
-          <Check v-if="multiple && isAnswered(answers[question.id])" class="chat-question-done" :size="13" />
-        </p>
-        <ul
-          v-if="question.options.length"
-          class="chat-question-options"
-          :role="question.multiSelect ? 'group' : 'radiogroup'"
+    <UiCollapse>
+      <div v-show="!collapsed" ref="body" class="chat-question-body vs-scroll">
+        <div
+          v-for="(question, questionIndex) in questions"
+          :key="question.id"
+          :ref="(el) => { if (el) itemEls[questionIndex] = el as HTMLElement; }"
+          class="chat-question-item"
+          :class="{ active: questionIndex === index, answered: isAnswered(answers[question.id]) }"
+          @click="questionIndex !== index && activate(questionIndex, { keepFocus: true })"
         >
-          <li v-for="(option, optionIndex) in question.options" :key="option.label">
-            <button
-              type="button"
-              class="chat-question-option"
-              :class="{
-                selected: isSelected(question, option.label),
-                focused: questionIndex === index && focused === optionIndex,
-              }"
-              :role="question.multiSelect ? 'checkbox' : 'radio'"
-              :aria-checked="isSelected(question, option.label)"
-              tabindex="-1"
-              @click.stop="pick(questionIndex, optionIndex)"
-              @mouseenter="questionIndex === index && (focused = optionIndex)"
-            >
-              <span class="chat-question-key">
-                <Check v-if="question.multiSelect && isSelected(question, option.label)" :size="11" />
-                <template v-else>{{ optionIndex + 1 }}</template>
-              </span>
-              <span class="chat-question-option-text">
-                <b>{{ option.label }}</b>
-                <small v-if="option.description">{{ option.description }}</small>
-              </span>
-            </button>
-          </li>
-        </ul>
-        <textarea
-          v-if="question.allowCustom"
-          :ref="(el) => setCustomEl(question.id, el)"
-          class="chat-question-custom"
-          rows="1"
-          :value="answers[question.id]?.custom ?? ''"
-          :placeholder="question.options.length ? t('chat.question.customWithOptions') : t('chat.question.customOnly')"
-          @input="onCustomInput(question, $event)"
-          @compositionstart="ime.compositionStart"
-          @compositionend="ime.compositionEnd"
-          @focus="index = questionIndex; focused = question.options.length"
-        />
+          <p class="chat-question-text">
+            <span v-if="multiple" class="chat-question-no">{{ questionIndex + 1 }}.</span>
+            <span>
+              <small v-if="question.header" class="chat-question-header">{{ question.header }}</small>
+              {{ question.question }}
+            </span>
+            <Check v-if="multiple && isAnswered(answers[question.id])" class="chat-question-done" :size="13" />
+          </p>
+          <ul
+            v-if="question.options.length"
+            class="chat-question-options"
+            :role="question.multiSelect ? 'group' : 'radiogroup'"
+          >
+            <li v-for="(option, optionIndex) in question.options" :key="option.label">
+              <button
+                type="button"
+                class="chat-question-option"
+                :class="{
+                  selected: isSelected(question, option.label),
+                  focused: questionIndex === index && focused === optionIndex,
+                }"
+                :role="question.multiSelect ? 'checkbox' : 'radio'"
+                :aria-checked="isSelected(question, option.label)"
+                tabindex="-1"
+                @click.stop="pick(questionIndex, optionIndex)"
+                @mouseenter="questionIndex === index && (focused = optionIndex)"
+              >
+                <span class="chat-question-key">
+                  <Check v-if="question.multiSelect && isSelected(question, option.label)" :size="11" />
+                  <template v-else>{{ optionIndex + 1 }}</template>
+                </span>
+                <span class="chat-question-option-text">
+                  <b>{{ option.label }}</b>
+                  <small v-if="option.description">{{ option.description }}</small>
+                </span>
+              </button>
+            </li>
+          </ul>
+          <textarea
+            v-if="question.allowCustom"
+            :ref="(el) => setCustomEl(question.id, el)"
+            class="chat-question-custom"
+            rows="1"
+            :value="answers[question.id]?.custom ?? ''"
+            :placeholder="question.options.length ? t('chat.question.customWithOptions') : t('chat.question.customOnly')"
+            @input="onCustomInput(question, $event)"
+            @compositionstart="ime.compositionStart"
+            @compositionend="ime.compositionEnd"
+            @focus="index = questionIndex; focused = question.options.length"
+          />
+        </div>
       </div>
-    </div>
-    <footer v-show="!collapsed" class="chat-question-foot">
-      <span class="chat-question-hint">
-        <template v-if="current.options.length">{{ t("chat.question.hintPick", { range: `1–${Math.min(current.options.length, 9)}` }) }}</template>
-        <template v-if="multiple">{{ t("chat.question.hintSwitch") }}</template>Enter {{ isLast || answeredCount === total ? t("chat.question.hintEnterSubmit") : t("chat.question.hintEnterNext") }}{{ t("chat.question.hintEsc") }}
-      </span>
-      <div class="chat-question-actions">
-        <UiButton variant="ghost" size="small" @click="emit('skip')">{{ t("chat.question.skip") }}</UiButton>
-        <UiButton
-          class="primary"
-          size="small"
-          :tip="t('chat.question.submitShortcut', { mod: submitMod })"
-          :disabled="!answeredCount"
-          @click="submit"
-        >{{ multiple ? t("chat.question.submitProgress", { answered: answeredCount, total }) : t("chat.question.submit") }}</UiButton>
-      </div>
-    </footer>
+    </UiCollapse>
+    <UiCollapse>
+      <footer v-show="!collapsed" class="chat-question-foot">
+        <span class="chat-question-hint">
+          <template v-if="current.options.length">{{ t("chat.question.hintPick", { range: `1–${Math.min(current.options.length, 9)}` }) }}</template>
+          <template v-if="multiple">{{ t("chat.question.hintSwitch") }}</template>Enter {{ isLast || answeredCount === total ? t("chat.question.hintEnterSubmit") : t("chat.question.hintEnterNext") }}{{ t("chat.question.hintEsc") }}
+        </span>
+        <div class="chat-question-actions">
+          <UiButton variant="ghost" size="small" @click="emit('skip')">{{ t("chat.question.skip") }}</UiButton>
+          <UiButton
+            class="primary"
+            size="small"
+            :tip="t('chat.question.submitShortcut', { mod: submitMod })"
+            :disabled="!answeredCount"
+            @click="submit"
+          >{{ multiple ? t("chat.question.submitProgress", { answered: answeredCount, total }) : t("chat.question.submit") }}</UiButton>
+        </div>
+      </footer>
+    </UiCollapse>
   </section>
 </template>

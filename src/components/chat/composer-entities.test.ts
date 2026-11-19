@@ -15,6 +15,16 @@ describe("composer entity references", () => {
     });
   });
 
+  test("does not treat URL/API paths as slash skill triggers", () => {
+    expect(activeComposerTrigger("GET /operationAdmin2/v1/UserCouponExport")).toBeNull();
+    expect(activeComposerTrigger("见 /foo\\bar")).toBeNull();
+    expect(activeComposerTrigger("跑 /compact")).toEqual({
+      symbol: "/",
+      category: "skill",
+      query: "compact",
+    });
+  });
+
   test("replaces only the active token with a stable reference chip", () => {
     const trigger = activeComposerTrigger("请处理 #登录");
     expect(trigger).not.toBeNull();

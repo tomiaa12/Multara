@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import { playEnter } from "./ui/motion";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { rememberAppRoute } from "./views/dashboard/last-app-route";
 import { lastProjectsPath, rememberProjectsPath } from "./views/dashboard/last-projects-path";
 import { readStorage, writeStorage } from "./utils/safe-storage";
 import {
@@ -66,11 +68,24 @@ import { unreadBadgeLabel, unreadTotal } from "./domain/inbox";
 import SideNav, { type SideNavItem } from "./components/SideNav.vue";
 import TerminalActivity from "./components/workbench/TerminalActivity.vue";
 import { startRunningTerminalWatch } from "./stores/running-terminals";
+import { startTerminalCtlWatch } from "./stores/terminal-ctl";
 import TaskCreateDialog from "./views/TaskCreateDialog.vue";
 
 const store = useAppStore();
 const editorStatus = useEditorStatusStore();
 const route = useRoute();
+
+/* 切侧栏菜单：新页面淡入。不用 <Transition> 包 keep-alive —— 多根节点的页面在 out-in 下会白屏 */
+const mainEl = ref<HTMLElement | null>(null);
+watch(
+  () => route.path,
+  () =>
+    void nextTick(() => {
+      for (const child of mainEl.value?.children ?? []) {
+        if (child instanceof HTMLElement && !child.className.startsWith("vs-overlay")) playEnter(child, "page");
+      }
+    }),
+);
 const router = useRouter();
 const languageButton = ref<HTMLButtonElement | null>(null);
 const languagePickerOpen = ref(false);
@@ -101,6 +116,10 @@ const workbenchProjectId = computed(() => {
   const match = route.path.match(/^\/projects\/([^/]+)/);
   return match?.[1] ?? null;
 });
+/** 所有需求工作台共用一个 keep-alive 槽。按 path 分槽会在下拉直切时同时挂两个完整工作台（Monaco + git + 聊天），直接卡死。 */
+const viewCacheKey = computed(() =>
+  workbenchProjectId.value ? "project-workspace" : route.path,
+);
 const projectSwitchOptions = computed(() => {
   const projects = store.data?.projects ?? [];
   const currentId = workbenchProjectId.value;
@@ -232,6 +251,7 @@ let stopWindowClose: (() => void) | undefined;
 let stopUnsavedPrompt: (() => void) | undefined;
 let stopConfirmDialog: (() => void) | undefined;
 let stopMenuWordWrap: UnlistenFn | undefined;
+let stopMenuAutoSaveOnFocusLoss: UnlistenFn | undefined;
 let stopMenuClose: UnlistenFn | undefined;
 
 function onPageUnload(event: BeforeUnloadEvent) {
@@ -373,6 +393,7 @@ const projectsNavTo = ref(lastProjectsPath());
 watch(
   () => route.path,
   (path) => {
+    rememberAppRoute(path);
     rememberProjectsPath(path);
     if (path === "/projects" || path.startsWith("/projects/")) projectsNavTo.value = path;
   },
@@ -456,6 +477,7 @@ async function restoreImmersiveTitlebar() {
 onMounted(async () => {
   startOsFileDrop();
   startRunningTerminalWatch();
+  startTerminalCtlWatch();
   store.initialize();
   // 设置页、store 初始化都会直接改 data-theme，这里统一监听以同步标题栏图标。
   themeObserver = new MutationObserver(() => {
@@ -478,6 +500,13 @@ onMounted(async () => {
     stopMenuWordWrap = await listen<boolean>("menu-word-wrap", async ({ payload }) => {
       try {
         await store.saveSettings({ wordWrap: String(payload) });
+      } catch {
+        // 菜单勾选已变；持久化失败时下次启动沿用旧值。
+      }
+    });
+    stopMenuAutoSaveOnFocusLoss = await listen<boolean>("menu-auto-save-on-focus-loss", async ({ payload }) => {
+      try {
+        await store.saveSettings({ autoSaveOnFocusLoss: String(payload) });
       } catch {
         // 菜单勾选已变；持久化失败时下次启动沿用旧值。
       }
@@ -524,6 +553,7 @@ onBeforeUnmount(() => {
   stopConfirmDialog?.();
   stopMenuClose?.();
   stopMenuWordWrap?.();
+  stopMenuAutoSaveOnFocusLoss?.();
   stopWindowClose?.();
   stopWindowResize?.();
 });
@@ -623,13 +653,13 @@ onBeforeUnmount(() => {
       </template>
     </SideNav>
 
-    <main class="main-content vs-scroll">
+    <main ref="mainEl" class="main-content vs-scroll">
       <div v-if="store.loading" class="empty">{{ t("app.loading") }}</div>
       <div v-else-if="store.error" class="error-card">{{ store.error }}</div>
       <RouterView v-else v-slot="{ Component }">
         <!-- 按 path 缓存页面，切侧栏菜单不丢滚动/表单；上限防止无限涨内存 -->
         <keep-alive :max="24">
-          <component :is="Component" :key="route.path" />
+          <component :is="Component" :key="viewCacheKey" />
         </keep-alive>
       </RouterView>
     </main>

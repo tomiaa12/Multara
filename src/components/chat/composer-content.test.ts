@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
 import {
-  carriedMentions,
   feishuRecipients,
   formatAgentPrompt,
   locatedChipPath,
@@ -9,6 +8,7 @@ import {
   isPastedImage,
   MAX_INLINE_SELECTION_LINES,
   parseUserPromptNodes,
+  titleSeedText,
   visiblePromptText,
   type ComposerNode,
 } from "./composer-content";
@@ -21,37 +21,6 @@ const chip: ComposerNode = {
   endLine: 2,
   text: "const a = 1;",
 };
-
-describe("carriedMentions", () => {
-  const mention = (referenceKind: "agent" | "squad" | "skill", referenceId: string): ComposerNode => ({
-    type: "chip",
-    id: `${referenceKind}:${referenceId}`,
-    referenceId,
-    referenceKind,
-    label: referenceId,
-  });
-
-  test("carries @ agents and squads other than the session target into the next draft", () => {
-    const nodes: ComposerNode[] = [
-      mention("agent", "a1"),
-      { type: "text", value: " 改一下按钮 " },
-      mention("agent", "a1"),
-      mention("squad", "team"),
-      mention("skill", "s1"),
-      chip,
-    ];
-    expect(carriedMentions(nodes, "agent:miku")).toEqual([
-      mention("agent", "a1"),
-      mention("squad", "team"),
-      { type: "text", value: " " },
-    ]);
-  });
-
-  test("carries nothing when the message only mentions the session target", () => {
-    expect(carriedMentions([mention("agent", "miku"), { type: "text", value: "hi" }], "agent:miku")).toEqual([]);
-    expect(carriedMentions([{ type: "text", value: "hi" }], "agent:miku")).toEqual([]);
-  });
-});
 
 describe("feishu chips", () => {
   const person = (openId: string, label: string): ComposerNode => ({
@@ -136,6 +105,24 @@ describe("parseUserPromptNodes", () => {
       { ...folder, text: "" },
       { ...file, text: "" },
     ]);
+  });
+
+  test("titleSeedText prefers human text over UUID folder chip labels", () => {
+    const folder: ComposerNode = {
+      type: "chip",
+      id: "uuid:folder",
+      path: "/tmp/1a39df9c-6690-48a9-837c-8d620e66cb3c",
+      startLine: 0,
+      endLine: 0,
+      text: "",
+      isDirectory: true,
+    };
+    const content = formatAgentPrompt([
+      folder,
+      { type: "text", value: "这个账户美股期权开户页面进不去" },
+    ]);
+    expect(visiblePromptText(content).startsWith("1a39df9c-6690-48a9")).toBe(true);
+    expect(titleSeedText(content)).toBe("这个账户美股期权开户页面进不去");
   });
 
   test("joins a workspace-relative chip to that workspace root", () => {

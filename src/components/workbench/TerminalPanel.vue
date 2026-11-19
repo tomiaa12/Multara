@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { Terminal } from "@xterm/xterm";
 import type { ILink, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -27,6 +28,7 @@ import {
 } from "./terminal-selection";
 import { decodeTerminalChunk } from "../../utils/terminal-decode";
 import { ShellIntegration } from "./terminal-shell-integration";
+import { terminalCellSize, terminalScreenElement } from "./terminal-geometry";
 import {
   rankTerminalSuggestions,
   suggestionInsertText,
@@ -591,7 +593,11 @@ async function mount(session: TerminalTab) {
         bell.value = false;
       }, 400);
     });
-    term.onScroll(() => updateSticky(session.id));
+    term.onScroll(() => {
+      updateSticky(session.id);
+      // 对齐 VS Code SuggestAddon：滚动时关掉补全，避免锚点错位
+      if (session.id === props.activeId) clearSuggestions();
+    });
     const links = registerFileLinks(term, () => props.sessions.find((item) => item.id === session.id)?.cwd ?? session.cwd);
     resizeBackend(session.id, term);
     const data = await listen<{ id: string; data: string }>("terminal-data", (event) => {
@@ -871,11 +877,16 @@ async function refreshSuggestions(id: string, nonce: number, forced: boolean) {
     ? await loadCommandNames()
     : await loadPathNames(session.cwd, token?.directory ?? "");
   if (nonce !== suggestNonce) return;
-  suggestions.value = name ? rankTerminalSuggestions(candidates, name) : candidates.slice(0, 10);
+  const next = name ? rankTerminalSuggestions(candidates, name) : candidates.slice(0, 10);
+  const element = hostEl(id);
+  // 定位失败（常见于 WebGL 下旧逻辑找不到 .xterm-rows）时不展示，避免钉在左上角
+  if (!next.length || !element || !placeSuggestions(mounted.term, element, next.length)) {
+    if (nonce === suggestNonce) clearSuggestions();
+    return;
+  }
+  suggestions.value = next;
   suggestIndex.value = 0;
   suggestTokenName.value = name;
-  const element = hostEl(id);
-  if (element) placeSuggestions(mounted.term, element);
 }
 
 async function loadCommandNames() {
@@ -901,27 +912,26 @@ async function loadPathNames(cwd: string, directory: string) {
   }
 }
 
-function placeSuggestions(term: Terminal, element: HTMLElement) {
+/** 相对 `.terminal-body` 锚定到光标下方（空间不够则翻到上方）。成功返回 true。 */
+function placeSuggestions(term: Terminal, element: HTMLElement, count: number) {
   const root = body.value;
-  const screen = element.querySelector(".xterm-screen");
-  const rows = element.querySelector(".xterm-rows");
-  if (!root || !(screen instanceof HTMLElement) || !(rows instanceof HTMLElement)) return;
-  if (!term.rows || !term.cols) return;
+  const screen = terminalScreenElement(element);
+  const cell = terminalCellSize(term, element);
+  if (!root || !screen || !cell) return false;
   const buffer = term.buffer.active;
-  const cellWidth = rows.clientWidth / term.cols;
-  const cellHeight = rows.clientHeight / term.rows;
   const screenRect = screen.getBoundingClientRect();
   const rootRect = root.getBoundingClientRect();
-  const cursorX = screenRect.left - rootRect.left + buffer.cursorX * cellWidth;
-  const below = screenRect.top - rootRect.top + (buffer.cursorY + 1) * cellHeight;
-  const listHeight = Math.min(180, suggestions.value.length * 22 + 8);
+  const cursorX = screenRect.left - rootRect.left + buffer.cursorX * cell.width;
+  const below = screenRect.top - rootRect.top + (buffer.cursorY + 1) * cell.height;
+  const listHeight = Math.min(180, count * 22 + 8);
   const y = rootRect.height - below < listHeight && below > listHeight
-    ? below - listHeight - cellHeight
+    ? below - listHeight - cell.height
     : below;
   suggestPlace.value = {
     x: Math.max(0, Math.min(cursorX, rootRect.width - 280)),
     y: Math.max(0, y),
   };
+  return true;
 }
 
 function schedulePublish(id: string) {
@@ -963,15 +973,13 @@ function readSelection(term: Terminal) {
 
 function selectionBlockTop(term: Terminal, element: HTMLElement, root: HTMLElement) {
   const position = term.getSelectionPosition();
-  const screen = element.querySelector(".xterm-screen");
-  const rows = element.querySelector(".xterm-rows");
-  if (!position || !(screen instanceof HTMLElement) || !(rows instanceof HTMLElement)) return null;
-  if (!term.rows) return null;
+  const screen = terminalScreenElement(element);
+  const cell = terminalCellSize(term, element);
+  if (!position || !screen || !cell) return null;
   const viewportRow = position.start.y - term.buffer.active.viewportY;
-  const cellHeight = rows.clientHeight / term.rows;
   const screenRect = screen.getBoundingClientRect();
   const rootRect = root.getBoundingClientRect();
-  return screenRect.top - rootRect.top + viewportRow * cellHeight;
+  return screenRect.top - rootRect.top + viewportRow * cell.height;
 }
 
 function showAddChat() {
@@ -1047,13 +1055,11 @@ function bufferLines(term: Terminal) {
 }
 
 function rowFromPointer(term: Terminal, element: HTMLElement, clientY: number) {
-  const screen = element.querySelector(".xterm-screen");
-  const rows = element.querySelector(".xterm-rows");
-  if (!(screen instanceof HTMLElement) || !(rows instanceof HTMLElement) || !term.rows) return null;
+  const screen = terminalScreenElement(element);
+  const cell = terminalCellSize(term, element);
+  if (!screen || !cell || !term.rows) return null;
   const screenRect = screen.getBoundingClientRect();
-  const cellHeight = rows.clientHeight / term.rows;
-  if (!cellHeight) return null;
-  const viewportRow = Math.floor((clientY - screenRect.top) / cellHeight);
+  const viewportRow = Math.floor((clientY - screenRect.top) / cell.height);
   if (viewportRow < 0 || viewportRow >= term.rows) return null;
   return term.buffer.active.viewportY + viewportRow;
 }
@@ -1369,7 +1375,7 @@ defineExpose({
       >
         <template v-for="session in sessions" :key="session.id">
           <UiTooltip :content="tabTooltip(session)">
-            <button
+            <button v-motion="{ enter: 'fade' }"
               type="button"
               class="bottom-panel-tab"
               :class="{
@@ -1439,7 +1445,7 @@ defineExpose({
         @close="findOpen = false; findSearch = null"
       />
       <div v-if="sticky" class="terminal-sticky">{{ sticky }}</div>
-      <div v-if="overlay" class="terminal-size-overlay">{{ overlay }}</div>
+      <div v-motion="'fade'" v-if="overlay" class="terminal-size-overlay">{{ overlay }}</div>
       <div v-if="linkHint" class="terminal-link-hint" :style="{ left: `${linkHint.x}px`, top: `${linkHint.y}px` }">
         {{ mac ? t('terminal.openLinkMac') : t('terminal.openLinkWin') }}
       </div>

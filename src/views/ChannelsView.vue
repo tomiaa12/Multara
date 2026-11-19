@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AlertTriangle, Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
 import type { ChannelInstallation, ChannelInstallationInput, ChannelUser } from "../domain/types";
@@ -13,6 +13,7 @@ import UiModal from "../components/ui/UiModal.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import UiRelativeTime from "../components/ui/UiRelativeTime.vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import ChatTargetSelect from "../components/ChatTargetSelect.vue";
 
 const store = useAppStore();
 const installations = ref<ChannelInstallation[]>([]);
@@ -27,8 +28,6 @@ const form = reactive({
   id: undefined as string | undefined,
   name: "",
   channelType: "feishu" as "feishu" | "lark",
-  targetType: "agent" as "agent" | "squad",
-  targetId: "",
   projectId: "",
   appId: "",
   appSecret: "",
@@ -36,25 +35,16 @@ const form = reactive({
   enabled: true,
 });
 
-const targets = computed(() => [
-  {
-    label: t("channels.agentGroup"),
-    options: (store.data?.agents ?? []).map((agent) => ({ value: `agent:${agent.id}`, label: agent.name })),
-  },
-  {
-    label: t("channels.squadGroup"),
-    options: (store.data?.squads ?? []).map((squad) => ({ value: `squad:${squad.id}`, label: squad.name })),
-  },
-].filter((group) => group.options.length));
+function userTargetValue(user: ChannelUser) {
+  return user.targetType && user.targetId ? `${user.targetType}:${user.targetId}` : "";
+}
 
-const targetValue = computed({
-  get: () => (form.targetId ? `${form.targetType}:${form.targetId}` : ""),
-  set: (value: string) => {
-    const [type, id] = value.split(":");
-    form.targetType = type === "squad" ? "squad" : "agent";
-    form.targetId = id ?? "";
-  },
-});
+function parseTargetValue(value: string): { targetType: "agent" | "squad" | null; targetId: string | null } {
+  if (!value) return { targetType: null, targetId: null };
+  const [type, id] = value.split(":");
+  if (!id) return { targetType: null, targetId: null };
+  return { targetType: type === "squad" ? "squad" : "agent", targetId: id };
+}
 
 async function refresh() {
   try {
@@ -114,8 +104,6 @@ function edit(item?: ChannelInstallation) {
   form.id = item?.id;
   form.name = item?.name ?? "";
   form.channelType = item?.channelType ?? "feishu";
-  form.targetType = item?.targetType ?? "agent";
-  form.targetId = item?.targetId ?? "";
   form.projectId = item?.projectId ?? "";
   form.appId = item?.appId ?? "";
   form.appSecret = "";
@@ -128,13 +116,10 @@ async function save() {
   busy.value = true;
   error.value = "";
   try {
-    if (!form.targetId) throw new Error(t("channels.targetRequired"));
     const input: ChannelInstallationInput = {
       id: form.id,
       name: form.name.trim(),
       channelType: form.channelType,
-      targetType: form.targetType,
-      targetId: form.targetId,
       projectId: form.projectId || null,
       appId: form.appId.trim(),
       appSecret: form.appSecret.trim() || undefined,
@@ -249,6 +234,21 @@ async function saveNote(item: ChannelInstallation, user: ChannelUser, event: Eve
   }
 }
 
+async function saveUserTarget(item: ChannelInstallation, user: ChannelUser, value: string) {
+  const next = parseTargetValue(value);
+  const previous = { targetType: user.targetType ?? null, targetId: user.targetId ?? null };
+  if ((previous.targetType ?? null) === next.targetType && (previous.targetId ?? null) === next.targetId) return;
+  user.targetType = next.targetType;
+  user.targetId = next.targetId;
+  try {
+    await backend.setChannelUserTarget(item.id, user.channelUserId, next.targetType, next.targetId);
+  } catch (cause) {
+    user.targetType = previous.targetType;
+    user.targetId = previous.targetId;
+    error.value = String(cause);
+  }
+}
+
 async function rotateCode(item: ChannelInstallation) {
   try {
     const code = await backend.rotateChannelPairingCode(item.id);
@@ -266,11 +266,6 @@ async function copyCode(item: ChannelInstallation) {
   } catch {
     /* 剪贴板不可用时忽略 */
   }
-}
-
-function targetName(item: ChannelInstallation) {
-  const list = item.targetType === "squad" ? store.data?.squads : store.data?.agents;
-  return list?.find((target) => target.id === item.targetId)?.name ?? item.targetId;
 }
 
 function projectName(item: ChannelInstallation) {
@@ -307,7 +302,6 @@ function projectName(item: ChannelInstallation) {
             <strong>{{ item.name }}</strong>
             <small>
               {{ item.channelType === "lark" ? "Lark" : t("channels.feishu") }} ·
-              {{ item.targetType === "squad" ? t("channels.squad") : t("channels.agent") }}：{{ targetName(item) }} ·
               {{ projectName(item) }}
             </small>
             <p class="channel-meta">
@@ -379,6 +373,7 @@ function projectName(item: ChannelInstallation) {
                 <th>{{ t("channels.userId") }}</th>
                 <th>{{ t("channels.userRole") }}</th>
                 <th>{{ t("channels.authorizedAt") }}</th>
+                <th>{{ t("channels.userTarget") }}</th>
                 <th>{{ t("channels.note") }}</th>
                 <th>{{ t("common.actions") }}</th>
               </tr>
@@ -394,6 +389,16 @@ function projectName(item: ChannelInstallation) {
                 <td class="channel-user-id">{{ user.channelUserId }}</td>
                 <td>{{ roleLabel(user.role) }}</td>
                 <td class="channel-user-time"><UiRelativeTime :value="user.createdAt" /></td>
+                <td class="channel-user-target">
+                  <ChatTargetSelect
+                    size="sm"
+                    :model-value="userTargetValue(user)"
+                    :placeholder="t('channels.userTargetNone')"
+                    :none-label="t('channels.userTargetNone')"
+                    :aria-label="t('channels.userTarget')"
+                    @update:model-value="(value) => saveUserTarget(usersTarget!, user, String(value ?? ''))"
+                  />
+                </td>
                 <td class="channel-user-note">
                   <UiInput
                     :model-value="user.note ?? ''"
@@ -426,7 +431,6 @@ function projectName(item: ChannelInstallation) {
             {{ t("channels.platform") }}
             <UiSelect v-model="form.channelType" :options="[{ value: 'feishu', label: t('channels.feishu') }, { value: 'lark', label: 'Lark' }]" />
           </label>
-          <label>{{ t("channels.target") }}<UiSelect v-model="targetValue" required :placeholder="t('channels.targetPlaceholder')" :groups="targets" /></label>
           <label>
             {{ t("channels.project") }}
             <UiSelect
@@ -434,6 +438,7 @@ function projectName(item: ChannelInstallation) {
               :options="[{ value: '', label: t('channels.noProject') }, ...(store.data?.projects ?? []).map((project) => ({ value: project.id, label: project.name }))]"
             />
           </label>
+          <p class="channel-hint">{{ t("channels.userTargetHint") }}</p>
           <label>{{ t("channels.appId") }}<UiInput v-model="form.appId" required placeholder="cli_xxxxxxxx" /></label>
           <label>
             {{ t("channels.appSecret") }}
@@ -466,8 +471,10 @@ function projectName(item: ChannelInstallation) {
 .channel-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; align-self: center; justify-content: flex-end; }
 .channel-users-dialog { width: min(920px, 94vw); }
 .channel-user-time { white-space: nowrap; color: var(--color-text-secondary); }
-.channel-user-note { min-width: 160px; }
+.channel-user-note { min-width: 140px; }
 .channel-user-note .ui-input { width: 100%; }
+.channel-user-target { min-width: 180px; }
+.channel-user-target :deep(.ds-select) { width: 100%; }
 .channel-user-id { font-family: var(--font-family-mono); font-weight: var(--font-weight-regular); overflow-wrap: anywhere; }
 .channel-user-actions { width: 1%; text-align: right; white-space: nowrap; }
 .channel-dialog { width: min(560px, 92vw); max-height: 86vh; overflow: auto; }

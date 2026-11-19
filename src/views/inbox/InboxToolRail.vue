@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import type { FileContent, Workspace } from "../../domain/types";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
@@ -39,6 +40,7 @@ import {
   selectTerminalSession,
   terminalSessions,
 } from "../../stores/terminal-sessions";
+import { readProjectTerminalOpen, writeProjectTerminalOpen } from "../../stores/terminal-layout";
 import { inboxBrowserLinks } from "./inbox-browser-links";
 import { placeEditorTab } from "./editor-tabs";
 import InboxBrowser from "./InboxBrowser.vue";
@@ -50,7 +52,6 @@ import {
   INBOX_FILES_WIDTH_KEY,
   INBOX_PANEL_WIDTH_KEY,
   INBOX_SURFACES_KEY,
-  INBOX_TERMINAL_OPEN_KEY,
   INBOX_TOOL_MIN_WIDTH,
   createInboxSurfaceTab,
   readInboxFilesWidth,
@@ -134,7 +135,12 @@ const historyPath = computed(() => {
   return filePreview.value?.path || "";
 });
 const filesWanted = ref(false);
-const terminalOpen = ref(false);
+const railProjectId = computed(
+  () => props.workspaces.find((item) => item.id === props.workspaceId)?.projectId
+    ?? props.workspaces[0]?.projectId
+    ?? "",
+);
+const terminalOpen = ref(readProjectTerminalOpen("inbox", railProjectId.value));
 const surfaces = ref<InboxSurfaceTab[]>(readInboxSurfaces());
 const editorTabs = ref<EditorTab[]>([]);
 const activeEditorKey = ref("");
@@ -345,13 +351,19 @@ function readTerminalHeight() {
   return 240;
 }
 
+/** keep-alive 缓存时后台实例不抢布局 / 预览；真正销毁才走 onBeforeUnmount。 */
+const railActive = ref(true);
+
 function writeLayout() {
   localStorage.setItem(INBOX_PANEL_WIDTH_KEY, String(panelWidth.value));
   localStorage.setItem(INBOX_FILES_WIDTH_KEY, String(filesWidth.value));
   localStorage.setItem(INBOX_FILES_OPEN_KEY, filesWanted.value ? "1" : "0");
-  localStorage.setItem(INBOX_TERMINAL_OPEN_KEY, terminalOpen.value ? "1" : "0");
+  if (railProjectId.value) {
+    writeProjectTerminalOpen("inbox", railProjectId.value, terminalOpen.value);
+  }
   localStorage.setItem(INBOX_SURFACES_KEY, JSON.stringify(surfaces.value.map((item) => item.kind)));
   localStorage.setItem("multara.inbox.activeSurface", activeSurface.value?.kind ?? "");
+  if (!railActive.value) return;
   emit("layout", {
     content: stageOpen.value,
     files: false,
@@ -359,6 +371,13 @@ function writeLayout() {
     terminal: terminalOpen.value,
   });
   void nextTick(keepFloatInside);
+}
+
+function applyGitWatch() {
+  const ids = railActive.value ? props.workspaces.map((item) => item.id) : [];
+  void explorerBackend
+    .watchWorkspaces(gitWatchOwner, ids, watcherExcludes.value)
+    .catch(() => undefined);
 }
 
 function tabDirty(tab: EditorTab) {
@@ -477,9 +496,68 @@ function openUncommitted() {
   openSurface("uncommitted", "singleton");
 }
 
-function openWorkspaceFile(workspaceId: string, path: string) {
+function openWorkspaceFile(workspaceId: string, path: string, startLine?: number) {
   filesWanted.value = true;
+  if (startLine && startLine > 0) fileLine.value = startLine;
   void openFile(workspaceId, path, true);
+}
+
+function resolveRevealPath(path: string, workspaceId?: string): { workspaceId: string; path: string } | null {
+  if (workspaceId && props.workspaces.some((item) => item.id === workspaceId)) {
+    return { workspaceId, path };
+  }
+  const absolute = props.workspaces.find((item) => {
+    const root = item.workPath || item.sourcePath;
+    return Boolean(root) && (path === root || path.startsWith(`${root}/`));
+  });
+  if (absolute) {
+    const root = absolute.workPath || absolute.sourcePath;
+    return {
+      workspaceId: absolute.id,
+      path: path.slice(root.length).replace(/^\//, ""),
+    };
+  }
+  const fallback = workspaceId || props.workspaceId || props.workspaces[0]?.id;
+  if (!fallback) return null;
+  return { workspaceId: fallback, path };
+}
+
+async function onFileReveal() {
+  const request = store.fileReveal;
+  if (!request) return;
+  const nonce = request.nonce;
+  const resolved = resolveRevealPath(request.path, request.workspaceId);
+  if (!resolved || store.fileReveal?.nonce !== nonce) return;
+  openWorkspaceFile(resolved.workspaceId, resolved.path, request.startLine);
+}
+
+function onBrowserReveal() {
+  const request = store.browserReveal;
+  if (!request?.url) return;
+  showBrowser(request.url);
+}
+
+function onTerminalReveal() {
+  const request = store.terminalReveal;
+  if (!request) return;
+  if (request.workspaceId && props.workspaces.some((item) => item.id === request.workspaceId)) {
+    emit("pick-workspace", request.workspaceId);
+  }
+  terminalOpen.value = true;
+  writeLayout();
+  if (request.terminalId && sessions.value.some((item) => item.id === request.terminalId)) {
+    activeTerminalSessionId.value = request.terminalId;
+    return;
+  }
+  const current = props.workspaces.find((item) => item.id === (request.workspaceId || props.workspaceId))
+    ?? workspace.value;
+  if (!current) return;
+  void ensureWorkspaceTerminal({
+    workspaceId: current.id,
+    cwd: current.workPath || current.sourcePath,
+    title: current.name,
+    projectId: current.projectId,
+  });
 }
 
 function openGitList() {
@@ -839,7 +917,8 @@ function beginPanelResize(event: PointerEvent) {
   window.addEventListener("pointercancel", finish);
 }
 
-function beginFilesResize(event: PointerEvent) {
+/** 右侧侧栏拖左缘缩小；左侧侧栏（invert）拖右缘缩小。 */
+function beginFilesResize(event: PointerEvent, invert = false) {
   event.preventDefault();
   event.stopPropagation();
   const startX = event.clientX;
@@ -847,7 +926,9 @@ function beginFilesResize(event: PointerEvent) {
   const max = panelWidth.value;
   document.body.classList.add("is-resizing-panels");
   const move = (moveEvent: PointerEvent) => {
-    filesWidth.value = Math.min(max, Math.max(INBOX_TOOL_MIN_WIDTH, startWidth - (moveEvent.clientX - startX)));
+    const delta = moveEvent.clientX - startX;
+    const next = invert ? startWidth + delta : startWidth - delta;
+    filesWidth.value = Math.min(max, Math.max(INBOX_TOOL_MIN_WIDTH, next));
   };
   const finish = () => {
     window.removeEventListener("pointermove", move);
@@ -938,6 +1019,19 @@ function closeAll() {
 
 defineExpose({ closeAll, openWorkspaceFile });
 
+watch(() => store.fileReveal?.nonce, () => {
+  if (!railActive.value) return;
+  void onFileReveal();
+});
+watch(() => store.browserReveal?.nonce, () => {
+  if (!railActive.value) return;
+  onBrowserReveal();
+});
+watch(() => store.terminalReveal?.nonce, () => {
+  if (!railActive.value) return;
+  onTerminalReveal();
+});
+
 watch([stageOpen, panelWidth, terminalOpen], () => writeLayout(), { immediate: true });
 
 watch(() => props.kind, (kind) => {
@@ -969,18 +1063,15 @@ watch(
     () => props.workspaces.map((item) => item.id).join("\0"),
     () => watcherExcludes.value.join("\0"),
   ],
-  ([ids, excludes]) => {
-    void explorerBackend.watchWorkspaces(
-      gitWatchOwner,
-      ids ? ids.split("\0") : [],
-      excludes ? excludes.split("\0") : [],
-    ).catch(() => undefined);
+  () => {
+    applyGitWatch();
   },
   { immediate: true },
 );
 
 void explorerBackend
   .onFsChanged((change) => {
+    if (!railActive.value) return;
     if (!props.workspaces.some((item) => item.id === change.workspaceId)) return;
     if (change.git || change.overflow || change.paths.length > 0) {
       gitChangeRefreshScheduler.request();
@@ -992,6 +1083,8 @@ void explorerBackend
   });
 
 watch(() => props.sessionId, () => {
+  // keep-alive 下每个需求各有实例；同需求换会话时才清编辑器。
+  if (!railActive.value) return;
   editorTabs.value = [];
   activeEditorKey.value = "";
   writeLayout();
@@ -1037,8 +1130,6 @@ async function openHistoryInFiles(target: ScmOpenTarget) {
 }
 
 onMounted(() => {
-  window.addEventListener("keydown", onKeydown);
-  void nextTick(watchFloatHost);
   void backend.terminalProfiles().then((list) => {
     profiles.value = list ?? [];
   }).catch(() => {
@@ -1046,7 +1137,26 @@ onMounted(() => {
   });
 });
 
+onActivated(() => {
+  railActive.value = true;
+  window.addEventListener("keydown", onKeydown);
+  applyGitWatch();
+  writeLayout();
+  void nextTick(watchFloatHost);
+});
+
+onDeactivated(() => {
+  railActive.value = false;
+  window.removeEventListener("keydown", onKeydown);
+  void explorerBackend.watchWorkspaces(gitWatchOwner, [], watcherExcludes.value).catch(() => undefined);
+  floatHostObserver?.disconnect();
+  floatHostObserver = null;
+  fileCursor?.dispose();
+  fileCursor = null;
+});
+
 onBeforeUnmount(() => {
+  railActive.value = false;
   gitWatchDisposed = true;
   gitWatchUnlisten?.();
   gitWatchUnlisten = null;
@@ -1062,7 +1172,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="stageOpen" class="inbox-stage">
+  <section v-motion="{ enter: 'fade' }" v-if="stageOpen" class="inbox-stage">
     <div
       class="inbox-tool-resize"
       role="separator"
@@ -1158,6 +1268,8 @@ onBeforeUnmount(() => {
             :ref="bindUncommittedChanges"
             :project-id="workspace?.projectId ?? ''"
             :theme="theme"
+            :side-width="filesWidth"
+            @resize-side="beginFilesResize"
           />
           <SearchView
             v-else-if="tab.kind === 'search'"
@@ -1211,7 +1323,18 @@ onBeforeUnmount(() => {
                 :word-wrap="wordWrap"
               />
             </div>
-            <aside v-if="gitBarOpen || !gitPreview" class="inbox-git-bar">
+            <aside
+              v-if="gitBarOpen || !gitPreview"
+              class="inbox-git-bar"
+              :style="{ width: `${filesWidth}px` }"
+            >
+              <div
+                class="inbox-files-resize"
+                role="separator"
+                aria-orientation="vertical"
+                :aria-label="t('inbox.tool.resize')"
+                @pointerdown="beginFilesResize"
+              />
               <SourceControlPanel
                 :ref="bindSourceControlPanel"
                 :project-id="workspace?.projectId ?? ''"
@@ -1378,8 +1501,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </section>
-  <Teleport to=".inbox-detail.chat-surface">
+  <!-- keep-alive 停用时关掉 Teleport，避免残留悬浮栏抢点击、改到后台实例 -->
+  <Teleport to=".inbox-detail.chat-surface" :disabled="!railActive">
     <nav
+      v-if="railActive"
       ref="floatEl"
       class="inbox-float"
       :style="floatStyle"

@@ -28,7 +28,11 @@ async function resend(id: string) {
     await backend.resendFeishuSend(id);
     await store.loadMessages(props.sessionId);
   } catch (cause) {
-    store.reportComposerNotice(cause instanceof Error ? cause.message : String(cause));
+    store.reportComposerNotice(
+      cause instanceof Error ? cause.message : String(cause),
+      "",
+      props.sessionId,
+    );
   } finally {
     const next = new Set(pendingIds.value);
     next.delete(id);

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { X } from "@lucide/vue";
 import EditorWithDiff from "../components/workbench/EditorWithDiff.vue";
 import FileTypeIcon from "../components/FileTypeIcon.vue";
@@ -103,7 +104,7 @@ defineExpose({ layout });
         </div>
       </header>
       <div class="editor-main">
-        <div v-if="pendingChunks" class="chat-editor-overlay-widget">
+        <div v-motion="'dropdown'" v-if="pendingChunks" class="chat-editor-overlay-widget">
           <UiButton
             class="diff-file-action diff-file-action-keep"
             size="small"

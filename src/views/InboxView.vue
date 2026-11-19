@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Archive, ArrowRight, GitBranch, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
@@ -22,6 +22,7 @@ const store = useAppStore();
 const route = useRoute();
 const router = useRouter();
 const selectedId = ref<string | null>(null);
+const threadPanel = ref<{ focus: () => void } | null>(null);
 const dividerMessageId = ref<string | null>(null);
 const REVIEW_MIN_WIDTH = 240;
 const REVIEW_DEFAULT_WIDTH = 420;
@@ -178,6 +179,12 @@ function destination(item: InboxItem) {
   return null;
 }
 
+/** 需求会话与任务一样可继续回复；无需求的聊天/频道通知仅在等待输入时可写。 */
+function composerHistoryOnly(item: InboxItem) {
+  if (item.projectId) return false;
+  return item.status !== "needs_input" && item.status !== "needs_permission";
+}
+
 async function select(item: InboxItem) {
   const same = selectedId.value === item.id;
   const wasUnread = !item.read;
@@ -188,6 +195,8 @@ async function select(item: InboxItem) {
   }
   if (!same) reviewFile.value = null;
   selectedId.value = item.id;
+  await nextTick();
+  threadPanel.value?.focus();
   if (!wasUnread) return;
   await store.markInboxRead(item.id, ids.at(-1) ?? null);
 }
@@ -348,6 +357,7 @@ onUnmounted(() => {
       <TaskActivity
         v-if="selected.taskId"
         :key="selected.id"
+        ref="threadPanel"
         class="inbox-thread"
         thread
         :session-id="selected.sessionId"
@@ -357,9 +367,10 @@ onUnmounted(() => {
       <ChatPanel
         v-else
         :key="selected.id"
+        ref="threadPanel"
         class="inbox-thread"
         embedded
-        :history-view-only="selected.status !== 'needs_input' && selected.status !== 'needs_permission'"
+        :history-view-only="composerHistoryOnly(selected)"
         :session-id="selected.sessionId"
         :project-id="selected.projectId"
         :unread-message-id="dividerMessageId"

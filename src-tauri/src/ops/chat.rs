@@ -163,6 +163,8 @@ fn copy_session(
         created_at: now.clone(),
         updated_at: now,
         default_mode: default_mode.parse().unwrap_or_default(),
+        last_run_agent_id: None,
+        last_run_at: None,
     })
 }
 

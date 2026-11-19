@@ -66,8 +66,8 @@
 .project-card.collapsible {
   cursor: pointer;
   transition:
-    border-color 120ms ease,
-    background 120ms ease;
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    background var(--motion-duration-fast) var(--motion-ease);
 }
 .project-card.collapsible:hover,
 .project-card.collapsible:focus-visible {
@@ -229,9 +229,9 @@
 .agent-tile {
   cursor: pointer;
   transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    transform 120ms ease;
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    background var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 .agent-tile:hover,
 .agent-tile:focus-visible {
@@ -574,14 +574,24 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
-.chat-session-tab {
+/* UiTooltip 包一层 trigger；max-width 落在 trigger 上，避免标题省略时关闭按钮挤出 tab */
+.chat-session-tabs > .ds-tooltip-trigger {
   display: flex;
   flex: 0 0 auto;
+  max-width: 188px;
+  min-width: 0;
+}
+.chat-session-tab {
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 6px;
-  max-width: 188px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 35px;
   padding: 0 6px 0 12px;
+  overflow: hidden;
   border: 0;
   border-right: 1px solid var(--color-border-light);
   border-radius: 0;
@@ -591,10 +601,21 @@
   text-align: left;
   white-space: nowrap;
 }
-.chat-session-tab > span:not(.tab-close) {
+.chat-session-tab > svg {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+}
+.chat-session-tab > .chat-session-tab-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.chat-session-tab > .ds-tooltip-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
 }
 .chat-session-tab:hover {
   background: var(--color-surface-raised);
@@ -746,6 +767,38 @@
 .user-prompt {
   width: 100%;
 }
+/* 折叠运行中：停止钮在右侧，正文右侧留白；点开编辑后浮钮藏起，由 footer 接手 */
+.chat-composer.user-prompt.is-running:not(.is-expanded):not(:focus-within) .composer-field {
+  padding-right: 32px;
+}
+/* 上下 inset 卡住高度，停止钮不会高出输入框；单行垂直居中，多行贴底 */
+.chat-composer.user-prompt > .user-prompt-stop-wrap {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: flex-end;
+  max-width: calc(100% - 8px);
+  pointer-events: none;
+}
+.chat-composer.user-prompt > .user-prompt-stop-wrap.is-single-line {
+  align-items: center;
+}
+.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button {
+  --ds-stop-size: 22px;
+  pointer-events: auto;
+}
+/* 折叠态钮更小，中间方块跟着缩小（footer 里仍用默认 14） */
+.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button svg {
+  width: 9px;
+  height: 9px;
+}
+.chat-composer.user-prompt.is-expanded > .user-prompt-stop-wrap,
+.chat-composer.user-prompt:focus-within > .user-prompt-stop-wrap {
+  display: none;
+}
 .reask-banner {
   display: flex;
   align-items: center;
@@ -783,10 +836,6 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-}
-.user-prompt button.composer-attachment {
-  justify-content: flex-start;
-  background: var(--color-bg-tertiary);
 }
 .user-prompt-text {
   white-space: pre-wrap;
@@ -827,7 +876,7 @@
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
-.task-activity-log > .assignment-turn + .assistant-working {
+.task-activity-log .assignment-turn + .assistant-working {
   width: 100%;
   margin-top: -16px;
 }
@@ -856,7 +905,7 @@
   margin-right: 4px;
   color: var(--color-info);
 }
-.task-activity-log > .assignment-turn + .assistant-turn.internal:not(.assignment-turn) {
+.task-activity-log .assignment-turn + .assistant-turn.internal:not(.assignment-turn) {
   margin-top: -16px;
 }
 .assignment-instruction {
@@ -1256,8 +1305,14 @@
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
+/* 头像略大于状态行字号，仍贴齐基线 */
 .assistant-working .agent-avatar {
+  width: 14px;
+  height: 14px;
   margin: 0;
+}
+.assistant-working .agent-avatar-glyph {
+  font-size: 9px;
 }
 .assistant-working-lines {
   display: flex;
@@ -1277,7 +1332,7 @@
   --ds-shimmer-base: var(--color-text-secondary);
 }
 .assistant-working svg {
-  animation: chat-spin 1s linear infinite;
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 /* 智能体状态格（需求列表 / 任务卡片）：头像 + 轮播动作文案，超长截断 */
 .agent-live-status {
@@ -1341,13 +1396,21 @@
  * 提问 + 队列同时存在时：提问卡片限高滚动，队列可折叠，总高度不挤掉聊天区。
  */
 .chat-queue {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  width: 100%;
   margin-bottom: 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg-tertiary);
   overflow: hidden;
+}
+/* 跟输入框同宽：宽度由 .chat-editing-dock 统一约束，队列不再单独再缩一圈 */
+.chat-editing-dock > .chat-queue {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 .chat-queue.under-question {
   margin-top: -2px;
@@ -1365,6 +1428,7 @@
   justify-content: flex-start;
   gap: 6px;
   width: 100%;
+  min-width: 0;
   height: 28px;
   padding: 0 10px;
   border: 0;
@@ -1379,10 +1443,21 @@
   background: var(--color-surface-hover);
   color: var(--color-text);
 }
+.chat-queue-heading > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chat-queue-heading small {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
+  overflow: hidden;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat-queue.is-held .chat-queue-heading small {
   color: var(--color-warning);
@@ -1425,34 +1500,41 @@
   border: 1.5px solid var(--color-text-tertiary);
   border-radius: 50%;
 }
+/* UiTooltip 包一层 trigger：flex/省略要落在 trigger 上，文字才能真正 … */
+.chat-queue-item > .ds-tooltip-trigger {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
 .chat-queue-text {
-  flex: 1;
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--color-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 操作只在悬停 / 键盘聚焦时浮在右侧，平时不占宽度，文字能显示得更长 */
-.chat-queue-item {
-  position: relative;
-}
+/* 操作占文档流：悬停时展开，文字同步缩短出省略号，不盖在字上面 */
 .chat-queue-actions {
-  position: absolute;
-  top: 50%;
-  right: 4px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 2px;
-  padding-left: 16px;
-  background: linear-gradient(to right, transparent, var(--color-surface-hover) 16px);
+  max-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-50%);
-  transition: opacity var(--motion-duration-fast) var(--motion-ease);
+  transition:
+    max-width var(--motion-duration-fast) var(--motion-ease),
+    opacity var(--motion-duration-fast) var(--motion-ease);
 }
 .chat-queue-item:hover .chat-queue-actions,
 .chat-queue-item:focus-within .chat-queue-actions {
+  max-width: 12rem;
   opacity: 1;
   pointer-events: auto;
 }
@@ -1463,7 +1545,7 @@
   border-radius: var(--radius-md);
   background: var(--color-field);
   padding: 6px;
-  transition: border-color 120ms ease;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease);
 }
 .chat-composer:focus-within {
   border-color: var(--color-focus);
@@ -1922,12 +2004,8 @@ body:has(.canvas-modal) .canvas-frame-host {
   opacity: 0.55;
 }
 /* 输入框上方的 Canvas 栏：和「已修改的文件」一样贴在输入框上（同宽、无底边、只有上圆角），
-   行的样式沿用 .chat-queue，这里只补按钮复位和状态文字。
-   选择器加上 .chat-editing-dock：要压过浮动聊天给队列卡片留边距的 .compact .chat-queue { width } */
-.chat-editing-dock > .chat-queue.canvas-bar,
-.shared-chat-panel.compact .chat-editing-dock > .chat-queue.canvas-bar {
-  box-sizing: border-box;
-  width: 100%;
+   行的样式沿用 .chat-queue，宽度已由 .chat-editing-dock > .chat-queue 统一为 100%。 */
+.chat-editing-dock > .chat-queue.canvas-bar {
   margin: 0;
   border: 1px solid var(--color-field-border);
   border-bottom: none;
@@ -1964,8 +2042,10 @@ body:has(.canvas-modal) .canvas-frame-host {
   outline: 1px solid var(--color-focus);
 }
 .canvas-bar-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .canvas-bar-status {
   flex: 0 0 auto;
@@ -2036,6 +2116,52 @@ body:has(.canvas-modal) .canvas-frame-host {
 .genui-title {
   color: var(--color-text-strong);
   font-weight: 600;
+}
+.genui-table-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+.genui-table-head .genui-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+}
+.genui-table-head-spacer {
+  flex: 1;
+  min-width: 0;
+}
+.genui-copy-split {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.genui-copy-split .genui-copy-main,
+.genui-copy-split .genui-copy-caret {
+  border: 0;
+  border-radius: 0;
+}
+.genui-copy-split .genui-copy-main {
+  padding-inline: 8px;
+}
+.genui-copy-split .genui-copy-caret {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  border-left: 1px solid var(--color-border);
+}
+.genui-copy-split .genui-copy-main:hover,
+.genui-copy-split .genui-copy-caret:hover {
+  background: var(--color-surface-hover);
 }
 .genui-skeleton {
   min-height: 72px;
@@ -2365,7 +2491,7 @@ button.chat-editing-overview-open {
 .chat-editing-chevron {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .chat-editing-bar:not(.is-collapsed) .chat-editing-chevron {
   transform: rotate(90deg);
@@ -2376,6 +2502,9 @@ button.chat-editing-overview-open {
   align-items: center;
   gap: 2px;
   margin-left: auto;
+}
+.chat-editing-overview-actions .working-set-line-counts {
+  margin-left: 4px;
 }
 button.chat-editing-overview-open:hover {
   color: var(--color-text);
@@ -2658,15 +2787,15 @@ textarea:not(.inputarea) {
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 200ms ease,
-    visibility 0s linear 200ms;
+    opacity var(--motion-duration-normal) var(--motion-ease),
+    visibility 0s linear var(--motion-duration-normal);
 }
 .floating-chat-backdrop.open {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transition:
-    opacity 200ms ease,
+    opacity var(--motion-duration-normal) var(--motion-ease),
     visibility 0s;
 }
 .floating-chat {
@@ -2695,12 +2824,12 @@ textarea:not(.inputarea) {
 .floating-chat.open {
   visibility: visible;
   pointer-events: auto;
-  animation: floating-chat-in 200ms ease;
+  animation: floating-chat-in var(--motion-duration-normal) var(--motion-ease-out);
 }
 .floating-chat.closing {
   visibility: visible;
   pointer-events: none;
-  animation: floating-chat-out 200ms ease forwards;
+  animation: floating-chat-out var(--motion-duration-exit) var(--motion-ease-in) forwards;
 }
 @keyframes floating-chat-in {
   from { transform: translateX(100%); }
@@ -2785,9 +2914,6 @@ textarea:not(.inputarea) {
 .shared-chat-panel.compact .chat-surface > .chat-editing-dock {
   width: calc(100% - 20px);
   margin-bottom: 10px;
-}
-.shared-chat-panel.compact .chat-queue {
-  width: calc(100% - 20px);
 }
 /* 右下角浮动聊天：提问卡再压矮，多题只展示当前题，给消息区让位 */
 .shared-chat-panel.compact .chat-question-card {
@@ -2949,8 +3075,12 @@ textarea:not(.inputarea) {
   font-size: var(--font-size-sm);
 }
 .diff-card,
-.shell-card {
+.shell-card,
+.todo-progress-card,
+.permission-card {
   justify-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
 }
 .explore-group > summary,
 .thinking-line > summary,
@@ -2991,7 +3121,7 @@ textarea:not(.inputarea) {
 .read-row > summary svg {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .thinking-line[open] > summary svg,
 .read-row[open] > summary svg {
@@ -3005,7 +3135,7 @@ textarea:not(.inputarea) {
 .shell-card > summary .shell-chevron,
 .shell-card > .shell-summary .shell-chevron {
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .shell-card[open] > summary .shell-chevron,
 .shell-card.is-open > .shell-summary .shell-chevron {
@@ -3265,6 +3395,9 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .shell-body:not(.is-collapsed) {
   max-height: 280px;
 }
+.shell-body {
+  transition: max-height var(--motion-duration-normal) var(--motion-ease);
+}
 .explore-group[open] > .explore-reads {
   max-height: 280px;
 }
@@ -3322,7 +3455,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .process-fold > summary svg {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .process-fold[open] > summary svg {
   transform: rotate(90deg);
@@ -3364,7 +3497,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .subagent-chevron {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .subagent-card.is-open .subagent-chevron {
   transform: rotate(90deg);
@@ -3580,7 +3713,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   cursor: pointer;
 }
 .plan-artifact-toggle:hover { color: var(--color-text); }
-.plan-artifact-toggle svg { transition: transform 120ms ease; }
+.plan-artifact-toggle svg { transition: transform var(--motion-duration-fast) var(--motion-ease); }
 .plan-artifact-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .plan-artifact-changes {
   display: flex;
@@ -3754,7 +3887,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   color: var(--color-success);
 }
 .process-spinner {
-  animation: chat-spin 1s linear infinite;
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 .failure-bubble {
   display: grid;
@@ -4155,9 +4288,12 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .shared-chat-panel.compact .composer-field {
   max-height: calc(var(--composer-line-height) * 11);
 }
+/* 宽度跟 .chat-editing-dock 走，各环境输入框怎么对齐，按钮就在那一列上居中 */
 .scroll-to-bottom-row {
   display: flex;
   justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
   margin: 0 0 var(--spacing-1-5);
 }
 .scroll-to-bottom {
@@ -4371,7 +4507,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   inset: 0 1px;
   background: var(--color-border);
   pointer-events: none;
-  transition: background 0.12s;
+  transition: background var(--motion-duration-fast) var(--motion-ease);
 }
 .panel-resize-handle,
 .panel-resize-handle::before,
@@ -4683,23 +4819,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: inherit;
 }
 .scm-changes-pane > .ui-pane-body {
-  /* 与「更改」标题箭头右侧对齐：.ui-pane-twistie 的 2px 左边距 + 16px 宽度 */
-  padding-left: 18px;
+  /* 一级项目顶格（与标题箭头对齐）；分组 / 文件仍在项目下缩进 */
+  padding-left: 0;
 }
-/* 悬停 / 选中背景用无模糊的左偏移阴影补满上面那 18px 内边距；阴影不受行自身 overflow: hidden 裁剪 */
-.scm-changes-pane :is(
-  .scm-provider:hover,
-  .scm-repository.is-selected > .scm-provider,
-  .scm-group > header:hover,
-  .scm-group > header:focus-within,
-  .scm-file:hover,
-  .scm-file:focus-visible,
-  .scm-file.is-selected,
-  .scm-dir:hover,
-  .scm-file-tree .tree-entry:hover,
-  .scm-file-tree .tree-entry.selected
-) {
-  box-shadow: -18px 0 0 var(--color-surface-active);
+.scm-changes-pane .scm-provider {
+  padding-left: 2px;
 }
 .scm-repository {
   position: relative;
@@ -4929,6 +5053,9 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   line-height: 1.55;
 }
 .scm-direct-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 8px 8px 0;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
@@ -4936,6 +5063,15 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-warning);
   font-size: var(--font-size-xs);
   line-height: 1.45;
+}
+.scm-direct-warn > p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.scm-direct-warn > .ui-button {
+  flex: 0 0 auto;
+  color: inherit;
 }
 .scm-sync {
   display: flex;
@@ -5461,8 +5597,8 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    box-shadow var(--motion-duration-fast) var(--motion-ease);
 }
 .scm-commit-field:focus-within {
   border-color: var(--color-focus);
@@ -5604,7 +5740,10 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   opacity: 1;
   pointer-events: auto;
 }
-.scm-group > header .ui-button {
+.scm-group > header .ui-button,
+.scm-group > header .ui-button[data-size="icon"],
+.scm-group > header .ui-button:hover:not(:disabled),
+.scm-group > header .ui-button:active:not(:disabled) {
   width: 22px;
   height: 22px;
   min-width: 22px;
@@ -5614,7 +5753,14 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   padding: 0;
   overflow: hidden;
   border: 0;
+  border-radius: 0;
   background: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+}
+.scm-group > header .ui-button:hover:not(:disabled) {
+  color: var(--color-text-strong);
 }
 .scm-file {
   position: relative;
@@ -5677,7 +5823,9 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   display: flex;
 }
 .scm-file-actions .ui-button,
-.scm-file-actions .ui-button[data-size="icon"] {
+.scm-file-actions .ui-button[data-size="icon"],
+.scm-file-actions .ui-button:hover:not(:disabled),
+.scm-file-actions .ui-button:active:not(:disabled) {
   width: 18px;
   height: 18px;
   min-width: 18px;
@@ -5687,15 +5835,15 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: var(--radius-xs);
+  border-radius: 0;
   background: transparent;
+  background-color: transparent;
   box-shadow: none;
   color: var(--color-text);
 }
-.scm-file-actions .ui-button:hover,
-.scm-file-actions .ui-button[data-size="icon"]:hover {
+.scm-file-actions .ui-button:hover:not(:disabled),
+.scm-file-actions .ui-button[data-size="icon"]:hover:not(:disabled) {
   color: var(--color-text-strong);
-  background: var(--color-surface-emphasis);
 }
 .scm-file.git-deleted .scm-file-name,
 .scm-file.git-deleted .scm-file-path {
@@ -5707,10 +5855,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   align-items: center;
   margin-left: auto;
 }
+/* 与行 gap 对齐，避免再叠 margin 导致列表/树间距不一致 */
 .scm-file:hover > .scm-file-actions + .ds-tooltip-trigger,
 .scm-file:focus-within > .scm-file-actions + .ds-tooltip-trigger,
 .scm-file.is-selected > .scm-file-actions + .ds-tooltip-trigger {
-  margin-left: var(--spacing-2);
+  margin-left: 0;
 }
 .scm-toolbar {
   position: sticky;
@@ -5821,10 +5970,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   width: 100%;
   min-height: 25px;
   padding-top: 2px;
+  padding-right: 8px;
   padding-bottom: 2px;
   border: 0;
   border-radius: 0;
@@ -5861,12 +6011,12 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 .scm-file-tree .tree-entry > .ds-tooltip-trigger:has(> .tree-git-badge) {
   margin-left: auto;
-  margin-right: 10px;
+  margin-right: 0;
 }
 .scm-file-tree .tree-entry:hover > .scm-file-actions + .ds-tooltip-trigger,
 .scm-file-tree .tree-entry:focus-within > .scm-file-actions + .ds-tooltip-trigger,
 .scm-file-tree .tree-entry.selected > .scm-file-actions + .ds-tooltip-trigger {
-  margin-left: var(--spacing-2);
+  margin-left: 0;
 }
 .scm-file-tree .tree-entry.git-deleted .tree-name {
   text-decoration: line-through;
@@ -5990,7 +6140,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   background: transparent;
   pointer-events: none;
   cursor: inherit;
-  transition: background-color 0.1s ease-out;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease);
 }
 .ui-pane-sash.is-hover::before,
 .ui-pane-sash.is-active::before {
@@ -6233,26 +6383,36 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   flex-direction: column;
   overflow: hidden;
 }
-.scm-graph-project {
+.scm-graph-workspace-wrap {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  max-width: min(220px, 48%);
   margin-left: 8px;
-  overflow: hidden;
-  color: var(--color-text-secondary);
+}
+.scm-graph-workspace.scm-inspect-branch-picker.ds-select {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+.scm-graph-workspace.scm-inspect-branch-picker.ds-select .ds-select-trigger {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 22px;
+  max-height: none;
+  padding: 1px 4px 1px 6px;
+  align-items: center;
+}
+.scm-graph-workspace .scm-inspect-branch-project {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  line-height: 22px;
+  line-height: 1.2;
   text-transform: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.scm-graph-repo.ui-select {
-  width: auto;
-  max-width: 120px;
-  height: 22px;
-  min-height: 22px;
-  padding: 0 22px 0 var(--spacing-1);
-  font-size: var(--font-size-xs);
+.scm-graph-workspace .scm-inspect-branch-ref {
+  font-size: 10px;
+  line-height: 1.15;
 }
 .scm-graph-body {
   display: grid;
@@ -7371,6 +7531,15 @@ body.is-dragging-workspace-file * {
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
+}
+/* 与 FileTypeIcon / 聊天 tab 左侧图标统一为 15px */
+.editor-tab > .codicon,
+.editor-tab > .file-type-icon {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  font-size: 15px;
+  line-height: 15px;
 }
 .editor-tab-name {
   flex: 0 1 auto;
@@ -8961,6 +9130,14 @@ body.is-dragging-workspace-file * {
 .workbench .editor-tabbar > .diff-file-nav .ui-button[data-size="icon"]:hover:not(:disabled) {
   border-color: transparent;
 }
+.workbench .scm-group > header .ui-button:hover:not(:disabled),
+.workbench .scm-group > header .ui-button:active:not(:disabled),
+.workbench .scm-file-actions .ui-button:hover:not(:disabled),
+.workbench .scm-file-actions .ui-button:active:not(:disabled) {
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
 .workbench .scm-file-actions .ui-button,
 .workbench .scm-file-actions .ui-button[data-size="icon"] {
   width: 18px;
@@ -9046,13 +9223,8 @@ body.is-dragging-workspace-file * {
   overflow-y: auto;
 }
 
-@keyframes chat-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .spin {
-  animation: chat-spin 1s linear infinite;
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 
 /* Task board, create dialog, issue page, inbox */
@@ -9776,6 +9948,11 @@ body.is-dragging-task * {
   min-height: 0;
   min-width: 0;
 }
+.task-issue-hero {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: var(--spacing-1) clamp(var(--spacing-4), 4vw, var(--spacing-10)) 0;
+}
 .task-issue-scroll {
   flex: 1;
   min-height: 0;
@@ -9967,17 +10144,38 @@ body.is-dragging-task * {
 .task-feed {
   margin-top: 28px;
 }
+.task-feed-fill {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 0 clamp(var(--spacing-4), 4vw, var(--spacing-10)) 0;
+}
 .task-feed > header {
+  flex: 0 0 auto;
   margin-bottom: 12px;
   color: var(--color-text-strong);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
+}
+.task-feed-fill > header {
+  width: min(720px, 100%);
+  margin-left: auto;
+  margin-right: auto;
 }
 .task-activity {
   display: grid;
   gap: 12px;
   min-width: 0;
   max-width: 100%;
+}
+.task-feed-fill > .task-activity {
+  flex: 1 1 0;
+  min-height: 0;
+  width: min(720px, 100%);
+  margin: 0 auto;
 }
 .task-activity-empty {
   color: var(--color-text-tertiary);
@@ -10058,6 +10256,17 @@ body.is-dragging-task * {
     grid-template-rows: auto auto;
   }
   .task-issue-scroll {
+    overflow: visible;
+  }
+  .task-feed-fill {
+    flex: none;
+  }
+  .task-activity.is-docked {
+    height: auto;
+    overflow: visible;
+  }
+  .task-activity.is-docked .task-activity-log {
+    flex: none;
     overflow: visible;
   }
   .task-issue-side {
@@ -10189,19 +10398,19 @@ body.is-dragging-task * {
   min-height: 0;
 }
 .inbox-git-bar {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   width: 280px;
   min-width: 220px;
-  max-width: 360px;
   min-height: 0;
   border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
+/* 未打开文件时仍靠右、保持侧栏宽度，不占满整列（与打开预览时一致） */
 .inbox-git-split:not(.has-preview) .inbox-git-bar {
-  flex: 1;
-  width: auto;
-  max-width: none;
-  border-left: 0;
+  margin-left: auto;
 }
 .inbox-git-bar > .source-control-panel {
   flex: 1;
@@ -10338,17 +10547,22 @@ body.is-dragging-task * {
   min-height: 0;
 }
 .uncommitted-changes-files {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   width: 280px;
   min-width: 220px;
-  max-width: 360px;
   border-left: 1px solid var(--color-border);
   background: var(--color-bg);
 }
 .uncommitted-changes.files-left .uncommitted-changes-files {
   border-left: 0;
   border-right: 1px solid var(--color-border);
+}
+.uncommitted-changes.files-left .uncommitted-changes-files > .inbox-files-resize {
+  left: auto;
+  right: 0;
 }
 .uncommitted-changes-file {
   display: flex;
@@ -10931,7 +11145,8 @@ body.is-dragging-inbox-float * {
   min-height: 0;
   height: 100%;
 }
-.task-activity.is-thread {
+.task-activity.is-thread,
+.task-activity.is-docked {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -10939,23 +11154,53 @@ body.is-dragging-inbox-float * {
   gap: 0;
   overflow: hidden;
 }
-.task-activity.is-thread .task-activity-log {
+.task-activity.is-thread .task-activity-log,
+.task-activity.is-docked .task-activity-log {
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
+}
+.task-activity.is-thread .task-activity-log {
   padding: 16px clamp(16px, 5vw, 72px);
 }
+.task-activity.is-docked .task-activity-log {
+  padding: 0 0 16px;
+}
+/* 收件箱 thread / 任务详情 docked：末轮撑满列表内容区，发送后贴底时提问 sticky 停在视口顶 */
+.task-activity.is-thread .message-exchange:last-child,
+.task-activity.is-docked .message-exchange:last-child {
+  box-sizing: border-box;
+  min-height: 100%;
+}
 .task-activity.is-thread > .chat-composer,
-.task-activity.is-thread > .task-create-error {
+.task-activity.is-thread > .task-create-error,
+.task-activity.is-docked > .chat-composer,
+.task-activity.is-docked > .task-create-error,
+.task-activity.is-docked > .chat-question-carousel {
   position: relative;
   z-index: 3;
   flex: 0 0 auto;
+}
+.task-activity.is-thread > .chat-composer,
+.task-activity.is-thread > .task-create-error {
   width: min(720px, calc(100% - 32px));
   margin: 0 auto 14px;
 }
-.task-activity.is-thread > .chat-composer .composer-field {
+.task-activity.is-docked > .chat-composer,
+.task-activity.is-docked > .task-create-error,
+.task-activity.is-docked > .chat-question-carousel {
+  width: 100%;
+  margin: 0 0 14px;
+}
+/* 无消息时仍把输入框顶到视口底 */
+.task-activity.is-thread > .task-activity-empty,
+.task-activity.is-docked > .task-activity-empty {
+  flex: 1 1 auto;
+}
+.task-activity.is-thread > .chat-composer .composer-field,
+.task-activity.is-docked > .chat-composer .composer-field {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -12870,6 +13115,7 @@ label.settings-row:hover {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
 }
 .settings-log-result {
   overflow-wrap: anywhere;
@@ -12992,6 +13238,15 @@ label.settings-row:hover {
   flex-wrap: wrap;
   gap: var(--spacing-2);
   justify-content: flex-end;
+}
+.settings-update-status {
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-4) var(--spacing-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
 }
 /* 内容区窄于 600px 时（如窗口较窄或侧栏展开），输入类控件下沉到说明下方，开关保持在行尾 */
 @container (max-width: 600px) {
@@ -13414,7 +13669,7 @@ label.settings-row:hover {
 .req-run .inbox-list button > .req-run-item {
   display: grid;
   flex: 1;
-  gap: var(--spacing-0-5);
+  gap: var(--spacing-1-5);
   min-width: 0;
   overflow: hidden;
   white-space: normal;
@@ -13433,12 +13688,15 @@ label.settings-row:hover {
   min-width: 0;
   max-width: 100%;
 }
-/* 没人在跑时不占位（编码表是「—」，侧栏更紧） */
-.req-run .req-run-workers:not(:has(.agent-live-status.is-live)) {
+/* 无人可展示时不占位（只有「—」）；运行中 / 空闲头像+相对时间都保留 */
+.req-run .req-run-workers:has(> .avatar-stack-empty) {
   display: none;
 }
-.req-run .req-run-workers .agent-live-label {
+.req-run .req-run-workers .agent-live-status {
   font-size: var(--font-size-sm);
+}
+.req-run .req-run-workers .agent-live-label {
+  font-size: inherit;
   font-weight: var(--font-weight-regular);
   color: var(--color-text-secondary);
 }
@@ -15663,10 +15921,9 @@ body.is-dragging-terminal-tab * {
 }
 .runtime-model-control { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .runtime-model-control > :first-child { flex: 1 1 auto; min-width: 0; }
-.runtime-model-control .is-loading svg { animation: runtime-model-spin 0.9s linear infinite; }
+.runtime-model-control .is-loading svg { animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite; }
 .runtime-model-hint { color: var(--color-text-tertiary); font-size: 11.5px; font-weight: 400; line-height: 1.45; }
 .runtime-model-hint.is-warn { color: var(--color-warning); }
-@keyframes runtime-model-spin { to { transform: rotate(360deg); } }
 
 /* Vite 运行时错误层：盖过 Monaco 悬浮提示，背景不透出编辑器。 */
 vite-error-overlay {
