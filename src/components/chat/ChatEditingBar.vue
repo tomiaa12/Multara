@@ -185,13 +185,13 @@ async function undoAll() {
         <ChevronRight class="chat-editing-chevron" :size="12" />
         {{ t('chat.editingFilesCount', { count: rows.length }) }}
       </button>
-      <span v-if="expanded" class="working-set-line-counts">
-        <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
-        <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
-      </span>
       <span class="chat-editing-overview-actions" @click.stop>
-        <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
         <UiButton variant="ghost" size="small" :tip="t('chat.editingKeepAllTitle')" :disabled="busy" @click="keepAll">{{ t('chat.editingKeepAll') }}</UiButton>
+        <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoAllTitle')" :disabled="busy" @click="undoAll">{{ t('chat.editingUndoAll') }}</UiButton>
+        <span v-if="expanded" class="working-set-line-counts">
+          <span v-if="totals.added" class="working-set-lines-added">+{{ totals.added }}</span>
+          <span v-if="totals.removed" class="working-set-lines-removed">−{{ totals.removed }}</span>
+        </span>
       </span>
     </header>
     <div v-if="expanded" class="chat-editing-files vs-scroll">

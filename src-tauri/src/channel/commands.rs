@@ -41,6 +41,8 @@ pub struct ChannelUserView {
     /// 授权（配对成功）时间
     created_at: String,
     note: Option<String>,
+    target_type: Option<String>,
+    target_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -49,7 +51,10 @@ pub struct ChannelInstallationInput {
     pub id: Option<String>,
     pub name: String,
     pub channel_type: String,
+    /// 安装级目标已废弃，改由授权用户各自配置；保留字段兼容旧客户端。
+    #[serde(default)]
     pub target_type: String,
+    #[serde(default)]
     pub target_id: String,
     pub project_id: Option<String>,
     pub app_id: String,
@@ -133,9 +138,6 @@ fn save_installation_blocking(
     if app_id.is_empty() {
         return Err(tr!("请填写 App ID"));
     }
-    if !matches!(input.target_type.as_str(), "agent" | "squad") {
-        return Err(tr!("目标类型无效"));
-    }
     if !matches!(
         input.channel_type.as_str(),
         super::TYPE_FEISHU | super::TYPE_LARK
@@ -143,29 +145,6 @@ fn save_installation_blocking(
         return Err(tr!("暂不支持这个渠道类型"));
     }
     let db = state.lock_db()?;
-    if input.target_type == "agent" {
-        let exists: bool = db
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
-                [&input.target_id],
-                |row| row.get(0),
-            )
-            .map_err(|error| error.to_string())?;
-        if !exists {
-            return Err(tr!("选择的智能体不存在"));
-        }
-    } else {
-        let exists: bool = db
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM squads WHERE id=?1)",
-                [&input.target_id],
-                |row| row.get(0),
-            )
-            .map_err(|error| error.to_string())?;
-        if !exists {
-            return Err(tr!("选择的小队不存在"));
-        }
-    }
     if let Some(project_id) = input
         .project_id
         .as_deref()
@@ -215,6 +194,16 @@ fn save_installation_blocking(
         config.bot_name = None;
         config.bot_avatar = None;
     }
+    // 安装级目标不再使用；新建留空，编辑保留旧值以免误清已回填到用户上的历史数据。
+    let target_type = existing
+        .as_ref()
+        .map(|item| item.target_type.clone())
+        .filter(|value| matches!(value.as_str(), "agent" | "squad"))
+        .unwrap_or_else(|| "agent".to_string());
+    let target_id = existing
+        .as_ref()
+        .map(|item| item.target_id.clone())
+        .unwrap_or_default();
     drop(db);
 
     if let Some(app_secret) = input.app_secret.as_deref().map(str::trim) {
@@ -230,8 +219,8 @@ fn save_installation_blocking(
         id: id.clone(),
         channel_type: input.channel_type.clone(),
         name: name.to_string(),
-        target_type: input.target_type.clone(),
-        target_id: input.target_id.clone(),
+        target_type,
+        target_id,
         project_id: input.project_id.clone().filter(|value| !value.is_empty()),
         config,
         enabled: input.enabled,
@@ -326,6 +315,8 @@ pub fn list_channel_allowed_users(
             role: user.role,
             created_at: user.created_at,
             note: user.note,
+            target_type: user.target_type,
+            target_id: user.target_id,
         })
         .collect())
 }
@@ -427,6 +418,56 @@ pub fn set_channel_user_note(
     let note = note.trim();
     let db = state.lock_db()?;
     store::set_allowed_user_note(&db, &id, &user_id, (!note.is_empty()).then_some(note))
+}
+
+#[tauri::command]
+pub fn set_channel_user_target(
+    id: String,
+    user_id: String,
+    target_type: Option<String>,
+    target_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let target_type = target_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let target_id = target_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match (target_type, target_id) {
+        (None, None) => {
+            let db = state.lock_db()?;
+            store::set_allowed_user_target(&db, &id, &user_id, None, None)
+        }
+        (Some(kind), Some(target)) if matches!(kind, "agent" | "squad") => {
+            let db = state.lock_db()?;
+            let exists: bool = if kind == "agent" {
+                db.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
+                    [target],
+                    |row| row.get(0),
+                )
+            } else {
+                db.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM squads WHERE id=?1)",
+                    [target],
+                    |row| row.get(0),
+                )
+            }
+            .map_err(|error| error.to_string())?;
+            if !exists {
+                return Err(if kind == "agent" {
+                    tr!("选择的智能体不存在")
+                } else {
+                    tr!("选择的小队不存在")
+                });
+            }
+            store::set_allowed_user_target(&db, &id, &user_id, Some(kind), Some(target))
+        }
+        _ => Err(tr!("目标类型无效")),
+    }
 }
 
 #[tauri::command]

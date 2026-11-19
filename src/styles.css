@@ -2510,6 +2510,9 @@ button.chat-editing-overview-open {
   gap: 2px;
   margin-left: auto;
 }
+.chat-editing-overview-actions .working-set-line-counts {
+  margin-left: 4px;
+}
 button.chat-editing-overview-open:hover {
   color: var(--color-text);
 }
@@ -3079,8 +3082,12 @@ textarea:not(.inputarea) {
   font-size: var(--font-size-sm);
 }
 .diff-card,
-.shell-card {
+.shell-card,
+.todo-progress-card,
+.permission-card {
   justify-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
 }
 .explore-group > summary,
 .thinking-line > summary,
@@ -10402,19 +10409,19 @@ body.is-dragging-task * {
   min-height: 0;
 }
 .inbox-git-bar {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   width: 280px;
   min-width: 220px;
-  max-width: 360px;
   min-height: 0;
   border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
+/* 未打开文件时仍靠右、保持侧栏宽度，不占满整列（与打开预览时一致） */
 .inbox-git-split:not(.has-preview) .inbox-git-bar {
-  flex: 1;
-  width: auto;
-  max-width: none;
-  border-left: 0;
+  margin-left: auto;
 }
 .inbox-git-bar > .source-control-panel {
   flex: 1;
@@ -10551,17 +10558,22 @@ body.is-dragging-task * {
   min-height: 0;
 }
 .uncommitted-changes-files {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   width: 280px;
   min-width: 220px;
-  max-width: 360px;
   border-left: 1px solid var(--color-border);
   background: var(--color-bg);
 }
 .uncommitted-changes.files-left .uncommitted-changes-files {
   border-left: 0;
   border-right: 1px solid var(--color-border);
+}
+.uncommitted-changes.files-left .uncommitted-changes-files > .inbox-files-resize {
+  left: auto;
+  right: 0;
 }
 .uncommitted-changes-file {
   display: flex;

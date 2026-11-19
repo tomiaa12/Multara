@@ -83,11 +83,29 @@
     "ja": "セッションを作成できません：{error}",
     "ko": "세션을 만들 수 없습니다: {error}"
   },
-  "配对成功。现在可以直接给这个机器人发消息，也可以发送 /help 查看指令。": {
-    "en": "Paired. You can now message this bot directly, or send /help to see the commands.",
-    "zh-TW": "配對成功。現在可以直接傳訊息給這個機器人，也可以傳送 /help 查看指令。",
-    "ja": "ペアリングが完了しました。このボットに直接メッセージを送れます。/help でコマンド一覧を表示できます。",
-    "ko": "페어링되었습니다. 이제 이 봇에게 바로 메시지를 보낼 수 있으며, /help를 보내면 명령어를 볼 수 있습니다."
+  "配对成功。请在 Multara 的「集成」→「授权用户」里为你指定智能体或小队，然后就可以发消息了。": {
+    "en": "Paired. In Multara, open Integrations → Authorized users, assign an agent or squad to your account, then you can start messaging.",
+    "zh-TW": "配對成功。請在 Multara 的「整合」→「授權使用者」裡為你指定智能體或小隊，然後就可以傳訊息了。",
+    "ja": "ペアリングが完了しました。Multara の「連携」→「許可ユーザー」でエージェントまたはスクワッドを指定すると、メッセージを送れます。",
+    "ko": "페어링되었습니다. Multara의 '통합' → '승인된 사용자'에서 에이전트 또는 스쿼드를 지정한 뒤 메시지를 보내세요."
+  },
+  "还没有为你指定智能体或小队。请打开 Multara →「集成」→「授权用户」，为你的账号选择智能体或小队后再发消息。": {
+    "en": "No agent or squad is assigned to you yet. In Multara, open Integrations → Authorized users, choose an agent or squad for your account, then send a message again.",
+    "zh-TW": "還沒有為你指定智能體或小隊。請打開 Multara →「整合」→「授權使用者」，為你的帳號選擇智能體或小隊後再傳訊息。",
+    "ja": "まだエージェントまたはスクワッドが指定されていません。Multara の「連携」→「許可ユーザー」でアカウントに指定してから、もう一度メッセージを送ってください。",
+    "ko": "아직 에이전트 또는 스쿼드가 지정되지 않았습니다. Multara의 '통합' → '승인된 사용자'에서 계정에 지정한 뒤 다시 메시지를 보내 주세요."
+  },
+  "未配置": {
+    "en": "Not configured",
+    "zh-TW": "未設定",
+    "ja": "未設定",
+    "ko": "미설정"
+  },
+  "还没有为你指定智能体或小队": {
+    "en": "No agent or squad has been assigned to you",
+    "zh-TW": "還沒有為你指定智能體或小隊",
+    "ja": "まだエージェントまたはスクワッドが指定されていません",
+    "ko": "아직 에이전트 또는 스쿼드가 지정되지 않았습니다"
   },
   "你已经绑定过了。直接说要做的事，不要再发送配对码。": {
     "en": "You're already linked. Say what you want done, and don't send the pairing code again.",

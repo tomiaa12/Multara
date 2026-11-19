@@ -68,7 +68,7 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
             Err(_) => None,
         }
     };
-    if allowed.is_none() {
+    let Some(allowed) = allowed else {
         if try_pair(app, installation, &message) {
             return;
         }
@@ -81,9 +81,9 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
             );
         }
         return;
-    }
+    };
     if message.sender_name.is_none() {
-        message.sender_name = saved_sender_name(allowed.as_ref())
+        message.sender_name = saved_sender_name(Some(&allowed))
             .or_else(|| remember_sender_name(app, installation, &message.sender_id));
     }
 
@@ -102,7 +102,19 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
         return;
     }
 
-    let binding = match ensure_binding(app, installation, &message) {
+    if !store::user_has_target(&allowed) {
+        if pairing::allow_notice(&installation.id, &message.sender_id) {
+            send_notice(
+                app,
+                installation,
+                &message,
+                &tr!("还没有为你指定智能体或小队。请打开 Multara →「集成」→「授权用户」，为你的账号选择智能体或小队后再发消息。"),
+            );
+        }
+        return;
+    }
+
+    let binding = match ensure_binding(app, installation, &allowed, &message) {
         Ok(binding) => binding,
         Err(error) => {
             send_notice(
@@ -247,7 +259,7 @@ fn try_pair(app: &AppHandle, installation: &Installation, message: &InboundMessa
         app,
         installation,
         message,
-        &tr!("配对成功。现在可以直接给这个机器人发消息，也可以发送 /help 查看指令。"),
+        &tr!("配对成功。请在 Multara 的「集成」→「授权用户」里为你指定智能体或小队，然后就可以发消息了。"),
     );
     true
 }
@@ -328,6 +340,13 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
                         (binding.session_id, running, queued)
                     })
             };
+            let user = {
+                let state = app.state::<AppState>();
+                state
+                    .lock_db()
+                    .ok()
+                    .and_then(|db| store::allowed_user(&db, &installation.id, &message.sender_id))
+            };
             match detail {
                 Some((session_id, running, queued)) => send_notice(
                     app,
@@ -335,7 +354,7 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
                     message,
                     &tr!(
                         "目标：{target}\n会话：{session}\n运行中 {running} · 排队 {queued}",
-                        target = target_label(installation),
+                        target = target_label(user.as_ref()),
                         session = &session_id[..session_id.len().min(8)],
                         running = running,
                         queued = queued
@@ -394,17 +413,17 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
     true
 }
 
-fn target_label(installation: &Installation) -> String {
-    let state = format!(
-        "{} {}",
-        if installation.target_type == "squad" {
-            tr!("小队")
-        } else {
-            tr!("智能体")
-        },
-        installation.name
-    );
-    state
+fn target_label(user: Option<&store::AllowedUser>) -> String {
+    let Some(user) = user.filter(|item| store::user_has_target(item)) else {
+        return tr!("未配置");
+    };
+    let kind = if user.target_type.as_deref() == Some("squad") {
+        tr!("小队")
+    } else {
+        tr!("智能体")
+    };
+    let id = user.target_id.as_deref().unwrap_or_default();
+    format!("{kind} {id}")
 }
 
 fn session_is_busy(app: &AppHandle, session_id: &str) -> bool {
@@ -496,6 +515,7 @@ fn route_key(message: &InboundMessage) -> String {
 fn ensure_binding(
     app: &AppHandle,
     installation: &Installation,
+    user: &store::AllowedUser,
     message: &InboundMessage,
 ) -> Result<Binding, String> {
     let key = route_key(message);
@@ -504,14 +524,25 @@ fn ensure_binding(
     if let Some(binding) = store::active_binding(&db, &installation.id, &key)? {
         return Ok(binding);
     }
+    let target_type = user
+        .target_type
+        .as_deref()
+        .filter(|value| matches!(*value, "agent" | "squad"))
+        .ok_or_else(|| tr!("还没有为你指定智能体或小队"))?;
+    let target_id = user
+        .target_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| tr!("还没有为你指定智能体或小队"))?;
     let target_name: String = db
         .query_row(
-            if installation.target_type == "squad" {
+            if target_type == "squad" {
                 "SELECT name FROM squads WHERE id=?1"
             } else {
                 "SELECT name FROM agents WHERE id=?1"
             },
-            [&installation.target_id],
+            [target_id],
             |row| row.get(0),
         )
         .map_err(|_| tr!("绑定的智能体或小队不存在"))?;
@@ -543,8 +574,8 @@ fn ensure_binding(
             session_id,
             installation.project_id,
             title,
-            installation.target_type,
-            installation.target_id,
+            target_type,
+            target_id,
             now
         ],
     )
