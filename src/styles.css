@@ -4823,23 +4823,11 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: inherit;
 }
 .scm-changes-pane > .ui-pane-body {
-  /* 与「更改」标题箭头右侧对齐：.ui-pane-twistie 的 2px 左边距 + 16px 宽度 */
-  padding-left: 18px;
+  /* 一级项目顶格（与标题箭头对齐）；分组 / 文件仍在项目下缩进 */
+  padding-left: 0;
 }
-/* 悬停 / 选中背景用无模糊的左偏移阴影补满上面那 18px 内边距；阴影不受行自身 overflow: hidden 裁剪 */
-.scm-changes-pane :is(
-  .scm-provider:hover,
-  .scm-repository.is-selected > .scm-provider,
-  .scm-group > header:hover,
-  .scm-group > header:focus-within,
-  .scm-file:hover,
-  .scm-file:focus-visible,
-  .scm-file.is-selected,
-  .scm-dir:hover,
-  .scm-file-tree .tree-entry:hover,
-  .scm-file-tree .tree-entry.selected
-) {
-  box-shadow: -18px 0 0 var(--color-surface-active);
+.scm-changes-pane .scm-provider {
+  padding-left: 2px;
 }
 .scm-repository {
   position: relative;
@@ -6399,26 +6387,36 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   flex-direction: column;
   overflow: hidden;
 }
-.scm-graph-project {
+.scm-graph-workspace-wrap {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  max-width: min(220px, 48%);
   margin-left: 8px;
-  overflow: hidden;
-  color: var(--color-text-secondary);
+}
+.scm-graph-workspace.scm-inspect-branch-picker.ds-select {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+.scm-graph-workspace.scm-inspect-branch-picker.ds-select .ds-select-trigger {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 22px;
+  max-height: none;
+  padding: 1px 4px 1px 6px;
+  align-items: center;
+}
+.scm-graph-workspace .scm-inspect-branch-project {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  line-height: 22px;
+  line-height: 1.2;
   text-transform: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.scm-graph-repo.ui-select {
-  width: auto;
-  max-width: 120px;
-  height: 22px;
-  min-height: 22px;
-  padding: 0 22px 0 var(--spacing-1);
-  font-size: var(--font-size-xs);
+.scm-graph-workspace .scm-inspect-branch-ref {
+  font-size: 10px;
+  line-height: 1.15;
 }
 .scm-graph-body {
   display: grid;
@@ -13680,7 +13678,7 @@ label.settings-row:hover {
 .req-run .inbox-list button > .req-run-item {
   display: grid;
   flex: 1;
-  gap: var(--spacing-0-5);
+  gap: var(--spacing-1-5);
   min-width: 0;
   overflow: hidden;
   white-space: normal;

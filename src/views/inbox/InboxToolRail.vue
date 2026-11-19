@@ -1500,8 +1500,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </section>
-  <Teleport to=".inbox-detail.chat-surface">
+  <!-- keep-alive 停用时关掉 Teleport，避免残留悬浮栏抢点击、改到后台实例 -->
+  <Teleport to=".inbox-detail.chat-surface" :disabled="!railActive">
     <nav
+      v-if="railActive"
       ref="floatEl"
       class="inbox-float"
       :style="floatStyle"

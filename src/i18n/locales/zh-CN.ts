@@ -3,6 +3,7 @@ import type { MessageCatalog } from "../types";
 const catalog: MessageCatalog = {
   "chat.thinking": "思考中…",
   "chat.waiting": "等待响应",
+  "chat.starting": "启动中",
   "chat.queued": "排队中",
   "chat.typing": "输入中",
   "chat.runningCommand": "运行命令",
