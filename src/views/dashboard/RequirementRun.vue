@@ -71,7 +71,10 @@ const sessionId = computed(() => {
   const sessions = (store.data?.sessions ?? []).filter(
     (item) => item.projectId === projectId && !taskIds.has(item.id),
   );
-  return sessions.find((item) => item.id === store.activeSessionId)?.id ?? sessions[0]?.id ?? "";
+  if (sessions.some((item) => item.id === store.activeSessionId)) return store.activeSessionId;
+  const remembered = store.lastActiveSessionId(projectId);
+  if (remembered && sessions.some((item) => item.id === remembered)) return remembered;
+  return sessions[0]?.id ?? "";
 });
 
 // 与编码模式一致：有会话专属 workspace（如合并冲突临时库）时只展示专属，不再并上原工作区。

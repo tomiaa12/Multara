@@ -8,6 +8,7 @@ import {
   isPastedImage,
   MAX_INLINE_SELECTION_LINES,
   parseUserPromptNodes,
+  titleSeedText,
   visiblePromptText,
   type ComposerNode,
 } from "./composer-content";
@@ -104,6 +105,24 @@ describe("parseUserPromptNodes", () => {
       { ...folder, text: "" },
       { ...file, text: "" },
     ]);
+  });
+
+  test("titleSeedText prefers human text over UUID folder chip labels", () => {
+    const folder: ComposerNode = {
+      type: "chip",
+      id: "uuid:folder",
+      path: "/tmp/1a39df9c-6690-48a9-837c-8d620e66cb3c",
+      startLine: 0,
+      endLine: 0,
+      text: "",
+      isDirectory: true,
+    };
+    const content = formatAgentPrompt([
+      folder,
+      { type: "text", value: "这个账户美股期权开户页面进不去" },
+    ]);
+    expect(visiblePromptText(content).startsWith("1a39df9c-6690-48a9")).toBe(true);
+    expect(titleSeedText(content)).toBe("这个账户美股期权开户页面进不去");
   });
 
   test("joins a workspace-relative chip to that workspace root", () => {

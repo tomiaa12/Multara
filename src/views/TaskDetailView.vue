@@ -9,7 +9,7 @@ import {
   parseUserPromptNodes,
   type ComposerNode,
 } from "../components/chat/composer-content";
-import { syncStickyUserTurnPush } from "../components/chat/chat-scroll";
+import { listIsAtBottom, syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { useAppStore } from "../stores/app";
 import TaskActivity from "./TaskActivity.vue";
 import TaskIssueSide from "./TaskIssueSide.vue";
@@ -66,7 +66,7 @@ function onIssueScroll() {
   if (pinningIssue) return;
   const element = issueScroll.value;
   if (!element) return;
-  followBottom.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+  followBottom.value = listIsAtBottom(element);
   syncStickyUserTurnPush(element, true);
 }
 
@@ -88,10 +88,18 @@ const followStream = watch(
   },
   async (current, previous) => {
     const sessionChanged = !previous || current[0] !== previous[0];
-    const historyFilled = Number(previous?.[1] ?? 0) === 0 && current[1] > 0;
-    if (!sessionChanged && !historyFilled && !followBottom.value) return;
+    const lengthBefore = Number(previous?.[1] ?? 0);
+    const lengthAfter = current[1];
+    const historyFilled = lengthBefore === 0 && lengthAfter > 0;
+    const sessionId = typeof current[0] === "string" ? current[0] : "";
+    const list = sessionId ? store.messages[sessionId] ?? [] : [];
+    const fromUserSend = lengthAfter > lengthBefore
+      && list.slice(lengthBefore).some((message) => message.role === "user");
+    // 用户主动上滚后回答跟流不拽回底部；新发送仍强制贴底
+    if (fromUserSend) followBottom.value = true;
+    if (!sessionChanged && !historyFilled && !fromUserSend && !followBottom.value) return;
     await nextTick();
-    pinIssueToBottom(sessionChanged || historyFilled);
+    pinIssueToBottom(sessionChanged || historyFilled || fromUserSend);
   },
 );
 onDeactivated(() => followStream.pause());

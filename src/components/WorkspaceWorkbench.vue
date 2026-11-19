@@ -6034,7 +6034,7 @@ defineExpose({
                 @auxclick="onOpenEditorAux($event, tab)"
                 @contextmenu="openOpenEditorsMenu(tab, $event)"
               >
-                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+                <Codicon v-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="15" />
                 <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
                 <span :class="{ 'is-preview-name': !tab.pinned }">{{ editorTabName(tab) }}</span>
                 <i v-if="isEditorTabDirty(tab)" class="ui-pane-dirty" />
@@ -6456,8 +6456,8 @@ defineExpose({
             @close="closeEditorTab(tab, $event)"
             @contextmenu="openTabMenu(tab, $event)"
           >
-            <Codicon v-if="tab.canvas" name="dashboard" :size="16" />
-            <Codicon v-else-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="16" />
+            <Codicon v-if="tab.canvas" name="dashboard" :size="15" />
+            <Codicon v-else-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="15" />
             <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
           </EditorTabButton>
         </div>

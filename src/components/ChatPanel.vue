@@ -553,9 +553,17 @@ async function ensureSession() {
   const visible = displaySessions.value;
   if (!visible.length) return;
   // 有打开的 tab 才选中；全部关掉时保持空欢迎态，等发出第一条再建会话
-  if (!visible.some((item) => item.id === store.activeSessionId)) {
-    await store.selectSession(visible[visible.length - 1].id);
+  if (visible.some((item) => item.id === store.activeSessionId)) {
+    store.rememberActiveSessionTab(props.projectId, store.activeSessionId);
+    return;
   }
+  // 切需求时优先恢复该需求上次选中的聊天 tab（编码 / 执行共用）
+  const remembered = store.lastActiveSessionId(props.projectId);
+  const next = (remembered
+    ? visible.find((item) => item.id === remembered)
+    : undefined) ?? visible[visible.length - 1];
+  if (!next) return;
+  await store.selectSession(next.id);
 }
 
 function currentComposerNodes(): ComposerNode[] {
@@ -1962,7 +1970,7 @@ defineExpose({
                   @mousedown.middle.prevent
                   @contextmenu="openTabMenu(item.id, $event)"
                 >
-                  <MessageSquare :size="13" />
+                  <MessageSquare :size="15" />
                   <span class="chat-session-tab-title">{{ item.title }}</span>
                   <UiTooltip :content="t('chat.closeTab')">
                     <span class="tab-close" @click="closeSessionTab(item.id, $event)">

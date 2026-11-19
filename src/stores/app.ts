@@ -2,14 +2,16 @@ import { defineStore } from "pinia";
 import { computed, getCurrentScope, ref, watch, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, RunStatus, Squad, TaskInput, TaskStatus } from "../domain/types";
-import { visiblePromptText } from "../components/chat/composer-content";
+import { titleSeedText } from "../components/chat/composer-content";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
 import * as backend from "../services/backend";
 import {
   clearLegacyDismissed,
+  loadActiveTabsMap,
   loadLegacyDismissed,
   loadOpenTabsMap,
+  persistActiveTabsMap,
   persistOpenTabsMap,
   tabScope,
 } from "./chat-open-tabs";
@@ -121,6 +123,7 @@ export const useAppStore = defineStore("app", () => {
   const terminalReveal = ref<{ workspaceId?: string; terminalId?: string; nonce: number } | null>(null);
   const workspaceJobs = ref<WorkspacePrepJob[]>([]);
   const openSessionTabs = ref<Record<string, string[]>>(loadOpenTabsMap());
+  const activeSessionTabs = ref<Record<string, string>>(loadActiveTabsMap());
   let eventsReady = false;
   let taskInboxRefresh: Promise<void> | undefined;
   let taskInboxRefreshQueued = false;
@@ -1109,6 +1112,22 @@ export const useAppStore = defineStore("app", () => {
     persistOpenTabsMap(openSessionTabs.value);
   }
 
+  function persistActiveSessionTabs() {
+    persistActiveTabsMap(activeSessionTabs.value);
+  }
+
+  function rememberActiveSessionTab(projectId: string | null | undefined, sessionId: string) {
+    if (!sessionId) return;
+    const scope = tabScope(projectId);
+    if (activeSessionTabs.value[scope] === sessionId) return;
+    activeSessionTabs.value = { ...activeSessionTabs.value, [scope]: sessionId };
+    persistActiveSessionTabs();
+  }
+
+  function lastActiveSessionId(projectId: string | null | undefined) {
+    return activeSessionTabs.value[tabScope(projectId)] ?? "";
+  }
+
   function hasOpenSessionTabs(projectId: string | null | undefined) {
     return Object.prototype.hasOwnProperty.call(openSessionTabs.value, tabScope(projectId));
   }
@@ -1155,6 +1174,8 @@ export const useAppStore = defineStore("app", () => {
 
   async function selectSession(sessionId: string) {
     activeSessionId.value = sessionId;
+    const session = data.value?.sessions.find((item) => item.id === sessionId);
+    if (session) rememberActiveSessionTab(session.projectId, sessionId);
     await loadMessages(sessionId);
   }
 
@@ -1184,7 +1205,10 @@ export const useAppStore = defineStore("app", () => {
     messages.value[session.id] = [];
     addOpenSessionTab(projectId, session.id);
     // 调用方要先写入草稿再切换，避免新输入框挂载时读到空内容。
-    if (options?.activate !== false) activeSessionId.value = session.id;
+    if (options?.activate !== false) {
+      activeSessionId.value = session.id;
+      rememberActiveSessionTab(projectId, session.id);
+    }
     return session;
   }
 
@@ -1208,6 +1232,8 @@ export const useAppStore = defineStore("app", () => {
     if (/^与 .+ 对话$/.test(trimmed)) return true;
     // 旧逻辑会把协议头截进标题，仍允许自动改名覆盖
     if (/^\[(实体引用|指派要求|代码引用|文件|文件夹|终端)\]/.test(trimmed)) return true;
+    // 文件夹 chip 曾把 UUID 目录名截成标题（如 1a39df9c-6690-48a9），仍允许自动改名
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}(-[0-9a-f]{4}){0,3}(-[0-9a-f]{1,12})?$/i.test(trimmed)) return true;
     return false;
   }
 
@@ -1265,8 +1291,8 @@ export const useAppStore = defineStore("app", () => {
         }
       }
       try {
-        // 给模型看可见正文，不要把 [实体引用] 协议头喂进去
-        const plainForModel = visiblePromptText(content).trim() || content;
+        // 给模型看人文正文（无正文时才带 chip 标签），不要把协议头喂进去
+        const plainForModel = titleSeedText(content).trim() || content;
         const generated = (await backend.generateChatSessionTitle(plainForModel)).trim();
         if (!generated || generated === fallback) return;
         if (task) {
@@ -1991,6 +2017,8 @@ export const useAppStore = defineStore("app", () => {
     openSessionTabs,
     hasOpenSessionTabs,
     openedSessionIds,
+    lastActiveSessionId,
+    rememberActiveSessionTab,
     seedOpenSessionTabs,
     addOpenSessionTab,
     closeOpenSessionTabs,
