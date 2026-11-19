@@ -22,6 +22,7 @@ import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
 import { hasAwaitingQuestion } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
+import { previewFromTimelineItem } from "../components/chat/agent-preview";
 import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unanswered-turn";
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
 import { confirmDialog } from "../components/ui/confirm-dialog";
@@ -114,6 +115,10 @@ export const useAppStore = defineStore("app", () => {
     endLine?: number;
     nonce: number;
   } | null>(null);
+  /** 执行模式右侧浏览器：AI 导航到某 URL 时主动打开。 */
+  const browserReveal = ref<{ url: string; nonce: number } | null>(null);
+  /** 执行/编码模式集成终端：控制通道或预览请求主动展开。 */
+  const terminalReveal = ref<{ workspaceId?: string; terminalId?: string; nonce: number } | null>(null);
   const workspaceJobs = ref<WorkspacePrepJob[]>([]);
   const openSessionTabs = ref<Record<string, string[]>>(loadOpenTabsMap());
   let eventsReady = false;
@@ -301,6 +306,17 @@ export const useAppStore = defineStore("app", () => {
         useDiffStore().onFileDeleted(payload.filePath, payload.workspaceId ?? "");
         return;
       }
+      // 快照在 tool_use（写入前）拍；写入完成后靠 affectedFile 再刷一次，否则改动条会晚一拍才出现。
+      if (payload.affectedFile) {
+        useDiffStore().notifyDiskChanged();
+        revealWorkspaceFile(
+          payload.affectedFile,
+          undefined,
+          undefined,
+          payload.workspaceId ?? undefined,
+        );
+      }
+      dispatchAgentPreview(payload);
       const previous = runStates.value[payload.runId];
       const terminal = ["completed", "failed", "stopped"];
       if (
@@ -1458,9 +1474,14 @@ export const useAppStore = defineStore("app", () => {
 
   function mergeResolvePrompt(merge: MergeSession) {
     const target = merge.targetRemote ? `${merge.targetRemote}/${merge.targetBranch}` : merge.targetBranch;
+    const workPath = data.value?.workspaces.find((item) => item.id === merge.workspaceId)?.workPath;
     return [
-      `请帮我解决合并冲突：把 \`${merge.sourceLabel}\` 合并到 \`${target}\`。`,
-      "当前工作区是专门为这次合并创建的临时 Worktree，已经处于合并中状态，下面这些文件有冲突：",
+      `请帮我解决合并冲突：把 \`${merge.sourceLabel}\` 合并到 \`${target}\`（方向是来源 → 目标，不要反过来）。`,
+      workPath
+        ? `唯一可写目录是临时合并 Worktree：\`${workPath}\`。不要改其他 worktree / 原开发分支目录。`
+        : "当前工作区是专门为这次合并创建的临时 Worktree。",
+      `该目录已 checkout 在目标侧 \`${target}\` 上，并且 \`git merge\` 已开始（存在 MERGE_HEAD）。HEAD 是目标，MERGE_HEAD 是 \`${merge.sourceLabel}\`。不要再执行 git merge / pull / checkout / switch。`,
+      "下面这些文件有冲突：",
       ...merge.conflicts.map((file) => `- ${file}`),
       "",
       "要求：",
@@ -1638,7 +1659,41 @@ export const useAppStore = defineStore("app", () => {
     endLine?: number,
     workspaceId?: string,
   ) {
-    fileReveal.value = { path, startLine, endLine, workspaceId, nonce: Date.now() };
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    fileReveal.value = { path: trimmed, startLine, endLine, workspaceId, nonce: Date.now() };
+  }
+
+  function revealBrowser(url: string) {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    browserReveal.value = { url: trimmed, nonce: Date.now() };
+  }
+
+  function revealTerminal(workspaceId?: string, terminalId?: string) {
+    terminalReveal.value = { workspaceId, terminalId, nonce: Date.now() };
+  }
+
+  function dispatchAgentPreview(payload: RunEvent) {
+    const preview = previewFromTimelineItem(payload.timelineItem);
+    if (!preview) return;
+    if (preview.type === "file") {
+      // affectedFile 已带更准的相对路径；时间线路径可能是绝对路径，作补充。
+      if (!payload.affectedFile) {
+        revealWorkspaceFile(
+          preview.path,
+          preview.startLine,
+          preview.endLine,
+          payload.workspaceId ?? undefined,
+        );
+      }
+      return;
+    }
+    if (preview.type === "browser") {
+      revealBrowser(preview.url);
+      return;
+    }
+    // shell 工具仍只在聊天卡片里跑；长跑服务请用 `multara terminal run` 进集成终端。
   }
 
   function removeQueuedMessage(index: number) {
@@ -1864,6 +1919,8 @@ export const useAppStore = defineStore("app", () => {
     quickOpenRequest,
     sendFailure,
     fileReveal,
+    browserReveal,
+    terminalReveal,
     runStates,
     processingMessage,
     sessionProcessing,
@@ -1957,6 +2014,8 @@ export const useAppStore = defineStore("app", () => {
     clearComposerNotice,
     dismissSendFailure,
     revealWorkspaceFile,
+    revealBrowser,
+    revealTerminal,
     removeQueuedMessage,
     takeQueuedMessage,
     promoteQueuedMessage,

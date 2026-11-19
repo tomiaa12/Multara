@@ -55,6 +55,8 @@ pub mod session_export;
 pub mod snapshot;
 pub mod snapshot_db;
 pub mod terminal;
+pub mod terminal_cli;
+pub mod terminal_ctl;
 pub mod text_search;
 pub mod ui_host;
 pub mod usage;

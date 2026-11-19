@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 智能体状态格：有智能体在跑时显示「头像 + 轮播动作文案」，多个同时跑时显示堆叠头像 + 「N 个智能体处理中」；
-// 没在跑时回退到传入的 fallback（堆叠头像，或单个头像 + 名字）。需求列表、任务卡片共用。
+// 没在跑时：可显示 fallback 头像 + idleLabel（如「3 小时前」），或单个头像 + 名字。需求列表、任务卡片共用。
 import { computed } from "vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
@@ -14,13 +14,16 @@ const props = withDefaults(defineProps<{
   sessionIds: string[];
   /** 没有在跑的智能体时展示的人 */
   fallback?: AvatarStackItem[];
-  /** fallback 只有一个人时，头像后面带名字 */
+  /** 空闲时头像旁的文案（如相对时间）；有 fallback 时才展示 */
+  idleLabel?: string;
+  /** fallback 只有一个人时，头像后面带名字（与 idleLabel 互斥优先 idleLabel） */
   showName?: boolean;
   max?: number;
   size?: number;
   dialogTitle?: string;
 }>(), {
   fallback: () => [],
+  idleLabel: "",
   showName: false,
   max: 3,
   size: 18,
@@ -51,13 +54,20 @@ const liveLabel = computed(() => {
   return liveWorkParts(timeline, 0, { language: store.data?.settings.language, status: run.status })[0]?.label ?? "";
 });
 
-const single = computed(() => (props.showName && props.fallback.length === 1 ? props.fallback[0] : null));
+const idleText = computed(() => props.idleLabel.trim());
+const single = computed(() => (
+  !idleText.value && props.showName && props.fallback.length === 1 ? props.fallback[0] : null
+));
 </script>
 
 <template>
   <span v-if="liveRuns.length" class="agent-live-status is-live" aria-live="polite">
     <AvatarStack :items="liveItems" :max="max" :size="size" :dialog-title="dialogTitle" />
     <UiShimmerText class="agent-live-label" :text="liveLabel" rotate />
+  </span>
+  <span v-else-if="fallback.length && idleText" class="agent-live-status">
+    <AvatarStack :items="fallback" :max="max" :size="size" :dialog-title="dialogTitle" />
+    <span class="agent-live-label">{{ idleText }}</span>
   </span>
   <span v-else-if="single" class="agent-live-status">
     <AgentAvatar :value="single.image || ''" :name="single.name" :size="size" />

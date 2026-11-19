@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { ArrowUp, FileText, Square } from "@lucide/vue";
+import { ArrowUp, FileText, Square, X } from "@lucide/vue";
 import ChatComposer from "./ChatComposer.vue";
 import ComposerPasteImages from "./ComposerPasteImages.vue";
 import type { SelectOption } from "../ui/select-types";
@@ -47,6 +47,7 @@ const emit = defineEmits<{
   stop: [];
 }>();
 const previews = ref<Record<string, string>>({});
+const removedAttachmentIds = ref(new Set<string>());
 const editNotice = ref("");
 const composer = ref<{
   focus: () => void;
@@ -62,8 +63,11 @@ const OVERFLOW_TOLERANCE_PX = 1;
 let clipObserver: ResizeObserver | undefined;
 
 const nodes = computed(() => parseUserPromptNodes(props.message.content));
-const pastedImages = computed(() => props.message.attachments.filter(isPastedImage));
-const files = computed(() => props.message.attachments.filter((item) => !isPastedImage(item)));
+const keptAttachments = computed(() =>
+  props.message.attachments.filter((item) => !removedAttachmentIds.value.has(item.id)),
+);
+const pastedImages = computed(() => keptAttachments.value.filter(isPastedImage));
+const files = computed(() => keptAttachments.value.filter((item) => !isPastedImage(item)));
 const contexts = computed<EditorSelectionContext[]>(() =>
   nodes.value
     .filter(isFileChip)
@@ -87,8 +91,13 @@ const promptTag = computed(() => {
   return { kind: mode, label: modeLabel(mode) };
 });
 const replayAttachments = computed<MessageAttachmentInput[]>(() =>
-  props.message.attachments.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size })),
+  keptAttachments.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size })),
 );
+
+function removeAttachment(id: string) {
+  if (props.viewOnly) return;
+  removedAttachmentIds.value = new Set([...removedAttachmentIds.value, id]);
+}
 
 function onChange(nextNodes: ComposerNode[]) {
   draftEmpty.value = !nextNodes.some((node) =>
@@ -161,10 +170,18 @@ async function openAttachment(attachment: MessageAttachment) {
 }
 
 watch(
+  () => props.message.id,
+  () => {
+    removedAttachmentIds.value = new Set();
+  },
+);
+
+watch(
   () => props.restoreNonce,
   () => {
     if (!props.restoreNonce || props.restoreMessageId !== props.message.id) return;
     composer.value?.restore(nodes.value);
+    removedAttachmentIds.value = new Set();
     draftEmpty.value = false;
     editNotice.value = "";
   },
@@ -218,7 +235,12 @@ watch(
     <ChatComposer
       ref="composer"
       class="user-prompt"
-      :class="{ 'is-expanded': expanded, 'is-view-only': viewOnly, 'has-overflow': clipped }"
+      :class="{
+        'is-expanded': expanded,
+        'is-view-only': viewOnly,
+        'has-overflow': clipped,
+        'is-running': running && !viewOnly,
+      }"
       @focusin="onFieldFocus"
       placeholder=""
       :initial-nodes="nodes"
@@ -240,6 +262,16 @@ watch(
       @target-change="emit('target-change', $event)"
       @click="onComposerClick"
     >
+      <!-- 折叠未聚焦时 footer 会藏起；运行中单独浮一个停止钮，点进编辑后由 footer 接手 -->
+      <UiButton
+        v-if="running && !viewOnly"
+        type="button"
+        class="icon-button user-prompt-stop"
+        :tip="t('chat.stopTaskShortcut')"
+        @mousedown.prevent="emit('stop')"
+      >
+        <Square :size="14" />
+      </UiButton>
       <template #actions>
         <template v-if="!viewOnly">
           <!-- mousedown.prevent：footer-on-focus 下若等 click，失焦会先把页脚 display:none，点击落空；与底栏 Ctrl+C 同走 stop -->
@@ -266,15 +298,27 @@ watch(
       <span v-if="promptTag" class="user-prompt-tag" :data-kind="promptTag.kind">{{ promptTag.label }}</span>
       <p v-if="editNotice" class="composer-error">{{ editNotice }}</p>
       <ComposerPasteImages
+        :removable="!viewOnly"
         :images="pastedImages.map((image) => ({ key: image.id, src: previews[image.id], name: image.name }))"
+        @remove="removeAttachment"
       />
       <div v-if="files.length" class="composer-attachments vs-scroll">
         <template v-for="file in files" :key="file.id">
           <UiTooltip :content="file.name">
-            <button class="composer-attachment" type="button" @click="openAttachment(file)">
+            <div class="composer-attachment" role="button" tabindex="0" @click="openAttachment(file)">
               <FileText :size="15" />
               <span>{{ file.name }}</span>
-            </button>
+              <UiButton
+                v-if="!viewOnly"
+                type="button"
+                variant="ghost"
+                size="icon"
+                :tip="t('chat.removeAttachment')"
+                @click.stop="removeAttachment(file.id)"
+              >
+                <X :size="12" />
+              </UiButton>
+            </div>
           </UiTooltip>
         </template>
       </div>

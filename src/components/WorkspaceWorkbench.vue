@@ -162,6 +162,7 @@ import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
 import { activeTerminalSessionId, terminalSessions } from "../stores/terminal-sessions";
+import { readProjectTerminalOpen, writeProjectTerminalOpen } from "../stores/terminal-layout";
 import { useAppStore } from "../stores/app";
 import { useCanvasStore } from "../stores/canvas";
 import UiFrame from "./UiFrame.vue";
@@ -208,16 +209,14 @@ const workspaces = computed(() => {
   const source = props.preview
     ? [previewWorkspace, previewWorkspaceB]
     : (() => {
-        const projectWorkspaces =
+        const shared =
           store.data?.workspaces.filter(
-            (item) => item.projectId === projectId.value,
+            (item) => item.projectId === projectId.value && !item.sessionId,
           ) ?? [];
-        const dedicated = projectWorkspaces.filter(
-          (item) => item.sessionId === store.activeSessionId,
-        );
-        return dedicated.length
-          ? dedicated
-          : projectWorkspaces.filter((item) => !item.sessionId);
+        if (!store.activeSessionId) return shared;
+        const session = store.data?.sessions.find((item) => item.id === store.activeSessionId);
+        if (session?.projectId !== projectId.value) return shared;
+        return store.sessionWorkspaces(store.activeSessionId);
       })();
   return source.filter((item) => !detachedWorkspaceIds.value.has(item.id));
 });
@@ -323,12 +322,20 @@ const searchView = ref<{
   findIn: (workspaceId: string, include: string) => void;
   focusSearch: () => void;
 } | null>(null);
-const terminalOpen = ref(false);
+const terminalOpen = ref(
+  props.preview ? false : readProjectTerminalOpen("workbench", props.projectId ?? ""),
+);
 const terminalHeight = ref(Number(localStorage.getItem("multara.panel.terminalHeight")) || 240);
 const previewTerminals = ref<TerminalTab[]>([]);
 const previewActiveTerminalId = ref("");
 const terminalTabs = props.preview ? previewTerminals : terminalSessions;
 const activeTerminalId = props.preview ? previewActiveTerminalId : activeTerminalSessionId;
+/** 只展示当前需求工作区的终端；其它需求的会话留在 store 里，切回去还能接着用。 */
+const visibleTerminalTabs = computed(() => {
+  if (props.preview) return previewTerminals.value;
+  const ids = new Set(workspaces.value.map((item) => item.id));
+  return terminalSessions.value.filter((item) => ids.has(item.workspaceId));
+});
 const terminalProfiles = ref<backend.TerminalProfile[]>([]);
 const defaultTerminalProfile = ref(localStorage.getItem("multara.terminal.defaultProfile") || "");
 const pendingTerminalProfile = ref<string | undefined>();
@@ -528,6 +535,7 @@ const workspaceSummary = computed(() => {
 const workbenchActive = ref(true);
 onActivated(() => {
   workbenchActive.value = true;
+  syncActiveTerminalToVisible();
 });
 onDeactivated(() => {
   workbenchActive.value = false;
@@ -3745,8 +3753,8 @@ async function killTerminal(id: string) {
     }
   }
   if (activeTerminalId.value === id) {
-    activeTerminalId.value = terminalTabs.value.find((item) => !item.pending)?.id
-      ?? terminalTabs.value[0]?.id
+    activeTerminalId.value = visibleTerminalTabs.value.find((item) => !item.pending)?.id
+      ?? visibleTerminalTabs.value[0]?.id
       ?? "";
   }
 }
@@ -3763,28 +3771,32 @@ watch(
   () => {
     const list = workspaces.value;
     if (!list.length) return;
-    const known = new Set(terminalTabs.value.map((tab) => tab.workspaceId));
-    const switched = terminalTabs.value.length > 0 && !list.some((workspace) => known.has(workspace.id));
-    if (switched) {
-      for (const tab of terminalTabs.value) {
-        if (!tab.live) continue;
-        forgetTerminal(tab.id);
-        void backend.terminalClose(tab.id);
-      }
-      terminalTabs.value = [];
-      activeTerminalId.value = "";
-    }
+    // 切换需求时不关其它需求的 PTY：会话留在共享 store，切回去还能接着看。
     for (const workspace of list) {
       if (terminalTabs.value.some((tab) => tab.workspaceId === workspace.id)) continue;
-      terminalTabs.value.push(pendingTerminal(workspace));
+      terminalTabs.value = [...terminalTabs.value, pendingTerminal(workspace)];
     }
-    if (terminalOpen.value && !terminalTabs.value.some((tab) => tab.id === activeTerminalId.value && !tab.pending)) {
-      const first = terminalTabs.value[0];
+    syncActiveTerminalToVisible();
+    const visible = visibleTerminalTabs.value;
+    if (terminalOpen.value && !visible.some((tab) => tab.id === activeTerminalId.value && !tab.pending)) {
+      const first = visible[0];
       if (first) void materializeTerminal(first);
     }
   },
   { immediate: true },
 );
+
+watch(terminalOpen, (open) => {
+  if (props.preview || !projectId.value) return;
+  writeProjectTerminalOpen("workbench", projectId.value, open);
+});
+
+function syncActiveTerminalToVisible() {
+  const visible = visibleTerminalTabs.value;
+  if (!visible.length) return;
+  if (visible.some((tab) => tab.id === activeTerminalId.value)) return;
+  activeTerminalId.value = visible.find((tab) => !tab.pending)?.id ?? visible[0]?.id ?? "";
+}
 
 watch(terminalFocus, (request) => {
   if (!request || props.preview) return;
@@ -3794,6 +3806,26 @@ watch(terminalFocus, (request) => {
   terminalOpen.value = true;
   activeTerminalId.value = tab.id;
   if (tab.pending) void materializeTerminal(tab);
+});
+
+watch(() => store.terminalReveal?.nonce, () => {
+  if (props.preview) return;
+  const request = store.terminalReveal;
+  if (!request) return;
+  const byId = request.terminalId
+    ? terminalTabs.value.find((item) => item.id === request.terminalId)
+    : undefined;
+  const byWorkspace = request.workspaceId
+    ? terminalTabs.value.find((item) => item.workspaceId === request.workspaceId && item.live && !item.pending)
+      ?? terminalTabs.value.find((item) => item.workspaceId === request.workspaceId)
+    : undefined;
+  const tab = byId ?? byWorkspace;
+  if (tab && !workspaces.value.some((workspace) => workspace.id === tab.workspaceId)) return;
+  terminalOpen.value = true;
+  if (!tab) return;
+  activeTerminalId.value = tab.id;
+  if (tab.pending) void materializeTerminal(tab);
+  else void nextTick(() => terminalPanel.value?.focus());
 });
 
 watch(terminalPick, (open) => {
@@ -6605,7 +6637,7 @@ defineExpose({
         v-show="terminalOpen"
         :data-open="terminalOpen ? 'true' : 'false'"
         ref="terminalPanel"
-        :sessions="terminalTabs"
+        :sessions="visibleTerminalTabs"
         :active-id="activeTerminalId"
         :height="terminalHeight"
         :new-title="newTerminalTitle"

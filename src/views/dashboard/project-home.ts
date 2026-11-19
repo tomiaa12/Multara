@@ -7,6 +7,7 @@ import type {
   Squad,
   Workspace,
 } from "../../domain/types";
+import { formatRelativeTime } from "../../components/ui/relative-time";
 import { t } from "../../i18n";
 
 export type HomeFilter = "all" | "running" | "archived";
@@ -35,6 +36,8 @@ export interface HomeProject {
   workerSentence: string;
   workerParts: SentencePart[];
   idleLine: string;
+  /** 空闲时列表旁文案：相对时间；进行中为空（由 AgentLiveStatus 播报动作） */
+  activityLabel: string;
   workers: HomeWorker[];
   /** 这个需求下所有会话；界面据此读实时 run 状态 */
   sessionIds: string[];
@@ -281,6 +284,11 @@ export function buildHomeProject(
       ended: relativeEndedAt(latest.updatedAt, now),
     })
     : t("projectHome.idlePrefix");
+  const activityLabel = working.length || queued.length
+    ? ""
+    : latest
+      ? formatRelativeTime(latest.updatedAt, now)
+      : "";
 
   const gitCount = workspaces.filter((item) => item.kind === "git").length;
   const folderCount = workspaces.length - gitCount;
@@ -311,6 +319,7 @@ export function buildHomeProject(
     workerSentence,
     workerParts,
     idleLine,
+    activityLabel,
     workers,
     sessionIds: sessions.map((item) => item.id),
     gitCount,
@@ -336,4 +345,14 @@ export function workspaceKindLabel(gitCount: number, folderCount: number): strin
   if (gitCount) parts.push(t("projectHome.gitCount", { n: gitCount }));
   if (folderCount) parts.push(t("projectHome.folderCount", { n: folderCount }));
   return parts.join(t("projectHome.metaJoiner"));
+}
+
+/** 需求列表 / 编码表：传给 AgentLiveStatus 的 fallback 头像 */
+export function homeWorkerItems(row: HomeProject) {
+  return row.workers.map((worker) => ({
+    key: worker.key,
+    name: worker.name,
+    image: worker.image,
+    title: worker.title,
+  }));
 }

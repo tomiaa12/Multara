@@ -150,12 +150,18 @@ describe("buildHomeProject workers", () => {
         elapsedMs: 1000,
       },
     };
-    const home = buildHomeProject(project, data, finished);
+    const home = buildHomeProject(
+      project,
+      data,
+      finished,
+      Date.parse("2026-01-02T03:00:00Z"),
+    );
     expect(home.workers.map((item) => item.key)).toEqual([
       "agent:miku",
       "agent:reviewer",
     ]);
     expect(home.workers.find((item) => item.key === "agent:reviewer")?.image).toBe("👀");
+    expect(home.activityLabel).toBeTruthy();
   });
 
   it("有进行中时只展示进行中的智能体", () => {
@@ -209,5 +215,6 @@ describe("buildHomeProject workers", () => {
     const home = buildHomeProject(project, data, runs);
     expect(home.workers.map((item) => item.key)).toEqual(["agent:miku"]);
     expect(home.filters).toContain("running");
+    expect(home.activityLabel).toBe("");
   });
 });

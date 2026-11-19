@@ -34,7 +34,7 @@ multara — Multara 内置 CLI
   skill        list|get|builtin|import
   runtime      list
   session      history|resume
-  terminal     list|read [id] [--start N] [--end N]
+  terminal     list|read|open|run|write|focus
 
 stdout 为 JSON。提示与 --help 走 stderr。解析 stdout 时不要 2>&1。
 
@@ -89,8 +89,12 @@ pub fn run_args(
     mut stderr: impl io::Write,
 ) -> Result<(), i32> {
     // `-h` 只在开头才算求助，否则恰好等于 `-h` 的描述或评论会被吞掉。
-    let canvas = args.first().map(String::as_str) == Some("canvas");
-    if args.is_empty() || args[0] == "-h" || (!canvas && args.iter().any(|arg| arg == "--help")) {
+    // canvas / terminal 有自己的 --help。
+    let owns_help = matches!(
+        args.first().map(String::as_str),
+        Some("canvas") | Some("terminal")
+    );
+    if args.is_empty() || args[0] == "-h" || (!owns_help && args.iter().any(|arg| arg == "--help")) {
         let _ = writeln!(stderr, "{}", help());
         return Ok(());
     }
@@ -101,9 +105,21 @@ pub fn run_args(
             return Err(1);
         }
     };
-    // canvas 子命令有自己的退出码约定（1 参数 / 2 环境 / 3 Canvas 错误），stdout 失败时也是 JSON
+    // canvas / terminal 控制类子命令有自己的退出码约定，stdout 失败时也是 JSON
     if args.first().map(String::as_str) == Some("canvas") {
         let output = crate::canvas_cli::run(args, &mut db);
+        for line in output.stderr {
+            let _ = writeln!(stderr, "{line}");
+        }
+        let _ = writeln!(stdout, "{}", output.stdout);
+        return if output.code == 0 {
+            Ok(())
+        } else {
+            Err(output.code)
+        };
+    }
+    if args.first().map(String::as_str) == Some("terminal") {
+        let output = crate::terminal_cli::run(args);
         for line in output.stderr {
             let _ = writeln!(stderr, "{line}");
         }
@@ -528,23 +544,6 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                 .ok_or_else(|| tr!("缺少会话 id 或 MULTARA_SESSION_ID"))?;
             ops::json(&ops::skill::comment_history(db, &session_id)?)
         }
-        ("terminal", "list") => ops::json(&crate::terminal::list_snapshots(&app_data_dir()?)?),
-        ("terminal", "read") => {
-            let start = parsed
-                .flag(&["start"])
-                .map(|value| parse_line(value, "start"))
-                .transpose()?;
-            let end = parsed
-                .flag(&["end"])
-                .map(|value| parse_line(value, "end"))
-                .transpose()?;
-            ops::json(&crate::terminal::read_snapshot(
-                &app_data_dir()?,
-                id.as_deref(),
-                start,
-                end,
-            )?)
-        }
         ("session", "resume") => {
             let session_id = id
                 .or_else(|| env::var("MULTARA_SESSION_ID").ok())
@@ -834,14 +833,6 @@ fn open_db() -> Result<Connection, String> {
     let db = database::open_file_light(&path)?;
     crate::app_locale::set_current(crate::app_locale::from_db(&db));
     Ok(db)
-}
-
-fn parse_line(value: &str, name: &str) -> Result<usize, String> {
-    value
-        .parse()
-        .ok()
-        .filter(|line| *line >= 1)
-        .ok_or_else(|| tr!("--{name} 需要从 1 开始的行号", name = name))
 }
 
 fn app_data_dir() -> Result<PathBuf, String> {

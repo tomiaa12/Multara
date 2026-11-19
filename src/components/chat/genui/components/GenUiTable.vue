@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { ChevronDown } from "@lucide/vue";
 import type { Cell, ColumnFormat, TableProps } from "../schema";
 import { readGenUiState, writeGenUiState } from "../state";
 import { t } from "../../../../i18n";
+import UiButton from "../../../ui/UiButton.vue";
+import ContextMenu, { type ContextMenuItem } from "../../../ui/ContextMenu.vue";
 
 // GenUiBlock 给所有组件传同一组 props，没声明的不要落到根元素上（例如 title 会变成原生提示）
 defineOptions({ inheritAttrs: false });
 
-const props = defineProps<{ data: TableProps; stateKey: string }>();
+const props = defineProps<{ data: TableProps; stateKey: string; title?: string }>();
 
 type Sort = { key: string; dir: "asc" | "desc" } | null;
 const sort = ref<Sort>(readGenUiState<Sort>(props.stateKey, "sort") ?? null);
 watch(sort, (value) => writeGenUiState(props.stateKey, "sort", value));
-const copied = ref<"" | "tsv" | "md">("");
+const copied = ref(false);
+let copiedTimer = 0;
+const menu = ref<{ x: number; y: number } | null>(null);
+const splitEl = ref<HTMLElement | null>(null);
+
+const copyMenuItems = computed<ContextMenuItem[]>(() => [
+  { id: "md", label: t("genui.copyMarkdown") },
+  { id: "tsv", label: t("genui.copyTsv") },
+]);
 
 const rows = computed(() => {
   const current = sort.value;
@@ -70,14 +81,61 @@ function asMarkdown() {
 }
 
 async function copy(kind: "tsv" | "md") {
+  menu.value = null;
   await navigator.clipboard.writeText(kind === "tsv" ? asTsv() : asMarkdown());
-  copied.value = kind;
-  window.setTimeout(() => (copied.value = ""), 1200);
+  copied.value = true;
+  window.clearTimeout(copiedTimer);
+  copiedTimer = window.setTimeout(() => {
+    copied.value = false;
+  }, 1200);
 }
+
+function openCopyMenu() {
+  const anchor = splitEl.value;
+  if (!anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  // 菜单左缘对齐拆分按钮左缘；ContextMenu 会按窗口边缘夹紧
+  menu.value = { x: Math.round(rect.left), y: Math.round(rect.bottom + 4) };
+}
+
+function onCopyMenuSelect(id: string) {
+  if (id === "tsv" || id === "md") void copy(id);
+}
+
+onBeforeUnmount(() => {
+  window.clearTimeout(copiedTimer);
+});
 </script>
 
 <template>
   <div class="genui-table">
+    <div class="genui-table-head">
+      <header v-if="title" class="genui-title">{{ title }}</header>
+      <div v-else class="genui-table-head-spacer" />
+      <div ref="splitEl" class="genui-copy-split">
+        <UiButton
+          class="genui-copy-main"
+          size="small"
+          variant="ghost"
+          :aria-label="t('genui.copyMarkdown')"
+          @click="copy('md')"
+        >
+          {{ copied ? t("chat.copied") : t("genui.copyMarkdown") }}
+        </UiButton>
+        <button
+          type="button"
+          class="ui-button genui-copy-caret"
+          data-variant="ghost"
+          data-size="icon"
+          :aria-label="t('genui.copyMore')"
+          :aria-expanded="Boolean(menu)"
+          aria-haspopup="menu"
+          @click="openCopyMenu"
+        >
+          <ChevronDown :size="13" />
+        </button>
+      </div>
+    </div>
     <div class="genui-table-scroll vs-scroll">
       <table>
         <thead>
@@ -103,9 +161,14 @@ async function copy(kind: "tsv" | "md") {
         </tbody>
       </table>
     </div>
-    <div class="genui-toolbar">
-      <UiButton size="small" variant="ghost" @click="copy('tsv')">{{ copied === "tsv" ? t("chat.copied") : t("genui.copyTsv") }}</UiButton>
-      <UiButton size="small" variant="ghost" @click="copy('md')">{{ copied === "md" ? t("chat.copied") : t("genui.copyMarkdown") }}</UiButton>
-    </div>
+    <ContextMenu
+      v-if="menu"
+      :x="menu.x"
+      :y="menu.y"
+      :items="copyMenuItems"
+      fit
+      @select="onCopyMenuSelect"
+      @close="menu = null"
+    />
   </div>
 </template>

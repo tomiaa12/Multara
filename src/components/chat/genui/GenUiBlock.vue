@@ -134,7 +134,8 @@ function onAction(item: Rendered, action: string, values?: unknown) {
         :data-type="item.spec.type"
         :style="placeholderStyle(item.stateKey)"
       >
-        <header v-if="item.spec.title" class="genui-title">{{ item.spec.title }}</header>
+        <!-- table 自己画标题行（右侧带复制），避免和工具栏各占一行 -->
+        <header v-if="item.spec.title && item.spec.type !== 'table'" class="genui-title">{{ item.spec.title }}</header>
         <div :ref="(el) => observeBody(item.stateKey, el)" class="genui-body">
           <component
             :is="genUiEntry(item.spec.type)!.component!"

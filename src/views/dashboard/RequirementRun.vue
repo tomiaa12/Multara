@@ -9,6 +9,7 @@ import { t } from "../../i18n";
 import { useAppStore } from "../../stores/app";
 import InboxToolRail from "../inbox/InboxToolRail.vue";
 import {
+  homeWorkerItems,
   matchesHomeFilter,
   type HomeFilter,
   type HomeProject,
@@ -36,10 +37,9 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppStore();
-const toolRail = ref<{ openWorkspaceFile: (workspaceId: string, path: string) => void } | null>(null);
 
 function onReviewFile(file: { workspaceId: string; filePath: string }) {
-  toolRail.value?.openWorkspaceFile(file.workspaceId, file.filePath);
+  store.revealWorkspaceFile(file.filePath, undefined, undefined, file.workspaceId);
 }
 const filter = ref<HomeFilter>("all");
 const query = ref("");
@@ -74,12 +74,15 @@ const sessionId = computed(() => {
   return sessions.find((item) => item.id === store.activeSessionId)?.id ?? sessions[0]?.id ?? "";
 });
 
-const toolWorkspaces = computed(() =>
-  (store.data?.workspaces ?? []).filter((item) => {
-    if (item.projectId !== selected.value?.id) return false;
-    return !item.sessionId || item.sessionId === sessionId.value;
-  }),
-);
+// 与编码模式一致：有会话专属 workspace（如合并冲突临时库）时只展示专属，不再并上原工作区。
+const toolWorkspaces = computed(() => {
+  if (!sessionId.value) {
+    return (store.data?.workspaces ?? []).filter(
+      (item) => item.projectId === selected.value?.id && !item.sessionId,
+    );
+  }
+  return store.sessionWorkspaces(sessionId.value);
+});
 
 const activeWorkspace = computed(() =>
   toolWorkspaces.value.find((item) => item.id === pickedWorkspaceId.value) ?? toolWorkspaces.value[0] ?? null,
@@ -241,6 +244,8 @@ onBeforeUnmount(() => {
             <span class="req-run-workers">
               <AgentLiveStatus
                 :session-ids="row.sessionIds"
+                :fallback="homeWorkerItems(row)"
+                :idle-label="row.activityLabel"
                 :max="3"
                 :size="18"
                 :dialog-title="t('dashboard.col.workers')"
@@ -270,7 +275,6 @@ onBeforeUnmount(() => {
   <section class="inbox-detail chat-surface">
     <ChatPanel
       v-if="selected"
-      :key="selected.id"
       class="inbox-thread"
       :project-id="selected.id"
       compact
@@ -284,18 +288,20 @@ onBeforeUnmount(() => {
     </div>
   </section>
 
-  <InboxToolRail
-    v-if="selected"
-    ref="toolRail"
-    :key="selected.id"
-    :workspaces="toolWorkspaces"
-    :workspace-id="activeWorkspace?.id ?? ''"
-    :session-id="sessionId"
-    kind="project"
-    :task-id="null"
-    @pick-workspace="pickedWorkspaceId = $event"
-    @layout="emit('layout', $event)"
-  />
+  <!-- 按需求缓存右侧栏：切走再回来保留打开的文件 / 更改 / 浏览器 / 终端等界面 -->
+  <KeepAlive :max="16">
+    <InboxToolRail
+      v-if="selected"
+      :key="selected.id"
+      :workspaces="toolWorkspaces"
+      :workspace-id="activeWorkspace?.id ?? ''"
+      :session-id="sessionId"
+      kind="project"
+      :task-id="null"
+      @pick-workspace="pickedWorkspaceId = $event"
+      @layout="emit('layout', $event)"
+    />
+  </KeepAlive>
 
   <ContextMenu
     v-if="menu"

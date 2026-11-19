@@ -38,6 +38,7 @@ import { useAppStore } from "../stores/app";
 import {
   buildHomeIndex,
   buildHomeProject,
+  homeWorkerItems,
   matchesHomeFilter,
   type HomeFilter,
   type HomeProject,
@@ -537,6 +538,8 @@ const runShellStyle = computed(() => {
               <td class="req-col-agents">
                 <AgentLiveStatus
                   :session-ids="row.sessionIds"
+                  :fallback="homeWorkerItems(row)"
+                  :idle-label="row.activityLabel"
                   :max="AVATAR_VISIBLE"
                   :size="24"
                   :dialog-title="t('dashboard.col.workers')"

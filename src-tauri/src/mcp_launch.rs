@@ -17,14 +17,14 @@ pub struct McpLaunch {
     /// ACP `session/new` 和 dsh `mcp_servers` 用的服务器列表。
     pub protocol_servers: Vec<Value>,
     temps: Vec<PathBuf>,
-    /// Cursor：`(mcp.json, 备份文件)`。备份落盘，异常退出下次启动也能还原。
-    project_mcp_restore: Option<(PathBuf, PathBuf)>,
+    /// Cursor：`(mcp.json, 备份文件)`。备份落在 `~/.multara`，异常退出下次启动也能还原。
+    mcp_restore: Option<(PathBuf, PathBuf)>,
 }
 
 impl Drop for McpLaunch {
     fn drop(&mut self) {
-        if let Some((path, bak)) = self.project_mcp_restore.take() {
-            restore_project_mcp_from_bak(&path, &bak);
+        if let Some((path, bak)) = self.mcp_restore.take() {
+            restore_mcp_from_bak(&path, &bak);
         }
         for dir in self.temps.drain(..) {
             let _ = fs::remove_dir_all(dir);
@@ -42,7 +42,7 @@ pub fn prepare(
         env: Vec::new(),
         protocol_servers: Vec::new(),
         temps: Vec::new(),
-        project_mcp_restore: None,
+        mcp_restore: None,
     };
     let Some(path) = config_file else {
         return Ok(launch);
@@ -155,23 +155,27 @@ fn prepare_cursor(
 ) -> Result<(), String> {
     // cursor-agent 只发现「当前 workspace / 父目录」和 ~/.cursor 的 mcp.json。
     // --add-dir 里的 .cursor/mcp.json 文件能读到，但不会进工具命名空间（对话诊断已证实）。
-    // 因此把本轮授权的 MCP 合并进 workspace 根的 .cursor/mcp.json，跑完再还原。
+    // 不能写进仓库的 .cursor/mcp.json（会污染 git），改合并进用户级 ~/.cursor/mcp.json，
+    // 备份落在 ~/.multara，跑完再还原。
     let project = project_root(cwd);
-    let project_mcp = project.join(".cursor").join("mcp.json");
-    let bak = injection_backup_path(&project_mcp);
+    cleanup_legacy_project_mcp_injection(&project);
+
+    let home = dirs_home().ok_or_else(|| "找不到用户目录".to_string())?;
+    let home_mcp = home.join(".cursor").join("mcp.json");
+    let bak = home_cursor_mcp_backup_path(&home)?;
     // 上次异常退出留下的备份：先还原再继续。
     if bak.exists() {
-        restore_project_mcp_from_bak(&project_mcp, &bak);
+        restore_mcp_from_bak(&home_mcp, &bak);
     }
-    let previous = fs::read(&project_mcp).ok();
+    let previous = fs::read(&home_mcp).ok();
     match previous.as_ref() {
         Some(bytes) => write_private(&bak, bytes)?,
         None => write_private(&bak, b"")?,
     }
-    write_merged_project_mcp(&project_mcp, previous.as_deref(), servers)?;
-    launch.project_mcp_restore = Some((project_mcp, bak));
+    write_merged_mcp(&home_mcp, previous.as_deref(), servers)?;
+    launch.mcp_restore = Some((home_mcp, bak));
 
-    // 仍挂一份临时目录：给只扫 add-dir 的旁路 / 人工排查用；真正加载靠上面的 workspace 文件。
+    // 仍挂一份临时目录：给只扫 add-dir 的旁路 / 人工排查用；真正加载靠上面的用户级文件。
     let root = mcp_root(servers)?;
     launch.temps.push(root.clone());
     launch.args.push("--add-dir".into());
@@ -204,8 +208,8 @@ fn prepare_cursor(
     Ok(())
 }
 
-/// 把本轮 MCP 合并进已有 mcp.json（保留项目原有 server）。
-fn write_merged_project_mcp(
+/// 把本轮 MCP 合并进已有 mcp.json（保留原有 server）。
+fn write_merged_mcp(
     path: &Path,
     previous: Option<&[u8]>,
     servers: &Map<String, Value>,
@@ -233,23 +237,48 @@ fn write_merged_project_mcp(
     )
 }
 
-fn injection_backup_path(project_mcp: &Path) -> PathBuf {
-    project_mcp.with_file_name(PROJECT_MCP_BACKUP_NAME)
+const LEGACY_PROJECT_MCP_BACKUP_NAME: &str = "mcp.json.multara-bak";
+const HOME_CURSOR_MCP_BACKUP_NAME: &str = "cursor-mcp-home.bak";
+
+fn legacy_project_backup_path(project_mcp: &Path) -> PathBuf {
+    project_mcp.with_file_name(LEGACY_PROJECT_MCP_BACKUP_NAME)
 }
 
-const PROJECT_MCP_BACKUP_NAME: &str = "mcp.json.multara-bak";
+fn home_cursor_mcp_backup_path(home: &Path) -> Result<PathBuf, String> {
+    let dir = home.join(".multara");
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir.join(HOME_CURSOR_MCP_BACKUP_NAME))
+}
 
-/// Cursor 运行期间 workspace 的 `.cursor/mcp.json` 被临时合并了本轮注入的 MCP。
-/// 这段时间里扫描要读备份里的原始内容，否则临时项会被当成工作区 MCP 绑给 Miku，跑完文件还原后变成失效绑定。
+/// 旧版曾把注入写进仓库 `.cursor/mcp.json` 并旁置 bak；启动时若仍残留则先还原，避免污染 git。
+fn cleanup_legacy_project_mcp_injection(project: &Path) {
+    let project_mcp = project.join(".cursor").join("mcp.json");
+    let bak = legacy_project_backup_path(&project_mcp);
+    if bak.exists() {
+        restore_mcp_from_bak(&project_mcp, &bak);
+    }
+}
+
+/// Cursor 运行期间 `~/.cursor/mcp.json`（或旧版工作区文件）被临时合并了本轮注入的 MCP。
+/// 这段时间里扫描要读备份里的原始内容，否则临时项会被当成用户/工作区 MCP 绑给 Miku，跑完文件还原后变成失效绑定。
 /// 返回 `None` 表示当前没有注入；`Some("")` 表示注入前文件不存在。
 pub fn original_project_mcp(path: &Path) -> Option<String> {
     if path.file_name()? != "mcp.json" {
         return None;
     }
-    fs::read_to_string(injection_backup_path(path)).ok()
+    // 旧版：工作区旁的 bak
+    if let Ok(text) = fs::read_to_string(legacy_project_backup_path(path)) {
+        return Some(text);
+    }
+    // 现行：用户级 ~/.cursor/mcp.json，bak 在 ~/.multara
+    let home = dirs_home()?;
+    if path == home.join(".cursor").join("mcp.json") {
+        return fs::read_to_string(home.join(".multara").join(HOME_CURSOR_MCP_BACKUP_NAME)).ok();
+    }
+    None
 }
 
-fn restore_project_mcp_from_bak(path: &Path, bak: &Path) {
+fn restore_mcp_from_bak(path: &Path, bak: &Path) {
     let previous = fs::read(bak).ok();
     let _ = fs::remove_file(bak);
     match previous.as_deref() {
@@ -572,17 +601,17 @@ fn dirs_home() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        approval_keys, original_project_mcp, restore_project_mcp_from_bak,
-        write_merged_project_mcp, write_private,
+        approval_keys, cleanup_legacy_project_mcp_injection, original_project_mcp,
+        restore_mcp_from_bak, write_merged_mcp, write_private, HOME_CURSOR_MCP_BACKUP_NAME,
     };
     use serde_json::json;
     use std::fs;
 
     #[test]
-    fn merges_into_existing_project_mcp_and_restores() {
+    fn merges_into_existing_mcp_and_restores() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".cursor").join("mcp.json");
-        let bak = dir.path().join(".cursor").join("mcp.json.multara-bak");
+        let bak = dir.path().join(".multara").join(HOME_CURSOR_MCP_BACKUP_NAME);
         let original = br#"{"mcpServers":{"keep-me":{"command":"echo"}}}"#;
         write_private(&path, original).unwrap();
         write_private(&bak, original).unwrap();
@@ -591,20 +620,20 @@ mod tests {
             "feishu-project".into(),
             json!({"type":"http","url":"https://project.feishu.cn/mcp_server/v1"}),
         );
-        write_merged_project_mcp(&path, Some(original), &servers).unwrap();
+        write_merged_mcp(&path, Some(original), &servers).unwrap();
         let merged: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert!(merged["mcpServers"]["keep-me"].is_object());
         assert_eq!(
             merged["mcpServers"]["feishu-project"]["url"],
             "https://project.feishu.cn/mcp_server/v1"
         );
-        restore_project_mcp_from_bak(&path, &bak);
+        restore_mcp_from_bak(&path, &bak);
         assert_eq!(fs::read(&path).unwrap(), original);
         assert!(!bak.exists());
     }
 
     #[test]
-    fn original_project_mcp_reads_backup_only_while_injected() {
+    fn original_project_mcp_reads_legacy_workspace_backup() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".cursor").join("mcp.json");
         let bak = dir.path().join(".cursor").join("mcp.json.multara-bak");
@@ -622,17 +651,59 @@ mod tests {
     }
 
     #[test]
-    fn restores_missing_project_mcp_by_deleting() {
+    fn original_project_mcp_reads_home_backup_while_injected() {
+        static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = HOME_LOCK.lock().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("HOME");
+        std::env::set_var("HOME", home.path());
+        let path = home.path().join(".cursor").join("mcp.json");
+        let bak = home.path().join(".multara").join(HOME_CURSOR_MCP_BACKUP_NAME);
+        write_private(&path, br#"{"mcpServers":{"injected":{"command":"echo"}}}"#).unwrap();
+        assert_eq!(original_project_mcp(&path), None);
+        write_private(&bak, br#"{"mcpServers":{"keep":{"command":"true"}}}"#).unwrap();
+        assert_eq!(
+            original_project_mcp(&path).as_deref(),
+            Some(r#"{"mcpServers":{"keep":{"command":"true"}}}"#)
+        );
+        let unrelated = home.path().join("proj").join(".cursor").join("mcp.json");
+        write_private(&unrelated, br#"{"mcpServers":{}}"#).unwrap();
+        assert_eq!(original_project_mcp(&unrelated), None);
+        match previous {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    fn cleanup_legacy_restores_workspace_mcp_from_bak() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".cursor").join("mcp.json");
         let bak = dir.path().join(".cursor").join("mcp.json.multara-bak");
+        let original = br#"{"mcpServers":{"mine":{"command":"echo"}}}"#;
+        write_private(&bak, original).unwrap();
+        write_private(
+            &path,
+            br#"{"mcpServers":{"mine":{"command":"echo"},"multara-leak":{"url":"https://x"}}}"#,
+        )
+        .unwrap();
+        cleanup_legacy_project_mcp_injection(dir.path());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(!bak.exists());
+    }
+
+    #[test]
+    fn restores_missing_mcp_by_deleting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".cursor").join("mcp.json");
+        let bak = dir.path().join(".multara").join(HOME_CURSOR_MCP_BACKUP_NAME);
         write_private(&bak, b"").unwrap();
         write_private(
             &path,
             br#"{"mcpServers":{"feishu-project":{"url":"https://x"}}}"#,
         )
         .unwrap();
-        restore_project_mcp_from_bak(&path, &bak);
+        restore_mcp_from_bak(&path, &bak);
         assert!(!path.exists());
         assert!(!bak.exists());
     }

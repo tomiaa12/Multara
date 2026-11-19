@@ -176,6 +176,7 @@ fn brief_text(locale: &str) -> BriefText {
             no_workspace: "This run has no linked project and no writable working directory. Do not modify arbitrary directories.",
             task_id_note: "The current task id is in the `MULTARA_TASK_ID` environment variable; always pass `--parent` when spawning subtasks (or rely on automatic attachment).",
             cli_notes: "For other commands, run `multara <cmd> --help`. stdout is JSON; hints go to stderr. Do not use `2>&1` when parsing stdout.\n\
+Use `multara terminal run --command \"...\"` to open the integrated terminal panel and run long-lived commands there (dev servers, watchers) so the user can see output and stop the process. Prefer that over the Shell tool for services the user needs to watch. Short one-shot commands may still use Shell.\n\
 `terminal read` reads the screen of a terminal currently open in the workbench (without an id, it reads the one being viewed). When the user adds a terminal selection to a message, the message body includes a reference with the matching line numbers.",
             workflow_project: "\
 ## Workflow
@@ -214,6 +215,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "這次執行沒有關聯專案，也沒有可寫的工作目錄。不要改隨機目錄。",
             task_id_note: "目前任務 id 在環境變數 `MULTARA_TASK_ID`；派生子任務務必帶 `--parent`（或依賴自動掛接）。",
             cli_notes: "其餘指令用 `multara <cmd> --help`。stdout 是 JSON；提示在 stderr。解析 stdout 時不要 `2>&1`。\n\
+長駐命令（開發伺服器、watch）用 `multara terminal run --command \"...\"` 在整合終端機面板執行，讓使用者能看到輸出並停止；不要只用 Shell 工具。短命令仍可用 Shell。\n\
 `terminal read` 讀取工作台裡目前開啟的終端機畫面（不傳 id 則讀正在看的那個）。使用者把終端機選取範圍加進訊息時，正文裡會有對應行號的引用。",
             workflow_project: "\
 ## Workflow
@@ -252,6 +254,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "この実行には関連プロジェクトも書き込み可能な作業ディレクトリもありません。任意のディレクトリを変更しないでください。",
             task_id_note: "現在のタスク id は環境変数 `MULTARA_TASK_ID` にあります。サブタスクを作るときは必ず `--parent` を付けてください（または自動ひも付けに任せます）。",
             cli_notes: "その他のコマンドは `multara <cmd> --help` で確認してください。stdout は JSON、ヒントは stderr に出ます。stdout を解析するときは `2>&1` を付けないでください。\n\
+開発サーバーや watch など長時間動かす命令は `multara terminal run --command \"...\"` で統合ターミナルに出し、ユーザーが出力を見たり止めたりできるようにしてください。短いワンショットは Shell でも構いません。\n\
 `terminal read` は作業台で現在開いているターミナルの画面を読み取ります（id を省略すると表示中のものを読みます）。ユーザーがターミナルの選択範囲をメッセージに追加すると、本文に対応する行番号付きの参照が入ります。",
             workflow_project: "\
 ## Workflow
@@ -290,6 +293,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "이번 실행에는 연결된 프로젝트도, 쓸 수 있는 작업 디렉터리도 없습니다. 임의의 디렉터리를 수정하지 마세요.",
             task_id_note: "현재 작업 id는 환경 변수 `MULTARA_TASK_ID`에 있습니다. 하위 작업을 만들 때는 반드시 `--parent`를 붙이세요(또는 자동 연결에 맡기세요).",
             cli_notes: "다른 명령은 `multara <cmd> --help`로 확인하세요. stdout은 JSON이고 안내 메시지는 stderr로 나옵니다. stdout을 파싱할 때 `2>&1`을 쓰지 마세요.\n\
+개발 서버·watch처럼 오래 도는 명령은 `multara terminal run --command \"...\"`로 통합 터미널에서 실행해 사용자가 출력을 보고 멈출 수 있게 하세요. 짧은 일회성 명령은 Shell을 써도 됩니다.\n\
 `terminal read`는 작업대에 현재 열려 있는 터미널 화면을 읽습니다(id를 생략하면 보고 있는 터미널을 읽습니다). 사용자가 터미널 선택 영역을 메시지에 추가하면 본문에 해당 줄 번호가 담긴 참조가 들어갑니다.",
             workflow_project: "\
 ## Workflow
@@ -328,6 +332,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "这次运行没有关联项目，也没有可写的工作目录。不要改随机目录。",
             task_id_note: "当前任务 id 在环境变量 `MULTARA_TASK_ID`；派生子任务务必带 `--parent`（或依赖自动挂接）。",
             cli_notes: "其余命令用 `multara <cmd> --help`。stdout 是 JSON；提示在 stderr。解析 stdout 时不要 `2>&1`。\n\
+长驻命令（开发服务器、watch）用 `multara terminal run --command \"...\"` 在集成终端面板执行，让用户能看到输出并停止；不要只用 Shell 工具。短命令仍可用 Shell。\n\
 `terminal read` 读取工作台里当前打开的终端画面（不传 id 则读正在看的那个）。用户把终端选区加进消息时，正文里会有对应行号的引用。",
             workflow_project: "\
 ## Workflow
@@ -509,6 +514,10 @@ multara project get <id>
 multara runtime list
 multara terminal list
 multara terminal read [id] [--start N] [--end N]
+multara terminal open [--cwd <path>] [--workspace <id>] [--new]
+multara terminal run --command \"...\" [--cwd <path>] [--workspace <id>] [--new]
+multara terminal write <id> --text \"...\"
+multara terminal focus [id]
 {cli_notes}
 
 {workflow}

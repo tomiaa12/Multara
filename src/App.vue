@@ -65,6 +65,7 @@ import { unreadBadgeLabel, unreadTotal } from "./domain/inbox";
 import SideNav, { type SideNavItem } from "./components/SideNav.vue";
 import TerminalActivity from "./components/workbench/TerminalActivity.vue";
 import { startRunningTerminalWatch } from "./stores/running-terminals";
+import { startTerminalCtlWatch } from "./stores/terminal-ctl";
 import TaskCreateDialog from "./views/TaskCreateDialog.vue";
 
 const store = useAppStore();
@@ -454,6 +455,7 @@ async function restoreImmersiveTitlebar() {
 onMounted(async () => {
   startOsFileDrop();
   startRunningTerminalWatch();
+  startTerminalCtlWatch();
   store.initialize();
   // 设置页、store 初始化都会直接改 data-theme，这里统一监听以同步标题栏图标。
   themeObserver = new MutationObserver(() => {

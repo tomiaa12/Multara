@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { X } from "@lucide/vue";
+import { t } from "../../i18n";
 import ImagePreviewLightbox from "../ui/ImagePreviewLightbox.vue";
 
 defineProps<{
@@ -43,7 +44,7 @@ function closePreview() {
             type="button"
             variant="ghost"
             size="icon"
-            tip="移除图片"
+            :tip="t('chat.removeAttachment')"
             @click.stop="emit('remove', image.key)"
           >
             <X :size="10" />

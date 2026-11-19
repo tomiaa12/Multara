@@ -76,6 +76,30 @@ const emit = defineEmits<{
   error: [message: string];
 }>();
 
+const REAL_BRANCH_WARN_KEY = "multara.scm.hideRealBranchWarn";
+
+function readHideRealBranchWarn() {
+  try {
+    return localStorage.getItem(REAL_BRANCH_WARN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+const hideRealBranchWarn = ref(readHideRealBranchWarn());
+const showRealBranchWarn = computed(
+  () => workspaceMode(props.workspace) === "direct" && !hideRealBranchWarn.value,
+);
+
+function dismissRealBranchWarn() {
+  hideRealBranchWarn.value = true;
+  try {
+    localStorage.setItem(REAL_BRANCH_WARN_KEY, "1");
+  } catch {
+    // 存储不可用时只在本次会话内生效
+  }
+}
+
 const commitMenu = ref<{ x: number; y: number } | null>(null);
 const moreMenu = ref<{ x: number; y: number } | null>(null);
 const checkoutOpen = ref(false);
@@ -462,9 +486,17 @@ function onPrimary() {
         {{ workspaceModeHint(workspace) }}
       </div>
       <template v-else-if="repository">
-        <p v-if="workspaceMode(workspace) === 'direct'" class="scm-direct-warn">
-          {{ t("scm.editingRealBranch", { branch: repository.branch }) }}
-        </p>
+        <div v-if="showRealBranchWarn" class="scm-direct-warn">
+          <p>{{ t("scm.editingRealBranch", { branch: repository.branch }) }}</p>
+          <UiButton
+            variant="ghost"
+            size="small"
+            :tip="t('scm.editingRealBranchDismissTitle')"
+            @click="dismissRealBranchWarn"
+          >
+            {{ t("scm.editingRealBranchDismiss") }}
+          </UiButton>
+        </div>
         <div v-if="mergeSession" class="scm-merge-session">
           <div class="scm-merge-session-title">
             <Codicon name="git-merge" :size="16" />
