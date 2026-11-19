@@ -17,6 +17,8 @@ const backend = vi.hoisted(() => ({
   scanResources: vi.fn(async () => []),
   listProjectsAndWorkspaces: vi.fn(async () => ({ projects: [], workspaces: [] })),
   sendMessage: vi.fn<(sessionId: string, content: string, attachments: unknown[], requestedMode?: string) => Promise<ChatMessage[]>>(),
+  listMessageQueue: vi.fn(async () => []),
+  saveMessageQueue: vi.fn(async () => undefined),
   setSessionDefaultMode: vi.fn(async () => undefined),
   stopRun: vi.fn(),
   upsertInboxItem: vi.fn(async (input: Record<string, unknown>) => ({ id: "notice", ...input })),

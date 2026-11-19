@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { t } from "../i18n";
 import { Maximize2, MessageCircle, Minimize2, Minus } from "@lucide/vue";
@@ -101,6 +101,7 @@ watch(
 /** host 已在 hidden 时整体 v-show=false；此处只区分面板 / FAB */
 const panelOpen = computed(() => store.chatOpen);
 const panelEl = ref<HTMLElement | null>(null);
+const chatPanel = ref<{ focus: () => void } | null>(null);
 /** 关掉时先播完滑出，再卸掉动画，避免停在带 transform 的状态上 */
 const closing = ref(false);
 let closeTimer = 0;
@@ -109,6 +110,10 @@ watch(panelOpen, (open, wasOpen) => {
   if (open) {
     closing.value = false;
     window.clearTimeout(closeTimer);
+    // 隐藏挂载时不抢焦点；首次打开要等 ChatPanel 挂上
+    if (!props.hidden) {
+      void nextTick(() => chatPanel.value?.focus());
+    }
     return;
   }
   if (!wasOpen) return;
@@ -185,6 +190,7 @@ onBeforeUnmount(() => {
       />
       <ChatPanel
         v-if="retained"
+        ref="chatPanel"
         :key="projectId ?? 'global'"
         :project-id="projectId"
         compact

@@ -2,11 +2,12 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, provide, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { chatMessagesKey } from "../components/chat/context-usage";
-import { ArrowUp, LoaderCircle, Plus, Square } from "@lucide/vue";
+import { ArrowUp, LoaderCircle, Plus } from "@lucide/vue";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
+import ChatStopButton from "../components/chat/ChatStopButton.vue";
 import ReshuffleModal from "../components/chat/ReshuffleModal.vue";
 import ChatQuestionCarousel from "../components/chat/ChatQuestionCarousel.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
@@ -29,6 +30,7 @@ import {
   speakerForMessage,
   subtaskEmbedForMessage,
 } from "../components/chat/message-speaker";
+import { resolveSessionLiveWorkStatus } from "../components/agent-live-status";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import {
   classifyClipboardEntry,
@@ -191,17 +193,11 @@ const currentTurnAssistant = computed(() => {
   }
   return null;
 });
-const liveRunStatus = computed(() => {
-  const events = Object.values(store.runStates).filter((event) =>
-    event.sessionId === props.sessionId
-    && (event.status === "queued" || event.status === "running")
-    && !event.runId.startsWith("pending:"),
-  );
-  if (events.some((event) => event.status === "running")) return "running" as const;
-  if (events.some((event) => event.status === "queued")) return "queued" as const;
-  if (sessionProcessing.value) return "sending" as const;
-  return null;
-});
+const liveRunStatus = computed(() => resolveSessionLiveWorkStatus({
+  runStates: store.runStates,
+  sessionId: props.sessionId,
+  processing: sessionProcessing.value,
+}));
 const liveAnchor = computed(() => {
   const created = Date.parse(currentTurnAssistant.value?.createdAt ?? "");
   if (Number.isFinite(created) && created > 0 && created <= liveClock.value + 1000) return created;
@@ -311,6 +307,10 @@ function rememberChip(context: EditorSelectionContext) {
     isDirectory: context.isDirectory,
   });
 }
+
+defineExpose({
+  focus: () => composer.value?.focus(),
+});
 
 async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {
   if (file.workspaceId) {
@@ -635,13 +635,13 @@ watch(
           class="assistant-working"
           aria-live="polite"
         >
-          <LoaderCircle :size="14" />
+          <LoaderCircle :size="12" />
           <AgentAvatar
             v-for="item in workingAgents"
             :key="item.id"
             :value="item.avatar"
             :name="item.name"
-            :size="16"
+            :size="14"
           />
           <span class="assistant-working-lines">
             <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
@@ -654,13 +654,13 @@ watch(
     </div>
     <p v-else-if="showWorking" class="task-activity-empty">
       <span class="assistant-working" aria-live="polite">
-        <LoaderCircle :size="14" />
+        <LoaderCircle :size="12" />
         <AgentAvatar
           v-for="item in workingAgents"
           :key="item.id"
           :value="item.avatar"
           :name="item.name"
-          :size="16"
+          :size="14"
         />
         <span class="assistant-working-lines">
           <span v-for="(line, index) in workingLines" :key="index" class="assistant-working-line">
@@ -725,9 +725,7 @@ watch(
         >
           <Plus :size="16" />
         </UiButton>
-        <UiButton v-if="sessionRunning && !canSend" class="icon-button" type="button" :tip="t('chat.stop')" @click="stop">
-          <Square :size="14" />
-        </UiButton>
+        <ChatStopButton v-if="sessionRunning && !canSend" @click="stop" />
         <UiButton v-else class="ds-send-button send-button" type="submit" :tip="sessionRunning ? t('chat.enqueue') : t('chat.send')" :disabled="!canSend">
           <ArrowUp :size="16" />
         </UiButton>

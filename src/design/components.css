@@ -247,6 +247,48 @@
   cursor: not-allowed;
 }
 
+/* Stop Button：与发送钮同尺寸圆形，底部输入 / 已发送折叠 / 点开后 footer 共用 */
+.ds-stop-button {
+  --ds-stop-size: var(--control-height-md);
+  display: inline-grid;
+  place-items: center;
+  width: var(--ds-stop-size);
+  height: var(--ds-stop-size);
+  min-width: var(--ds-stop-size);
+  min-height: var(--ds-stop-size);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-text-strong);
+  box-shadow: none;
+  color: var(--color-bg);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    box-shadow var(--motion-duration-fast) var(--motion-ease);
+}
+.ds-stop-button svg {
+  color: inherit;
+  stroke: currentColor;
+  fill: currentColor;
+}
+.ds-stop-button:hover:not(:disabled),
+.ds-stop-button.is-hover {
+  background: color-mix(in srgb, var(--color-text-strong) 82%, var(--color-bg));
+  color: var(--color-bg);
+}
+.ds-stop-button:active:not(:disabled),
+.ds-stop-button.is-active {
+  background: color-mix(in srgb, var(--color-text-strong) 70%, var(--color-bg));
+}
+.ds-stop-button:focus-visible,
+.ds-stop-button.is-focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+
 /* Loading：保留宽度，文字透明，叠加旋转指示器 */
 .ui-button.is-loading,
 .ds-button.is-loading {
@@ -1284,8 +1326,7 @@ input.ds-checkbox[type="checkbox"]:disabled {
 }
 .ds-segmented-indicator {
   position: absolute;
-  top: var(--spacing-0-5);
-  bottom: var(--spacing-0-5);
+  top: 0;
   left: 0;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -1295,7 +1336,8 @@ input.ds-checkbox[type="checkbox"]:disabled {
 .ds-segmented-indicator.is-ready {
   transition:
     transform var(--motion-duration-normal) var(--motion-ease),
-    width var(--motion-duration-normal) var(--motion-ease);
+    width var(--motion-duration-normal) var(--motion-ease),
+    height var(--motion-duration-normal) var(--motion-ease);
 }
 [data-theme="dark"] .ds-segmented-indicator,
 :root:not([data-theme]) .ds-segmented-indicator {

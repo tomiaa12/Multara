@@ -767,46 +767,33 @@
 .user-prompt {
   width: 100%;
 }
-/* 折叠运行中：停止钮占右下角一行，正文右侧留白；点开编辑后浮钮藏起，恢复默认展开样式 */
+/* 折叠运行中：停止钮在右侧，正文右侧留白；点开编辑后浮钮藏起，由 footer 接手 */
 .chat-composer.user-prompt.is-running:not(.is-expanded):not(:focus-within) .composer-field {
-  padding-right: 40px;
+  padding-right: 32px;
 }
+/* 上下 inset 卡住高度，停止钮不会高出输入框；单行垂直居中，多行贴底 */
 .chat-composer.user-prompt > .user-prompt-stop-wrap {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
   z-index: 2;
   display: inline-flex;
-  align-items: center;
-  gap: 0;
-  max-width: calc(100% - 12px);
+  align-items: flex-end;
+  max-width: calc(100% - 8px);
   pointer-events: none;
 }
-.chat-composer.user-prompt > .user-prompt-stop-wrap .user-prompt-ellipsis {
-  flex: 0 0 auto;
-  margin-right: 2px;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  user-select: none;
+.chat-composer.user-prompt > .user-prompt-stop-wrap.is-single-line {
+  align-items: center;
 }
-.chat-composer.user-prompt .user-prompt-stop {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-strong);
-}
-.chat-composer.user-prompt > .user-prompt-stop-wrap .user-prompt-stop {
+.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button {
+  --ds-stop-size: 22px;
   pointer-events: auto;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-field) 80%, transparent);
 }
-.chat-composer.user-prompt .user-prompt-stop:hover {
-  background: var(--color-bg-secondary);
+/* 折叠态钮更小，中间方块跟着缩小（footer 里仍用默认 14） */
+.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button svg {
+  width: 9px;
+  height: 9px;
 }
 .chat-composer.user-prompt.is-expanded > .user-prompt-stop-wrap,
 .chat-composer.user-prompt:focus-within > .user-prompt-stop-wrap {
@@ -1318,8 +1305,14 @@
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
+/* 头像略大于状态行字号，仍贴齐基线 */
 .assistant-working .agent-avatar {
+  width: 14px;
+  height: 14px;
   margin: 0;
+}
+.assistant-working .agent-avatar-glyph {
+  font-size: 9px;
 }
 .assistant-working-lines {
   display: flex;
@@ -13699,8 +13692,11 @@ label.settings-row:hover {
 .req-run .req-run-workers:has(> .avatar-stack-empty) {
   display: none;
 }
-.req-run .req-run-workers .agent-live-label {
+.req-run .req-run-workers .agent-live-status {
   font-size: var(--font-size-sm);
+}
+.req-run .req-run-workers .agent-live-label {
+  font-size: inherit;
   font-weight: var(--font-weight-regular);
   color: var(--color-text-secondary);
 }

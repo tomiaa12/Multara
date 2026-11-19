@@ -372,6 +372,7 @@ function liveStageKeyForKind(kind: ToolKind): MessageKey {
 }
 
 function liveStageKey(items: TimelineItem[], status?: "queued" | "running" | "sending" | null): MessageKey {
+  // status=queued 仅表示「同会话已有人在跑、自己还在等」；调度占位的 queued 应由调用方收成 sending
   if (status === "queued") return "chat.queued";
   const latest = latestWorkItem(items);
   // 尚无 timeline：CLI / 会话还在拉起（对齐 Multica starting_up），不要直接「思考中」

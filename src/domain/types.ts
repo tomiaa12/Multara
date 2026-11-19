@@ -251,6 +251,9 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   defaultMode?: RunMode;
+  /** 最近一次已结束 run 的执行者；需求列表空闲态用，不依赖内存 runStates */
+  lastRunAgentId?: string | null;
+  lastRunAt?: string | null;
 }
 
 export type TaskStatus =
@@ -453,6 +456,20 @@ export interface MessageAttachmentInput {
 export interface MessageSourceInput {
   sourceType: "genui";
   meta: Record<string, unknown>;
+}
+
+/** 输入框上方排队消息；落库后刷新 / 重启可恢复 */
+export interface PersistedQueuedMessage {
+  id: string;
+  sessionId: string;
+  content: string;
+  attachments: MessageAttachmentInput[];
+  requestedMode?: RunMode;
+  priority?: boolean;
+  immediate?: boolean;
+  source?: MessageSourceInput;
+  feishuRecipients?: FeishuRecipientInput[];
+  createdAt: string;
 }
 
 /** 会话里的一个 Canvas 实例（方案 §5.3）。URL 不入库，由 ensureCanvasHosted 懒托管时给出 */

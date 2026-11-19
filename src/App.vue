@@ -4,6 +4,7 @@ import { playEnter } from "./ui/motion";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { rememberAppRoute } from "./views/dashboard/last-app-route";
 import { lastProjectsPath, rememberProjectsPath } from "./views/dashboard/last-projects-path";
 import { readStorage, writeStorage } from "./utils/safe-storage";
 import {
@@ -391,6 +392,7 @@ const projectsNavTo = ref(lastProjectsPath());
 watch(
   () => route.path,
   (path) => {
+    rememberAppRoute(path);
     rememberProjectsPath(path);
     if (path === "/projects" || path.startsWith("/projects/")) projectsNavTo.value = path;
   },

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../domain/types";
-import { collectLiveRuns } from "./agent-live-status";
+import {
+  collectLiveRuns,
+  resolveRunLiveWorkStatus,
+  resolveSessionLiveWorkStatus,
+} from "./agent-live-status";
 
 function run(runId: string, sessionId: string, agentId: string, status: RunEvent["status"]): RunEvent {
   return {
@@ -27,5 +31,47 @@ describe("collectLiveRuns", () => {
       c: run("pending:x", "s1", "ag2", "running"),
     };
     expect(collectLiveRuns(states, ["s1"])).toEqual([]);
+  });
+});
+
+describe("resolveSessionLiveWorkStatus", () => {
+  it("maps lone queued to sending (启动中), not queued", () => {
+    const states = { a: run("a", "s1", "ag1", "queued") };
+    expect(resolveSessionLiveWorkStatus({ runStates: states, sessionId: "s1" })).toBe("sending");
+  });
+
+  it("prefers running when present", () => {
+    const states = {
+      a: run("a", "s1", "ag1", "running"),
+      b: run("b", "s1", "ag2", "queued"),
+    };
+    expect(resolveSessionLiveWorkStatus({ runStates: states, sessionId: "s1" })).toBe("running");
+  });
+
+  it("falls back to sending while processing with no live runs", () => {
+    expect(resolveSessionLiveWorkStatus({
+      runStates: {},
+      sessionId: "s1",
+      processing: true,
+    })).toBe("sending");
+  });
+});
+
+describe("resolveRunLiveWorkStatus", () => {
+  it("shows starting for solo queued, queued only behind a running peer", () => {
+    const solo = { a: run("a", "s1", "ag1", "queued") };
+    expect(resolveRunLiveWorkStatus(
+      { runId: "a", sessionId: "s1", status: "queued" },
+      solo,
+    )).toBe("sending");
+
+    const behind = {
+      a: run("a", "s1", "ag1", "running"),
+      b: run("b", "s1", "ag2", "queued"),
+    };
+    expect(resolveRunLiveWorkStatus(
+      { runId: "b", sessionId: "s1", status: "queued" },
+      behind,
+    )).toBe("queued");
   });
 });

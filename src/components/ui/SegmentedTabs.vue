@@ -27,7 +27,7 @@ function showCount(item: SegmentedTab) {
 /* 选中底块：单独一个元素，切换时滑到新位置（而不是旧的消失、新的出现）。
  * 首次量到位置前不加过渡，避免从左上角滑进来。 */
 const navEl = ref<HTMLElement | null>(null);
-const indicator = ref<{ x: number; width: number } | null>(null);
+const indicator = ref<{ x: number; y: number; width: number; height: number } | null>(null);
 const indicatorReady = ref(false);
 let observer: ResizeObserver | null = null;
 
@@ -39,8 +39,12 @@ function measure() {
     return;
   }
   // 用 rect 差值而不是 offsetLeft：首次量时 nav 还没 position:relative，offsetParent 不是它
-  const x = active.getBoundingClientRect().left - nav.getBoundingClientRect().left - nav.clientLeft;
-  indicator.value = { x, width: active.offsetWidth };
+  // 换行时也要量 y/height，否则指示块会上下拉满整段（盖住第二行）
+  const navRect = nav.getBoundingClientRect();
+  const activeRect = active.getBoundingClientRect();
+  const x = activeRect.left - navRect.left - nav.clientLeft;
+  const y = activeRect.top - navRect.top - nav.clientTop;
+  indicator.value = { x, y, width: active.offsetWidth, height: active.offsetHeight };
   if (!indicatorReady.value) requestAnimationFrame(() => (indicatorReady.value = true));
 }
 
@@ -66,7 +70,11 @@ onBeforeUnmount(() => observer?.disconnect());
       class="ds-segmented-indicator"
       :class="{ 'is-ready': indicatorReady }"
       aria-hidden="true"
-      :style="{ width: `${indicator.width}px`, transform: `translateX(${indicator.x}px)` }"
+      :style="{
+        width: `${indicator.width}px`,
+        height: `${indicator.height}px`,
+        transform: `translate(${indicator.x}px, ${indicator.y}px)`,
+      }"
     />
     <button
       v-for="item in items"

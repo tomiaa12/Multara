@@ -22,6 +22,7 @@ import type {
   FeishuRecipientInput,
   MessageAttachmentInput,
   MessageSourceInput,
+  PersistedQueuedMessage,
   CanvasDefinition,
   CanvasInstance,
   CanvasListing,
@@ -2205,6 +2206,16 @@ export async function sendMessage(
     source: source ?? null,
     feishuRecipients: feishuRecipients ?? [],
   });
+}
+
+export async function listMessageQueue(): Promise<PersistedQueuedMessage[]> {
+  if (!hasBackend()) return [];
+  return invoke<PersistedQueuedMessage[]>("list_message_queue");
+}
+
+export async function saveMessageQueue(items: PersistedQueuedMessage[]): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("save_message_queue", { items });
 }
 
 export async function stopRun(runId: string): Promise<void> {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { ArrowUp, FileText, Square, X } from "@lucide/vue";
+import { ArrowUp, FileText, X } from "@lucide/vue";
 import ChatComposer from "./ChatComposer.vue";
+import ChatStopButton from "./ChatStopButton.vue";
 import ComposerPasteImages from "./ComposerPasteImages.vue";
 import type { SelectOption } from "../ui/select-types";
 import type {
@@ -59,6 +60,8 @@ const expanded = ref(false);
 const draftEmpty = ref(false);
 /** 收起为 3 行时内容是否被裁切（用于底部渐变提示） */
 const clipped = ref(false);
+/** 折叠态仅一行正文时，停止钮与输入区上下居中；多行仍贴右下角 */
+const singleLine = ref(true);
 const OVERFLOW_TOLERANCE_PX = 1;
 let clipObserver: ResizeObserver | undefined;
 
@@ -118,12 +121,16 @@ function measureClip() {
   const field = root.value?.querySelector<HTMLElement>(".composer-field");
   if (!field || expanded.value) {
     clipped.value = false;
+    singleLine.value = true;
     return;
   }
-  // 高度裁切，或正文横向顶到停止钮留白时，显示 …
-  const tall = field.scrollHeight > field.clientHeight + OVERFLOW_TOLERANCE_PX;
-  const wide = field.scrollWidth > field.clientWidth + OVERFLOW_TOLERANCE_PX;
-  clipped.value = tall || wide;
+  const lineHeight = Number.parseFloat(getComputedStyle(field).lineHeight) || 20;
+  // 有附件/图片时整块变高，停止钮继续贴右下，避免居中叠到附件上
+  singleLine.value =
+    field.scrollHeight <= lineHeight + OVERFLOW_TOLERANCE_PX
+    && pastedImages.value.length === 0
+    && files.value.length === 0;
+  clipped.value = field.scrollHeight > field.clientHeight + OVERFLOW_TOLERANCE_PX;
 }
 
 function bindClipObserver() {
@@ -202,7 +209,7 @@ watch(root, (el, _, onCleanup) => {
   });
 }, { flush: "post" });
 
-watch([expanded, () => props.message.content], () => {
+watch([expanded, () => props.message.content, pastedImages, files], () => {
   void nextTick(measureClip);
 });
 
@@ -265,30 +272,17 @@ watch(
       @target-change="emit('target-change', $event)"
       @click="onComposerClick"
     >
-      <!-- 折叠未聚焦：停止钮占右下角一行，正文右侧留白；点开编辑后藏起，由 footer 接手 -->
-      <div v-if="running && !viewOnly" class="user-prompt-stop-wrap">
-        <span v-if="clipped" class="user-prompt-ellipsis" aria-hidden="true">…</span>
-        <UiButton
-          type="button"
-          class="icon-button user-prompt-stop"
-          :tip="t('chat.stopTaskShortcut')"
-          @mousedown.prevent="emit('stop')"
-        >
-          <Square :size="14" />
-        </UiButton>
+      <!-- 折叠未聚焦：停止钮在右侧；单行与输入上下居中，多行贴右下；点开后由 footer 接手 -->
+      <div
+        v-if="running && !viewOnly"
+        class="user-prompt-stop-wrap"
+        :class="{ 'is-single-line': singleLine }"
+      >
+        <ChatStopButton @click="emit('stop')" />
       </div>
       <template #actions>
         <template v-if="!viewOnly">
-          <!-- mousedown.prevent：footer-on-focus 下若等 click，失焦会先把页脚 display:none，点击落空；与底栏 Ctrl+C 同走 stop -->
-          <UiButton
-            v-if="running"
-            type="button"
-            class="icon-button user-prompt-stop"
-            :tip="t('chat.stopTaskShortcut')"
-            @mousedown.prevent="emit('stop')"
-          >
-            <Square :size="14" />
-          </UiButton>
+          <ChatStopButton v-if="running" @click="emit('stop')" />
           <UiButton
             v-else
             class="ds-send-button send-button"
