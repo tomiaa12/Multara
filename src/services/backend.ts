@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { connectDevBackend, hasBackend, inTauri, invoke } from "./dev-backend";
 
 export { connectDevBackend, hasBackend, inTauri };
-import { visiblePromptText } from "../components/chat/composer-content";
+import { titleSeedText } from "../components/chat/composer-content";
 import { t } from "../i18n";
 import type {
   ActiveDiffData,
@@ -955,8 +955,8 @@ export async function generateChatSessionTitle(prompt: string): Promise<string> 
 }
 
 export function titleFromPrompt(content: string) {
-  // 用可见正文截断，去掉 [实体引用]/[指派要求]/文件围栏等协议串，避免标题变成「[实体引用] agent …」
-  const text = visiblePromptText(content).replace(/\s+/g, " ").trim();
+  // 优先人文文本截断；无正文时才用 chip 标签。避免 UUID 工作区目录名抢占标题。
+  const text = titleSeedText(content).replace(/\s+/g, " ").trim();
   return [...text].slice(0, 18).join("") || t("chat.newChatLabel");
 }
 

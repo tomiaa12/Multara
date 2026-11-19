@@ -171,8 +171,8 @@ defineExpose({ focusSearch: () => searchInput.value?.focus() });
                 @click="emit('select', row.id)"
                 @dblclick="startRename(row)"
               >
-                <LoaderCircle v-if="row.running" class="chat-session-row-icon process-spinner" :size="13" />
-                <MessageSquare v-else class="chat-session-row-icon" :size="13" />
+                <LoaderCircle v-if="row.running" class="chat-session-row-icon process-spinner" :size="15" />
+                <MessageSquare v-else class="chat-session-row-icon" :size="15" />
                 <span class="chat-session-row-title">{{ row.title }}</span>
                 <span v-if="row.awaitingPlan && !row.running" class="chat-session-row-dot" aria-hidden="true" />
                 <UiRelativeTime class="chat-session-row-time" :value="row.activityAt" empty="" />

@@ -248,6 +248,16 @@ export function visiblePromptText(content: string) {
     .trim();
 }
 
+/** 自动标题用：优先人文文本，避免文件夹/文件 chip（尤其是 UUID 目录名）抢占截断标题。 */
+export function titleSeedText(content: string) {
+  const textOnly = parseUserPromptNodes(content)
+    .flatMap((node) => (node.type === "text" ? [node.value] : []))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return textOnly || visiblePromptText(content);
+}
+
 export function parseUserPromptNodes(content: string): ComposerNode[] {
   const citations: ComposerChipNode[] = [];
   const visible = content

@@ -176,6 +176,12 @@ function destination(item: InboxItem) {
   return null;
 }
 
+/** 需求会话与任务一样可继续回复；无需求的聊天/频道通知仅在等待输入时可写。 */
+function composerHistoryOnly(item: InboxItem) {
+  if (item.projectId) return false;
+  return item.status !== "needs_input" && item.status !== "needs_permission";
+}
+
 async function select(item: InboxItem) {
   const same = selectedId.value === item.id;
   const wasUnread = !item.read;
@@ -355,7 +361,7 @@ onUnmounted(() => {
         :key="selected.id"
         class="inbox-thread"
         embedded
-        :history-view-only="selected.status !== 'needs_input' && selected.status !== 'needs_permission'"
+        :history-view-only="composerHistoryOnly(selected)"
         :session-id="selected.sessionId"
         :project-id="selected.projectId"
         :unread-message-id="dividerMessageId"
