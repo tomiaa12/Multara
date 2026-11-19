@@ -45,7 +45,11 @@ const mode = computed({
   get: () => store.sessionMode(props.sessionId),
   set: (value: RunMode) => {
     store.setSessionMode(props.sessionId, value).catch((cause: unknown) => {
-      store.reportComposerNotice(t("chat.mode.switchFailed", { message: cause instanceof Error ? cause.message : String(cause) }));
+      store.reportComposerNotice(
+        t("chat.mode.switchFailed", { message: cause instanceof Error ? cause.message : String(cause) }),
+        "",
+        props.sessionId,
+      );
     });
   },
 });

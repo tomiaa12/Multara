@@ -30,10 +30,12 @@ import {
 } from "../components/chat/message-speaker";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import {
+  classifyClipboardEntry,
   type OsDroppedEntry,
   type WorkspaceFileDragPayload,
 } from "../components/chat/workspace-file-drag";
 import * as backend from "../services/backend";
+import * as explorerBackend from "../services/explorer-backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { useAppStore } from "../stores/app";
@@ -46,13 +48,19 @@ const props = withDefaults(defineProps<{
   sessionId: string;
   agentId: string;
   thread?: boolean;
+  /** 任务详情：自管消息滚动，输入框固定在底部（对齐收件箱 thread）。 */
+  docked?: boolean;
   historyViewOnly?: boolean;
   unreadMessageId?: string | null;
 }>(), {
   thread: false,
+  docked: false,
   historyViewOnly: false,
   unreadMessageId: null,
 });
+
+/** 自管滚动：收件箱 thread 或任务详情 docked。 */
+const selfScroll = computed(() => props.thread || props.docked);
 
 const store = useAppStore();
 const diffStore = useDiffStore();
@@ -319,7 +327,49 @@ async function onDropWorkspace(file: WorkspaceFileDragPayload) {
 
 async function onDropOs(entries: OsDroppedEntry[]) {
   for (const entry of entries) {
+    if (entry.file?.type.startsWith("image/") && !entry.path) {
+      await pasteImages([entry.file]);
+      continue;
+    }
     const chip = await externalPathChip(entry, workspaces.value);
+    if (!chip) {
+      pasteError.value = t("chat.noRefFiles");
+      continue;
+    }
+    rememberChip(chip);
+  }
+}
+
+/** 剪贴板粘贴：与 ChatPanel 一致，图片走附件，路径走 chip。 */
+async function pasteOsFiles(entries: OsDroppedEntry[]) {
+  if (props.historyViewOnly) return;
+  let list = entries;
+  if (!list.length) {
+    const copied = await explorerBackend.readClipboardFiles().catch(() => []);
+    list = copied.map((file) => ({
+      path: file.path,
+      name: file.name || file.path.split(/[\\/]/).pop() || file.path,
+      isDirectory: file.isDirectory,
+    }));
+  }
+  for (const entry of list) {
+    const action = classifyClipboardEntry(entry, workspaces.value);
+    if (!action) {
+      if (!entry.path && !entry.file) pasteError.value = t("chat.noRefFiles");
+      continue;
+    }
+    if (action.kind === "image") {
+      await pasteImages([action.file]);
+      continue;
+    }
+    if (action.kind === "chip") {
+      rememberChip(await workspacePathChip(action));
+      continue;
+    }
+    const chip = await externalPathChip(
+      { path: action.path, name: action.name, isDirectory: action.kind === "folder" },
+      workspaces.value,
+    );
     if (!chip) {
       pasteError.value = t("chat.noRefFiles");
       continue;
@@ -445,18 +495,18 @@ function syncUserTurnPush(root: HTMLElement | null = logEl.value) {
   syncStickyUserTurnPush(root, true);
 }
 
-function onThreadScroll() {
-  if (!props.thread) return;
+function onDockedScroll() {
+  if (!selfScroll.value) return;
   const list = logEl.value;
   if (!list) return;
   if (!suppressScrollFollow) followBottom.value = listIsAtBottom(list);
   syncUserTurnPush(list);
 }
 
-/** 收件箱 thread：末轮撑满一屏后贴底，提问 sticky 停在视口顶（对齐 ChatPanel）。 */
-function pinThreadLastExchange(force = false) {
+/** 自管滚动：末轮撑满一屏后贴底，提问 sticky 停在视口顶（对齐 ChatPanel）。 */
+function pinDockedLastExchange(force = false) {
   const list = logEl.value;
-  if (!list || !props.thread) return;
+  if (!list || !selfScroll.value) return;
   if (!force && !followBottom.value) return;
   suppressScrollFollow = true;
   const last = syncStickyExchangeMinHeight(list, true);
@@ -473,9 +523,9 @@ function pinThreadLastExchange(force = false) {
   });
 }
 
-function revealThreadScroll(options: { force?: boolean; fromUserSend?: boolean } = {}) {
+function revealDockedScroll(options: { force?: boolean; fromUserSend?: boolean } = {}) {
   const list = logEl.value;
-  if (!list || !props.thread) return;
+  if (!list || !selfScroll.value) return;
   if (props.unreadMessageId && scrollListToMessage(list, props.unreadMessageId)) {
     followBottom.value = false;
     syncUserTurnPush(list);
@@ -488,11 +538,11 @@ function revealThreadScroll(options: { force?: boolean; fromUserSend?: boolean }
     syncUserTurnPush(list);
     return;
   }
-  pinThreadLastExchange(true);
+  pinDockedLastExchange(true);
   // 布局算完 min-height 后再贴一次，避免发送瞬间仍停在底部
   requestAnimationFrame(() => {
-    pinThreadLastExchange();
-    requestAnimationFrame(() => pinThreadLastExchange());
+    pinDockedLastExchange();
+    requestAnimationFrame(() => pinDockedLastExchange());
   });
 }
 
@@ -506,9 +556,9 @@ watch(() => props.sessionId, (sessionId) => {
 });
 
 watch(
-  () => [props.unreadMessageId, messages.value.length] as const,
+  () => [props.unreadMessageId, messages.value.length, selfScroll.value] as const,
   async (current, previous) => {
-    if (!props.thread) return;
+    if (!selfScroll.value) return;
     const lengthBefore = Number(previous?.[1] ?? 0);
     const lengthAfter = Number(current[1] ?? 0);
     const fromUserSend = lengthAfter > lengthBefore
@@ -516,7 +566,7 @@ watch(
     const historyFilled = lengthBefore === 0 && lengthAfter > 0;
     await nextTick();
     requestAnimationFrame(() => {
-      revealThreadScroll({
+      revealDockedScroll({
         force: historyFilled || !previous,
         fromUserSend,
       });
@@ -527,14 +577,14 @@ watch(
 </script>
 
 <template>
-  <div class="task-activity" :class="{ 'is-thread': thread }">
-    <!-- 任务详情由外层 task-issue-scroll 负责滚动；仅 inbox thread 自管滚动时挂 vs-scroll -->
+  <div class="task-activity" :class="{ 'is-thread': thread, 'is-docked': docked }">
+    <!-- thread / docked 自管滚动；否则由任务详情外层滚动（旧布局兜底） -->
     <div
       v-if="messages.length"
       ref="logEl"
       class="task-activity-log"
-      :class="{ 'vs-scroll': thread }"
-      @scroll.passive="onThreadScroll"
+      :class="{ 'vs-scroll': selfScroll }"
+      @scroll.passive="onDockedScroll"
     >
       <section
         v-for="group in messageGroups"
@@ -649,6 +699,7 @@ watch(
       @change="onChange"
       @submit="submit"
       @paste-image="pasteImages"
+      @paste-os-files="pasteOsFiles"
       @target-change="onTargetChange"
       @drop-workspace-file="onDropWorkspace"
       @drop-os-files="onDropOs"

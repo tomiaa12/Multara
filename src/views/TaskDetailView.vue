@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowLeft, ListTodo, PanelRight, Trash2 } from "@lucide/vue";
 import type { EditorSelectionContext } from "../domain/types";
@@ -9,7 +9,6 @@ import {
   parseUserPromptNodes,
   type ComposerNode,
 } from "../components/chat/composer-content";
-import { listIsAtBottom, syncStickyUserTurnPush } from "../components/chat/chat-scroll";
 import { useAppStore } from "../stores/app";
 import TaskActivity from "./TaskActivity.vue";
 import TaskIssueSide from "./TaskIssueSide.vue";
@@ -22,8 +21,6 @@ const sideOpen = ref(true);
 const error = ref("");
 const titleDraft = ref("");
 const titleEl = ref<HTMLTextAreaElement | null>(null);
-const issueScroll = ref<HTMLElement | null>(null);
-const followBottom = ref(true);
 const contexts = ref<EditorSelectionContext[]>([]);
 const descriptionNodes = ref<ComposerNode[]>([{ type: "text", value: "" }]);
 const descriptionKey = ref(0);
@@ -45,65 +42,6 @@ const showDescription = computed(() => {
   const content = opening.content.replace(/\u00a0/g, " ").trim();
   return description !== content;
 });
-
-let pinningIssue = false;
-
-function pinIssueToBottom(force = false) {
-  const element = issueScroll.value;
-  if (!element || (!force && !followBottom.value)) return;
-  pinningIssue = true;
-  element.scrollTop = element.scrollHeight;
-  requestAnimationFrame(() => {
-    if (issueScroll.value) {
-      issueScroll.value.scrollTop = issueScroll.value.scrollHeight;
-      syncStickyUserTurnPush(issueScroll.value, true);
-    }
-    pinningIssue = false;
-  });
-}
-
-function onIssueScroll() {
-  if (pinningIssue) return;
-  const element = issueScroll.value;
-  if (!element) return;
-  followBottom.value = listIsAtBottom(element);
-  syncStickyUserTurnPush(element, true);
-}
-
-watch(
-  () => task.value?.id,
-  () => {
-    followBottom.value = true;
-    void nextTick(() => pinIssueToBottom(true));
-  },
-  { immediate: true },
-);
-
-const followStream = watch(
-  () => {
-    const sessionId = task.value?.sessionId;
-    const list = sessionId ? store.messages[sessionId] ?? [] : [];
-    const last = list.at(-1);
-    return [sessionId, list.length, last?.content.length ?? 0] as const;
-  },
-  async (current, previous) => {
-    const sessionChanged = !previous || current[0] !== previous[0];
-    const lengthBefore = Number(previous?.[1] ?? 0);
-    const lengthAfter = current[1];
-    const historyFilled = lengthBefore === 0 && lengthAfter > 0;
-    const sessionId = typeof current[0] === "string" ? current[0] : "";
-    const list = sessionId ? store.messages[sessionId] ?? [] : [];
-    const fromUserSend = lengthAfter > lengthBefore
-      && list.slice(lengthBefore).some((message) => message.role === "user");
-    // 用户主动上滚后回答跟流不拽回底部；新发送仍强制贴底
-    if (fromUserSend) followBottom.value = true;
-    if (!sessionChanged && !historyFilled && !fromUserSend && !followBottom.value) return;
-    await nextTick();
-    pinIssueToBottom(sessionChanged || historyFilled || fromUserSend);
-  },
-);
-onDeactivated(() => followStream.pause());
-onActivated(() => followStream.resume());
 
 function fitTitle() {
   const el = titleEl.value;
@@ -179,7 +117,7 @@ async function removeTask() {
     </header>
     <div class="task-issue-body" :class="{ 'side-closed': !sideOpen }">
       <main class="task-issue-main">
-        <div ref="issueScroll" class="task-issue-scroll vs-scroll" @scroll.passive="onIssueScroll">
+        <div class="task-issue-hero">
           <div class="task-issue-content">
             <textarea
               ref="titleEl"
@@ -205,12 +143,12 @@ async function removeTask() {
               target-label=""
               target-avatar=""
             />
-            <section class="task-feed">
-              <header>{{ t('tasks.activity') }}</header>
-              <TaskActivity :session-id="task.sessionId" :agent-id="task.agentId" />
-            </section>
           </div>
         </div>
+        <section class="task-feed task-feed-fill">
+          <header>{{ t('tasks.activity') }}</header>
+          <TaskActivity docked :session-id="task.sessionId" :agent-id="task.agentId" />
+        </section>
         <p v-if="error" class="task-board-error">{{ error }}</p>
       </main>
       <TaskIssueSide v-if="sideOpen" :task-id="task.id" />

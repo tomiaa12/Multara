@@ -593,9 +593,13 @@ async function onSuggestSelect(item: ComposerSuggestItem) {
       } else if (item.id.startsWith("canvas-def:")) {
         await canvas.openRegistered(sessionId, item.id.slice("canvas-def:".length));
       }
-      store.reportComposerNotice(t("canvas.opened", { title: item.label }));
+      store.reportComposerNotice(t("canvas.opened", { title: item.label }), "", sessionId);
     } catch (cause) {
-      store.reportComposerNotice(cause instanceof Error ? cause.message : String(cause));
+      store.reportComposerNotice(
+        cause instanceof Error ? cause.message : String(cause),
+        "",
+        sessionId,
+      );
     }
     await nextTick();
     field.value?.focusEnd();

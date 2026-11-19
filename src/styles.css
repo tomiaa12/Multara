@@ -767,23 +767,50 @@
 .user-prompt {
   width: 100%;
 }
-/* 折叠态：停止钮浮在右上角；聚焦展开后 footer 自带停止，浮钮藏起避免重复 */
-.chat-composer.user-prompt.is-running {
-  padding-right: 36px;
+/* 折叠运行中：停止钮占右下角一行，正文右侧留白；点开编辑后浮钮藏起，恢复默认展开样式 */
+.chat-composer.user-prompt.is-running:not(.is-expanded):not(:focus-within) .composer-field {
+  padding-right: 40px;
 }
-.chat-composer.user-prompt > .user-prompt-stop {
+.chat-composer.user-prompt > .user-prompt-stop-wrap {
   position: absolute;
-  top: 6px;
   right: 6px;
+  bottom: 6px;
   z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  max-width: calc(100% - 12px);
+  pointer-events: none;
 }
-.chat-composer.user-prompt.is-expanded > .user-prompt-stop,
-.chat-composer.user-prompt:focus-within > .user-prompt-stop {
+.chat-composer.user-prompt > .user-prompt-stop-wrap .user-prompt-ellipsis {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  user-select: none;
+}
+.chat-composer.user-prompt .user-prompt-stop {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-strong);
+}
+.chat-composer.user-prompt > .user-prompt-stop-wrap .user-prompt-stop {
+  pointer-events: auto;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-field) 80%, transparent);
+}
+.chat-composer.user-prompt .user-prompt-stop:hover {
+  background: var(--color-bg-secondary);
+}
+.chat-composer.user-prompt.is-expanded > .user-prompt-stop-wrap,
+.chat-composer.user-prompt:focus-within > .user-prompt-stop-wrap {
   display: none;
-}
-.chat-composer.user-prompt.is-expanded,
-.chat-composer.user-prompt:focus-within {
-  padding-right: 6px;
 }
 .reask-banner {
   display: flex;
@@ -9925,6 +9952,11 @@ body.is-dragging-task * {
   min-height: 0;
   min-width: 0;
 }
+.task-issue-hero {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: var(--spacing-1) clamp(var(--spacing-4), 4vw, var(--spacing-10)) 0;
+}
 .task-issue-scroll {
   flex: 1;
   min-height: 0;
@@ -10116,17 +10148,38 @@ body.is-dragging-task * {
 .task-feed {
   margin-top: 28px;
 }
+.task-feed-fill {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 0 clamp(var(--spacing-4), 4vw, var(--spacing-10)) 0;
+}
 .task-feed > header {
+  flex: 0 0 auto;
   margin-bottom: 12px;
   color: var(--color-text-strong);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
+}
+.task-feed-fill > header {
+  width: min(720px, 100%);
+  margin-left: auto;
+  margin-right: auto;
 }
 .task-activity {
   display: grid;
   gap: 12px;
   min-width: 0;
   max-width: 100%;
+}
+.task-feed-fill > .task-activity {
+  flex: 1 1 0;
+  min-height: 0;
+  width: min(720px, 100%);
+  margin: 0 auto;
 }
 .task-activity-empty {
   color: var(--color-text-tertiary);
@@ -10207,6 +10260,17 @@ body.is-dragging-task * {
     grid-template-rows: auto auto;
   }
   .task-issue-scroll {
+    overflow: visible;
+  }
+  .task-feed-fill {
+    flex: none;
+  }
+  .task-activity.is-docked {
+    height: auto;
+    overflow: visible;
+  }
+  .task-activity.is-docked .task-activity-log {
+    flex: none;
     overflow: visible;
   }
   .task-issue-side {
@@ -11080,7 +11144,8 @@ body.is-dragging-inbox-float * {
   min-height: 0;
   height: 100%;
 }
-.task-activity.is-thread {
+.task-activity.is-thread,
+.task-activity.is-docked {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -11088,28 +11153,53 @@ body.is-dragging-inbox-float * {
   gap: 0;
   overflow: hidden;
 }
-.task-activity.is-thread .task-activity-log {
+.task-activity.is-thread .task-activity-log,
+.task-activity.is-docked .task-activity-log {
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
+}
+.task-activity.is-thread .task-activity-log {
   padding: 16px clamp(16px, 5vw, 72px);
 }
-/* 收件箱 thread：末轮撑满列表内容区，发送后贴底时提问 sticky 停在视口顶 */
-.task-activity.is-thread .message-exchange:last-child {
+.task-activity.is-docked .task-activity-log {
+  padding: 0 0 16px;
+}
+/* 收件箱 thread / 任务详情 docked：末轮撑满列表内容区，发送后贴底时提问 sticky 停在视口顶 */
+.task-activity.is-thread .message-exchange:last-child,
+.task-activity.is-docked .message-exchange:last-child {
   box-sizing: border-box;
   min-height: 100%;
 }
 .task-activity.is-thread > .chat-composer,
-.task-activity.is-thread > .task-create-error {
+.task-activity.is-thread > .task-create-error,
+.task-activity.is-docked > .chat-composer,
+.task-activity.is-docked > .task-create-error,
+.task-activity.is-docked > .chat-question-carousel {
   position: relative;
   z-index: 3;
   flex: 0 0 auto;
+}
+.task-activity.is-thread > .chat-composer,
+.task-activity.is-thread > .task-create-error {
   width: min(720px, calc(100% - 32px));
   margin: 0 auto 14px;
 }
-.task-activity.is-thread > .chat-composer .composer-field {
+.task-activity.is-docked > .chat-composer,
+.task-activity.is-docked > .task-create-error,
+.task-activity.is-docked > .chat-question-carousel {
+  width: 100%;
+  margin: 0 0 14px;
+}
+/* 无消息时仍把输入框顶到视口底 */
+.task-activity.is-thread > .task-activity-empty,
+.task-activity.is-docked > .task-activity-empty {
+  flex: 1 1 auto;
+}
+.task-activity.is-thread > .chat-composer .composer-field,
+.task-activity.is-docked > .chat-composer .composer-field {
   -webkit-user-select: text;
   user-select: text;
 }

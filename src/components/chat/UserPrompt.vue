@@ -120,7 +120,10 @@ function measureClip() {
     clipped.value = false;
     return;
   }
-  clipped.value = field.scrollHeight > field.clientHeight + OVERFLOW_TOLERANCE_PX;
+  // 高度裁切，或正文横向顶到停止钮留白时，显示 …
+  const tall = field.scrollHeight > field.clientHeight + OVERFLOW_TOLERANCE_PX;
+  const wide = field.scrollWidth > field.clientWidth + OVERFLOW_TOLERANCE_PX;
+  clipped.value = tall || wide;
 }
 
 function bindClipObserver() {
@@ -262,23 +265,25 @@ watch(
       @target-change="emit('target-change', $event)"
       @click="onComposerClick"
     >
-      <!-- 折叠未聚焦时 footer 会藏起；运行中单独浮一个停止钮，点进编辑后由 footer 接手 -->
-      <UiButton
-        v-if="running && !viewOnly"
-        type="button"
-        class="icon-button user-prompt-stop"
-        :tip="t('chat.stopTaskShortcut')"
-        @mousedown.prevent="emit('stop')"
-      >
-        <Square :size="14" />
-      </UiButton>
+      <!-- 折叠未聚焦：停止钮占右下角一行，正文右侧留白；点开编辑后藏起，由 footer 接手 -->
+      <div v-if="running && !viewOnly" class="user-prompt-stop-wrap">
+        <span v-if="clipped" class="user-prompt-ellipsis" aria-hidden="true">…</span>
+        <UiButton
+          type="button"
+          class="icon-button user-prompt-stop"
+          :tip="t('chat.stopTaskShortcut')"
+          @mousedown.prevent="emit('stop')"
+        >
+          <Square :size="14" />
+        </UiButton>
+      </div>
       <template #actions>
         <template v-if="!viewOnly">
           <!-- mousedown.prevent：footer-on-focus 下若等 click，失焦会先把页脚 display:none，点击落空；与底栏 Ctrl+C 同走 stop -->
           <UiButton
             v-if="running"
             type="button"
-            class="icon-button"
+            class="icon-button user-prompt-stop"
             :tip="t('chat.stopTaskShortcut')"
             @mousedown.prevent="emit('stop')"
           >
