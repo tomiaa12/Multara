@@ -84,9 +84,9 @@ const form = reactive({
   branchPrefix: "feat",
   autoUpdate: true,
   updateProxy: "",
-  formatOnSave: false,
   stickyScroll: true,
   wordWrap: false,
+  autoSaveOnFocusLoss: false,
   runTimeoutMinutes: 0,
   permissionMode: "bypass",
   dictationEnabled: true,
@@ -211,9 +211,9 @@ watch(
     gitTestMessage.value = "";
     form.updateProxy = settings.updateProxy ?? "";
     setUpdateProxy(form.updateProxy);
-    form.formatOnSave = settings.formatOnSave === "true";
     form.stickyScroll = settings.stickyScroll !== "false";
     form.wordWrap = settings.wordWrap === "true";
+    form.autoSaveOnFocusLoss = settings.autoSaveOnFocusLoss === "true";
     form.runTimeoutMinutes = Number(settings.runTimeoutMinutes ?? 0);
     form.permissionMode = settings.permissionMode === "prompt" || settings.permissionMode === "ask" ? "prompt" : "bypass";
     form.dictationEnabled = settings.dictationEnabled !== "false";
@@ -262,9 +262,9 @@ watch(
     form.branchPrefix,
     form.autoUpdate,
     form.updateProxy,
-    form.formatOnSave,
     form.stickyScroll,
     form.wordWrap,
+    form.autoSaveOnFocusLoss,
     form.runTimeoutMinutes,
     form.permissionMode,
     form.dictationEnabled,
@@ -315,9 +315,9 @@ function settingsPayload() {
     branchPrefix: form.branchPrefix.trim() || "feat",
     autoUpdate: String(form.autoUpdate),
     updateProxy: form.updateProxy.trim(),
-    formatOnSave: String(form.formatOnSave),
     stickyScroll: String(form.stickyScroll),
     wordWrap: String(form.wordWrap),
+    autoSaveOnFocusLoss: String(form.autoSaveOnFocusLoss),
     ...integerSettingEntry("runTimeoutMinutes", form.runTimeoutMinutes, RUN_TIMEOUT_MIN_MINUTES, RUN_TIMEOUT_MAX_MINUTES),
     permissionMode: form.permissionMode,
     dictationEnabled: String(form.dictationEnabled),
@@ -544,8 +544,8 @@ onBeforeUnmount(() => {
             />
           </div>
           <label class="settings-row">
-            <div><strong>{{ t("settings.formatOnSave") }}</strong><p>{{ t("settings.formatOnSaveHint") }}</p></div>
-            <UiInput v-model="form.formatOnSave" class="ds-switch" type="checkbox" />
+            <div><strong>{{ t("settings.autoSaveOnFocusLoss") }}</strong><p>{{ t("settings.autoSaveOnFocusLossHint") }}</p></div>
+            <UiInput v-model="form.autoSaveOnFocusLoss" class="ds-switch" type="checkbox" />
           </label>
           <label class="settings-row">
             <div><strong>{{ t("settings.stickyScroll") }}</strong><p>{{ t("settings.stickyScrollHint") }}</p></div>

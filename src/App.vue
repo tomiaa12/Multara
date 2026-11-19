@@ -232,6 +232,7 @@ let stopWindowClose: (() => void) | undefined;
 let stopUnsavedPrompt: (() => void) | undefined;
 let stopConfirmDialog: (() => void) | undefined;
 let stopMenuWordWrap: UnlistenFn | undefined;
+let stopMenuAutoSaveOnFocusLoss: UnlistenFn | undefined;
 let stopMenuClose: UnlistenFn | undefined;
 
 function onPageUnload(event: BeforeUnloadEvent) {
@@ -482,6 +483,13 @@ onMounted(async () => {
         // 菜单勾选已变；持久化失败时下次启动沿用旧值。
       }
     });
+    stopMenuAutoSaveOnFocusLoss = await listen<boolean>("menu-auto-save-on-focus-loss", async ({ payload }) => {
+      try {
+        await store.saveSettings({ autoSaveOnFocusLoss: String(payload) });
+      } catch {
+        // 菜单勾选已变；持久化失败时下次启动沿用旧值。
+      }
+    });
   } catch {
     // Browser preview has no native menu.
   }
@@ -524,6 +532,7 @@ onBeforeUnmount(() => {
   stopConfirmDialog?.();
   stopMenuClose?.();
   stopMenuWordWrap?.();
+  stopMenuAutoSaveOnFocusLoss?.();
   stopWindowClose?.();
   stopWindowResize?.();
 });

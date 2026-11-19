@@ -3037,6 +3037,8 @@ pub async fn save_settings(
     let reload_webhook = settings.contains_key("webhookPort");
     #[cfg(target_os = "macos")]
     let word_wrap = settings.get("wordWrap").cloned();
+    #[cfg(target_os = "macos")]
+    let auto_save_on_focus_loss = settings.get("autoSaveOnFocusLoss").cloned();
     let skill_root = app
         .path()
         .app_data_dir()
@@ -3059,6 +3061,10 @@ pub async fn save_settings(
     if let Some(value) = word_wrap {
         crate::macos_menu::sync_word_wrap(&app, value == "true");
     }
+    #[cfg(target_os = "macos")]
+    if let Some(value) = auto_save_on_focus_loss {
+        crate::macos_menu::sync_auto_save_on_focus_loss(&app, value == "true");
+    }
     Ok(saved)
 }
 
@@ -3078,9 +3084,9 @@ fn save_settings_rows(
             "shareDiagnostics",
             "runTimeoutMinutes",
             "webhookPort",
-            "formatOnSave",
             "stickyScroll",
             "wordWrap",
+            "autoSaveOnFocusLoss",
             "explorerSettings",
             "branchPrefix",
             "branchPrompt",
@@ -7171,7 +7177,7 @@ fn validate_settings(settings: &HashMap<String, String>) -> Result<(), String> {
             return Err(tr!("无效的资源管理器设置"));
         }
     }
-    for key in ["formatOnSave", "stickyScroll", "wordWrap"] {
+    for key in ["stickyScroll", "wordWrap", "autoSaveOnFocusLoss"] {
         if settings
             .get(key)
             .is_some_and(|value| !["true", "false"].contains(&value.as_str()))

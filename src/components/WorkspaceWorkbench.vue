@@ -799,9 +799,9 @@ const dirty = computed(() =>
     activeFile.value && activeFile.value.content !== originalContent.value,
   ),
 );
-const formatOnSave = computed(() => store.data?.settings.formatOnSave === "true");
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
 const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
+const autoSaveOnFocusLoss = computed(() => store.data?.settings.autoSaveOnFocusLoss === "true");
 const activeEditorOptions = computed(() => {
   const file = activeFile.value;
   if (!file) return { insertSpaces: true, tabSize: 4, eol: "LF" as EditorEol };
@@ -2545,9 +2545,8 @@ const markdownToggleVisible = computed(() =>
 const markdownMode = computed(() => {
   const file = activeFile.value;
   if (!file || !markdownToggleVisible.value) return "source";
-  // HTML 默认直接看渲染效果，Markdown 默认看源码。
-  return markdownModes.value[editorLanguageKey(file.workspaceId, file.path)]
-    ?? (isHtmlFile(file) ? "preview" : "source");
+  // HTML / Markdown 默认都看源码，可手动切到 Preview。
+  return markdownModes.value[editorLanguageKey(file.workspaceId, file.path)] ?? "source";
 });
 
 function setMarkdownMode(mode: "preview" | "source") {
@@ -2842,7 +2841,20 @@ async function goPendingDiffFile(delta: number) {
 }
 
 function activateEditorTab(tab: EditorTab) {
+  const previous = activeEditorTab();
   flushActiveEditorTab();
+  // 切标签时 Monaco 往往不 blur；对齐 VS Code onFocusChange，离开当前编辑器就落盘。
+  if (
+    autoSaveOnFocusLoss.value
+    && !props.preview
+    && previous
+    && tabKey(previous) !== tabKey(tab)
+    && !isVirtualTab(previous)
+    && !previous.file.readOnly
+    && isEditorTabDirty(previous)
+  ) {
+    void saveTab(previous);
+  }
   ignoreDirtyPin.value = true;
   const key = tabKey(tab);
   activeEditorKey.value = key;
@@ -3174,6 +3186,37 @@ function closeAllEditorTabs() {
 async function saveAllOpenEditors() {
   for (const tab of [...dirtyEditorTabs()]) {
     if (!(await saveTab(tab))) return;
+  }
+}
+
+let autoSaveFocusTimer = 0;
+let autoSaveInFlight: Promise<void> | null = null;
+
+function scheduleAutoSaveOnFocusLoss() {
+  if (!autoSaveOnFocusLoss.value || props.preview) return;
+  window.clearTimeout(autoSaveFocusTimer);
+  autoSaveFocusTimer = window.setTimeout(() => {
+    void runAutoSaveOnFocusLoss();
+  }, 50);
+}
+
+async function runAutoSaveOnFocusLoss() {
+  if (!autoSaveOnFocusLoss.value || props.preview || autoSaveInFlight) return;
+  const tabs = dirtyEditorTabs().filter((tab) => !isVirtualTab(tab));
+  if (!tabs.length) return;
+  autoSaveInFlight = (async () => {
+    for (const tab of tabs) {
+      if (!(await saveTab(tab))) break;
+    }
+  })().finally(() => {
+    autoSaveInFlight = null;
+  });
+  await autoSaveInFlight;
+}
+
+function onWindowFocusLoss() {
+  if (document.visibilityState === "hidden" || !document.hasFocus()) {
+    scheduleAutoSaveOnFocusLoss();
   }
 }
 
@@ -4191,10 +4234,6 @@ async function saveTab(tab: EditorTab) {
 async function saveFile() {
   const tab = activeEditorTab();
   if (!tab || !activeFile.value || activeFile.value.readOnly) return;
-  if (formatOnSave.value) {
-    const action = codeEditor.value?.getAction("editor.action.formatDocument");
-    if (action) await action.run();
-  }
   flushActiveEditorTab();
   pinEditorTab(tab);
   if (!dirty.value || saving.value) return;
@@ -5233,6 +5272,8 @@ function onEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   codeEditor.value = markRaw(editor);
   bindEditorZoom(editor, monaco);
   editor.onDidChangeCursorPosition(() => syncEditorDocument());
+  // 对齐 VS Code onFocusChange：离开整块编辑器（不是点开查找框）时保存。
+  editor.onDidBlurEditorWidget(() => scheduleAutoSaveOnFocusLoss());
   editor.addAction({
     id: "multara-save",
     label: t("workbench.shortcut.save"),
@@ -5537,6 +5578,8 @@ onMounted(() => {
   });
   stopUnsavedEditor = registerUnsavedEditor(unsavedEditorOwner);
   window.addEventListener("resize", layoutEditor);
+  window.addEventListener("blur", onWindowFocusLoss);
+  document.addEventListener("visibilitychange", onWindowFocusLoss);
   bindGlobalKeys();
   resizePanel("left", 0);
   resizePanel("right", 0);
@@ -5556,6 +5599,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.clearTimeout(autoSaveFocusTimer);
+  window.removeEventListener("blur", onWindowFocusLoss);
+  document.removeEventListener("visibilitychange", onWindowFocusLoss);
   unregisterCloseSurface?.();
   unregisterCloseSurface = null;
   stopOsHover();
