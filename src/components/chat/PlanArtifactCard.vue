@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import UiCollapse from "../ui/UiCollapse.vue";
 import { ChevronRight, ClipboardList, LoaderCircle } from "@lucide/vue";
 import { useAppStore } from "../../stores/app";
 import { useDiffStore } from "../../stores/diff";
@@ -73,9 +74,11 @@ async function undoChanges() {
         <li v-for="step in previewSteps" :key="step.id">{{ step.text }}</li>
         <li v-if="hiddenStepCount > 0" class="is-more">{{ t("chat.plan.moreSteps", { n: hiddenStepCount }) }}</li>
       </ol>
-      <div v-if="expanded" class="plan-artifact-markdown vs-scroll">
-        <RichContent :content="plan.markdown" />
-      </div>
+      <UiCollapse>
+        <div v-if="expanded" class="plan-artifact-markdown vs-scroll">
+          <RichContent :content="plan.markdown" />
+        </div>
+      </UiCollapse>
       <button type="button" class="plan-artifact-toggle" :aria-expanded="expanded" @click="expanded = !expanded">
         <ChevronRight :size="13" />
         <span>{{ expanded ? t("chat.plan.collapse") : t("chat.plan.expand") }}</span>

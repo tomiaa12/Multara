@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 输入框上方的 Canvas 入口（方案 §5.7）：没有实例不显示；1 个显示标题和状态；多个显示数量，点开列表，每项可关闭。
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import type { CanvasInstance } from "../../domain/types";
 import { useCanvasStore } from "../../stores/canvas";
 import { t } from "../../i18n";
@@ -72,7 +73,7 @@ function togglePin(item: CanvasInstance) {
       </template>
       <span v-else>{{ t("canvas.pillMany", { count: list.length }) }}</span>
     </button>
-    <ul v-if="open && !single" class="canvas-pill-menu" role="menu">
+    <ul v-motion="'dropup'" v-if="open && !single" class="canvas-pill-menu" role="menu">
       <li v-for="item in list" :key="`${item.sessionId}/${item.instanceId}`" role="none">
         <button type="button" role="menuitem" class="canvas-pill-item" @click="pick(item)">
           <span class="canvas-pill-title">{{ item.title }}</span>

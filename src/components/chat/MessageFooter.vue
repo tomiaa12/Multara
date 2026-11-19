@@ -64,7 +64,10 @@ async function forkFromHere() {
       :aria-label="copied ? t('chat.copied') : t('chat.copyMessage')"
       @click="copyMessage"
     >
-      <Check v-if="copied" :size="13" /><Copy v-else :size="13" />
+      <!-- 复制 → 对勾：缩放互换 -->
+      <Transition name="ds-scale" mode="out-in">
+        <Check v-if="copied" :size="13" /><Copy v-else :size="13" />
+      </Transition>
     </UiButton>
     <UiButton
       v-if="canFork"

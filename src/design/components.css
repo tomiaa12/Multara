@@ -1268,6 +1268,40 @@ input.ds-checkbox[type="checkbox"]:disabled {
   background: var(--color-surface-active);
   box-shadow: none;
 }
+/* SegmentedTabs 组件：选中底块是独立元素，切换时滑动；按钮自身不再画底色 */
+.ds-segmented.has-indicator {
+  position: relative;
+}
+.ds-segmented.has-indicator > button {
+  position: relative;
+  z-index: 1;
+  transition: color var(--motion-duration-fast) var(--motion-ease);
+}
+.ds-segmented.has-indicator > button.active,
+.ds-segmented.has-indicator > button.active:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+.ds-segmented-indicator {
+  position: absolute;
+  top: var(--spacing-0-5);
+  bottom: var(--spacing-0-5);
+  left: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--color-border);
+  pointer-events: none;
+}
+.ds-segmented-indicator.is-ready {
+  transition:
+    transform var(--motion-duration-normal) var(--motion-ease),
+    width var(--motion-duration-normal) var(--motion-ease);
+}
+[data-theme="dark"] .ds-segmented-indicator,
+:root:not([data-theme]) .ds-segmented-indicator {
+  background: var(--color-surface-active);
+  box-shadow: none;
+}
 .ds-segmented em {
   margin: 0;
   color: var(--color-text-tertiary);
@@ -2180,9 +2214,18 @@ form.modal:has(> .ds-scroll-fade) {
   white-space: pre-wrap;
   opacity: 0;
   pointer-events: none;
+  transform: translateY(var(--ds-tooltip-offset, 2px));
 }
+.ds-tooltip[data-placement^="bottom"] {
+  --ds-tooltip-offset: -2px;
+}
+/* 定位量完再显示（is-ready），这时淡入并归位；退场由 v-motion 残影淡出 */
 .ds-tooltip.is-ready {
   opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .ds-toast {

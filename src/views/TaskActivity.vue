@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, provide, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { chatMessagesKey } from "../components/chat/context-usage";
 import { ArrowUp, LoaderCircle, Plus, Square } from "@lucide/vue";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
@@ -629,6 +630,7 @@ watch(
           />
         </template>
         <div
+          v-motion="{ enter: 'fade' }"
           v-if="showWorking && group.id === lastGroupId"
           class="assistant-working"
           aria-live="polite"

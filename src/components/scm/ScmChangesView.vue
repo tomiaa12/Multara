@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
+import UiCollapse from "../ui/UiCollapse.vue";
 import { t } from "../../i18n";
 import type { GitRepositoryStatus, MergeSession, Workspace } from "../../domain/types";
 import FileTypeIcon from "../FileTypeIcon.vue";
@@ -480,106 +482,108 @@ function onPrimary() {
         </button></UiTooltip>
       </div>
     </div>
-    <div v-if="expanded" class="scm-repository-body">
-      <div v-if="workspace.kind !== 'git'" class="scm-folder-card">
-        {{ t("scm.notGit") }}<br />
-        {{ workspaceModeHint(workspace) }}
+    <UiCollapse>
+      <div v-if="expanded" class="scm-repository-body">
+        <div v-if="workspace.kind !== 'git'" class="scm-folder-card">
+          {{ t("scm.notGit") }}<br />
+          {{ workspaceModeHint(workspace) }}
+        </div>
+        <template v-else-if="repository">
+          <div v-if="showRealBranchWarn" class="scm-direct-warn">
+            <p>{{ t("scm.editingRealBranch", { branch: repository.branch }) }}</p>
+            <UiButton
+              variant="ghost"
+              size="small"
+              :tip="t('scm.editingRealBranchDismissTitle')"
+              @click="dismissRealBranchWarn"
+            >
+              {{ t("scm.editingRealBranchDismiss") }}
+            </UiButton>
+          </div>
+          <div v-if="mergeSession" class="scm-merge-session">
+            <div class="scm-merge-session-title">
+              <Codicon name="git-merge" :size="16" />
+              <span>
+                {{ t("scm.mergeProgress", { source: mergeSession.sourceLabel, target: mergeTargetLabel }) }}
+              </span>
+            </div>
+            <p>
+              {{ unresolvedCount ? t("scm.conflictsLeft", { count: unresolvedCount }) : t("scm.conflictsDone") }}
+              · {{ t("scm.mergeCleanup", { action: mergeSession.push ? t("scm.mergeThenPush") : t("scm.mergeThenLocal") }) }}
+            </p>
+            <div v-if="!readonly" class="scm-merge-session-actions">
+              <UiButton
+                size="small"
+                :disabled="Boolean(busy)"
+                :tip="scmBusyTitle(busy, `abort-merge:${workspace.id}`, t('scm.abortMergeTitle'))"
+                @click="emit('abortMergeSession')"
+              >
+                {{ t("scm.abortMerge") }}
+              </UiButton>
+              <UiButton
+                v-if="mergeSession.push && !unresolvedCount"
+                size="small"
+                :disabled="Boolean(busy)"
+                :tip="scmBusyTitle(busy, `pull-merge:${workspace.id}`, t('scm.pullLatestTitle'))"
+                @click="emit('pullMerge')"
+              >
+                {{ t("scm.pullLatest") }}
+              </UiButton>
+              <UiButton
+                v-if="unresolvedCount"
+                size="small"
+                :disabled="Boolean(busy)"
+                :tip="t('scm.aiResolveTitle')"
+                @click="emit('resolveWithAi')"
+              >
+                {{ t("scm.aiResolve") }}
+              </UiButton>
+              <UiButton
+                size="small"
+                variant="primary"
+                :disabled="Boolean(busy)"
+                :tip="scmBusyTitle(busy, `finish-merge:${workspace.id}`, t('scm.finishMergeTitle'))"
+                @click="emit('finishMerge')"
+              >
+                {{ t("scm.finishMerge") }}
+              </UiButton>
+            </div>
+          </div>
+          <ScmCommitBox
+            v-if="!readonly && !mergeSession"
+            v-model="message"
+            :workspace-id="workspace.id"
+            :repository="repository"
+            :action="action"
+            :busy="busy"
+            :can-commit="canCommit"
+            :can-primary="canPrimary"
+            @submit="onPrimary"
+            @menu="openAt($event, 'commit')"
+            @generate="emit('generate')"
+            @settings="emit('openSettings', 'commit')"
+          />
+          <ScmResourceList
+            :workspace-id="workspace.id"
+            :groups="groups"
+            :view-mode="viewMode"
+            :busy="busy"
+            :readonly="readonly"
+            @open="emit('open', $event)"
+            @open-file="emit('openFile', $event)"
+            @stage="emit('stage', $event)"
+            @discard="emit('discard', $event)"
+            @attach="emit('attach', $event)"
+          />
+        </template>
+        <p v-else-if="loading" class="tree-empty">{{ t("scm.loadingRepo") }}</p>
       </div>
-      <template v-else-if="repository">
-        <div v-if="showRealBranchWarn" class="scm-direct-warn">
-          <p>{{ t("scm.editingRealBranch", { branch: repository.branch }) }}</p>
-          <UiButton
-            variant="ghost"
-            size="small"
-            :tip="t('scm.editingRealBranchDismissTitle')"
-            @click="dismissRealBranchWarn"
-          >
-            {{ t("scm.editingRealBranchDismiss") }}
-          </UiButton>
-        </div>
-        <div v-if="mergeSession" class="scm-merge-session">
-          <div class="scm-merge-session-title">
-            <Codicon name="git-merge" :size="16" />
-            <span>
-              {{ t("scm.mergeProgress", { source: mergeSession.sourceLabel, target: mergeTargetLabel }) }}
-            </span>
-          </div>
-          <p>
-            {{ unresolvedCount ? t("scm.conflictsLeft", { count: unresolvedCount }) : t("scm.conflictsDone") }}
-            · {{ t("scm.mergeCleanup", { action: mergeSession.push ? t("scm.mergeThenPush") : t("scm.mergeThenLocal") }) }}
-          </p>
-          <div v-if="!readonly" class="scm-merge-session-actions">
-            <UiButton
-              size="small"
-              :disabled="Boolean(busy)"
-              :tip="scmBusyTitle(busy, `abort-merge:${workspace.id}`, t('scm.abortMergeTitle'))"
-              @click="emit('abortMergeSession')"
-            >
-              {{ t("scm.abortMerge") }}
-            </UiButton>
-            <UiButton
-              v-if="mergeSession.push && !unresolvedCount"
-              size="small"
-              :disabled="Boolean(busy)"
-              :tip="scmBusyTitle(busy, `pull-merge:${workspace.id}`, t('scm.pullLatestTitle'))"
-              @click="emit('pullMerge')"
-            >
-              {{ t("scm.pullLatest") }}
-            </UiButton>
-            <UiButton
-              v-if="unresolvedCount"
-              size="small"
-              :disabled="Boolean(busy)"
-              :tip="t('scm.aiResolveTitle')"
-              @click="emit('resolveWithAi')"
-            >
-              {{ t("scm.aiResolve") }}
-            </UiButton>
-            <UiButton
-              size="small"
-              variant="primary"
-              :disabled="Boolean(busy)"
-              :tip="scmBusyTitle(busy, `finish-merge:${workspace.id}`, t('scm.finishMergeTitle'))"
-              @click="emit('finishMerge')"
-            >
-              {{ t("scm.finishMerge") }}
-            </UiButton>
-          </div>
-        </div>
-        <ScmCommitBox
-          v-if="!readonly && !mergeSession"
-          v-model="message"
-          :workspace-id="workspace.id"
-          :repository="repository"
-          :action="action"
-          :busy="busy"
-          :can-commit="canCommit"
-          :can-primary="canPrimary"
-          @submit="onPrimary"
-          @menu="openAt($event, 'commit')"
-          @generate="emit('generate')"
-          @settings="emit('openSettings', 'commit')"
-        />
-        <ScmResourceList
-          :workspace-id="workspace.id"
-          :groups="groups"
-          :view-mode="viewMode"
-          :busy="busy"
-          :readonly="readonly"
-          @open="emit('open', $event)"
-          @open-file="emit('openFile', $event)"
-          @stage="emit('stage', $event)"
-          @discard="emit('discard', $event)"
-          @attach="emit('attach', $event)"
-        />
-      </template>
-      <p v-else-if="loading" class="tree-empty">{{ t("scm.loadingRepo") }}</p>
-    </div>
+    </UiCollapse>
 
     <ContextMenu v-if="commitMenu" :x="commitMenu.x" :y="commitMenu.y" :items="commitMenuItems" @select="onCommitMenu" @close="commitMenu = null" />
     <ContextMenu v-if="moreMenu" :x="moreMenu.x" :y="moreMenu.y" :items="moreMenuItems" @select="onMoreMenu" @close="moreMenu = null" />
     <Teleport to="body">
-      <div v-if="checkoutOpen" class="scm-checkout-backdrop" @mousedown="closeCheckout">
+      <div v-motion="'fade'" v-if="checkoutOpen" class="scm-checkout-backdrop" @mousedown="closeCheckout">
       <div
         class="scm-checkout-pick"
         role="dialog"

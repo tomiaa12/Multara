@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import UiCollapse from "../ui/UiCollapse.vue";
 import { ChevronRight } from "@lucide/vue";
 import { t } from "../../i18n";
 import { useAppStore } from "../../stores/app";
@@ -45,19 +46,21 @@ const deep = computed(() => props.depth > MAX_INDENTED_DEPTH);
       <em v-if="deep" class="subagent-depth">L{{ depth }}</em>
     </button>
     <p v-if="failure" class="subagent-failure">{{ failure }}</p>
-    <div v-if="open" class="subagent-body" :class="{ 'is-deep': deep }">
-      <ProcessFold
-        v-if="item.children?.length"
-        :blocks="item.children"
-        :running="status === 'running'"
-        :depth="depth"
-        :run-id="runId"
-        :default-collapse-subagents="defaultCollapseSubagents"
-      />
-      <section v-if="resultText" class="subagent-result">
-        <header>{{ t("chat.subagent.result") }}</header>
-        <div class="process-detail vs-scroll">{{ resultText }}</div>
-      </section>
-    </div>
+    <UiCollapse>
+      <div v-if="open" class="subagent-body" :class="{ 'is-deep': deep }">
+        <ProcessFold
+          v-if="item.children?.length"
+          :blocks="item.children"
+          :running="status === 'running'"
+          :depth="depth"
+          :run-id="runId"
+          :default-collapse-subagents="defaultCollapseSubagents"
+        />
+        <section v-if="resultText" class="subagent-result">
+          <header>{{ t("chat.subagent.result") }}</header>
+          <div class="process-detail vs-scroll">{{ resultText }}</div>
+        </section>
+      </div>
+    </UiCollapse>
   </article>
 </template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { RouterLink } from "vue-router";
 import type { ChatMessage, TimelineItem } from "../../domain/types";
 import AgentAvatar from "../AgentAvatar.vue";
@@ -301,7 +302,7 @@ const outboundRecipient = computed(() => {
           :disabled="true"
           :disabled-reason="t('genui.readonly')"
         />
-        <details class="tool-ui-raw">
+        <details v-details-motion class="tool-ui-raw">
           <summary>{{ t("genui.viewRawOutput") }}</summary>
           <pre><code>$ {{ tool.command }}
 {{ tool.raw }}</code></pre>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import { ArrowUp, Users } from "@lucide/vue";
 import AgentAvatar from "../AgentAvatar.vue";
 import MicButton from "../dictation/MicButton.vue";
@@ -772,7 +773,7 @@ defineExpose({
   >
     <slot />
     <ComposerPlanHint v-if="modeSessionId" :session-id="modeSessionId" />
-    <div v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
+    <div v-motion="'fade'" v-if="dropOver" class="composer-drop-overlay" aria-hidden="true">
       <span>{{ t("chat.dropToAttach") }}</span>
     </div>
     <ComposerSuggestMenu

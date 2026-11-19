@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import {
   parseQuickOpenQuery,
@@ -85,7 +86,7 @@ void nextTick(() => input.value?.focus());
 </script>
 
 <template>
-  <div class="quick-pick quick-open" role="dialog" :aria-label="t('workbench.quickOpen.title')" @focusout="onFocusOut">
+  <div v-motion="'dropdown'" class="quick-pick quick-open" role="dialog" :aria-label="t('workbench.quickOpen.title')" @focusout="onFocusOut">
     <input
       ref="input"
       v-model="query"
