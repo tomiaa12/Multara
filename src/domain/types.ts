@@ -867,8 +867,10 @@ export interface ChannelInstallation {
   id: string;
   channelType: ChannelType;
   name: string;
-  targetType: "agent" | "squad";
-  targetId: string;
+  /** @deprecated 改由授权用户各自配置；列表接口仍可能带回历史值 */
+  targetType?: "agent" | "squad" | string;
+  /** @deprecated 同上 */
+  targetId?: string;
   projectId?: string | null;
   appId: string;
   region: "feishu" | "lark";
@@ -887,8 +889,6 @@ export interface ChannelInstallationInput {
   id?: string;
   name: string;
   channelType: ChannelType;
-  targetType: "agent" | "squad";
-  targetId: string;
   projectId?: string | null;
   appId: string;
   appSecret?: string;
@@ -906,4 +906,7 @@ export interface ChannelUser {
   /** 授权（配对成功）时间，ISO 字符串 */
   createdAt: string;
   note?: string | null;
+  /** 该用户绑定的智能体或小队；未设置为空 */
+  targetType?: "agent" | "squad" | null;
+  targetId?: string | null;
 }

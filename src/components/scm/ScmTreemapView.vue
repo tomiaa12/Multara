@@ -11,6 +11,7 @@ import * as backend from "../../services/backend";
 import { t } from "../../i18n";
 import {
   buildTreemapFromEntries,
+  
   countTreemapFiles,
   extensionHue,
   filterEntriesByScope,

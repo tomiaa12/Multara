@@ -2337,6 +2337,21 @@ export async function setChannelUserNote(id: string, userId: string, note: strin
   await invoke("set_channel_user_note", { id, userId, note });
 }
 
+export async function setChannelUserTarget(
+  id: string,
+  userId: string,
+  targetType: "agent" | "squad" | null,
+  targetId: string | null,
+): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_user_target", {
+    id,
+    userId,
+    targetType,
+    targetId,
+  });
+}
+
 export async function rotateChannelPairingCode(id: string): Promise<string> {
   if (!hasBackend()) return "000000";
   return invoke<string>("rotate_channel_pairing_code", { id });

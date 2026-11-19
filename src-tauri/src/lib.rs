@@ -344,6 +344,7 @@ pub fn run() {
             channel::commands::remove_channel_allowed_user,
             channel::commands::rotate_channel_pairing_code,
             channel::commands::set_channel_user_note,
+            channel::commands::set_channel_user_target,
             channel::commands::set_channel_group_enabled,
             merge_flow::git_merge_preview,
             merge_flow::git_merge_into_branch,

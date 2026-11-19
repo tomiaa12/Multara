@@ -18,9 +18,17 @@ const MODE_KEY = "multara.inbox.uncommitted.filesMode";
 const POS_KEY = "multara.inbox.uncommitted.filesPos";
 const GROUP_ORDER: ScmGroupId[] = ["changes", "merge", "staged"];
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   projectId: string;
   theme: string;
+  /** 与文件 / Git 侧栏共用宽度，可拖。 */
+  sideWidth?: number;
+}>(), {
+  sideWidth: 280,
+});
+
+const emit = defineEmits<{
+  "resize-side": [event: PointerEvent, invert?: boolean];
 }>();
 
 const files = ref<CommitDiffFile[]>([]);
@@ -292,7 +300,18 @@ defineExpose({ refresh: load });
           :focus-path="focusPath"
         />
       </div>
-      <aside v-if="showFilesPane" class="uncommitted-changes-files vs-scroll">
+      <aside
+        v-if="showFilesPane"
+        class="uncommitted-changes-files vs-scroll"
+        :style="{ width: `${sideWidth}px` }"
+      >
+        <div
+          class="inbox-files-resize"
+          role="separator"
+          aria-orientation="vertical"
+          :aria-label="t('inbox.tool.resize')"
+          @pointerdown="emit('resize-side', $event, filesPos === 'left')"
+        />
         <button
           v-for="row in rows"
           :key="row.key"

@@ -916,7 +916,8 @@ function beginPanelResize(event: PointerEvent) {
   window.addEventListener("pointercancel", finish);
 }
 
-function beginFilesResize(event: PointerEvent) {
+/** 右侧侧栏拖左缘缩小；左侧侧栏（invert）拖右缘缩小。 */
+function beginFilesResize(event: PointerEvent, invert = false) {
   event.preventDefault();
   event.stopPropagation();
   const startX = event.clientX;
@@ -924,7 +925,9 @@ function beginFilesResize(event: PointerEvent) {
   const max = panelWidth.value;
   document.body.classList.add("is-resizing-panels");
   const move = (moveEvent: PointerEvent) => {
-    filesWidth.value = Math.min(max, Math.max(INBOX_TOOL_MIN_WIDTH, startWidth - (moveEvent.clientX - startX)));
+    const delta = moveEvent.clientX - startX;
+    const next = invert ? startWidth + delta : startWidth - delta;
+    filesWidth.value = Math.min(max, Math.max(INBOX_TOOL_MIN_WIDTH, next));
   };
   const finish = () => {
     window.removeEventListener("pointermove", move);
@@ -1264,6 +1267,8 @@ onBeforeUnmount(() => {
             :ref="bindUncommittedChanges"
             :project-id="workspace?.projectId ?? ''"
             :theme="theme"
+            :side-width="filesWidth"
+            @resize-side="beginFilesResize"
           />
           <SearchView
             v-else-if="tab.kind === 'search'"
@@ -1317,7 +1322,18 @@ onBeforeUnmount(() => {
                 :word-wrap="wordWrap"
               />
             </div>
-            <aside v-if="gitBarOpen || !gitPreview" class="inbox-git-bar">
+            <aside
+              v-if="gitBarOpen || !gitPreview"
+              class="inbox-git-bar"
+              :style="{ width: `${filesWidth}px` }"
+            >
+              <div
+                class="inbox-files-resize"
+                role="separator"
+                aria-orientation="vertical"
+                :aria-label="t('inbox.tool.resize')"
+                @pointerdown="beginFilesResize"
+              />
               <SourceControlPanel
                 :ref="bindSourceControlPanel"
                 :project-id="workspace?.projectId ?? ''"

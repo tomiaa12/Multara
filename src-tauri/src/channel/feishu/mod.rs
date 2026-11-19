@@ -96,10 +96,6 @@ fn run_inner(
     {
         return Err(tr!("暂不支持这个渠道类型"));
     }
-    if installation.target_id.is_empty() {
-        return Err(tr!("渠道未绑定智能体"));
-    }
-
     let (url, ping_secs) = api.ws_endpoint()?;
     let bot = api.bot_info().unwrap_or_default();
     let mut config = installation.config.clone();
