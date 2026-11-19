@@ -66,8 +66,8 @@
 .project-card.collapsible {
   cursor: pointer;
   transition:
-    border-color 120ms ease,
-    background 120ms ease;
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    background var(--motion-duration-fast) var(--motion-ease);
 }
 .project-card.collapsible:hover,
 .project-card.collapsible:focus-visible {
@@ -229,9 +229,9 @@
 .agent-tile {
   cursor: pointer;
   transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    transform 120ms ease;
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    background var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 .agent-tile:hover,
 .agent-tile:focus-visible {
@@ -767,46 +767,33 @@
 .user-prompt {
   width: 100%;
 }
-/* 折叠运行中：停止钮占右下角一行，正文右侧留白；点开编辑后浮钮藏起，恢复默认展开样式 */
+/* 折叠运行中：停止钮在右侧，正文右侧留白；点开编辑后浮钮藏起，由 footer 接手 */
 .chat-composer.user-prompt.is-running:not(.is-expanded):not(:focus-within) .composer-field {
-  padding-right: 40px;
+  padding-right: 32px;
 }
+/* 上下 inset 卡住高度，停止钮不会高出输入框；单行垂直居中，多行贴底 */
 .chat-composer.user-prompt > .user-prompt-stop-wrap {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
   z-index: 2;
   display: inline-flex;
-  align-items: center;
-  gap: 0;
-  max-width: calc(100% - 12px);
+  align-items: flex-end;
+  max-width: calc(100% - 8px);
   pointer-events: none;
 }
-.chat-composer.user-prompt > .user-prompt-stop-wrap .user-prompt-ellipsis {
-  flex: 0 0 auto;
-  margin-right: 2px;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  user-select: none;
+.chat-composer.user-prompt > .user-prompt-stop-wrap.is-single-line {
+  align-items: center;
 }
-.chat-composer.user-prompt .user-prompt-stop {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-strong);
-}
-.chat-composer.user-prompt > .user-prompt-stop-wrap .user-prompt-stop {
+.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button {
+  --ds-stop-size: 22px;
   pointer-events: auto;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-field) 80%, transparent);
 }
-.chat-composer.user-prompt .user-prompt-stop:hover {
-  background: var(--color-bg-secondary);
+/* 折叠态钮更小，中间方块跟着缩小（footer 里仍用默认 14） */
+.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button svg {
+  width: 9px;
+  height: 9px;
 }
 .chat-composer.user-prompt.is-expanded > .user-prompt-stop-wrap,
 .chat-composer.user-prompt:focus-within > .user-prompt-stop-wrap {
@@ -1318,8 +1305,14 @@
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
+/* 头像略大于状态行字号，仍贴齐基线 */
 .assistant-working .agent-avatar {
+  width: 14px;
+  height: 14px;
   margin: 0;
+}
+.assistant-working .agent-avatar-glyph {
+  font-size: 9px;
 }
 .assistant-working-lines {
   display: flex;
@@ -1339,7 +1332,7 @@
   --ds-shimmer-base: var(--color-text-secondary);
 }
 .assistant-working svg {
-  animation: chat-spin 1s linear infinite;
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 /* 智能体状态格（需求列表 / 任务卡片）：头像 + 轮播动作文案，超长截断 */
 .agent-live-status {
@@ -1552,7 +1545,7 @@
   border-radius: var(--radius-md);
   background: var(--color-field);
   padding: 6px;
-  transition: border-color 120ms ease;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease);
 }
 .chat-composer:focus-within {
   border-color: var(--color-focus);
@@ -2498,7 +2491,7 @@ button.chat-editing-overview-open {
 .chat-editing-chevron {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .chat-editing-bar:not(.is-collapsed) .chat-editing-chevron {
   transform: rotate(90deg);
@@ -2794,15 +2787,15 @@ textarea:not(.inputarea) {
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 200ms ease,
-    visibility 0s linear 200ms;
+    opacity var(--motion-duration-normal) var(--motion-ease),
+    visibility 0s linear var(--motion-duration-normal);
 }
 .floating-chat-backdrop.open {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transition:
-    opacity 200ms ease,
+    opacity var(--motion-duration-normal) var(--motion-ease),
     visibility 0s;
 }
 .floating-chat {
@@ -2831,12 +2824,12 @@ textarea:not(.inputarea) {
 .floating-chat.open {
   visibility: visible;
   pointer-events: auto;
-  animation: floating-chat-in 200ms ease;
+  animation: floating-chat-in var(--motion-duration-normal) var(--motion-ease-out);
 }
 .floating-chat.closing {
   visibility: visible;
   pointer-events: none;
-  animation: floating-chat-out 200ms ease forwards;
+  animation: floating-chat-out var(--motion-duration-exit) var(--motion-ease-in) forwards;
 }
 @keyframes floating-chat-in {
   from { transform: translateX(100%); }
@@ -3128,7 +3121,7 @@ textarea:not(.inputarea) {
 .read-row > summary svg {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .thinking-line[open] > summary svg,
 .read-row[open] > summary svg {
@@ -3142,7 +3135,7 @@ textarea:not(.inputarea) {
 .shell-card > summary .shell-chevron,
 .shell-card > .shell-summary .shell-chevron {
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .shell-card[open] > summary .shell-chevron,
 .shell-card.is-open > .shell-summary .shell-chevron {
@@ -3402,6 +3395,9 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .shell-body:not(.is-collapsed) {
   max-height: 280px;
 }
+.shell-body {
+  transition: max-height var(--motion-duration-normal) var(--motion-ease);
+}
 .explore-group[open] > .explore-reads {
   max-height: 280px;
 }
@@ -3459,7 +3455,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .process-fold > summary svg {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .process-fold[open] > summary svg {
   transform: rotate(90deg);
@@ -3501,7 +3497,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .subagent-chevron {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
 }
 .subagent-card.is-open .subagent-chevron {
   transform: rotate(90deg);
@@ -3717,7 +3713,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   cursor: pointer;
 }
 .plan-artifact-toggle:hover { color: var(--color-text); }
-.plan-artifact-toggle svg { transition: transform 120ms ease; }
+.plan-artifact-toggle svg { transition: transform var(--motion-duration-fast) var(--motion-ease); }
 .plan-artifact-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .plan-artifact-changes {
   display: flex;
@@ -3891,7 +3887,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   color: var(--color-success);
 }
 .process-spinner {
-  animation: chat-spin 1s linear infinite;
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 .failure-bubble {
   display: grid;
@@ -4511,7 +4507,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   inset: 0 1px;
   background: var(--color-border);
   pointer-events: none;
-  transition: background 0.12s;
+  transition: background var(--motion-duration-fast) var(--motion-ease);
 }
 .panel-resize-handle,
 .panel-resize-handle::before,
@@ -5601,8 +5597,8 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    box-shadow var(--motion-duration-fast) var(--motion-ease);
 }
 .scm-commit-field:focus-within {
   border-color: var(--color-focus);
@@ -6144,7 +6140,7 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   background: transparent;
   pointer-events: none;
   cursor: inherit;
-  transition: background-color 0.1s ease-out;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease);
 }
 .ui-pane-sash.is-hover::before,
 .ui-pane-sash.is-active::before {
@@ -9227,13 +9223,8 @@ body.is-dragging-workspace-file * {
   overflow-y: auto;
 }
 
-@keyframes chat-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .spin {
-  animation: chat-spin 1s linear infinite;
+  animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite;
 }
 
 /* Task board, create dialog, issue page, inbox */
@@ -13701,8 +13692,11 @@ label.settings-row:hover {
 .req-run .req-run-workers:has(> .avatar-stack-empty) {
   display: none;
 }
-.req-run .req-run-workers .agent-live-label {
+.req-run .req-run-workers .agent-live-status {
   font-size: var(--font-size-sm);
+}
+.req-run .req-run-workers .agent-live-label {
+  font-size: inherit;
   font-weight: var(--font-weight-regular);
   color: var(--color-text-secondary);
 }
@@ -15927,10 +15921,9 @@ body.is-dragging-terminal-tab * {
 }
 .runtime-model-control { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .runtime-model-control > :first-child { flex: 1 1 auto; min-width: 0; }
-.runtime-model-control .is-loading svg { animation: runtime-model-spin 0.9s linear infinite; }
+.runtime-model-control .is-loading svg { animation: ds-spin var(--motion-spin-duration, 0.9s) linear infinite; }
 .runtime-model-hint { color: var(--color-text-tertiary); font-size: 11.5px; font-weight: 400; line-height: 1.45; }
 .runtime-model-hint.is-warn { color: var(--color-warning); }
-@keyframes runtime-model-spin { to { transform: rotate(360deg); } }
 
 /* Vite 运行时错误层：盖过 Monaco 悬浮提示，背景不透出编辑器。 */
 vite-error-overlay {

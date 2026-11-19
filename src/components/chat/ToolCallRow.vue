@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { ChevronRight } from "@lucide/vue";
 import type { TimelineItem } from "../../domain/types";
 import { exploreDetail, inferToolName } from "./timeline-display";
@@ -14,7 +15,7 @@ const expandable = computed(() => Boolean(props.item.input || props.item.content
 </script>
 
 <template>
-  <details class="read-row" :class="{ 'is-running': running }">
+  <details v-details-motion class="read-row" :class="{ 'is-running': running }">
     <summary>
       <UiShimmerText class="read-row-text" :text="`${name} ${detail}`" :active="Boolean(running)" />
       <ChevronRight v-if="expandable" :size="12" />

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import { bindDismissableLayer } from "../ui/dismissable-layer";
 import {
@@ -135,7 +136,7 @@ watch(query, resetHighlight);
 </script>
 
 <template>
-  <div
+  <div v-motion="'dropup'"
     ref="panelEl"
     class="editor-language-picker context-menu"
     :style="style"

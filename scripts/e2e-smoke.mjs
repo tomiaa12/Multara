@@ -378,7 +378,7 @@ async function main() {
     await e2e({
       action: "eval",
       js: `(() => {
-        const close = document.querySelector(".task-create-dialog button[aria-label], .task-create-dialog .icon-button, .modal-backdrop");
+        const close = document.querySelector(".task-create-dialog button[aria-label], .task-create-dialog .icon-button, .modal-backdrop:not(.ds-motion-ghost)");
         const x = [...document.querySelectorAll(".task-create-dialog button, .modal button")].find((el) => {
           const t = (el.textContent || "").replace(/\\s+/g, " ").trim();
           return t === "取消" || t === "Cancel" || el.classList.contains("icon-button");

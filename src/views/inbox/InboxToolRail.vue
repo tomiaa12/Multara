@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import type { FileContent, Workspace } from "../../domain/types";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
@@ -1171,7 +1172,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="stageOpen" class="inbox-stage">
+  <section v-motion="{ enter: 'fade' }" v-if="stageOpen" class="inbox-stage">
     <div
       class="inbox-tool-resize"
       role="separator"

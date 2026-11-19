@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { vMotion } from "../ui/motion";
 import { useRoute, useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Download, FlaskConical, FolderTree, GitBranch, Info, MessageSquare, Mic, Shield, SlidersHorizontal, Workflow } from "@lucide/vue";
@@ -525,7 +526,7 @@ onBeforeUnmount(() => {
           <div v-if="message" class="settings-save" role="status">{{ message }}</div>
         </header>
 
-        <section v-if="section === 'general'" class="settings-card">
+        <section v-if="section === 'general'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row">
             <div><strong>{{ t("settings.language") }}</strong><p>{{ t("settings.languageHint") }}</p></div>
             <UiSelect v-model="form.language" :options="languageOptions" />
@@ -572,7 +573,7 @@ onBeforeUnmount(() => {
           </label>
         </section>
 
-        <section v-else-if="section === 'dictation'" class="settings-card">
+        <section v-else-if="section === 'dictation'" v-motion="{ enter: 'page' }" class="settings-card">
           <p v-if="!dictationStore.supported" class="settings-hint">
             {{ dictationReasonKey ? t(dictationReasonKey) : t("settings.dictation.unsupported") }}
           </p>
@@ -599,7 +600,7 @@ onBeforeUnmount(() => {
           </template>
         </section>
 
-        <section v-else-if="section === 'experimental'" class="settings-card">
+        <section v-else-if="section === 'experimental'" v-motion="{ enter: 'page' }" class="settings-card">
           <label class="settings-row">
             <div><strong>{{ t("settings.experimental.genui") }}</strong><p>{{ t("settings.experimental.genuiHint") }}</p></div>
             <UiInput v-model="form.genuiEnabled" class="ds-switch" type="checkbox" />
@@ -615,7 +616,7 @@ onBeforeUnmount(() => {
           </label>
         </section>
 
-        <section v-else-if="section === 'explorer'" class="settings-card">
+        <section v-else-if="section === 'explorer'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row">
             <div><strong>{{ t("settings.explorer.sort") }}</strong><p>{{ t("settings.explorer.sortHint") }}</p></div>
             <UiSelect
@@ -706,7 +707,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="section === 'git'" class="settings-card">
+        <section v-else-if="section === 'git'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row settings-row-start">
             <div><strong>{{ t("settings.git.executable") }}</strong><p>{{ t("settings.git.executableHint") }}</p></div>
             <div class="settings-inline">
@@ -727,7 +728,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="section === 'branch'" class="settings-card settings-ai-gen">
+        <section v-else-if="section === 'branch'" v-motion="{ enter: 'page' }" class="settings-card settings-ai-gen">
           <div class="settings-row">
             <div><strong>{{ t("settings.branch.prefix") }}</strong><p>{{ t("settings.branch.prefixHint") }}</p></div>
             <UiInput v-model="form.branchPrefix" :placeholder="t('settings.branch.prefixPlaceholder')" spellcheck="false" />
@@ -744,7 +745,7 @@ onBeforeUnmount(() => {
           />
         </section>
 
-        <section v-else-if="section === 'commit'" class="settings-card settings-ai-gen">
+        <section v-else-if="section === 'commit'" v-motion="{ enter: 'page' }" class="settings-card settings-ai-gen">
           <SettingsAiGenBlock
             v-model:mode="form.commitGenMode"
             v-model:agent-id="form.commitAgentId"
@@ -757,7 +758,7 @@ onBeforeUnmount(() => {
           />
         </section>
 
-        <section v-else-if="section === 'automation'" class="settings-card">
+        <section v-else-if="section === 'automation'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row settings-row-start">
             <div>
               <strong>{{ t("settings.automation.port") }}</strong>
@@ -767,7 +768,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="section === 'updates'" class="settings-card">
+        <section v-else-if="section === 'updates'" v-motion="{ enter: 'page' }" class="settings-card">
           <div class="settings-row">
             <div><strong>{{ t("settings.about.version") }}</strong><p>{{ t("settings.about.versionHint") }}</p></div>
             <span class="settings-version">{{ version || "…" }}</span>

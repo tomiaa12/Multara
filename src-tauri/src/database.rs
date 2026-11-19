@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -789,7 +789,22 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     migrate_diff_chunk_keys(db)?;
     migrate_run_event_types(db)?;
     db.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
+        "CREATE TABLE IF NOT EXISTS session_message_queue (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+          position INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          attachments_json TEXT NOT NULL DEFAULT '[]',
+          requested_mode TEXT,
+          priority INTEGER NOT NULL DEFAULT 0,
+          immediate INTEGER NOT NULL DEFAULT 0,
+          source_json TEXT,
+          feishu_recipients_json TEXT,
+          created_at TEXT NOT NULL
+        );
+         CREATE INDEX IF NOT EXISTS idx_session_message_queue_session
+           ON session_message_queue(session_id, position);
+         CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
          CREATE INDEX IF NOT EXISTS idx_messages_run ON messages(run_id);
          CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(session_id);
          CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);

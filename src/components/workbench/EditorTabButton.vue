@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { X } from "@lucide/vue";
+import { vMotion } from "../../ui/motion";
 import { t } from "../../i18n";
 import UiTooltip from "../ui/UiTooltip.vue";
 
@@ -40,7 +41,7 @@ function onMiddle(event: MouseEvent) {
 
 <template>
   <UiTooltip :content="tip">
-    <button
+    <button v-motion="{ enter: 'fade' }"
       type="button"
       class="editor-tab"
       :class="{

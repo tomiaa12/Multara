@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { vMotion } from "../ui/motion";
 import { RefreshCw, X } from "@lucide/vue";
 import { t } from "../i18n";
 import { useUpdaterStore } from "../stores/updater";
@@ -20,7 +21,7 @@ async function restartNow() {
 </script>
 
 <template>
-  <div v-if="visible" class="update-toast ds-toast" data-tone="success" role="status">
+  <div v-motion="'slide-up'" v-if="visible" class="update-toast ds-toast" data-tone="success" role="status">
     <RefreshCw :size="16" />
     <div>
       <strong>{{ t("updates.readyTitle") }}</strong>

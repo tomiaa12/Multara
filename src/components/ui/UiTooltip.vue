@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref } from "vue";
+import { vMotion } from "../../ui/motion";
 import { nextPopupZIndex } from "./popup-z-index";
 import {
   pickTooltipPlacement,
@@ -106,6 +107,7 @@ onBeforeUnmount(() => {
     <div
       v-if="open && content.trim()"
       ref="tipEl"
+      v-motion="{ leave: 'fade' }"
       class="ds-tooltip"
       :class="{ 'is-ready': ready }"
       role="tooltip"

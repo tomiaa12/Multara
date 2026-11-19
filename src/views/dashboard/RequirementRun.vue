@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Plus, Search } from "@lucide/vue";
 import AgentLiveStatus from "../../components/AgentLiveStatus.vue";
 import ChatPanel from "../../components/ChatPanel.vue";
@@ -44,6 +44,7 @@ function onReviewFile(file: { workspaceId: string; filePath: string }) {
 const filter = ref<HomeFilter>("all");
 const query = ref("");
 const selectedId = ref("");
+const chatPanel = ref<{ focus: () => void } | null>(null);
 const pickedWorkspaceId = ref("");
 const menu = ref<{ x: number; y: number; row: HomeProject } | null>(null);
 const railWidth = ref(readRunRail());
@@ -117,6 +118,13 @@ watch(visible, (list) => {
 watch(selectedId, () => {
   pickedWorkspaceId.value = "";
 });
+
+/** 用户点列表才聚焦输入框；visible 自动补选首项不抢焦点 */
+async function selectRow(id: string) {
+  selectedId.value = id;
+  await nextTick();
+  chatPanel.value?.focus();
+}
 
 function onRowContext(row: HomeProject, event: MouseEvent) {
   event.preventDefault();
@@ -239,7 +247,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           :class="{ selected: row.id === selectedId }"
-          @click="selectedId = row.id"
+          @click="selectRow(row.id)"
           @contextmenu="onRowContext(row, $event)"
         >
           <span class="req-run-item">
@@ -250,7 +258,7 @@ onBeforeUnmount(() => {
                 :fallback="homeWorkerItems(row)"
                 :idle-label="row.activityLabel"
                 :max="3"
-                :size="18"
+                :size="16"
                 :dialog-title="t('dashboard.col.workers')"
               />
             </span>
@@ -278,6 +286,7 @@ onBeforeUnmount(() => {
   <section class="inbox-detail chat-surface">
     <ChatPanel
       v-if="selected"
+      ref="chatPanel"
       class="inbox-thread"
       :project-id="selected.id"
       compact

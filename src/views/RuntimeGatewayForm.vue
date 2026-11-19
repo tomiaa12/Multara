@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { vDetailsMotion } from "../ui/motion";
 import { listen } from "@tauri-apps/api/event";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import type { GatewayOptions } from "../domain/types";
@@ -293,7 +294,7 @@ function submit() {
     <UiInput v-model="useApiKey" type="checkbox" />
     {{ t("runtime.gateway.keyStyle") }}
   </label>
-  <details class="runtime-advanced">
+  <details v-details-motion class="runtime-advanced">
     <summary>{{ t("runtime.advanced") }}</summary>
     <RuntimeGatewayAdvancedFields v-model="advancedGateway" />
     <label>{{ t("runtime.field.commandLine") }}<UiInput v-model="draft.commandLine" spellcheck="false" /></label>

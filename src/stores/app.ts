@@ -83,9 +83,22 @@ export const useAppStore = defineStore("app", () => {
   const activeSessionId = ref("welcome");
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
   const activeInboxSessionId = ref<string | null>(null);
-  /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它 */
-  type QueuedMessage = { sessionId: string; content: string; attachments: MessageAttachmentInput[]; requestedMode?: RunMode; priority?: boolean; immediate?: boolean; source?: MessageSourceInput; feishuRecipients?: FeishuRecipientInput[] };
+  /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它；id/createdAt 用于落库恢复 */
+  type QueuedMessage = {
+    id: string;
+    sessionId: string;
+    content: string;
+    attachments: MessageAttachmentInput[];
+    requestedMode?: RunMode;
+    priority?: boolean;
+    immediate?: boolean;
+    source?: MessageSourceInput;
+    feishuRecipients?: FeishuRecipientInput[];
+    createdAt: string;
+  };
   const queuedMessages = ref<QueuedMessage[]>([]);
+  let queuePersistTimer = 0;
+  let queuePersistInFlight: Promise<void> | null = null;
   const dismissedQuestions = ref(new Set<string>(readDismissedQuestions()));
   const sendingSessions = ref(new Set<string>());
   const pendingRunSessions = ref(new Set<string>());
@@ -245,6 +258,7 @@ export const useAppStore = defineStore("app", () => {
       setFileIconTheme(data.value.settings.fileIconTheme);
       await registerRunEvents();
       await seedActiveRuns();
+      await restoreMessageQueue();
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
         activeSessionId.value = data.value.sessions[0]?.id ?? "";
       }
@@ -434,6 +448,16 @@ export const useAppStore = defineStore("app", () => {
         await surfacesRefresh;
         await reloadPersistedMessages(payload.sessionId);
         pruneRunStates();
+        // 空闲态「谁 / 多久前」：surfaces 合并后再写，避免后端尚未带上 lastRun 时被 merge 冲掉
+        const finishedSession = data.value?.sessions.find((item) => item.id === payload.sessionId);
+        if (finishedSession && payload.agentId) {
+          const endedAt = new Date().toISOString();
+          const prevAt = finishedSession.lastRunAt ? Date.parse(finishedSession.lastRunAt) : 0;
+          if (!finishedSession.lastRunAt || prevAt <= Date.parse(endedAt)) {
+            finishedSession.lastRunAgentId = payload.agentId;
+            finishedSession.lastRunAt = endedAt;
+          }
+        }
         if (previous?.status === "running") {
           await captureInboxNotice(payload);
         }
@@ -1401,6 +1425,40 @@ export const useAppStore = defineStore("app", () => {
     })();
   }
 
+  function persistMessageQueue() {
+    window.clearTimeout(queuePersistTimer);
+    queuePersistTimer = window.setTimeout(() => {
+      const snapshot = queuedMessages.value.map((item) => ({ ...item }));
+      queuePersistInFlight = backend.saveMessageQueue(snapshot).catch((cause) => {
+        console.error("[app] persist message queue failed", cause);
+      });
+    }, 80);
+  }
+
+  async function restoreMessageQueue() {
+    try {
+      const rows = await backend.listMessageQueue();
+      const known = new Set((data.value?.sessions ?? []).map((session) => session.id));
+      queuedMessages.value = rows
+        .filter((row) => known.has(row.sessionId))
+        .map((row) => ({
+          id: row.id,
+          sessionId: row.sessionId,
+          content: row.content,
+          attachments: row.attachments ?? [],
+          createdAt: row.createdAt || new Date().toISOString(),
+          ...(row.requestedMode ? { requestedMode: row.requestedMode } : {}),
+          ...(row.priority ? { priority: true } : {}),
+          ...(row.immediate ? { immediate: true } : {}),
+          ...(row.source ? { source: row.source } : {}),
+          ...(row.feishuRecipients?.length ? { feishuRecipients: row.feishuRecipients } : {}),
+        }));
+      if (queuedMessages.value.length) void drainMessageQueue();
+    } catch (cause) {
+      console.error("[app] restore message queue failed", cause);
+    }
+  }
+
   function send(
     content: string,
     sessionId = activeSessionId.value,
@@ -1411,16 +1469,19 @@ export const useAppStore = defineStore("app", () => {
     if (!text && !attachments.length) return;
     if (!sessionId) return;
     const item: QueuedMessage = {
+      id: crypto.randomUUID(),
       sessionId,
       content: text,
       attachments,
       requestedMode: options.mode ?? sessionMode(sessionId),
       priority: options.priority,
+      createdAt: new Date().toISOString(),
       ...(options.source ? { source: options.source } : {}),
       ...(options.feishuRecipients?.length ? { feishuRecipients: options.feishuRecipients } : {}),
     };
     if (options.priority) queuedMessages.value.unshift(item);
     else queuedMessages.value.push(item);
+    persistMessageQueue();
     void drainMessageQueue();
   }
 
@@ -1567,6 +1628,7 @@ export const useAppStore = defineStore("app", () => {
     // 重放沿用该条消息当时的模式，不跟随会话当前默认模式
     const replayMode = messages.value[sessionId]?.find((item) => item.id === messageId)?.requestedMode ?? undefined;
     queuedMessages.value = queuedMessages.value.filter((item) => item.sessionId !== sessionId);
+    persistMessageQueue();
     await stopSessionRuns(sessionId);
     const diffStore = useDiffStore();
     const result = await executeReask({
@@ -1733,18 +1795,22 @@ export const useAppStore = defineStore("app", () => {
   function removeQueuedMessage(index: number) {
     if (index < 0 || index >= queuedMessages.value.length) return;
     queuedMessages.value.splice(index, 1);
+    persistMessageQueue();
   }
 
   /** 取出一条排队消息（编辑时放回输入框） */
   function takeQueuedMessage(index: number) {
     if (index < 0 || index >= queuedMessages.value.length) return null;
-    return queuedMessages.value.splice(index, 1)[0] ?? null;
+    const item = queuedMessages.value.splice(index, 1)[0] ?? null;
+    if (item) persistMessageQueue();
+    return item;
   }
 
   function promoteQueuedMessage(index: number) {
     const item = takeQueuedMessage(index);
     if (!item) return;
     queuedMessages.value.unshift({ ...item, priority: true, immediate: true });
+    persistMessageQueue();
     drainMessageQueue();
   }
 
@@ -1756,14 +1822,17 @@ export const useAppStore = defineStore("app", () => {
       && (item.immediate || !sessionProcessing(item.sessionId))
       && (item.priority || !awaitingAnswer(item.sessionId)),
     );
+    let changed = false;
     for (const item of ready) {
       if (sendingSessions.value.has(item.sessionId)) continue;
       const index = queuedMessages.value.indexOf(item);
       if (index < 0) continue;
       queuedMessages.value.splice(index, 1);
+      changed = true;
       sendingSessions.value.add(item.sessionId);
       void sendQueuedMessage(item);
     }
+    if (changed) persistMessageQueue();
   }
 
   function sendQueued(next: QueuedMessage) {

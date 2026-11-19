@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { ChevronDown } from "@lucide/vue";
 import type { DiffLine, PairedTool } from "./timeline-display";
 import { DIFF_COLLAPSE_LINES, diffStats, editDiff, fileName, fileRevealTarget, toolPath } from "./timeline-display";
@@ -123,7 +124,7 @@ async function undoFile() {
 </script>
 
 <template>
-  <details v-if="lines.length" class="diff-card" open>
+  <details v-details-motion v-if="lines.length" class="diff-card" open>
     <summary>
       <ChevronDown :size="12" />
       <UiTooltip :content="pathTitle">

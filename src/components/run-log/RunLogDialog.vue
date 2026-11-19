@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vMotion } from "../../ui/motion";
 import {
   ChevronRight,
   Copy,
@@ -448,7 +449,7 @@ async function copyTranscript() {
               <span v-if="filterKeys.length">{{ filterKeys.length }}</span>
             </button>
           </UiTooltip>
-          <div v-if="filterOpen" class="run-log-menu" role="menu">
+          <div v-motion="'dropdown'" v-if="filterOpen" class="run-log-menu" role="menu">
             <button
               v-for="[key, label] in filterOptions"
               :key="key"
@@ -473,7 +474,7 @@ async function copyTranscript() {
               <MoreHorizontal :size="14" />
             </button>
           </UiTooltip>
-          <div v-if="moreOpen" class="run-log-menu" role="menu">
+          <div v-motion="'dropdown'" v-if="moreOpen" class="run-log-menu" role="menu">
             <button type="button" @click="sortNewest = !sortNewest; moreOpen = false">
               {{ sortNewest ? t("runLog.sortOldest") : t("runLog.sortNewest") }}
             </button>

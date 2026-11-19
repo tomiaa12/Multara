@@ -2345,6 +2345,7 @@ Who is this for? Any constraints?
   "chat.editingUndoAll": "Undo all",
   "chat.editingKeepAll": "Keep all",
   "chat.editingUndoAllTitle": "Undo changes in every file",
+  "chat.editingUndoAllConfirm": "Undo changes in all {count} files? This cannot be undone.",
   "chat.editingKeepAllTitle": "Keep changes in every file",
   "chat.chip.terminal": "Terminal {range}",
   "scm.branchPickerTooltip": "{label}, check out branch or tag…",

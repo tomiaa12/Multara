@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { vDetailsMotion } from "../../ui/motion";
 import { ChevronRight } from "@lucide/vue";
 import type { TimelineItem } from "../../domain/types";
 import { useAppStore } from "../../stores/app";
@@ -67,7 +68,7 @@ function errorText(block: TimelineBlock) {
 </script>
 
 <template>
-  <details
+  <details v-details-motion
     v-if="collapsed"
     class="process-fold"
     @toggle="opened = ($event.target as HTMLDetailsElement).open"
