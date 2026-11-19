@@ -450,6 +450,21 @@ watch(
   },
 );
 
+function isUpdateNetworkError(cause: unknown): boolean {
+  const raw = cause instanceof Error ? cause.message : String(cause);
+  // 网络不可达时 reqwest 会带完整 URL，不能直接展示。
+  return /error sending request|timed?\s*out|connection|dns|network|proxy|failed to lookup|certificate/i.test(
+    raw,
+  );
+}
+
+function formatUpdateError(cause: unknown): string {
+  if (isUpdateNetworkError(cause)) return t("settings.updates.checkFailedNetwork");
+  const raw = cause instanceof Error ? cause.message : String(cause);
+  const trimmed = raw.replace(/\s+/g, " ").trim();
+  return trimmed.length > 160 ? `${trimmed.slice(0, 157)}…` : trimmed;
+}
+
 async function checkUpdate() {
   message.value = t("settings.updates.checking");
   try {
@@ -462,9 +477,9 @@ async function checkUpdate() {
       ? t("settings.updates.ready", { version: found.version })
       : t("settings.updates.downloading", { version: found.version });
   } catch (cause) {
-    message.value = t("settings.updates.checkFailed", {
-      error: cause instanceof Error ? cause.message : String(cause),
-    });
+    message.value = isUpdateNetworkError(cause)
+      ? t("settings.updates.checkFailedNetwork")
+      : t("settings.updates.checkFailed", { error: formatUpdateError(cause) });
   }
 }
 
@@ -473,9 +488,9 @@ async function applyUpdate() {
   try {
     await updater.installNow();
   } catch (cause) {
-    message.value = t("settings.updates.checkFailed", {
-      error: cause instanceof Error ? cause.message : String(cause),
-    });
+    message.value = isUpdateNetworkError(cause)
+      ? t("settings.updates.checkFailedNetwork")
+      : t("settings.updates.checkFailed", { error: formatUpdateError(cause) });
   }
 }
 
@@ -754,7 +769,7 @@ onBeforeUnmount(() => {
 
         <section v-else-if="section === 'updates'" class="settings-card">
           <div class="settings-row">
-            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ message || t("settings.about.versionHint") }}</p></div>
+            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ t("settings.about.versionHint") }}</p></div>
             <span class="settings-version">{{ version || "…" }}</span>
           </div>
           <label class="settings-row">
@@ -782,11 +797,12 @@ onBeforeUnmount(() => {
               >{{ t("settings.updates.installNow") }}</UiButton>
             </div>
           </div>
+          <p v-if="message" class="settings-update-status" role="status">{{ message }}</p>
         </section>
 
         <section v-else class="settings-card">
           <div class="settings-row">
-            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ message || t("settings.about.versionHint") }}</p></div>
+            <div><strong>{{ t("settings.about.version") }}</strong><p>{{ t("settings.about.versionHint") }}</p></div>
             <span class="settings-version">{{ version || "…" }}</span>
           </div>
           <div class="settings-row">
