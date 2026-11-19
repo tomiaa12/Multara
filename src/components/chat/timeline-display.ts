@@ -374,7 +374,8 @@ function liveStageKeyForKind(kind: ToolKind): MessageKey {
 function liveStageKey(items: TimelineItem[], status?: "queued" | "running" | "sending" | null): MessageKey {
   if (status === "queued") return "chat.queued";
   const latest = latestWorkItem(items);
-  if (!latest) return status === "sending" ? "chat.waiting" : "chat.thinking";
+  // 尚无 timeline：CLI / 会话还在拉起（对齐 Multica starting_up），不要直接「思考中」
+  if (!latest) return "chat.starting";
   if (latest.eventType === "text") return "chat.typing";
   if (latest.eventType === "thinking") return "chat.thinking";
   if (latest.eventType === "todo") return "chat.updatingPlan";

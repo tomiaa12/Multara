@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import type { GitCommitFile, GitHistoryItem, Workspace } from "../../domain/types";
+import type { GitCommitFile, GitHistoryItem, GitRepositoryStatus, Workspace } from "../../domain/types";
 import Codicon from "../ui/Codicon.vue";
 import ContextMenu from "../ui/ContextMenu.vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiPane from "../ui/UiPane.vue";
+import UiTooltip from "../ui/UiTooltip.vue";
 import * as backend from "../../services/backend";
 import { fileNameOf } from "../workbench/workspace-mode";
 import {
@@ -25,22 +26,30 @@ import {
 } from "../workbench/scm-history";
 import type { ScmOpenChangesPayload, ScmOpenTarget } from "../workbench/scm-groups";
 import GitStatusBadge from "../workbench/GitStatusBadge.vue";
+import ScmInspectBranchPicker from "./ScmInspectBranchPicker.vue";
 import { gitStatusClass } from "../workbench/tree-git-status";
 import { t } from "../../i18n";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   workspaces: Workspace[];
   workspaceId: string;
   epoch: number;
   live?: boolean;
   branch?: string;
   upstream?: string | null;
-}>();
+  repositories?: GitRepositoryStatus[];
+  pinned?: boolean;
+}>(), {
+  repositories: () => [],
+  pinned: false,
+});
 const emit = defineEmits<{
   open: [target: ScmOpenTarget];
   openChanges: [payload: ScmOpenChangesPayload];
   error: [message: string];
   updated: [];
+  selectWorkspace: [id: string];
+  togglePin: [];
 }>();
 
 const menu = ref<{
@@ -91,8 +100,12 @@ const filesLoading = ref("");
 
 const colorMap = computed(() => historyColorMap(props.branch, props.upstream));
 const rows = computed(() => layoutHistoryGraph(items.value, colorMap.value));
-const workspaceName = computed(
-  () => props.workspaces.find((item) => item.id === props.workspaceId)?.name ?? "",
+const paneTitle = computed(() => {
+  const title = t("scm.graph.title");
+  return props.pinned ? t("scm.inspect.pinnedTitle", { title }) : title;
+});
+const showWorkspacePicker = computed(() =>
+  props.workspaces.some((item) => item.kind === "git"),
 );
 
 function rowBadges(row: HistoryGraphRow) {
@@ -281,18 +294,35 @@ defineExpose({ revealCommit });
 <template>
   <UiPane
     v-model:expanded="graphExpanded"
-    :title="t('scm.graph.title')"
+    :title="paneTitle"
     storage-key="multara.scm.graphCollapsed"
     size-key="multara.scm.graphSize"
     :default-size="200"
     :min-body="120"
+    :actions-visible="pinned"
   >
     <template #title-extra>
-      <UiTooltip v-if="workspaceName" :content="workspaceName">
-        <span class="scm-graph-project">{{ workspaceName }}</span>
-      </UiTooltip>
+      <div v-if="showWorkspacePicker" class="scm-graph-workspace-wrap" @click.stop @keydown.stop>
+        <ScmInspectBranchPicker
+          class="scm-graph-workspace"
+          :workspace-id="workspaceId"
+          :workspaces="workspaces"
+          :repositories="repositories"
+          :pinned="pinned"
+          @update:workspace-id="emit('selectWorkspace', $event)"
+        />
+      </div>
     </template>
     <template #actions>
+      <UiButton
+        variant="ghost"
+        size="icon"
+        :tip="pinned ? t('scm.inspect.unpinWorkspace') : t('scm.inspect.pinWorkspace')"
+        :aria-pressed="pinned ? 'true' : 'false'"
+        @click="emit('togglePin')"
+      >
+        <Codicon :name="pinned ? 'pinned' : 'pin'" />
+      </UiButton>
       <UiButton
         v-if="live !== false"
         variant="ghost"

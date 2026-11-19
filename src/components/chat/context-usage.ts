@@ -31,9 +31,20 @@ const SLICE_COLORS = {
   cacheWrite: "#fbbf24",
 } as const;
 
+/** 上下文用量展示：不足一千用原值，之后按 K / M / B 缩放。 */
 export function formatTokenCount(tokens: number): string {
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`;
-  return String(tokens);
+  if (!Number.isFinite(tokens) || tokens <= 0) return "0";
+  const value = Math.round(tokens);
+  if (value >= 1_000_000_000) {
+    const n = value / 1_000_000_000;
+    return `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}B`;
+  }
+  if (value >= 1_000_000) {
+    const n = value / 1_000_000;
+    return `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}M`;
+  }
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+  return String(value);
 }
 
 /** 本对话里出过场的智能体（有助手回复或带 agentId 的消息）。 */

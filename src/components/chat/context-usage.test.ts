@@ -71,9 +71,14 @@ describe("estimateContextUsage", () => {
     expect(miku.slices.find((slice) => slice.id === "conversation")?.tokens).toBe(20);
   });
 
-  test("formats thousands", () => {
+  test("formats with K / M / B units", () => {
+    expect(formatTokenCount(0)).toBe("0");
     expect(formatTokenCount(904)).toBe("904");
     expect(formatTokenCount(1700)).toBe("1.7K");
     expect(formatTokenCount(166700)).toBe("166.7K");
+    expect(formatTokenCount(1_200_000)).toBe("1.2M");
+    expect(formatTokenCount(12_500_000)).toBe("13M");
+    expect(formatTokenCount(1_500_000_000)).toBe("1.5B");
+    expect(formatTokenCount(15_000_000_000)).toBe("15B");
   });
 });
