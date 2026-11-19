@@ -101,6 +101,10 @@ const workbenchProjectId = computed(() => {
   const match = route.path.match(/^\/projects\/([^/]+)/);
   return match?.[1] ?? null;
 });
+/** 所有需求工作台共用一个 keep-alive 槽。按 path 分槽会在下拉直切时同时挂两个完整工作台（Monaco + git + 聊天），直接卡死。 */
+const viewCacheKey = computed(() =>
+  workbenchProjectId.value ? "project-workspace" : route.path,
+);
 const projectSwitchOptions = computed(() => {
   const projects = store.data?.projects ?? [];
   const currentId = workbenchProjectId.value;
@@ -638,7 +642,7 @@ onBeforeUnmount(() => {
       <RouterView v-else v-slot="{ Component }">
         <!-- 按 path 缓存页面，切侧栏菜单不丢滚动/表单；上限防止无限涨内存 -->
         <keep-alive :max="24">
-          <component :is="Component" :key="route.path" />
+          <component :is="Component" :key="viewCacheKey" />
         </keep-alive>
       </RouterView>
     </main>
