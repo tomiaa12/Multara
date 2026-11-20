@@ -9938,6 +9938,8 @@ body.is-dragging-task * {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 .task-issue-body.side-closed {
   grid-template-columns: minmax(0, 1fr);
@@ -16122,8 +16124,10 @@ vite-error-overlay {
   color: var(--color-text);
   background: var(--color-surface-hover, transparent);
 }
-/* 屏幕外的历史轮次不参与布局和绘制；`auto` 会记住渲染过的真实高度，减少滚动条跳动。 */
-.message-exchange:not(:last-child) {
+/* 仅 ChatPanel：屏外轮次跳过布局/绘制。任务详情 / 收件箱 thread 会挂全部历史，
+ * 在 WKWebView 里 content-visibility 常把屏外高度算成 0，滚动条消失只剩末轮。
+ * ChatPanel 已有「显示更早」窗口，历史不在 DOM 里，这里可以安全用。 */
+.shared-chat-panel .message-exchange:not(:last-child) {
   content-visibility: auto;
   contain-intrinsic-size: auto 480px;
 }

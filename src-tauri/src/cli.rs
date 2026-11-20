@@ -240,6 +240,9 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
         resource,
         verb,
     )?;
+    if resource == "node" || resource == "workflow" {
+        return crate::workflow::cli::execute(args, db);
+    }
     match (resource, verb) {
         ("task", "list") => {
             ops::task::settle_finished(db)?;
@@ -591,6 +594,9 @@ fn ensure_write_allowed(
         ("channel", "enable"),
         ("channel", "disable"),
         ("session", "resume"),
+        ("node", "output"),
+        ("node", "fail"),
+        ("workflow", "run"),
     ];
     if !WRITE_COMMANDS.contains(&(resource, verb)) {
         return Ok(());
@@ -831,7 +837,7 @@ fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
 fn open_db() -> Result<Connection, String> {
     let path = db_path()?;
     let db = database::open_file_light(&path)?;
-    crate::app_locale::set_current(crate::app_locale::from_db(&db));
+    crate::app_locale::refresh_from_db(&db);
     Ok(db)
 }
 

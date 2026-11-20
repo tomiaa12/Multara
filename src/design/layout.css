@@ -437,6 +437,8 @@ button.nav-item,
 .main-content:has(.task-issue),
 .main-content:has(.agent-detail-page),
 .main-content:has(.inbox-page),
+.main-content:has(.wf-editor),
+.main-content:has(.run-page),
 .main-content:has(.settings-shell) {
   overflow: hidden;
 }
@@ -444,6 +446,8 @@ button.nav-item,
 .main-content:has(.task-issue) > .task-issue,
 .main-content:has(.tasks-page) > .tasks-page,
 .main-content:has(.inbox-page) > .inbox-page,
+.main-content:has(.wf-editor) > .wf-editor,
+.main-content:has(.run-page) > .run-page,
 .main-content:has(.workbench) > .workbench {
   height: 100%;
   min-height: 0;

@@ -64,7 +64,7 @@ const emit = defineEmits<{
   attachFile: [file: { workspaceId: string; path: string; isDirectory?: boolean }];
 }>();
 
-type HookPlanKind = "commit" | "commit-push" | "commit-sync" | "push" | "pull" | "sync";
+type HookPlanKind = "commit" | "commit-push" | "commit-sync" | "push" | "pull" | "sync" | "finish-merge";
 
 const store = useAppStore();
 const router = useRouter();
@@ -441,9 +441,13 @@ function pullMerge(workspace: Workspace) {
 function finishMerge(workspace: Workspace) {
   const merge = store.mergeSessionFor(workspace.id);
   if (!merge) return;
-  return run(`finish-merge:${workspace.id}`, async () => {
-    await store.finishMergeSession(merge.id);
-  });
+  return run(
+    `finish-merge:${workspace.id}`,
+    async () => {
+      await store.finishMergeSession(merge.id);
+    },
+    { workspaceId: workspace.id, kind: "finish-merge" },
+  );
 }
 
 async function abortMergeSession(workspace: Workspace) {
@@ -478,6 +482,12 @@ async function skipHooksOnce() {
   if (!failure?.skippable || !plan) return;
   const id = plan.workspaceId;
   return run(`skip:${id}`, async () => {
+    if (plan.kind === "finish-merge") {
+      const merge = store.mergeSessionFor(id);
+      if (!merge) throw new Error(t("scm.finishMergeTitle"));
+      await store.finishMergeSession(merge.id, true);
+      return;
+    }
     if (plan.kind === "push" || (plan.kind === "commit-push" && failure.operation === "push")) {
       await backend.gitPushWorkspace(id, true);
       return;

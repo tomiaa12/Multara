@@ -1,10 +1,37 @@
 import { getVersion } from "@tauri-apps/api/app";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { connectDevBackend, hasBackend, inTauri, invoke } from "./dev-backend";
 
 export { connectDevBackend, hasBackend, inTauri };
 import { titleSeedText } from "../components/chat/composer-content";
 import { t } from "../i18n";
+import type {
+  Diagnostic,
+  NodeLogChunk,
+  NodeTemplate,
+  RenderPreview,
+  RunDetail,
+  SaveResult,
+  SecretName,
+  Workflow,
+  WorkflowDef,
+  WorkflowDetail,
+  WorkflowEvent,
+  WorkflowNodeValues,
+  WorkflowRun,
+  WorkflowSummary,
+  WorkflowTemplateMeta,
+} from "../domain/workflow";
+import {
+  fixtureDetail,
+  fixtureDiagnostics,
+  fixtureFlowTemplates,
+  fixtureNodeTemplates,
+  fixtureRunDetail,
+  fixtureRuns,
+  fixtureSecrets,
+  fixtureSummaries,
+} from "../dev/workflow-fixtures";
 import type {
   ActiveDiffData,
   SessionDiffData,
@@ -1437,6 +1464,12 @@ export async function saveSettings(settings: Record<string, string>): Promise<Re
   return invoke<Record<string, string>>("save_settings", { settings });
 }
 
+/** 把前端已解析的界面语言同步到后端 tr! / 提示词缓存（设置 → 通用 → 语言）。 */
+export async function syncAppLocale(locale: string): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke<string>("sync_app_locale", { locale });
+}
+
 export async function appVersion(): Promise<string> {
   if (inTauri()) return getVersion();
   if (hasBackend()) return "dev";
@@ -2094,8 +2127,8 @@ export async function gitPullMergeSession(mergeId: string): Promise<MergePullRes
   return invoke<MergePullResult>("git_pull_merge_session", { mergeId });
 }
 
-export async function gitFinishMergeSession(mergeId: string): Promise<MergeFinishResult> {
-  return invoke<MergeFinishResult>("git_finish_merge_session", { mergeId });
+export async function gitFinishMergeSession(mergeId: string, skipVerify = false): Promise<MergeFinishResult> {
+  return invoke<MergeFinishResult>("git_finish_merge_session", { mergeId, skipVerify });
 }
 
 export async function gitAbortMergeSession(mergeId: string): Promise<void> {
@@ -2366,4 +2399,230 @@ export async function setChannelUserTarget(
 export async function rotateChannelPairingCode(id: string): Promise<string> {
   if (!hasBackend()) return "000000";
   return invoke<string>("rotate_channel_pairing_code", { id });
+}
+
+// ---------- 工作流（src-tauri/src/workflow/commands.rs） ----------
+
+function desktopOnlyWorkflow(): Error {
+  return new Error(t("workflow.desktopOnly"));
+}
+
+export async function listWorkflows(): Promise<WorkflowSummary[]> {
+  if (!hasBackend()) return fixtureSummaries();
+  return invoke<WorkflowSummary[]>("list_workflows");
+}
+
+export async function getWorkflow(workflowId: string): Promise<WorkflowDetail> {
+  if (!hasBackend()) return fixtureDetail(workflowId);
+  return invoke<WorkflowDetail>("get_workflow", { workflowId });
+}
+
+export async function createWorkflow(input: { name: string; description?: string; templateId?: string | null }): Promise<Workflow> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<Workflow>("create_workflow", {
+    name: input.name,
+    description: input.description ?? "",
+    templateId: input.templateId ?? null,
+  });
+}
+
+export async function updateWorkflowMeta(workflowId: string, name: string, description: string, icon?: string): Promise<Workflow> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<Workflow>("update_workflow_meta", { workflowId, name, description, icon: icon ?? null });
+}
+
+export async function setWorkflowEnabled(workflowId: string, enabled: boolean): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("set_workflow_enabled", { workflowId, enabled });
+}
+
+/** 浏览器预览：草稿只在内存里编辑，不落盘，也返回新的 updatedAt 让编辑器保持可用 */
+export async function saveWorkflowDraft(workflowId: string, draft: WorkflowDef, expectedUpdatedAt: string | null): Promise<SaveResult> {
+  if (!hasBackend()) return { updatedAt: new Date().toISOString(), diagnostics: fixtureDiagnostics() };
+  return invoke<SaveResult>("save_workflow_draft", { workflowId, draft, expectedUpdatedAt });
+}
+
+export async function validateWorkflow(draft: WorkflowDef): Promise<Diagnostic[]> {
+  if (!hasBackend()) return fixtureDiagnostics();
+  return invoke<Diagnostic[]>("validate_workflow", { draft });
+}
+
+export async function publishWorkflow(workflowId: string, note: string): Promise<number> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<number>("publish_workflow", { workflowId, note });
+}
+
+export async function deleteWorkflow(workflowId: string): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("delete_workflow", { workflowId });
+}
+
+export async function duplicateWorkflow(workflowId: string): Promise<Workflow> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<Workflow>("duplicate_workflow", { workflowId });
+}
+
+export async function exportWorkflow(workflowId: string, path: string): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("export_workflow", { workflowId, path });
+}
+
+export async function importWorkflow(path: string): Promise<Workflow> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<Workflow>("import_workflow", { path });
+}
+
+export async function listNodeTemplates(): Promise<NodeTemplate[]> {
+  if (!hasBackend()) return fixtureNodeTemplates();
+  return invoke<NodeTemplate[]>("list_node_templates");
+}
+
+/** `template` 为 { nodes, edges }（选区），后端落成用户节点模板并返回最新列表 */
+export async function saveNodeTemplate(
+  name: string,
+  description: string,
+  template: { nodes: unknown[]; edges: unknown[] },
+): Promise<NodeTemplate[]> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<NodeTemplate[]>("save_node_template", { name, description, template });
+}
+
+export async function deleteNodeTemplate(templateId: string): Promise<NodeTemplate[]> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<NodeTemplate[]>("delete_node_template", { templateId });
+}
+
+export async function listWorkflowTemplates(): Promise<WorkflowTemplateMeta[]> {
+  if (!hasBackend()) return fixtureFlowTemplates();
+  return invoke<WorkflowTemplateMeta[]>("list_workflow_templates");
+}
+
+export async function workflowRenderPreview(input: {
+  draft: WorkflowDef;
+  nodeId: string;
+  source: string;
+  isExpression?: boolean;
+  sampleInputs?: Record<string, unknown>;
+}): Promise<RenderPreview> {
+  if (!hasBackend()) {
+    return {
+      rendered: input.source,
+      error: null,
+      variables: {
+        inputs: {},
+        run: { id: "run-id", short_id: "abc123", inputs: {}, started_at: "" },
+        workflow: { name: "workflow", slug: "workflow", version: 1 },
+        ws: {},
+        iteration: 0,
+        attempt: 1,
+        nodes: {},
+      },
+    };
+  }
+  return invoke<RenderPreview>("workflow_render_preview", {
+    draft: input.draft,
+    nodeId: input.nodeId,
+    source: input.source,
+    isExpression: input.isExpression ?? false,
+    sampleInputs: input.sampleInputs ?? null,
+  });
+}
+
+/** draft=true：用草稿跑一次（version 0 临时版本） */
+export async function startWorkflowRun(workflowId: string, inputs: Record<string, unknown>, draft = false): Promise<WorkflowRun> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<WorkflowRun>("start_workflow_run", { workflowId, inputs, draft });
+}
+
+export async function listWorkflowRuns(filter: { workflowId?: string | null; status?: string | null; limit?: number } = {}): Promise<WorkflowRun[]> {
+  if (!hasBackend()) {
+    const runs = fixtureRuns(filter.workflowId ?? undefined);
+    return filter.status ? runs.filter((run) => run.status === filter.status) : runs;
+  }
+  return invoke<WorkflowRun[]>("list_workflow_runs", {
+    workflowId: filter.workflowId ?? null,
+    status: filter.status ?? null,
+    limit: filter.limit ?? 100,
+  });
+}
+
+export async function getWorkflowRun(runId: string): Promise<RunDetail> {
+  if (!hasBackend()) return fixtureRunDetail(runId);
+  return invoke<RunDetail>("get_workflow_run", { runId });
+}
+
+/** 节点运行的输入快照与输出值（完整值，非 4KB 预览） */
+export async function getWorkflowNodeValues(nodeRunId: string): Promise<WorkflowNodeValues> {
+  if (!hasBackend()) return { inputs: {}, outputs: {} };
+  return invoke<WorkflowNodeValues>("get_workflow_node_values", { nodeRunId });
+}
+
+export async function getWorkflowNodeLog(nodeRunId: string, offset = 0): Promise<NodeLogChunk> {
+  if (!hasBackend()) return { text: "$ pnpm test\n\n PASS  src/a.test.ts\n Tests: 12 passed\n", nextOffset: 0, eof: true };
+  return invoke<NodeLogChunk>("get_workflow_node_log", { nodeRunId, offset });
+}
+
+export async function listWorkflowEvents(runId: string, afterSeq = 0): Promise<WorkflowEvent[]> {
+  if (!hasBackend()) return [];
+  return invoke<WorkflowEvent[]>("list_workflow_events", { runId, afterSeq });
+}
+
+export async function cancelWorkflowRun(runId: string): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("cancel_workflow_run", { runId });
+}
+
+export async function retryWorkflowNode(runId: string, nodeId: string, resetWorkspace: boolean): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("retry_workflow_node", { runId, nodeId, resetWorkspace });
+}
+
+/** 跳过失败节点：标 succeeded，输出由用户手填（port -> value） */
+export async function skipWorkflowNode(runId: string, nodeId: string, outputs: Record<string, unknown>): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("skip_workflow_node", { runId, nodeId, outputs });
+}
+
+export async function decideWorkflowGate(
+  nodeRunId: string,
+  decision: string,
+  comment = "",
+  form: unknown = null,
+): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("decide_workflow_gate", { nodeRunId, decision, comment, form });
+}
+
+export async function deleteWorkflowRun(runId: string, removeWorktrees = false): Promise<void> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  await invoke("delete_workflow_run", { runId, removeWorktrees });
+}
+
+export async function listWorkflowSecrets(): Promise<SecretName[]> {
+  if (!hasBackend()) return fixtureSecrets();
+  return invoke<SecretName[]>("list_workflow_secrets");
+}
+
+/** 值只写不读：后端从不返回密钥值 */
+export async function setWorkflowSecret(name: string, value: string, description = ""): Promise<SecretName[]> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<SecretName[]>("set_workflow_secret", { name, value, description });
+}
+
+export async function deleteWorkflowSecret(name: string): Promise<SecretName[]> {
+  if (!hasBackend()) throw desktopOnlyWorkflow();
+  return invoke<SecretName[]>("delete_workflow_secret", { name });
+}
+
+/** 选择 .multara-flow.json 文件（导入）；浏览器预览返回 null */
+export async function pickWorkflowImportFile(): Promise<string | null> {
+  if (!hasBackend()) return null;
+  const picked = await open({ multiple: false, directory: false, filters: [{ name: "Multara Flow", extensions: ["json"] }] });
+  return typeof picked === "string" ? picked : null;
+}
+
+/** 选择导出路径；浏览器预览返回 null */
+export async function pickWorkflowExportPath(defaultName: string): Promise<string | null> {
+  if (!hasBackend()) return null;
+  return save({ defaultPath: `${defaultName}.multara-flow.json`, filters: [{ name: "Multara Flow", extensions: ["json"] }] });
 }

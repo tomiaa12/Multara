@@ -26,6 +26,23 @@ export const router = createRouter({
       component: () => import("./views/TaskDetailView.vue"),
       meta: { titleKey: "route.taskDetail", parent: "/tasks" },
     },
+    { path: "/workflows", component: () => import("./views/workflows/WorkflowsView.vue"), meta: { titleKey: "nav.workflows" } },
+    {
+      path: "/workflows/:workflowId",
+      component: () => import("./views/workflows/WorkflowEditorView.vue"),
+      meta: { titleKey: "route.workflowEditor", parent: "/workflows" },
+    },
+    {
+      path: "/workflows/:workflowId/runs",
+      component: () => import("./views/workflows/WorkflowRunsView.vue"),
+      // 面包屑 parent 不能带参数；实际走过的路径由 breadcrumbs 记录
+      meta: { titleKey: "route.workflowRuns", parent: "/workflows" },
+    },
+    {
+      path: "/workflows/:workflowId/runs/:runId",
+      component: () => import("./views/workflows/WorkflowRunView.vue"),
+      meta: { titleKey: "route.workflowRun", parent: "/workflows" },
+    },
     { path: "/automation", component: () => import("./views/AutomationView.vue"), meta: { titleKey: "nav.automation" } },
     { path: "/channels", component: () => import("./views/ChannelsView.vue"), meta: { titleKey: "nav.channels" } },
     { path: "/agents", component: CollectionView, meta: { titleKey: "nav.agents", kind: "agents" } },

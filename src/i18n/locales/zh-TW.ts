@@ -1,6 +1,13 @@
 import type { MessageCatalog } from "../types";
 
+import { workflowMessages } from "../workflow";
+
 const catalog: MessageCatalog = {
+  ...workflowMessages("zh-TW"),
+  "nav.workflows": "工作流程",
+  "route.workflowEditor": "工作流程編輯",
+  "route.workflowRuns": "執行記錄",
+  "route.workflowRun": "執行詳情",
   "chat.thinking": "思考中…",
   "chat.waiting": "等待回應",
   "chat.starting": "啟動中",

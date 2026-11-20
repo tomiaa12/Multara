@@ -61,6 +61,7 @@ pub mod text_search;
 pub mod ui_host;
 pub mod usage;
 pub mod webhook;
+pub mod workflow;
 pub mod workspace;
 
 #[cfg(target_os = "macos")]
@@ -105,6 +106,7 @@ use commands::{
     scan_workspace_candidates, schedule_mcp_tools_refresh, search_catalog, search_workspace,
     send_message, set_automation_enabled, set_mcp_enabled, set_message_feedback,
     set_project_archived, set_session_default_mode, set_skill_enabled, sign_out_mcp,
+    sync_app_locale,
     skill_file_count, stop_run, terminal_clipboard_text, terminal_close, terminal_command_names,
     terminal_free_port, terminal_open, terminal_profiles, terminal_publish, terminal_resize,
     terminal_resolve_paths, terminal_services, terminal_write, test_runtime_connection,
@@ -299,7 +301,7 @@ pub fn run() {
                 message
             })?;
             let startup_theme = state.lock_db().ok().map(|db| {
-                app_locale::set_current(app_locale::from_db(&db));
+                app_locale::refresh_from_db(&db);
                 commands::setting_value(&db, "theme", "dark")
             });
             reveal_main_window(app, startup_theme.as_deref())?;
@@ -325,10 +327,43 @@ pub fn run() {
             executor::start_poller(app.handle().clone());
             channel::supervisor::start(app.handle().clone());
             channel::outbound::recover_pending(app.handle());
+            workflow::runtime::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            sync_app_locale,
+            workflow::commands::list_workflows,
+            workflow::commands::get_workflow,
+            workflow::commands::create_workflow,
+            workflow::commands::update_workflow_meta,
+            workflow::commands::set_workflow_enabled,
+            workflow::commands::save_workflow_draft,
+            workflow::commands::validate_workflow,
+            workflow::commands::publish_workflow,
+            workflow::commands::delete_workflow,
+            workflow::commands::duplicate_workflow,
+            workflow::commands::export_workflow,
+            workflow::commands::import_workflow,
+            workflow::commands::list_node_templates,
+            workflow::commands::save_node_template,
+            workflow::commands::delete_node_template,
+            workflow::commands::list_workflow_templates,
+            workflow::commands::workflow_render_preview,
+            workflow::commands::start_workflow_run,
+            workflow::commands::list_workflow_runs,
+            workflow::commands::get_workflow_run,
+            workflow::commands::get_workflow_node_values,
+            workflow::commands::get_workflow_node_log,
+            workflow::commands::list_workflow_events,
+            workflow::commands::cancel_workflow_run,
+            workflow::commands::retry_workflow_node,
+            workflow::commands::skip_workflow_node,
+            workflow::commands::decide_workflow_gate,
+            workflow::commands::delete_workflow_run,
+            workflow::commands::list_workflow_secrets,
+            workflow::commands::set_workflow_secret,
+            workflow::commands::delete_workflow_secret,
             list_task_inbox_surfaces,
             list_agents_and_squads,
             list_projects_and_workspaces,

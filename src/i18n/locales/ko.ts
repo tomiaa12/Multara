@@ -1,6 +1,13 @@
 import type { MessageCatalog } from "../types";
 
+import { workflowMessages } from "../workflow";
+
 const catalog: MessageCatalog = {
+  ...workflowMessages("ko"),
+  "nav.workflows": "워크플로",
+  "route.workflowEditor": "워크플로 편집",
+  "route.workflowRuns": "실행 기록",
+  "route.workflowRun": "실행 상세",
   "chat.thinking": "생각 중…",
   "chat.waiting": "대기 중",
   "chat.starting": "시작 중",

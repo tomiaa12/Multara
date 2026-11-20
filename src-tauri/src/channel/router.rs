@@ -273,12 +273,22 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
     let command = parts.next().unwrap_or_default().to_lowercase();
     let argument = parts.next().unwrap_or_default().trim();
 
+    if let Some(reply) =
+        crate::workflow::runtime::channel_command(app, &installation.id, &message.chat_id, command.as_str(), argument)
+    {
+        send_notice(app, installation, message, &reply);
+        return true;
+    }
     match command.as_str() {
         "/help" => send_notice(
             app,
             installation,
             message,
-            &tr!("可用指令：\n/new 开启新会话\n/stop 或「停止运行」中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明"),
+            &format!(
+                "{}\n{}",
+                tr!("可用指令：\n/new 开启新会话\n/stop 或「停止运行」中止当前运行\n/status 查看当前会话状态\n/project <需求名> 切换默认需求\n/help 显示这段说明"),
+                tr!("/flow <工作流名> <内容> 启动工作流\n/approve、/changes <原因>、/reject 审批工作流")
+            ),
         ),
         "/new" => {
             let route_key = route_key(message);
