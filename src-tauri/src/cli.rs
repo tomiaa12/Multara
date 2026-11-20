@@ -837,7 +837,7 @@ fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
 fn open_db() -> Result<Connection, String> {
     let path = db_path()?;
     let db = database::open_file_light(&path)?;
-    crate::app_locale::set_current(crate::app_locale::from_db(&db));
+    crate::app_locale::refresh_from_db(&db);
     Ok(db)
 }
 

@@ -1464,6 +1464,12 @@ export async function saveSettings(settings: Record<string, string>): Promise<Re
   return invoke<Record<string, string>>("save_settings", { settings });
 }
 
+/** 把前端已解析的界面语言同步到后端 tr! / 提示词缓存（设置 → 通用 → 语言）。 */
+export async function syncAppLocale(locale: string): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke<string>("sync_app_locale", { locale });
+}
+
 export async function appVersion(): Promise<string> {
   if (inTauri()) return getVersion();
   if (hasBackend()) return "dev";
@@ -2121,8 +2127,8 @@ export async function gitPullMergeSession(mergeId: string): Promise<MergePullRes
   return invoke<MergePullResult>("git_pull_merge_session", { mergeId });
 }
 
-export async function gitFinishMergeSession(mergeId: string): Promise<MergeFinishResult> {
-  return invoke<MergeFinishResult>("git_finish_merge_session", { mergeId });
+export async function gitFinishMergeSession(mergeId: string, skipVerify = false): Promise<MergeFinishResult> {
+  return invoke<MergeFinishResult>("git_finish_merge_session", { mergeId, skipVerify });
 }
 
 export async function gitAbortMergeSession(mergeId: string): Promise<void> {

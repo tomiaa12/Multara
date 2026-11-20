@@ -106,6 +106,7 @@ use commands::{
     scan_workspace_candidates, schedule_mcp_tools_refresh, search_catalog, search_workspace,
     send_message, set_automation_enabled, set_mcp_enabled, set_message_feedback,
     set_project_archived, set_session_default_mode, set_skill_enabled, sign_out_mcp,
+    sync_app_locale,
     skill_file_count, stop_run, terminal_clipboard_text, terminal_close, terminal_command_names,
     terminal_free_port, terminal_open, terminal_profiles, terminal_publish, terminal_resize,
     terminal_resolve_paths, terminal_services, terminal_write, test_runtime_connection,
@@ -300,7 +301,7 @@ pub fn run() {
                 message
             })?;
             let startup_theme = state.lock_db().ok().map(|db| {
-                app_locale::set_current(app_locale::from_db(&db));
+                app_locale::refresh_from_db(&db);
                 commands::setting_value(&db, "theme", "dark")
             });
             reveal_main_window(app, startup_theme.as_deref())?;
@@ -331,6 +332,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            sync_app_locale,
             workflow::commands::list_workflows,
             workflow::commands::get_workflow,
             workflow::commands::create_workflow,

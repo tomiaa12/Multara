@@ -1101,9 +1101,11 @@ pub async fn git_repair_worktree_runtime(
     let _span = crate::diag::span("git_repair_worktree_runtime");
     off_main(app, move |state| {
         let (workspace, _) = git_workspace_and_command(state, &workspace_id)?;
-        let report = hook_runtime::link_worktree_runtime(
+        // 修复钩子运行时时允许链接与 lockfile 不完全一致的 node_modules（合并临时区常见）。
+        let report = hook_runtime::link_worktree_runtime_with(
             std::path::Path::new(&workspace.source_path),
             std::path::Path::new(&workspace.work_path),
+            true,
         );
         Ok(hook_runtime::describe_repair(&report))
     })
@@ -3047,6 +3049,7 @@ pub async fn save_settings(
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("builtin-skills");
+    let language_changed = settings.contains_key("language");
     let saved = off_main(app.clone(), move |state| {
         let language_changed = settings.contains_key("language");
         let (locale, saved) = save_settings_rows(&*state.lock_db()?, settings)?;
@@ -3059,6 +3062,13 @@ pub async fn save_settings(
     .await?;
     if reload_webhook {
         crate::webhook::reload(&app);
+    }
+    #[cfg(target_os = "macos")]
+    if language_changed {
+        // 菜单文案走 tr!，语言变更后重建，避免仍显示旧语言。
+        if let Ok(menu) = crate::macos_menu::app_menu(&app) {
+            let _ = app.set_menu(menu);
+        }
     }
     #[cfg(target_os = "macos")]
     if let Some(value) = word_wrap {
@@ -3417,12 +3427,19 @@ pub fn delete_squad(squad_id: String, state: State<'_, AppState>) -> Result<Vec<
 }
 
 #[tauri::command]
+pub fn sync_app_locale(locale: String) -> Result<String, String> {
+    crate::app_locale::set_resolved(&locale).map(|id| id.to_string())
+}
+
+#[tauri::command]
 pub async fn bootstrap(app: AppHandle) -> Result<BootstrapData, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let _span = crate::diag::span("bootstrap");
         let state = app.state::<AppState>();
         {
             let db = state.lock_db()?;
+            // 与设置 → 通用 → 语言对齐；避免仅依赖启动时缓存。
+            crate::app_locale::refresh_from_db(&db);
             runtime::load_acp_mode_cache(&settings_map(&db)?);
         }
         // 运行时探测要逐个跑 CLI，耗时数秒，由前端在首屏后调用 list_runtimes 补上。

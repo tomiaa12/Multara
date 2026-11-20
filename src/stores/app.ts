@@ -1602,8 +1602,8 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
-  async function finishMergeSession(mergeId: string) {
-    const result = await backend.gitFinishMergeSession(mergeId);
+  async function finishMergeSession(mergeId: string, skipVerify = false) {
+    const result = await backend.gitFinishMergeSession(mergeId, skipVerify);
     dropMergeSession(mergeId);
     return result;
   }
