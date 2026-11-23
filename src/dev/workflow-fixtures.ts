@@ -18,11 +18,11 @@ import type {
 const NOW = "2026-11-18T08:00:00.000Z";
 
 function node(partial: Partial<NodeDef> & Pick<NodeDef, "id" | "kind" | "title" | "position">): NodeDef {
-  return { inputs: [], outputs: [], config: {}, workspaces: [], join: "all", onError: "fail_run", ...partial };
+  return { config: {}, ...partial };
 }
 
-function edge(id: string, source: string, sourcePort: string, target: string, targetPort: string, maxIterations?: number): EdgeDef {
-  return maxIterations ? { id, source, sourcePort, target, targetPort, maxIterations } : { id, source, sourcePort, target, targetPort };
+function edge(id: string, source: string, target: string, maxIterations?: number): EdgeDef {
+  return maxIterations ? { id, source, target, maxIterations } : { id, source, target };
 }
 
 export const fixtureDefinition = (): WorkflowDef => ({
@@ -31,64 +31,30 @@ export const fixtureDefinition = (): WorkflowDef => ({
     { name: "doc_url", type: "url", required: true, label: "需求文档地址", primary: true },
     { name: "project", type: "text", required: true, label: "需求 id" },
   ],
-  outputs: [{ name: "mr_url", type: "url" }],
   workspaces: [{ key: "app", label: "代码仓", project: "{{ run.inputs.project }}", isolation: "worktree_new", autoCommit: true }],
   nodes: [
     node({ id: "start", kind: "trigger", title: "开始", position: { x: 0, y: 160 }, config: { sources: ["manual", "automation", "channel"] } }),
     node({
       id: "prd", kind: "agent", title: "读取需求文档", position: { x: 280, y: 160 },
-      inputs: [{ name: "url", type: "url", required: true }],
-      outputs: [{ name: "spec", type: "json", required: true }],
-      config: { target: { type: "agent", id: "miku" }, mode: "auto", maxRepairTurns: 2, continueSession: "same_node", prompt: "阅读需求文档 {{ inputs.url }}，整理成结构化需求。" },
+      config: { target: { type: "agent", id: "miku" }, mode: "auto", context: "previous", route: "auto", prompt: "阅读需求文档 {{ inputs.url }}，整理成结构化需求。" },
     }),
     node({
       id: "code", kind: "agent", title: "编写代码", position: { x: 560, y: 160 },
-      inputs: [
-        { name: "spec", type: "json", required: true },
-        { name: "feedback", type: "markdown" },
-      ],
-      outputs: [{ name: "summary", type: "markdown", required: true }],
       workspaces: [{ slot: "app", access: "write" }],
-      config: { target: { type: "agent", id: "miku" }, mode: "plan", maxRepairTurns: 2, continueSession: "same_node", prompt: "按需求实现：{{ inputs.spec | tojson }}\n{% if inputs.feedback %}上一轮反馈：{{ inputs.feedback }}{% endif %}" },
+      config: { target: { type: "agent", id: "miku" }, mode: "plan", context: "previous", route: "auto", prompt: "按需求实现：{{ inputs.spec | tojson }}\n{% if inputs.feedback %}上一轮反馈：{{ inputs.feedback }}{% endif %}" },
     }),
     node({
-      id: "test", kind: "script", title: "运行单测", position: { x: 840, y: 160 },
-      workspaces: [{ slot: "app", access: "read" }],
-      config: { command: "pnpm test", shell: "default", cwd: { slot: "app" }, env: {}, successExitCodes: [0], failOnNonZero: false, parseStdout: "none", maxOutputKB: 256 },
+      id: "review", kind: "agent", title: "人工验收", position: { x: 840, y: 160 },
+      config: { target: { type: "agent", id: "miku" }, mode: "auto", context: "all", route: "human", humanConfirm: true, prompt: "验收：{{ run.inputs.project }}" },
     }),
-    node({
-      id: "check", kind: "switch", title: "测试结果判断", position: { x: 1120, y: 160 },
-      inputs: [{ name: "value", type: "any" }],
-      config: { value: "inputs.value", cases: [{ port: "pass", when: "inputs.value.exit_code == 0" }], defaultPort: "fail", mode: "first" },
-    }),
-    node({
-      id: "review", kind: "agent", title: "人工验收", position: { x: 1400, y: 100 },
-      config: {
-        title: "验收：{{ run.inputs.project }}", body: "请检查改动并给出结论。",
-        decisions: [
-          { port: "approve", label: "通过", primary: true },
-          { port: "changes", label: "打回修改", requireComment: true },
-          { port: "reject", label: "拒绝" },
-        ],
-        showDiffOf: ["app"], notify: {},
-      },
-    }),
-    node({
-      id: "ship", kind: "git", title: "推送", position: { x: 1680, y: 60 },
-      config: { slot: "app", op: "push", remote: "origin", setUpstream: true },
-    }),
-    node({ id: "done", kind: "output", title: "输出", position: { x: 1960, y: 60 }, inputs: [{ name: "mr_url", type: "url" }] }),
-    node({ id: "note_1", kind: "note", title: "说明", position: { x: 560, y: 340 }, config: { text: "单测失败最多回改 3 轮。" } }),
+    node({ id: "done", kind: "output", title: "输出", position: { x: 1120, y: 160 } }),
   ],
   edges: [
-    edge("e1", "start", "doc_url", "prd", "url"),
-    edge("e2", "prd", "spec", "code", "spec"),
-    edge("e3", "code", "$out", "test", "$in"),
-    edge("e4", "test", "$result", "check", "value"),
-    edge("e5", "check", "pass", "review", "$in"),
-    edge("e6", "check", "fail", "code", "feedback", 3),
-    edge("e7", "review", "approve", "ship", "$in"),
-    edge("e8", "ship", "head", "done", "mr_url"),
+    edge("e1", "start", "prd"),
+    edge("e2", "prd", "code"),
+    edge("e3", "code", "review"),
+    edge("e4", "review", "code", 3),
+    edge("e5", "review", "done"),
   ],
   settings: { ownerAgentId: "miku", maxParallelNodes: 4, concurrency: "allow" },
 });
@@ -128,7 +94,7 @@ export const fixtureDetail = (workflowId: string): WorkflowDetail => {
   const full = workflow.id === "wf-req";
   const draft = full
     ? fixtureDefinition()
-    : { ...fixtureDefinition(), nodes: fixtureDefinition().nodes.slice(0, 2), edges: [], inputs: [], outputs: [], workspaces: [] };
+    : { ...fixtureDefinition(), nodes: fixtureDefinition().nodes.slice(0, 2), edges: [], inputs: [], workspaces: [] };
   return {
     workflow,
     draft,
@@ -147,19 +113,17 @@ export const fixtureNodeTemplates = (): NodeTemplate[] => [
     recommends: { skills: ["lark-doc-get"], mcp: [] }, builtin: true, edges: [],
     nodes: [node({
       id: "prd", kind: "agent", title: "读取需求文档", position: { x: 0, y: 0 },
-      inputs: [{ name: "url", type: "url", required: true }],
-      outputs: [{ name: "spec", type: "json", required: true }],
-      config: { target: { type: "agent", id: "" }, mode: "auto", maxRepairTurns: 2, continueSession: "same_node", prompt: "阅读需求文档 {{ inputs.url }}" },
+      config: { target: { type: "agent", id: "" }, mode: "auto", context: "previous", route: "auto", prompt: "阅读需求文档 {{ inputs.url }}" },
     })],
   },
   {
     id: "builtin.unit_test", category: "quality", name: "运行测试并判断", description: "跑单测，失败走 fail 分支",
     recommends: null, builtin: true,
     nodes: [
-      node({ id: "test", kind: "script", title: "运行测试", position: { x: 0, y: 0 }, config: { command: "pnpm test", shell: "default", cwd: null, env: {}, successExitCodes: [0], failOnNonZero: false, parseStdout: "none", maxOutputKB: 256 } }),
-      node({ id: "check", kind: "switch", title: "测试结果", position: { x: 280, y: 0 }, inputs: [{ name: "value", type: "any" }], config: { value: "inputs.value", cases: [{ port: "pass", when: "inputs.value.exit_code == 0" }], defaultPort: "fail", mode: "first" } }),
+      node({ id: "test", kind: "agent", title: "运行测试", position: { x: 0, y: 0 }, config: { target: { type: "agent", id: "" }, mode: "auto", context: "previous", route: "auto", prompt: "运行 pnpm test" } }),
+      node({ id: "check", kind: "agent", title: "测试结果", position: { x: 280, y: 0 }, config: { target: { type: "agent", id: "" }, mode: "auto", context: "previous", route: "auto", prompt: "判断测试是否通过" } }),
     ],
-    edges: [edge("e1", "test", "$result", "check", "value")],
+    edges: [edge("e1", "test", "check")],
   },
   {
     id: "user.demo", category: "user", name: "我的审批卡", description: "自定义模板", recommends: null, builtin: false, edges: [],
@@ -209,14 +173,9 @@ export const fixtureRunDetail = (runId: string): RunDetail => {
     nodeRuns: [
       nodeRun({ id: "nr-start", nodeId: "start", kind: "trigger", status: "succeeded", nextNodeId: "prd" }),
       nodeRun({ id: "nr-prd", nodeId: "prd", kind: "agent", status: "succeeded", sessionId: "wf-node:nr-prd", nextNodeId: "code" }),
-      nodeRun({ id: "nr-code-0", nodeId: "code", kind: "agent", status: "succeeded", sessionId: "wf-node:nr-code-0", nextNodeId: "test" }),
-      nodeRun({ id: "nr-test-0", nodeId: "test", kind: "script", status: "succeeded", nextNodeId: "check" }),
-      nodeRun({ id: "nr-check-0", nodeId: "check", kind: "switch", status: "succeeded", nextNodeId: "code" }),
-      nodeRun({ id: "nr-code-1", nodeId: "code", kind: "agent", iteration: 1, status: "succeeded", sessionId: "wf-node:nr-code-0", nextNodeId: "test" }),
-      nodeRun({ id: "nr-test-1", nodeId: "test", kind: "script", iteration: 1, status: "succeeded", nextNodeId: "check" }),
-      nodeRun({ id: "nr-check-1", nodeId: "check", kind: "switch", iteration: 1, status: "succeeded", nextNodeId: "review" }),
+      nodeRun({ id: "nr-code-0", nodeId: "code", kind: "agent", status: "succeeded", sessionId: "wf-node:nr-code-0", nextNodeId: "review" }),
       nodeRun({ id: "nr-review", nodeId: "review", kind: "agent", iteration: 1, status: run.status === "succeeded" ? "succeeded" : "waiting_human", completedAt: null }),
-      ...(run.status === "failed" ? [nodeRun({ id: "nr-ship", nodeId: "ship", kind: "git", iteration: 1, status: "failed", error: "push rejected", errorCode: "git_failed" })] : []),
+      ...(run.status === "failed" ? [nodeRun({ id: "nr-done", nodeId: "done", kind: "output", iteration: 1, status: "failed", error: "output rejected", errorCode: "output_failed" })] : []),
     ],
     values: [
       { id: "v1", nodeRunId: "nr-prd", nodeId: "prd", port: "spec", portType: "json", size: 40, source: "agent", preview: { title: "示例需求", acceptance: ["可登录"] } },

@@ -21,19 +21,16 @@ describe("rename ports", () => {
     return {
       schemaVersion: 1,
       inputs: [{ name: "question", type: "text", required: true }],
-      outputs: [],
       workspaces: [{ key: "app", label: "代码", project: "{{ run.inputs.question }}", isolation: "direct" }],
       nodes: [
-        { id: "start", kind: "trigger", title: "开始", inputs: [], outputs: [], config: { sources: ["manual"] }, position: { x: 0, y: 0 } },
+        { id: "start", kind: "trigger", title: "开始", config: { sources: ["manual"] }, position: { x: 0, y: 0 } },
         {
           id: "ask", kind: "agent", title: "回答",
-          inputs: [{ name: "question", type: "text" }],
-          outputs: [{ name: "answer", type: "text" }],
           config: { prompt: "问题：{{ inputs.question }}\n上游：{{ nodes.start.outputs.question }}" },
           position: { x: 0, y: 0 },
         },
       ],
-      edges: [{ id: "e1", source: "start", sourcePort: "question", target: "ask", targetPort: "question" }],
+      edges: [{ id: "e1", source: "start", target: "ask" }],
       settings: { ownerAgentId: "", maxParallelNodes: 4, concurrency: "allow" },
     };
   }
@@ -42,7 +39,7 @@ describe("rename ports", () => {
     const workflow = def();
     renameNodeOutput(workflow, "start", "question", "用户问题");
     renameNodeInput(workflow, "ask", "question", "用户问题");
-    expect(workflow.edges[0]).toMatchObject({ sourcePort: "用户问题", targetPort: "用户问题" });
+    expect(workflow.edges[0]).toMatchObject({ source: "start", target: "ask" });
     expect(workflow.nodes[1].config).toMatchObject({
       prompt: "问题：{{ inputs.用户问题 }}\n上游：{{ nodes.start.outputs.用户问题 }}",
     });

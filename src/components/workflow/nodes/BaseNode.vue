@@ -36,7 +36,7 @@ const props = defineProps<{
 const connecting = inject<ConnectingContext | null>(CONNECTING_KEY, null);
 const node = computed(() => props.data.node);
 const meta = computed(() => NODE_KIND_META[node.value.kind] ?? NODE_KIND_META.trigger);
-const isNote = computed(() => node.value.kind === "note");
+const isNote = computed(() => false);
 const dataInputs = computed(() => (props.data.inputs ?? []).filter((port) => !isImplicitPort(port.name)));
 const dataOutputs = computed(() =>
   (props.data.outputs ?? []).filter((port) => !isImplicitPort(port.name) || port.name === "$result"),

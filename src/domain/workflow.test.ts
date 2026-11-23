@@ -27,14 +27,11 @@ describe("implicit ports (mirror of model.rs)", () => {
   const def = fixtureDefinition();
   const names = (node: NodeDef) => effectiveOutputs(node, def).map((port) => port.name);
 
-  it("script exposes exit_code / stdout / $result", () => {
-    const script = createNode("script", def, { x: 0, y: 0 });
-    expect(names(script)).toEqual(expect.arrayContaining(["exit_code", "stdout", "stderr", "log", "ok", "parsed", "$result", "$out", "$error"]));
-  });
-
-  it("switch exposes case ports, default and exhausted", () => {
-    const sw = def.nodes.find((node) => node.id === "check") as NodeDef;
-    expect(names(sw)).toEqual(expect.arrayContaining(["pass", "fail", "exhausted"]));
+  it("agent and output have no implicit ports", () => {
+    const agent = createNode("agent", def, { x: 0, y: 0 });
+    const output = createNode("output", def, { x: 0, y: 0 });
+    expect(names(agent)).toEqual([]);
+    expect(names(output)).toEqual([]);
   });
 
   it("a new agent waits for confirmation only when that option is on", () => {

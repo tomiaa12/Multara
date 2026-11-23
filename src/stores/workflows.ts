@@ -255,7 +255,7 @@ export const useWorkflowsStore = defineStore("workflows", () => {
       const minX = Math.min(...nodes.map((node) => node.position?.x ?? 0), 0);
       const minY = Math.min(...nodes.map((node) => node.position?.y ?? 0), 0);
       const placed = remapClipboard(
-        nodes.map((node) => ({ ...clone(node), templateId: template.builtin || template.id ? template.id : node.templateId })),
+        nodes.map((node) => clone(node)),
         edges,
         def.nodes.map((node) => node.id),
         def.edges.map((edge) => edge.id),
