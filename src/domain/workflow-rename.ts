@@ -58,9 +58,6 @@ function renameKey(map: Record<string, string> | undefined, from: string, to: st
 /** 输入端口改名：连线、本节点模板里的 inputs.旧名、子流程/遍历的入参键。 */
 export function renameNodeInput(def: WorkflowDef, nodeId: string, from: string, to: string) {
   if (!from || !to || from === to) return;
-  for (const edge of def.edges) {
-    if (edge.target === nodeId && edge.targetPort === from) edge.targetPort = to;
-  }
   const node = def.nodes.find((item) => item.id === nodeId);
   if (!node) return;
   replaceInTree(node, (source) => replacePath(source, "inputs.", from, to));
@@ -77,9 +74,6 @@ export function renameNodeInput(def: WorkflowDef, nodeId: string, from: string, 
 /** 输出端口改名：连线，以及全流程里的 nodes.<id>.outputs.旧名。触发器入参同时改 run.inputs。 */
 export function renameNodeOutput(def: WorkflowDef, nodeId: string, from: string, to: string) {
   if (!from || !to || from === to) return;
-  for (const edge of def.edges) {
-    if (edge.source === nodeId && edge.sourcePort === from) edge.sourcePort = to;
-  }
   const prefix = `nodes.${nodeId}.outputs.`;
   replaceInTree(def, (source) => replacePath(source, prefix, from, to));
   const node = def.nodes.find((item) => item.id === nodeId);

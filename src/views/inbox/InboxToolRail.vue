@@ -1623,7 +1623,7 @@ onBeforeUnmount(() => {
                 v-if="runId"
                 embedded
                 :state-key="`wf:${runId}`"
-                :list-directory="(path) => backend.listWorkflowDirectory(runId, path)"
+                :list-directory="(path) => backend.listWorkflowDirectory(runId || '', path)"
                 @open="openWorkflowFile"
               />
               <p v-else class="tree-empty">{{ t("workflow.outcome.emptyFiles") }}</p>

@@ -288,8 +288,7 @@ export function defaultConfig(kind: NodeKind): Record<string, unknown> {
   }
 }
 
-export function defaultInputs(kind: NodeKind): PortDef[] {
-  if (kind === "switch") return [{ name: "value", type: "any" }];
+export function defaultInputs(_kind: NodeKind): PortDef[] {
   return [];
 }
 

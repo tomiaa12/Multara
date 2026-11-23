@@ -29,7 +29,7 @@ describe("workflows store", () => {
   it("undo / redo restores the draft", async () => {
     const store = await loaded();
     const count = store.draft!.nodes.length;
-    const id = store.addNode("script", { x: 0, y: 0 });
+    const id = store.addNode("agent", { x: 0, y: 0 });
     expect(store.draft!.nodes).toHaveLength(count + 1);
     expect(store.canUndo).toBe(true);
     store.undo();
@@ -39,7 +39,7 @@ describe("workflows store", () => {
     expect(store.draft!.nodes.some((node) => node.id === id)).toBe(true);
     // 新的修改会清空重做栈
     store.undo();
-    store.addNode("http", { x: 0, y: 0 });
+    store.addNode("output", { x: 0, y: 0 });
     expect(store.canRedo).toBe(false);
   });
 
@@ -54,8 +54,8 @@ describe("workflows store", () => {
 
   it("debounces autosave (800ms) with the optimistic-lock timestamp", async () => {
     const store = await loaded();
-    store.addNode("script", { x: 0, y: 0 });
-    store.addNode("http", { x: 10, y: 0 });
+    store.addNode("agent", { x: 0, y: 0 });
+    store.addNode("output", { x: 10, y: 0 });
     expect(backend.saveWorkflowDraft).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(799);
     expect(backend.saveWorkflowDraft).not.toHaveBeenCalled();

@@ -71,7 +71,6 @@ export interface ConnectCheck {
  */
 export function checkConnection(def: GraphInput, source: NodeDef, target: NodeDef): ConnectCheck {
   if (source.id === target.id) return { kind: "invalid", reason: "self" };
-  if (source.kind === "note" || target.kind === "note") return { kind: "invalid", reason: "note" };
   if (target.kind === "trigger") return { kind: "invalid", reason: "trigger_target" };
   if (source.kind === "output") return { kind: "invalid", reason: "output_source" };
   if (ancestors(def, source.id).has(target.id)) {
