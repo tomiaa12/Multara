@@ -788,12 +788,8 @@
 }
 .chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button {
   --ds-stop-size: 22px;
+  --ds-stop-icon-size: 8px;
   pointer-events: auto;
-}
-/* 折叠态钮更小，中间方块跟着缩小（footer 里仍用默认 14） */
-.chat-composer.user-prompt > .user-prompt-stop-wrap .ds-stop-button svg {
-  width: 9px;
-  height: 9px;
 }
 .chat-composer.user-prompt.is-expanded > .user-prompt-stop-wrap,
 .chat-composer.user-prompt:focus-within > .user-prompt-stop-wrap {
@@ -919,6 +915,13 @@
 .reply-text > .rich-message,
 .reply-text > .rich-message > :first-child {
   display: inline;
+}
+.reply-text > .genui-block,
+.reply-text > .genui-fallback,
+.reply-text > .genui-skeleton {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
 }
 .assignment-turn .assignment-subtask {
   margin-top: 6px;
@@ -2101,6 +2104,56 @@ body:has(.canvas-modal) .canvas-frame-host {
   white-space: pre-wrap;
 }
 /* 生成式界面：聊天消息里的界面块（components/chat/genui） */
+.genui-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.genui-receipt-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.genui-receipt-head strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+}
+.genui-receipt-head span,
+.genui-receipt-label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.genui-receipt-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.genui-receipt-label {
+  flex: none;
+  padding-top: 2px;
+}
+.genui-receipt-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.genui-receipt-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  line-height: 18px;
+}
 .genui-block {
   display: flex;
   flex-direction: column;
@@ -2668,8 +2721,10 @@ button.chat-editing-overview-open:hover {
 .chat-editor-overlay-widget .diff-hunk-nav {
   margin-left: 4px;
 }
-/* Monaco 的隐藏输入框（.inputarea）跟着光标走，不能吃到这里的 width/color/background。 */
-textarea:not(.inputarea) {
+/* Monaco 的隐藏输入框（.inputarea）跟着光标走，不能吃到这里的 width/color/background。
+ * 同时避开设计系统字段（.ui-textarea / .ds-input），否则会盖掉公共组件的边框与底色。
+ * 聊天输入框的无边框样式由 .chat-composer .ui-textarea 单独负责。 */
+textarea:not(.inputarea):not(.ui-textarea):not(.ds-input) {
   width: 100%;
   resize: none;
   border: 0;
@@ -2906,6 +2961,35 @@ textarea:not(.inputarea) {
   /* 只压上下间距，别盖掉 .internal 卡片的左右 padding */
   padding-block: 7px;
 }
+.shared-chat-panel.compact .genui-block {
+  gap: 4px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  font-size: var(--font-size-xs);
+}
+.shared-chat-panel.compact .genui-table-head {
+  min-height: 0;
+  margin-bottom: 4px;
+}
+.shared-chat-panel.compact .genui-table-head .genui-title,
+.shared-chat-panel.compact .genui-table table {
+  font-size: var(--font-size-xs);
+}
+.shared-chat-panel.compact .genui-table th,
+.shared-chat-panel.compact .genui-table td {
+  padding: 2px 6px;
+}
+.shared-chat-panel.compact .genui-copy-split .genui-copy-main {
+  min-height: 22px;
+  padding-inline: 6px;
+  font-size: var(--font-size-xs);
+}
+.shared-chat-panel.compact .genui-copy-split .genui-copy-caret {
+  width: 20px;
+  min-width: 20px;
+  height: 22px;
+  min-height: 22px;
+}
 .shared-chat-panel.compact .assistant-working {
   width: 100%;
   margin: 8px 0;
@@ -3077,7 +3161,8 @@ textarea:not(.inputarea) {
 .diff-card,
 .shell-card,
 .todo-progress-card,
-.permission-card {
+.permission-card,
+.subagent-card {
   justify-self: stretch;
   width: 100%;
   box-sizing: border-box;
@@ -3133,9 +3218,14 @@ textarea:not(.inputarea) {
   color: var(--color-text-tertiary);
 }
 .shell-card > summary .shell-chevron,
-.shell-card > .shell-summary .shell-chevron {
+.shell-card > .shell-summary .shell-chevron,
+.shell-card > .shell-summary .shell-terminal-icon {
   color: var(--color-text-tertiary);
   transition: transform var(--motion-duration-fast) var(--motion-ease);
+}
+.shell-card > .shell-summary .shell-terminal-icon {
+  width: 14px;
+  height: 14px;
 }
 .shell-card[open] > summary .shell-chevron,
 .shell-card.is-open > .shell-summary .shell-chevron {
@@ -7422,6 +7512,18 @@ body.is-dragging-workspace-file * {
   grid-row: 1;
   grid-column: 1;
 }
+.editor-browser-toggle {
+  flex: none;
+  align-self: center;
+  margin-right: 4px;
+}
+.editor-area > .editor-browser {
+  grid-row: 2 / 4;
+  grid-column: 1;
+  min-width: 0;
+  min-height: 0;
+  z-index: 2;
+}
 .editor-area > .editor-breadcrumbs {
   grid-row: 2;
   grid-column: 1;
@@ -9577,6 +9679,32 @@ body.is-dragging-workspace-file * {
   pointer-events: none;
   rotate: 1.5deg;
 }
+.workflow-palette-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 80;
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-focus);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  opacity: 0.95;
+}
+body.is-dragging-workflow-palette,
+body.is-dragging-workflow-palette * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
 .task-card-drag-ghost * {
   pointer-events: none;
 }
@@ -9938,6 +10066,8 @@ body.is-dragging-task * {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 .task-issue-body.side-closed {
   grid-template-columns: minmax(0, 1fr);
@@ -10368,6 +10498,7 @@ body.is-dragging-task * {
   display: flex;
   flex-direction: column;
 }
+.inbox-stage-body > .inbox-surface-pane > .inbox-requirements,
 .inbox-stage-body > .inbox-surface-pane > .inbox-browser,
 .inbox-stage-body > .inbox-surface-pane > .inbox-git-split,
 .inbox-stage-body > .inbox-surface-pane > .uncommitted-changes,
@@ -10378,6 +10509,10 @@ body.is-dragging-task * {
   min-height: 0;
   min-width: 0;
   width: 100%;
+}
+.inbox-requirements {
+  overflow: auto;
+  padding: var(--spacing-3);
 }
 .inbox-git-split {
   display: flex;
@@ -10750,6 +10885,8 @@ body.is-resizing-panels .inbox-files-resize::after {
   background: var(--color-bg);
   color: var(--color-text);
   font-size: var(--font-size-sm);
+  /* 子 WebView 打开后，主窗口的字体回退会失效，Inter 后面的中文变成方框。地址栏直接用系统中文字体。 */
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", -apple-system, sans-serif;
 }
 .inbox-browser-chat-btn {
   gap: 2px;
@@ -13666,7 +13803,8 @@ label.settings-row:hover {
   width: max-content;
   max-width: 100%;
 }
-.req-run .inbox-list button > .req-run-item {
+/* 执行模式侧栏 / 工作台切换需求：同一行布局（名称 + 谁在工作） */
+.req-project-row {
   display: grid;
   flex: 1;
   gap: var(--spacing-1-5);
@@ -13674,8 +13812,15 @@ label.settings-row:hover {
   overflow: hidden;
   white-space: normal;
   font-weight: inherit;
+  text-align: start;
 }
-.req-run .req-run-name {
+.req-project-row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+}
+.req-project-row-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -13684,21 +13829,30 @@ label.settings-row:hover {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
-.req-run .req-run-workers {
+.req-project-row-workers {
   min-width: 0;
   max-width: 100%;
 }
 /* 无人可展示时不占位（只有「—」）；运行中 / 空闲头像+相对时间都保留 */
-.req-run .req-run-workers:has(> .avatar-stack-empty) {
+.req-project-row-workers:has(> .avatar-stack-empty) {
   display: none;
 }
-.req-run .req-run-workers .agent-live-status {
+.req-project-row-workers .agent-live-status {
   font-size: var(--font-size-sm);
 }
-.req-run .req-run-workers .agent-live-label {
+.req-project-row-workers .agent-live-label {
   font-size: inherit;
   font-weight: var(--font-weight-regular);
   color: var(--color-text-secondary);
+}
+.req-run .inbox-list button > .req-project-row {
+  width: 100%;
+}
+.ds-select-option .req-project-row {
+  width: 100%;
+}
+.ds-select-option .req-project-row-name {
+  font-size: inherit;
 }
 .req-run .inbox-detail > .req-run-empty {
   margin: auto;
@@ -14882,10 +15036,13 @@ body.is-resizing-row * {
   border-bottom: 1px solid var(--color-border-light);
   background: var(--color-surface);
 }
-.bottom-panel-tabs, .bottom-panel-actions { display: flex; align-items: center; gap: var(--spacing-0-5); min-width: 0; }
+.bottom-panel-tabs, .bottom-panel-actions { display: flex; align-items: center; min-width: 0; }
+.bottom-panel-tabs { gap: var(--spacing-1); }
+.bottom-panel-actions { flex: 0 0 auto; gap: var(--spacing-0-5); }
+/* 提示层是 flex 子项，默认可被压扁，标签文字会叠在一起。按内容宽度排开，多了再横向滚。 */
 .bottom-panel-tabs > .ds-tooltip-trigger {
   display: inline-flex;
-  min-width: 0;
+  flex: 0 0 auto;
   max-width: none;
 }
 .bottom-panel-tabs {
@@ -14933,11 +15090,12 @@ body.is-dragging-terminal-tab * {
   user-select: none !important;
 }
 .bottom-panel-tab i {
-  display: none;
+  display: inline-flex;
   cursor: pointer;
+  color: var(--color-text-tertiary);
 }
-.bottom-panel-tab:hover i,
-.bottom-panel-tab.active i { display: inline-flex; }
+.bottom-panel-tab i:hover,
+.bottom-panel-tab.active i { color: var(--color-text); }
 .bottom-panel-tab.busy { color: var(--color-text); }
 .bottom-panel-tab.error { color: var(--color-danger, #f14c4c); }
 .bottom-panel-tab.color-red { box-shadow: inset 0 -2px 0 #f14c4c; }
@@ -15309,8 +15467,7 @@ body.is-dragging-terminal-tab * {
   line-height: 16px;
 }
 .quick-pick button span {
-  flex: 0 1 auto;
-  max-width: 42%;
+  flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -15318,14 +15475,13 @@ body.is-dragging-terminal-tab * {
 }
 .quick-pick button.active, .quick-pick button:hover { background: var(--color-selection); color: var(--color-text-strong); }
 .quick-pick small {
-  flex: 0 1 auto;
-  max-width: 50%;
+  flex: 1 1 auto;
   min-width: 0;
-  margin-left: auto;
+  margin-left: 0;
   overflow: hidden;
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
-  text-align: right;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -16122,8 +16278,10 @@ vite-error-overlay {
   color: var(--color-text);
   background: var(--color-surface-hover, transparent);
 }
-/* 屏幕外的历史轮次不参与布局和绘制；`auto` 会记住渲染过的真实高度，减少滚动条跳动。 */
-.message-exchange:not(:last-child) {
+/* 仅 ChatPanel：屏外轮次跳过布局/绘制。任务详情 / 收件箱 thread 会挂全部历史，
+ * 在 WKWebView 里 content-visibility 常把屏外高度算成 0，滚动条消失只剩末轮。
+ * ChatPanel 已有「显示更早」窗口，历史不在 DOM 里，这里可以安全用。 */
+.shared-chat-panel .message-exchange:not(:last-child) {
   content-visibility: auto;
   contain-intrinsic-size: auto 480px;
 }

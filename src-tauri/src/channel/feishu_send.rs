@@ -40,6 +40,8 @@ pub struct FeishuContact {
     pub installation_name: String,
     pub open_id: String,
     pub display_name: Option<String>,
+    pub note: Option<String>,
+    pub session_id: Option<String>,
     pub session_title: Option<String>,
     pub paired_at: String,
     pub active_at: Option<String>,
@@ -384,7 +386,7 @@ pub fn list_feishu_contacts(state: State<'_, AppState>) -> Result<FeishuContactP
     }
     let mut statement = db
         .prepare(
-            "SELECT u.installation_id, i.name, u.channel_user_id, u.display_name, u.created_at
+            "SELECT u.installation_id, i.name, u.channel_user_id, u.display_name, u.note, u.created_at
              FROM channel_allowed_users u
              JOIN channel_installations i ON i.id = u.installation_id
              WHERE i.enabled != 0 AND i.channel_type IN ('feishu', 'lark')",
@@ -397,14 +399,15 @@ pub fn list_feishu_contacts(state: State<'_, AppState>) -> Result<FeishuContactP
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, Option<String>>(3)?,
-                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })
         .map_err(|error| error.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
     let mut listed = Vec::new();
-    for (installation_id, installation_name, open_id, display_name, paired_at) in contacts.drain(..)
+    for (installation_id, installation_name, open_id, display_name, note, paired_at) in contacts.drain(..)
     {
         let session = p2p_session(&db, &installation_id, &open_id)?;
         let sent_at = latest_send_at(&db, &installation_id, &open_id)?;
@@ -419,6 +422,10 @@ pub fn list_feishu_contacts(state: State<'_, AppState>) -> Result<FeishuContactP
             display_name: display_name
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
+            note: note
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            session_id: session.as_ref().map(|item| item.2.clone()),
             session_title: session.map(|item| item.0),
             paired_at,
             active_at,
@@ -892,9 +899,9 @@ fn p2p_session(
     db: &Connection,
     installation_id: &str,
     open_id: &str,
-) -> Result<Option<(String, String)>, String> {
+) -> Result<Option<(String, String, String)>, String> {
     db.query_row(
-        "SELECT s.title, s.updated_at
+        "SELECT s.title, s.updated_at, s.id
          FROM channel_session_bindings b
          JOIN chat_sessions s ON s.id = b.session_id
          WHERE b.installation_id=?1 AND b.chat_type='p2p' AND b.retired_at IS NULL
@@ -912,7 +919,7 @@ fn p2p_session(
            )
          ORDER BY s.updated_at DESC LIMIT 1",
         params![installation_id, open_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )
     .optional()
     .map_err(|error| error.to_string())

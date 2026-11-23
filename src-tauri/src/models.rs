@@ -480,6 +480,9 @@ pub struct QuickAction {
     pub prompt: String,
     #[serde(default)]
     pub primary: bool,
+    /// 结构化动作（如工作流审批）；有它时前端不发送 prompt，而是执行动作
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Serialize)]
@@ -717,6 +720,8 @@ pub struct Automation {
     pub next_run_at: Option<String>,
     pub webhook_token: Option<String>,
     pub last_run_status: Option<String>,
+    /// target_type = workflow 时：入参映射（JSON 模板，可用 payload / prompt）
+    pub inputs_template: String,
 }
 
 #[derive(Deserialize)]
@@ -737,6 +742,8 @@ pub struct AutomationInput {
     pub signing_secret: Option<String>,
     #[serde(default)]
     pub mode: Option<RunMode>,
+    #[serde(default)]
+    pub inputs_template: Option<String>,
 }
 
 #[derive(Serialize)]

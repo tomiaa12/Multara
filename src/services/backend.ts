@@ -1,10 +1,54 @@
 import { getVersion } from "@tauri-apps/api/app";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { connectDevBackend, hasBackend, inTauri, invoke } from "./dev-backend";
 
 export { connectDevBackend, hasBackend, inTauri };
 import { titleSeedText } from "../components/chat/composer-content";
 import { t } from "../i18n";
+import type {
+  Diagnostic,
+  NodeLogChunk,
+  NodeTemplate,
+  RenderPreview,
+  RunDetail,
+  SaveResult,
+  SecretName,
+  Workflow,
+  WorkflowDef,
+  WorkflowDetail,
+  WorkflowEvent,
+  WorkflowNodeValues,
+  WorkflowRun,
+  WorkflowSummary,
+  WorkflowTemplateMeta,
+} from "../domain/workflow";
+import {
+  fixtureFlowTemplates,
+  fixtureRunDetail,
+  fixtureRuns,
+} from "../dev/workflow-fixtures";
+import {
+  downloadJson,
+  memoryCreateWorkflow,
+  memoryDeleteNodeTemplate,
+  memoryDeleteWorkflow,
+  memoryDuplicateWorkflow,
+  memoryExportFile,
+  memoryGetWorkflow,
+  memoryImportText,
+  memoryListWorkflows,
+  memoryNodeTemplates,
+  memoryDeleteSecret,
+  memoryPublishWorkflow,
+  memoryResetExamples,
+  memorySaveNodeTemplate,
+  memorySaveWorkflowDraft,
+  memorySecrets,
+  memorySetSecret,
+  memorySetWorkflowEnabled,
+  memoryUpdateWorkflowMeta,
+  pickTextFile,
+} from "../dev/workflow-memory";
 import type {
   ActiveDiffData,
   SessionDiffData,
@@ -1437,6 +1481,12 @@ export async function saveSettings(settings: Record<string, string>): Promise<Re
   return invoke<Record<string, string>>("save_settings", { settings });
 }
 
+/** 把前端已解析的界面语言同步到后端 tr! / 提示词缓存（设置 → 通用 → 语言）。 */
+export async function syncAppLocale(locale: string): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke<string>("sync_app_locale", { locale });
+}
+
 export async function appVersion(): Promise<string> {
   if (inTauri()) return getVersion();
   if (hasBackend()) return "dev";
@@ -1642,6 +1692,23 @@ export interface OpenedTerminal {
   integration: boolean;
 }
 
+export interface OpenTerminalInfo {
+  id: string;
+  title: string;
+  cwd: string;
+  pid: number;
+}
+
+export async function terminalListOpen(): Promise<OpenTerminalInfo[]> {
+  if (!hasBackend()) return [];
+  return invoke<OpenTerminalInfo[]>("terminal_list_open");
+}
+
+export async function terminalReadScreen(id: string): Promise<string> {
+  if (!hasBackend()) return "";
+  return invoke<string>("terminal_read_screen", { id });
+}
+
 export async function terminalOpen(cwd: string, profile?: string): Promise<OpenedTerminal> {
   if (!hasBackend()) throw new Error("浏览器预览不能启动终端");
   return invoke<OpenedTerminal>("terminal_open", { cwd, profile: profile || null });
@@ -1796,6 +1863,11 @@ export async function readWorkspaceFile(workspaceId: string, path: string): Prom
     if (!message.startsWith(FILE_MISSING_PREFIX)) throw cause;
     throw new FileMissingError(message.slice(FILE_MISSING_PREFIX.length));
   });
+}
+
+export async function readSessionScratchFile(sessionId: string, path: string): Promise<FileContent> {
+  if (!hasBackend()) throw webRunOnly();
+  return invoke("read_session_scratch_file", { sessionId, path });
 }
 
 export async function readExternalFile(path: string): Promise<FileContent> {
@@ -2094,8 +2166,8 @@ export async function gitPullMergeSession(mergeId: string): Promise<MergePullRes
   return invoke<MergePullResult>("git_pull_merge_session", { mergeId });
 }
 
-export async function gitFinishMergeSession(mergeId: string): Promise<MergeFinishResult> {
-  return invoke<MergeFinishResult>("git_finish_merge_session", { mergeId });
+export async function gitFinishMergeSession(mergeId: string, skipVerify = false): Promise<MergeFinishResult> {
+  return invoke<MergeFinishResult>("git_finish_merge_session", { mergeId, skipVerify });
 }
 
 export async function gitAbortMergeSession(mergeId: string): Promise<void> {
@@ -2366,4 +2438,283 @@ export async function setChannelUserTarget(
 export async function rotateChannelPairingCode(id: string): Promise<string> {
   if (!hasBackend()) return "000000";
   return invoke<string>("rotate_channel_pairing_code", { id });
+}
+
+// ---------- 工作流（src-tauri/src/workflow/commands.rs） ----------
+
+function webRunOnly(): Error {
+  return new Error(t("workflow.web.runUnavailable"));
+}
+
+export async function listWorkflows(): Promise<WorkflowSummary[]> {
+  if (!hasBackend()) return memoryListWorkflows();
+  return invoke<WorkflowSummary[]>("list_workflows");
+}
+
+export async function getWorkflow(workflowId: string): Promise<WorkflowDetail> {
+  if (!hasBackend()) return memoryGetWorkflow(workflowId);
+  return invoke<WorkflowDetail>("get_workflow", { workflowId });
+}
+
+export async function createWorkflow(input: { name: string; description?: string; templateId?: string | null }): Promise<Workflow> {
+  if (!hasBackend()) return memoryCreateWorkflow(input.name, input.description ?? "", input.templateId);
+  return invoke<Workflow>("create_workflow", {
+    name: input.name,
+    description: input.description ?? "",
+    templateId: input.templateId ?? null,
+  });
+}
+
+export async function updateWorkflowMeta(workflowId: string, name: string, description: string, icon?: string): Promise<Workflow> {
+  if (!hasBackend()) return memoryUpdateWorkflowMeta(workflowId, name, description, icon ?? "");
+  return invoke<Workflow>("update_workflow_meta", { workflowId, name, description, icon: icon ?? null });
+}
+
+export async function setWorkflowEnabled(workflowId: string, enabled: boolean): Promise<void> {
+  if (!hasBackend()) {
+    memorySetWorkflowEnabled(workflowId, enabled);
+    return;
+  }
+  await invoke("set_workflow_enabled", { workflowId, enabled });
+}
+
+/** 浏览器：草稿写在内存里，并返回新的 updatedAt 让编辑器保持可用 */
+export async function saveWorkflowDraft(workflowId: string, draft: WorkflowDef, expectedUpdatedAt: string | null): Promise<SaveResult> {
+  if (!hasBackend()) return { updatedAt: memorySaveWorkflowDraft(workflowId, draft), diagnostics: [] };
+  return invoke<SaveResult>("save_workflow_draft", { workflowId, draft, expectedUpdatedAt });
+}
+
+export async function validateWorkflow(draft: WorkflowDef): Promise<Diagnostic[]> {
+  if (!hasBackend()) return [];
+  return invoke<Diagnostic[]>("validate_workflow", { draft });
+}
+
+export async function publishWorkflow(workflowId: string, note: string): Promise<number> {
+  if (!hasBackend()) return memoryPublishWorkflow(workflowId, note);
+  return invoke<number>("publish_workflow", { workflowId, note });
+}
+
+export async function deleteWorkflow(workflowId: string): Promise<void> {
+  if (!hasBackend()) {
+    memoryDeleteWorkflow(workflowId);
+    return;
+  }
+  await invoke("delete_workflow", { workflowId });
+}
+
+export async function duplicateWorkflow(workflowId: string): Promise<Workflow> {
+  if (!hasBackend()) return memoryDuplicateWorkflow(workflowId);
+  return invoke<Workflow>("duplicate_workflow", { workflowId });
+}
+
+export async function exportWorkflow(workflowId: string, path: string): Promise<void> {
+  if (!hasBackend()) {
+    downloadJson(`${path || "workflow"}.json`, memoryExportFile(workflowId));
+    return;
+  }
+  await invoke("export_workflow", { workflowId, path });
+}
+
+export async function importWorkflow(path: string): Promise<Workflow> {
+  return invoke<Workflow>("import_workflow", { path });
+}
+
+/** 浏览器导入：读用户选中的 JSON 文本 */
+export async function importWorkflowText(raw: string): Promise<Workflow> {
+  return memoryImportText(raw);
+}
+
+export function downloadWorkflowExport(workflowId: string) {
+  const file = memoryExportFile(workflowId);
+  downloadJson(`${file.name || "workflow"}.multara-flow.json`, file);
+}
+
+export function pickWorkflowJsonText(): Promise<string | null> {
+  return pickTextFile();
+}
+
+export async function listNodeTemplates(): Promise<NodeTemplate[]> {
+  if (!hasBackend()) return memoryNodeTemplates();
+  return invoke<NodeTemplate[]>("list_node_templates");
+}
+
+/** `template` 为 { nodes, edges }（选区），后端落成用户节点模板并返回最新列表 */
+export async function saveNodeTemplate(
+  name: string,
+  description: string,
+  template: { nodes: unknown[]; edges: unknown[] },
+): Promise<NodeTemplate[]> {
+  if (!hasBackend()) return memorySaveNodeTemplate(name, description, template as { nodes: NodeTemplate["nodes"]; edges: NodeTemplate["edges"] });
+  return invoke<NodeTemplate[]>("save_node_template", { name, description, template });
+}
+
+export async function deleteNodeTemplate(templateId: string): Promise<NodeTemplate[]> {
+  if (!hasBackend()) return memoryDeleteNodeTemplate(templateId);
+  return invoke<NodeTemplate[]>("delete_node_template", { templateId });
+}
+
+export async function listWorkflowTemplates(): Promise<WorkflowTemplateMeta[]> {
+  if (!hasBackend()) return fixtureFlowTemplates();
+  return invoke<WorkflowTemplateMeta[]>("list_workflow_templates");
+}
+
+/** 开发模式：恢复内置简单 / 中等 / 复杂示例工作流 */
+export async function resetWorkflowExamples(): Promise<WorkflowSummary[]> {
+  if (!hasBackend()) return memoryResetExamples();
+  return invoke<WorkflowSummary[]>("reset_workflow_examples");
+}
+
+export async function workflowRenderPreview(input: {
+  draft: WorkflowDef;
+  nodeId: string;
+  source: string;
+  isExpression?: boolean;
+  sampleInputs?: Record<string, unknown>;
+}): Promise<RenderPreview> {
+  if (!hasBackend()) {
+    return {
+      rendered: input.source,
+      error: null,
+      variables: {
+        inputs: {},
+        run: { id: "run-id", short_id: "abc123", inputs: {}, started_at: "" },
+        workflow: { name: "workflow", slug: "workflow", version: 1 },
+        ws: {},
+        iteration: 0,
+        attempt: 1,
+        nodes: {},
+      },
+    };
+  }
+  return invoke<RenderPreview>("workflow_render_preview", {
+    draft: input.draft,
+    nodeId: input.nodeId,
+    source: input.source,
+    isExpression: input.isExpression ?? false,
+    sampleInputs: input.sampleInputs ?? null,
+  });
+}
+
+/** draft=true：用草稿跑一次（version 0 临时版本） */
+export async function startWorkflowRun(workflowId: string, inputs: Record<string, unknown>, draft = false): Promise<WorkflowRun> {
+  if (!hasBackend()) throw webRunOnly();
+  return invoke<WorkflowRun>("start_workflow_run", { workflowId, inputs, draft });
+}
+
+export async function listWorkflowRuns(filter: { workflowId?: string | null; status?: string | null; limit?: number } = {}): Promise<WorkflowRun[]> {
+  if (!hasBackend()) {
+    const runs = fixtureRuns(filter.workflowId ?? undefined);
+    return filter.status ? runs.filter((run) => run.status === filter.status) : runs;
+  }
+  return invoke<WorkflowRun[]>("list_workflow_runs", {
+    workflowId: filter.workflowId ?? null,
+    status: filter.status ?? null,
+    limit: filter.limit ?? 100,
+  });
+}
+
+export async function getWorkflowRun(runId: string): Promise<RunDetail> {
+  if (!hasBackend()) return fixtureRunDetail(runId);
+  return invoke<RunDetail>("get_workflow_run", { runId });
+}
+
+/** 节点运行的输入快照与输出值（完整值，非 4KB 预览） */
+export async function getWorkflowNodeValues(nodeRunId: string): Promise<WorkflowNodeValues> {
+  if (!hasBackend()) return { inputs: {}, outputs: {} };
+  return invoke<WorkflowNodeValues>("get_workflow_node_values", { nodeRunId });
+}
+
+export async function getWorkflowNodeLog(nodeRunId: string, offset = 0): Promise<NodeLogChunk> {
+  if (!hasBackend()) return { text: "$ pnpm test\n\n PASS  src/a.test.ts\n Tests: 12 passed\n", nextOffset: 0, eof: true };
+  return invoke<NodeLogChunk>("get_workflow_node_log", { nodeRunId, offset });
+}
+
+export async function listWorkflowEvents(runId: string, afterSeq = 0): Promise<WorkflowEvent[]> {
+  if (!hasBackend()) return [];
+  return invoke<WorkflowEvent[]>("list_workflow_events", { runId, afterSeq });
+}
+
+export async function cancelWorkflowRun(runId: string): Promise<void> {
+  if (!hasBackend()) throw webRunOnly();
+  await invoke("cancel_workflow_run", { runId });
+}
+
+export async function retryWorkflowNode(runId: string, nodeId: string, resetWorkspace: boolean): Promise<void> {
+  if (!hasBackend()) throw webRunOnly();
+  await invoke("retry_workflow_node", { runId, nodeId, resetWorkspace });
+}
+
+/** 跳过失败节点：标 succeeded，输出由用户手填（port -> value） */
+export async function skipWorkflowNode(runId: string, nodeId: string, outputs: unknown): Promise<void> {
+  if (!hasBackend()) throw webRunOnly();
+  await invoke("skip_workflow_node", { runId, nodeId, outputs });
+}
+
+export async function workflowOutcome(workflowId: string, runId?: string): Promise<{ taskIds: string[]; artifactDir: string | null; runId: string | null }> {
+  if (!hasBackend()) return { taskIds: [], artifactDir: null, runId: null };
+  return invoke("workflow_outcome", { workflowId, runId: runId ?? null });
+}
+
+export async function setWorkflowTasks(workflowId: string, taskIds: string[]): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_workflow_tasks", { workflowId, taskIds });
+}
+
+export async function listWorkflowDirectory(runId: string, path?: string): Promise<import("../domain/types").FileEntry[]> {
+  if (!hasBackend()) return [];
+  return invoke("list_workflow_directory", { runId, path: path ?? null });
+}
+
+export async function readWorkflowFile(runId: string, path: string): Promise<import("../domain/types").FileContent> {
+  if (!hasBackend()) throw webRunOnly();
+  return invoke("read_workflow_file", { runId, path });
+}
+
+export async function confirmWorkflowNode(nodeRunId: string, target: string): Promise<void> {
+  if (!hasBackend()) throw webRunOnly();
+  await invoke("confirm_workflow_node", { nodeRunId, target });
+}
+
+export async function decideWorkflowGate(
+  nodeRunId: string,
+  decision: string,
+  comment = "",
+  form: unknown = null,
+): Promise<void> {
+  if (!hasBackend()) throw webRunOnly();
+  await invoke("decide_workflow_gate", { nodeRunId, decision, comment, form });
+}
+
+export async function deleteWorkflowRun(runId: string, removeWorktrees = false): Promise<void> {
+  if (!hasBackend()) throw webRunOnly();
+  await invoke("delete_workflow_run", { runId, removeWorktrees });
+}
+
+export async function listWorkflowSecrets(): Promise<SecretName[]> {
+  if (!hasBackend()) return memorySecrets();
+  return invoke<SecretName[]>("list_workflow_secrets");
+}
+
+/** 值只写不读：后端从不返回密钥值 */
+export async function setWorkflowSecret(name: string, value: string, description = ""): Promise<SecretName[]> {
+  if (!hasBackend()) return memorySetSecret(name, value, description);
+  return invoke<SecretName[]>("set_workflow_secret", { name, value, description });
+}
+
+export async function deleteWorkflowSecret(name: string): Promise<SecretName[]> {
+  if (!hasBackend()) return memoryDeleteSecret(name);
+  return invoke<SecretName[]>("delete_workflow_secret", { name });
+}
+
+/** 选择 .multara-flow.json 文件（导入）；浏览器预览返回 null */
+export async function pickWorkflowImportFile(): Promise<string | null> {
+  if (!hasBackend()) return null;
+  const picked = await open({ multiple: false, directory: false, filters: [{ name: "Multara Flow", extensions: ["json"] }] });
+  return typeof picked === "string" ? picked : null;
+}
+
+/** 选择导出路径；浏览器预览返回 null */
+export async function pickWorkflowExportPath(defaultName: string): Promise<string | null> {
+  if (!hasBackend()) return null;
+  return save({ defaultPath: `${defaultName}.multara-flow.json`, filters: [{ name: "Multara Flow", extensions: ["json"] }] });
 }

@@ -74,6 +74,11 @@ mod packaging_tests {
             "project".into(),
             "list".into()
         ]));
+        assert!(multara::cli::should_run_as_cli(&[
+            "node".into(),
+            "next".into()
+        ]));
+        assert!(multara::cli::should_run_as_cli(&["workflow".into(), "list".into()]));
         assert!(!multara::cli::should_run_as_cli(&[]));
         assert!(!multara::cli::should_run_as_cli(&["-psn_0_12345".into()]));
     }

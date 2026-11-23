@@ -35,6 +35,8 @@ multara — Multara 内置 CLI
   runtime      list
   session      history|resume
   terminal     list|read|open|run|write|focus
+  workflow     list|get|draft|create|rename|delete|enable|disable|publish|duplicate|node|edge|input|runs|run
+  node         status|next|fail
 
 stdout 为 JSON。提示与 --help 走 stderr。解析 stdout 时不要 2>&1。
 
@@ -79,7 +81,10 @@ pub fn should_run_as_cli(args: &[String]) -> bool {
             | "runtime"
             | "session"
             | "terminal"
+            | "surface"
             | "canvas"
+            | "node"
+            | "workflow"
     )
 }
 
@@ -92,7 +97,7 @@ pub fn run_args(
     // canvas / terminal 有自己的 --help。
     let owns_help = matches!(
         args.first().map(String::as_str),
-        Some("canvas") | Some("terminal")
+        Some("canvas") | Some("terminal") | Some("surface")
     );
     if args.is_empty() || args[0] == "-h" || (!owns_help && args.iter().any(|arg| arg == "--help")) {
         let _ = writeln!(stderr, "{}", help());
@@ -106,6 +111,14 @@ pub fn run_args(
         }
     };
     // canvas / terminal 控制类子命令有自己的退出码约定，stdout 失败时也是 JSON
+    if matches!(args.first().map(String::as_str), Some("canvas") | Some("terminal") | Some("surface")) {
+        let surface = args.first().map(String::as_str).unwrap_or("");
+        let verb = args.get(1).map(String::as_str).unwrap_or("");
+        if let Err(error) = ensure_workflow_node_scope(&db, env::var("MULTARA_RUN_ID").ok().as_deref(), surface, verb) {
+            let _ = writeln!(stderr, "{error}");
+            return Err(1);
+        }
+    }
     if args.first().map(String::as_str) == Some("canvas") {
         let output = crate::canvas_cli::run(args, &mut db);
         for line in output.stderr {
@@ -117,6 +130,14 @@ pub fn run_args(
         } else {
             Err(output.code)
         };
+    }
+    if args.first().map(String::as_str) == Some("surface") {
+        let output = crate::surface_cli::run(args);
+        for line in output.stderr {
+            let _ = writeln!(stderr, "{line}");
+        }
+        let _ = writeln!(stdout, "{}", output.stdout);
+        return if output.code == 0 { Ok(()) } else { Err(output.code) };
     }
     if args.first().map(String::as_str) == Some("terminal") {
         let output = crate::terminal_cli::run(args);
@@ -234,12 +255,12 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
     let resource = parsed.positional.first().map(String::as_str).unwrap_or("");
     let verb = parsed.positional.get(1).map(String::as_str).unwrap_or("");
     let id = parsed.positional.get(2).cloned();
-    ensure_write_allowed(
-        db,
-        env::var("MULTARA_RUN_ID").ok().as_deref(),
-        resource,
-        verb,
-    )?;
+    let run_id = env::var("MULTARA_RUN_ID").ok();
+    ensure_write_allowed(db, run_id.as_deref(), resource, verb)?;
+    ensure_workflow_node_scope(db, run_id.as_deref(), resource, verb)?;
+    if resource == "node" || resource == "workflow" {
+        return crate::workflow::cli::execute(args, db);
+    }
     match (resource, verb) {
         ("task", "list") => {
             ops::task::settle_finished(db)?;
@@ -591,6 +612,20 @@ fn ensure_write_allowed(
         ("channel", "enable"),
         ("channel", "disable"),
         ("session", "resume"),
+        ("node", "output"),
+        ("node", "next"),
+        ("node", "fail"),
+        ("workflow", "run"),
+        ("workflow", "create"),
+        ("workflow", "rename"),
+        ("workflow", "delete"),
+        ("workflow", "enable"),
+        ("workflow", "disable"),
+        ("workflow", "publish"),
+        ("workflow", "duplicate"),
+        ("workflow", "node"),
+        ("workflow", "edge"),
+        ("workflow", "input"),
     ];
     if !WRITE_COMMANDS.contains(&(resource, verb)) {
         return Ok(());
@@ -612,6 +647,66 @@ fn ensure_write_allowed(
         ));
     }
     Ok(())
+}
+
+/// 工作流节点会话只能提交本节点的输出。任务写入要节点勾了「允许创建子任务」才放行。
+fn ensure_workflow_node_scope(
+    db: &Connection,
+    run_id: Option<&str>,
+    resource: &str,
+    verb: &str,
+) -> Result<(), String> {
+    let Some(run_id) = run_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return Ok(());
+    };
+    let session_id: Option<String> = db
+        .query_row("SELECT session_id FROM agent_runs WHERE id=?1", [run_id], |row| row.get(0))
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some(session_id) = session_id.filter(|id| id.starts_with(crate::workflow::WF_NODE_PREFIX)) else {
+        return Ok(());
+    };
+    if resource == "node" {
+        return Ok(());
+    }
+    let foreign = matches!(
+        (resource, verb),
+        ("task", "create" | "update" | "status" | "assign" | "comment")
+            | ("agent", "create" | "update")
+            | ("squad", "create" | "update" | "member")
+            | ("project", "create" | "update")
+            | ("workspace", "add")
+            | ("automation", "create")
+            | ("channel", "enable" | "disable")
+            | ("session", "resume")
+            | ("workflow", "run" | "create" | "rename" | "delete" | "enable" | "disable" | "publish" | "duplicate" | "node" | "edge" | "input")
+            | ("feishu", "send")
+            | ("canvas", _)
+    );
+    if !foreign {
+        return Ok(());
+    }
+    if resource == "task" && node_allows_tasks(db, &session_id)? {
+        return Ok(());
+    }
+    if resource == "task" {
+        return Err(tr!("这个工作流节点没有允许创建或修改任务"));
+    }
+    Err(tr!("工作流节点不能操作这项功能"))
+}
+
+fn node_allows_tasks(db: &Connection, session_id: &str) -> Result<bool, String> {
+    let Some(node_run) = crate::workflow::store::node_run_by_session(db, session_id)? else {
+        return Ok(false);
+    };
+    let run = crate::workflow::store::run(db, &node_run.run_id)?;
+    let def = crate::workflow::store::definition(db, &run.workflow_id, run.version)?;
+    let Some(node) = def.node(&node_run.node_id) else {
+        return Ok(false);
+    };
+    Ok(serde_json::from_value::<crate::workflow::model::AgentConfig>(node.config.clone())
+        .map(|config| config.allow_task_commands)
+        .unwrap_or(false))
 }
 
 fn add_workspace_cli(db: &Connection, parsed: &ParsedArgs) -> Result<String, String> {
@@ -831,7 +926,7 @@ fn ensure_description_file_allowed(path: &str) -> Result<(), String> {
 fn open_db() -> Result<Connection, String> {
     let path = db_path()?;
     let db = database::open_file_light(&path)?;
-    crate::app_locale::set_current(crate::app_locale::from_db(&db));
+    crate::app_locale::refresh_from_db(&db);
     Ok(db)
 }
 
@@ -1506,6 +1601,45 @@ mod tests {
                 .contains("规划模式")
         );
         assert!(super::ensure_write_allowed(&db, Some("plan-run"), "task", "list").is_ok());
+    }
+
+    #[test]
+    fn workflow_node_cannot_touch_other_features() {
+        let db = db();
+        db.execute(
+            "INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('wf-node:n1', '节点', 'agent', 'miku', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs
+             (id, session_id, agent_id, runtime_id, assignment, status, created_at, mode)
+             VALUES ('node-run', 'wf-node:n1', 'miku', 'claude', 'answer', 'running', 'now', 'auto')",
+            [],
+        )
+        .unwrap();
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "task", "create")
+            .unwrap_err()
+            .contains("没有允许"));
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "workflow", "run").is_err());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "workflow", "node").is_err());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "workflow", "list").is_ok());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "session", "resume").is_err());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "feishu", "send").is_err());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "canvas", "open").is_err());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "terminal", "run").is_ok());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "surface", "list").is_ok());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "node", "output").is_ok());
+        assert!(super::ensure_workflow_node_scope(&db, Some("node-run"), "task", "list").is_ok());
+        db.execute(
+            "INSERT INTO agent_runs
+             (id, session_id, agent_id, runtime_id, assignment, status, created_at, mode)
+             VALUES ('chat-run', 'welcome', 'miku', 'claude', 'hi', 'running', 'now', 'auto')",
+            [],
+        )
+        .unwrap();
+        assert!(super::ensure_workflow_node_scope(&db, Some("chat-run"), "task", "create").is_ok());
     }
 
     #[test]

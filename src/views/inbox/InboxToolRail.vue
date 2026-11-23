@@ -28,8 +28,11 @@ import WorkspaceFileTree from "../../components/workbench/WorkspaceFileTree.vue"
 import { fileNameOf, workspaceMode, workspaceModeHint, workspaceModeLabel, workspaceSubtitle } from "../../components/workbench/workspace-mode";
 import { loadScmDiff, scmDiffId, scmOpensAsFile } from "../../components/workbench/scm-diff";
 import type { ScmOpenChangesPayload, ScmOpenTarget } from "../../components/workbench/scm-groups";
+import { isAbsoluteFsPath, normalizeFsPath } from "../../components/workbench/workspace-file-location";
 import { isCanvasEnabled } from "../../components/chat/genui/block";
+import { splitWorkspacePaths } from "../../components/chat/workspace-path";
 import { useAppStore } from "../../stores/app";
+import { registerSurfaceCtl, type SurfaceCtlPayload, type SurfaceCtlResult } from "../../stores/surface-ctl";
 import {
   activeTerminalSessionId,
   ensureWorkspaceTerminal,
@@ -45,6 +48,7 @@ import { inboxBrowserLinks } from "./inbox-browser-links";
 import { placeEditorTab } from "./editor-tabs";
 import InboxBrowser from "./InboxBrowser.vue";
 import InboxCanvas from "./InboxCanvas.vue";
+import WorkflowOutcome from "../../components/workflow/WorkflowOutcome.vue";
 import UncommittedChanges from "./UncommittedChanges.vue";
 import TaskIssueSide from "../TaskIssueSide.vue";
 import {
@@ -52,6 +56,7 @@ import {
   INBOX_FILES_WIDTH_KEY,
   INBOX_PANEL_WIDTH_KEY,
   INBOX_SURFACES_KEY,
+  INBOX_FILES_MIN_WIDTH,
   INBOX_TOOL_MIN_WIDTH,
   createInboxSurfaceTab,
   readInboxFilesWidth,
@@ -84,14 +89,21 @@ const props = defineProps<{
   workspaces: Workspace[];
   workspaceId: string;
   sessionId: string;
-  /** 需求才有更改和文件，任务才有属性侧栏。 */
-  kind: "project" | "task" | "chat";
+  /** 需求才有更改和文件，任务才有属性侧栏。工作流运行页用产物、需求、浏览器和终端。 */
+  kind: "project" | "task" | "chat" | "workflow";
   taskId: string | null;
+  runId?: string;
+  workflowId?: string;
+  /** 除 sessionId 外，这些会话的界面操作也落到这套侧栏。 */
+  extraSessionIds?: string[];
+  /** 悬浮按钮挂到哪个容器。 */
+  floatHostSelector?: string;
 }>();
 
 const emit = defineEmits<{
   "pick-workspace": [id: string];
   layout: [payload: { content: boolean; files: boolean; width: number; terminal: boolean }];
+  mergeFocus: [payload: { inboxItemId: string | null; workspaceId: string; sessionId: string }];
 }>();
 
 const store = useAppStore();
@@ -141,11 +153,12 @@ const railProjectId = computed(
     ?? "",
 );
 const terminalOpen = ref(readProjectTerminalOpen("inbox", railProjectId.value));
-const surfaces = ref<InboxSurfaceTab[]>(readInboxSurfaces());
+const surfaces = ref<InboxSurfaceTab[]>(props.kind === "workflow" ? [] : readInboxSurfaces());
 const editorTabs = ref<EditorTab[]>([]);
 const activeEditorKey = ref("");
 const activeSurfaceKey = ref("");
 const browserRequest = ref("");
+const browserUrls = ref<string[]>([]);
 const terminalHeight = ref(readTerminalHeight());
 const profiles = ref<TerminalProfile[]>([]);
 const defaultProfile = ref(localStorage.getItem("multara.terminal.defaultProfile") || "");
@@ -224,11 +237,11 @@ function readFloatTop() {
 }
 
 function floatHost() {
-  return document.querySelector(".inbox-detail.chat-surface");
+  return document.querySelector(props.floatHostSelector || ".inbox-detail.chat-surface");
 }
 
 function floatHeader(host: HTMLElement) {
-  const direct = host.querySelector(":scope > .chat-surface-header");
+  const direct = host.querySelector(":scope > .chat-surface-header, :scope > .run-header");
   if (direct instanceof HTMLElement) return direct;
   const nested = host.querySelector(".chat-surface-header");
   if (nested instanceof HTMLElement) return nested;
@@ -327,12 +340,14 @@ const surfaceLabel: Record<InboxSurfaceId, string> = {
   search: "workbench.search",
   details: "tasks.propertiesPanel",
   canvas: "canvas.surface",
+  requirements: "workflow.outcome.tasks",
 };
 
 function surfaceAllowed(id: InboxSurfaceId) {
   if (id === "canvas") {
     return isCanvasEnabled(store.data?.settings);
   }
+  if (id === "requirements") return props.kind === "workflow";
   if (id === "details") return props.kind === "task";
   if (id === "changes" || id === "uncommitted") return props.kind === "project";
   return true;
@@ -357,12 +372,14 @@ const railActive = ref(true);
 function writeLayout() {
   localStorage.setItem(INBOX_PANEL_WIDTH_KEY, String(panelWidth.value));
   localStorage.setItem(INBOX_FILES_WIDTH_KEY, String(filesWidth.value));
-  localStorage.setItem(INBOX_FILES_OPEN_KEY, filesWanted.value ? "1" : "0");
+  if (props.kind !== "workflow") {
+    localStorage.setItem(INBOX_FILES_OPEN_KEY, filesWanted.value ? "1" : "0");
+    localStorage.setItem(INBOX_SURFACES_KEY, JSON.stringify(surfaces.value.map((item) => item.kind)));
+    localStorage.setItem("multara.inbox.activeSurface", activeSurface.value?.kind ?? "");
+  }
   if (railProjectId.value) {
     writeProjectTerminalOpen("inbox", railProjectId.value, terminalOpen.value);
   }
-  localStorage.setItem(INBOX_SURFACES_KEY, JSON.stringify(surfaces.value.map((item) => item.kind)));
-  localStorage.setItem("multara.inbox.activeSurface", activeSurface.value?.kind ?? "");
   if (!railActive.value) return;
   emit("layout", {
     content: stageOpen.value,
@@ -409,6 +426,90 @@ function openSurface(kind: InboxSurfaceId, mode: "fresh" | "singleton") {
   surfaces.value = [...surfaces.value, tab];
   activeSurfaceKey.value = tab.key;
   writeLayout();
+}
+
+const chatFiles = computed(() => {
+  if (props.kind !== "chat") return [];
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const message of store.messages[props.sessionId] ?? []) {
+    if (!message.content) continue;
+    for (const segment of splitWorkspacePaths(message.content)) {
+      const path = segment.path?.trim();
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      paths.push(path);
+    }
+  }
+  return paths;
+});
+
+async function openScratchFile(path: string): Promise<boolean> {
+  if (isAbsoluteFsPath(path)) return false;
+  try {
+    const file = await backend.readSessionScratchFile(props.sessionId, path);
+    place({
+      key: `scratch\n${props.sessionId}\n${path}`,
+      workspaceId: "",
+      path: file.path || path,
+      name: fileNameOf(path),
+      pinned: true,
+      content: file.content,
+      original: file.content,
+      language: file.language,
+      readOnly: true,
+      diff: null,
+      commitFiles: null,
+      commitId: "",
+    });
+    closeEmptyFilesTab();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function openChatFile(path: string) {
+  filesWanted.value = true;
+  if (await openScratchFile(path)) return;
+  const resolved = resolveRevealPath(path);
+  if (!resolved) {
+    store.reportComposerNotice(t("workbench.fileNotFound", { path }), path, props.sessionId);
+    return;
+  }
+  if (!resolved.workspaceId) {
+    void openFile("", resolved.path, true);
+    return;
+  }
+  openWorkspaceFile(resolved.workspaceId, resolved.path);
+}
+
+async function openWorkflowFile(path: string) {
+  if (!props.runId) return;
+  showFiles();
+  const key = `wf\n${path}`;
+  const existing = editorTabs.value.find((tab) => tab.key === key);
+  if (existing) {
+    activateEditor(existing);
+    closeEmptyFilesTab();
+    return;
+  }
+  const file = await backend.readWorkflowFile(props.runId, path);
+  place({
+    key,
+    workspaceId: "",
+    path: file.path || path,
+    name: fileNameOf(path),
+    pinned: true,
+    content: file.content,
+    original: file.content,
+    language: file.language,
+    readOnly: true,
+    diff: null,
+    commitFiles: null,
+    commitId: "",
+  });
+  closeEmptyFilesTab();
 }
 
 function showFiles() {
@@ -503,19 +604,28 @@ function openWorkspaceFile(workspaceId: string, path: string, startLine?: number
 }
 
 function resolveRevealPath(path: string, workspaceId?: string): { workspaceId: string; path: string } | null {
-  if (workspaceId && props.workspaces.some((item) => item.id === workspaceId)) {
+  const normalized = normalizeFsPath(path);
+  if (
+    workspaceId
+    && props.workspaces.some((item) => item.id === workspaceId)
+    && !isAbsoluteFsPath(normalized)
+  ) {
     return { workspaceId, path };
   }
   const absolute = props.workspaces.find((item) => {
-    const root = item.workPath || item.sourcePath;
-    return Boolean(root) && (path === root || path.startsWith(`${root}/`));
+    const root = normalizeFsPath(item.workPath || item.sourcePath || "");
+    return Boolean(root) && (normalized === root || normalized.startsWith(`${root}/`));
   });
   if (absolute) {
-    const root = absolute.workPath || absolute.sourcePath;
+    const root = normalizeFsPath(absolute.workPath || absolute.sourcePath || "");
     return {
       workspaceId: absolute.id,
-      path: path.slice(root.length).replace(/^\//, ""),
+      path: normalized.slice(root.length).replace(/^\//, ""),
     };
+  }
+  // 工作区外的明确绝对路径：空 workspaceId，后面用 readExternalFile 只读打开。
+  if (isAbsoluteFsPath(normalized)) {
+    return { workspaceId: "", path: normalized };
   }
   const fallback = workspaceId || props.workspaceId || props.workspaces[0]?.id;
   if (!fallback) return null;
@@ -526,8 +636,22 @@ async function onFileReveal() {
   const request = store.fileReveal;
   if (!request) return;
   const nonce = request.nonce;
+  filesWanted.value = true;
+  if (await openScratchFile(request.path)) return;
+  if (store.fileReveal?.nonce !== nonce) return;
   const resolved = resolveRevealPath(request.path, request.workspaceId);
   if (!resolved || store.fileReveal?.nonce !== nonce) return;
+  if (!resolved.workspaceId) {
+    const opened = await openFile("", resolved.path, true);
+    if (!opened && store.fileReveal?.nonce === nonce) {
+      store.reportComposerNotice(
+        t("workbench.fileNotFound", { path: resolved.path }),
+        resolved.path,
+        store.activeSessionId,
+      );
+    }
+    return;
+  }
   openWorkspaceFile(resolved.workspaceId, resolved.path, request.startLine);
 }
 
@@ -581,19 +705,22 @@ function place(tab: EditorTab) {
   activateEditor(tab);
 }
 
-async function openFile(workspaceId: string, path: string, pin = false) {
+async function openFile(workspaceId: string, path: string, pin = false): Promise<boolean> {
   const key = `${workspaceId}\n${path}`;
   const existing = editorTabs.value.find((tab) => tab.key === key);
   if (existing) {
     if (pin) existing.pinned = true;
     activateEditor(existing);
     closeEmptyFilesTab();
-    return;
+    return true;
   }
   let file: FileContent;
   try {
-    file = await backend.readWorkspaceFile(workspaceId, path);
+    file = workspaceId
+      ? await backend.readWorkspaceFile(workspaceId, path)
+      : await backend.readExternalFile(path);
   } catch {
+    if (!workspaceId) return false;
     file = { workspaceId, path, content: "", language: "plaintext", size: 0, readOnly: true };
   }
   place({
@@ -605,12 +732,13 @@ async function openFile(workspaceId: string, path: string, pin = false) {
     content: file.content,
     original: file.content,
     language: file.language,
-    readOnly: Boolean(file.readOnly),
+    readOnly: Boolean(file.readOnly) || !workspaceId,
     diff: null,
     commitFiles: null,
     commitId: "",
   });
   closeEmptyFilesTab();
+  return true;
 }
 
 function closeEmptyFilesTab() {
@@ -928,7 +1056,7 @@ function beginFilesResize(event: PointerEvent, invert = false) {
   const move = (moveEvent: PointerEvent) => {
     const delta = moveEvent.clientX - startX;
     const next = invert ? startWidth + delta : startWidth - delta;
-    filesWidth.value = Math.min(max, Math.max(INBOX_TOOL_MIN_WIDTH, next));
+    filesWidth.value = Math.min(max, Math.max(INBOX_FILES_MIN_WIDTH, next));
   };
   const finish = () => {
     window.removeEventListener("pointermove", move);
@@ -978,6 +1106,8 @@ function setDefaultProfile(id: string) {
 }
 
 function showBrowser(url: string) {
+  const next = url.trim();
+  if (next && !browserUrls.value.includes(next)) browserUrls.value = [...browserUrls.value, next];
   browserRequest.value = `${Date.now()}\n${url}`;
   const current = activeSurface.value?.kind === "browser" ? activeSurface.value : null;
   const existing = current ?? surfaces.value.find((item) => item.kind === "browser") ?? null;
@@ -1129,7 +1259,62 @@ async function openHistoryInFiles(target: ScmOpenTarget) {
   }
 }
 
+async function handleSurfaceCtl(payload: SurfaceCtlPayload): Promise<SurfaceCtlResult> {
+  if (payload.method === "list") {
+    const workspaceIds = new Set(props.workspaces.map((item) => item.id));
+    return {
+      ok: true,
+      value: {
+        tabs: [
+          ...editorTabs.value.filter((tab) => !tab.emptyFiles).map((tab) => ({ kind: "file", title: tab.name, path: tab.path })),
+          ...surfaces.value.map((tab) => ({ kind: tab.kind, title: tab.kind })),
+        ],
+        browsers: browserUrls.value.map((url) => ({ url })),
+        terminals: props.workspaces.length
+          ? terminalSessions.value
+              .filter((item) => workspaceIds.has(item.workspaceId))
+              .map((item) => ({ id: item.id, title: item.title, cwd: item.cwd, live: item.live }))
+          : [],
+      },
+    };
+  }
+  if (payload.method === "open-file") {
+    const path = payload.path?.trim();
+    if (!path) return { ok: false, reason: "invalid", message: "缺少路径" };
+    if (props.kind === "workflow") await openWorkflowFile(path);
+    else await openChatFile(path);
+    return { ok: true, value: { path } };
+  }
+  if (payload.method === "browser-open") {
+    const url = payload.url?.trim();
+    if (!url) return { ok: false, reason: "invalid", message: "缺少地址" };
+    showBrowser(url);
+    return { ok: true, value: { url } };
+  }
+  if (payload.method === "browser-list") {
+    return { ok: true, value: { browsers: browserUrls.value.map((url) => ({ url })) } };
+  }
+  if (payload.method === "browser-back" || payload.method === "browser-forward" || payload.method === "browser-reload") {
+    try {
+      if (payload.method === "browser-back") await backend.inboxBrowserBack();
+      else if (payload.method === "browser-forward") await backend.inboxBrowserForward();
+      else await backend.inboxBrowserReload();
+      return { ok: true, value: { method: payload.method } };
+    } catch (error) {
+      return { ok: false, reason: "failed", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return { ok: false, reason: "unsupported" };
+}
+
+let unregisterSurface: (() => void) | null = null;
+
 onMounted(() => {
+  unregisterSurface = registerSurfaceCtl({
+    priority: 2,
+    matches: (sessionId) => railActive.value && (sessionId === props.sessionId || (props.extraSessionIds ?? []).includes(sessionId)),
+    handle: handleSurfaceCtl,
+  });
   void backend.terminalProfiles().then((list) => {
     profiles.value = list ?? [];
   }).catch(() => {
@@ -1156,6 +1341,8 @@ onDeactivated(() => {
 });
 
 onBeforeUnmount(() => {
+  unregisterSurface?.();
+  unregisterSurface = null;
   railActive.value = false;
   gitWatchDisposed = true;
   gitWatchUnlisten?.();
@@ -1283,6 +1470,12 @@ onBeforeUnmount(() => {
             v-else-if="tab.kind === 'details' && taskId"
             :task-id="taskId"
           />
+          <div
+            v-else-if="tab.kind === 'requirements' && workflowId"
+            class="inbox-requirements"
+          >
+            <WorkflowOutcome tasks-only :workflow-id="workflowId" :run-id="runId" />
+          </div>
           <InboxCanvas
             v-else-if="tab.kind === 'canvas'"
             :session-id="sessionId"
@@ -1343,6 +1536,7 @@ onBeforeUnmount(() => {
                 @open-change="openChangeInGit"
                 @open-changes="openChanges"
                 @open-file="(target) => openInGit(target.workspaceId, target.path)"
+                @merge-focus="emit('mergeFocus', $event)"
               />
             </aside>
           </div>
@@ -1424,6 +1618,33 @@ onBeforeUnmount(() => {
             @pointerdown="beginFilesResize"
           />
           <div class="file-tree vs-scroll inbox-files-tree">
+            <section v-if="kind === 'workflow'" class="tree-workspace">
+              <WorkspaceFileTree
+                v-if="runId"
+                embedded
+                :state-key="`wf:${runId}`"
+                :list-directory="(path) => backend.listWorkflowDirectory(runId, path)"
+                @open="openWorkflowFile"
+              />
+              <p v-else class="tree-empty">{{ t("workflow.outcome.emptyFiles") }}</p>
+            </section>
+            <section v-else-if="kind === 'chat'" class="tree-workspace">
+              <div class="tree-workspace-head">
+                <Codicon name="files" class="tree-chevron is-open" :size="10" />
+                <span class="tree-workspace-copy"><strong>{{ t("inbox.tool.chatFiles") }}</strong></span>
+              </div>
+              <button
+                v-for="path in chatFiles"
+                :key="path"
+                type="button"
+                class="tree-entry"
+                @click="openChatFile(path)"
+              >
+                <FileTypeIcon :name="path.split('/').pop() || path" />
+                <UiTooltip :content="path"><span class="tree-name">{{ path.split('/').pop() || path }}</span></UiTooltip>
+              </button>
+            </section>
+            <template v-else>
             <p v-if="!workspaces.length" class="tree-empty">{{ t("inbox.tool.noWorkspace") }}</p>
             <section
               v-for="item in workspaces"
@@ -1464,6 +1685,7 @@ onBeforeUnmount(() => {
                 @pin="openFile(item.id, $event, true)"
               />
             </section>
+            </template>
           </div>
           <UiPaneView v-if="fileHistoryWorkspaceId" class="inbox-files-history">
             <ScmHistoryListView
@@ -1502,7 +1724,7 @@ onBeforeUnmount(() => {
     </div>
   </section>
   <!-- keep-alive 停用时关掉 Teleport，避免残留悬浮栏抢点击、改到后台实例 -->
-  <Teleport to=".inbox-detail.chat-surface" :disabled="!railActive">
+  <Teleport :to="floatHostSelector || '.inbox-detail.chat-surface'" :disabled="!railActive">
     <nav
       v-if="railActive"
       ref="floatEl"
@@ -1542,14 +1764,24 @@ onBeforeUnmount(() => {
         <Codicon name="diff-multiple" :size="16" />
       </UiButton>
       <UiButton
-        v-if="kind === 'project'"
+        v-if="kind === 'project' || kind === 'workflow' || (kind === 'chat' && chatFiles.length)"
         variant="ghost"
         size="icon"
-        :tip="t('workbench.files')"
+        :tip="kind === 'workflow' ? t('workflow.outcome.files') : kind === 'chat' ? t('inbox.tool.chatFiles') : t('workbench.files')"
         :aria-pressed="Boolean(activeEditor?.emptyFiles) && !activeSurface"
         @click="showFiles"
       >
         <Codicon name="files" :size="16" />
+      </UiButton>
+      <UiButton
+        v-if="kind === 'workflow'"
+        variant="ghost"
+        size="icon"
+        :tip="t('workflow.outcome.tasks')"
+        :aria-pressed="activeSurface?.kind === 'requirements'"
+        @click="openSurface('requirements', 'singleton')"
+      >
+        <Codicon name="repo" :size="16" />
       </UiButton>
       <UiButton
         v-if="kind === 'task'"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, createVNode, nextTick, onBeforeUnmount, onMounted, ref, render, watch } from "vue";
-import { Bot, FolderKanban, Hash, MessageSquare, Network, Sparkles, X } from "@lucide/vue";
+import { Bot, FolderKanban, Hash, MessageSquare, Network, Sparkles, Workflow, X } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import Codicon from "../ui/Codicon.vue";
 import { t } from "../../i18n";
@@ -11,6 +11,7 @@ import {
   fileName,
   isWholeFileChip,
   lineRange,
+  type ComposerEntityKind,
   type ComposerFeishuChipNode,
   type ComposerFileChipNode,
   type ComposerNode,
@@ -108,6 +109,7 @@ function createChip(item: ComposerNode & { type: "chip" } | EditorSelectionConte
     if (reference.referenceKind === "mcp") component = Network;
     if (reference.referenceKind === "task") component = Hash;
     if (reference.referenceKind === "requirement") component = FolderKanban;
+    if (reference.referenceKind === "workflow") component = Workflow;
     render(createVNode(component, { size: 12 }), icon);
   } else {
     if (!file) return chip;
@@ -170,12 +172,12 @@ function contextFromChip(chip: HTMLElement): ComposerNode & { type: "chip" } {
     return feishuChip;
   }
   const referenceKind = chip.dataset.referenceKind;
-  if (referenceKind && ["agent", "squad", "skill", "mcp", "task", "requirement"].includes(referenceKind)) {
+  if (referenceKind && ["agent", "squad", "skill", "mcp", "task", "requirement", "session", "workflow"].includes(referenceKind)) {
     return {
       type: "chip",
       id,
       referenceId: chip.dataset.referenceId ?? "",
-      referenceKind: referenceKind as "agent" | "squad" | "skill" | "mcp" | "task" | "requirement",
+      referenceKind: referenceKind as ComposerEntityKind,
       label: chip.dataset.referenceLabel ?? "",
     };
   }

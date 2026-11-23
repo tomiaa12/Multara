@@ -196,6 +196,7 @@ onBeforeUnmount(() => {
         compact
         session-commands
         :show-editing-bar="false"
+        :attentive="Boolean(store.chatOpen && !hidden)"
       >
         <template #header-actions>
           <UiButton class="icon-button" variant="ghost" size="icon" :tip="expanded ? t('chat.floatRestore') : t('chat.floatExpand')" @click="toggleExpand">

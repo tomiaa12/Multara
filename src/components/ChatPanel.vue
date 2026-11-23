@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isWorkflowNodeSession, isWorkflowRunSession } from "../domain/workflow";
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { t } from "../i18n";
@@ -42,7 +43,7 @@ import type { CanvasDefinition, ChatMessage, EditorSelectionContext, MessageAtta
 import { CONTINUE_ASSIGNMENT } from "../domain/continue-task";
 import * as backend from "../services/backend";
 import { fileToBase64, PASTED_IMAGE_MAX_BYTES } from "../utils/file-base64";
-import { BROWSER_ATTACH_IMAGE } from "../views/inbox/browser-chat-attach";
+import { BROWSER_ATTACH_IMAGE, browserImageFile, elementIsShown } from "../views/inbox/browser-chat-attach";
 import { classifyClipboardEntry, resolvePathInWorkspaces, type OsDroppedEntry } from "./chat/workspace-file-drag";
 import * as explorerBackend from "../services/explorer-backend";
 import {
@@ -66,6 +67,10 @@ const props = withDefaults(defineProps<{
   compact?: boolean;
   embedded?: boolean;
   historyViewOnly?: boolean;
+  /** 只看会话，不渲染底部发送框 */
+  hideComposer?: boolean;
+  /** 已发出的用户消息不能再改、不能重发。工作流节点会话用。 */
+  lockSentPrompts?: boolean;
   reviewInPlace?: boolean;
   unreadMessageId?: string | null;
   allowTargetChange?: boolean;
@@ -91,12 +96,19 @@ const props = withDefaults(defineProps<{
   placeholderPlace?: "workbench" | "float" | "chat" | "inbox";
   /** 完整占位文案；传入时优先生效（不再拼 name）。 */
   placeholder?: string;
+  /**
+   * 用户是否正在看这个面板（气泡收起 / 工作台隐藏挂载的气泡应为 false）。
+   * 为 true 时登记「正在看」并清掉该会话收件箱未读。
+   */
+  attentive?: boolean;
 }>(), {
   projectId: null,
   sessionId: null,
   compact: false,
   embedded: false,
   historyViewOnly: false,
+  hideComposer: false,
+  lockSentPrompts: false,
   reviewInPlace: false,
   unreadMessageId: null,
   allowTargetChange: true,
@@ -111,6 +123,7 @@ const props = withDefaults(defineProps<{
   stickyUserTurn: true,
   placeholderPlace: undefined,
   placeholder: undefined,
+  attentive: true,
 });
 const reaskTarget = ref<{
   messageId: string;
@@ -170,7 +183,9 @@ const sessions = computed(() =>
   store.data?.sessions.filter((session) =>
     props.sessionId
       ? session.id === props.sessionId
-      : session.projectId === props.projectId && !taskSessionIds.value.has(session.id),
+      : session.projectId === props.projectId
+        && !taskSessionIds.value.has(session.id)
+        && !isWorkflowNodeSession(session.id),
   ) ?? [],
 );
 const previewTabs = ref<Array<{ id: string; title: string }>>([{ id: "preview", title: t("chat.previewTab") }]);
@@ -205,6 +220,7 @@ const session = computed(() => {
         }
       : undefined;
   }
+  if (props.sessionId) return sessions.value.find((item) => item.id === props.sessionId);
   const active = sessions.value.find((item) => item.id === store.activeSessionId);
   if (active && visible.some((item) => item.id === active.id)) return active;
   return undefined;
@@ -546,6 +562,8 @@ const pendingFailure = computed(() => {
 
 async function ensureSession() {
   if (props.preview) return;
+  // 钉住某一条会话时自己显示，不要改全局当前会话。否则运行视图里节点抽屉和总览会互相把对方清空。
+  if (props.sessionId && (isWorkflowNodeSession(props.sessionId) || isWorkflowRunSession(props.sessionId))) return;
   const visible = displaySessions.value;
   if (!visible.length) return;
   // 有打开的 tab 才选中；全部关掉时保持空欢迎态，等发出第一条再建会话
@@ -1589,12 +1607,10 @@ watch(
   ],
   async (current, previous) => {
     if (!previous || current[0] !== previous[0]) return;
-    const before = messageList.value?.scrollHeight ?? 0;
     const lengthBefore = Number(previous[3] ?? 0);
     const lengthAfter = Number(current[3] ?? 0);
     await nextTick();
-    const element = messageList.value;
-    if (!element) return;
+    if (!messageList.value) return;
     // 新对话是空的，切到已有对话时历史会一次出现。高度增量经常不到一屏，
     // 不能走平滑滚动，否则会从顶部滑到底部。按未读 / 收件箱贴底 / 上次位置揭示。
     if (lengthBefore === 0 && lengthAfter > 0) {
@@ -1615,11 +1631,8 @@ watch(
       return;
     }
     if (!followBottom.value) return;
-    const opened = element.scrollHeight - before > element.clientHeight;
-    if (opened) {
-      applySessionScroll(typeof current[0] === "string" ? current[0] : undefined);
-      return;
-    }
+    // 跟随时内容猛增也继续贴底；不要 applySessionScroll 恢复到旧的半程位置
+    //（收件箱发送后曾因此跳回前几个回答）。
     // 流式输出时每个片段都会走到这里，smooth 动画会被反复重启并连带强制布局。
     // 新提问靠末轮 min-height:100% + sticky，贴底后提问停在视口顶，回答在下方展开。
     scrollToBottom(sessionProcessing.value ? "auto" : "smooth");
@@ -1676,6 +1689,36 @@ watch(
   { immediate: true },
 );
 
+/** 用户正在看的会话：登记引用，并在打开 / 出现未读时清掉收件箱角标。 */
+watch(
+  () => {
+    if (props.preview || props.historyViewOnly || !props.attentive) return null;
+    return session.value?.id ?? null;
+  },
+  (sessionId, _previous, onCleanup) => {
+    if (!sessionId) return;
+    const release = store.retainInboxSessionView(sessionId);
+    void store.markSessionInboxSeen(sessionId);
+    onCleanup(release);
+  },
+);
+
+watch(
+  () => {
+    if (props.preview || props.historyViewOnly || !props.attentive) return "";
+    const sessionId = session.value?.id;
+    if (!sessionId) return "";
+    const item = store.data?.inbox.find((entry) => entry.sessionId === sessionId);
+    if (!item) return "";
+    return `${item.id}:${item.read ? 1 : 0}:${item.unreadCount}:${item.readMessageId ?? ""}`;
+  },
+  (signature) => {
+    if (!signature) return;
+    const sessionId = session.value?.id;
+    if (sessionId) void store.markSessionInboxSeen(sessionId);
+  },
+);
+
 let unregisterCloseSurface: (() => void) | null = null;
 
 async function closeActiveChatTab() {
@@ -1710,12 +1753,10 @@ async function onBrowserAttachImage(event: Event) {
   const detail = (event as CustomEvent<{ sessionId: string; name: string; mimeType: string; base64: string }>).detail;
   if (!detail || props.preview || props.historyViewOnly) return;
   if (!session.value || session.value.id !== detail.sessionId) return;
+  // 收件箱、执行模式、编码工作台和隐藏的气泡可能同时挂着。只让当前看得到的输入框接收。
+  if (!elementIsShown(chatRoot.value)) return;
   try {
-    const binary = atob(detail.base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    const file = new File([bytes], detail.name || "browser.png", { type: detail.mimeType || "image/png" });
-    await pasteImages([file]);
+    await pasteImages([browserImageFile(detail)]);
     composerInput.value?.focus();
   } catch (error) {
     composerError.value = error instanceof Error ? error.message : t("chat.pasteFailed");
@@ -1730,12 +1771,16 @@ watch(
     unregisterFiller?.();
     unregisterFiller = null;
     if (!sessionId) return;
-    unregisterFiller = registerComposerFiller(sessionId, (text) => {
-      if (composerHasContent() || composerLocked.value) return { ok: false, reason: "composer_not_empty" };
-      composerInput.value?.insertText(text);
-      composerInput.value?.focus();
-      return { ok: true };
-    });
+    unregisterFiller = registerComposerFiller(
+      sessionId,
+      (text) => {
+        if (composerHasContent() || composerLocked.value) return { ok: false, reason: "composer_not_empty" };
+        composerInput.value?.insertText(text);
+        composerInput.value?.focus();
+        return { ok: true };
+      },
+      () => elementIsShown(chatRoot.value),
+    );
   },
   { immediate: true },
 );
@@ -2058,14 +2103,14 @@ defineExpose({
               :target-value="targetValue"
               :target-options="targetOptions"
               :allow-target-change="allowTargetChange"
-              :enable-replay="!preview"
-              :view-only="false"
+              :enable-replay="!preview && !lockSentPrompts"
+              :view-only="lockSentPrompts"
               :ui-interactive="!preview && !historyViewOnly"
               :default-collapse-subagents="embedded || historyViewOnly"
               :compact="compact"
               :hide-speaker="shouldHideAssistantSpeaker(group.messages[messageIndex - 1], message)"
               :embed-subtask="subtaskEmbedForIndex(message)"
-              :allow-continue="!historyViewOnly && allowContinueFor(message)"
+              :allow-continue="!historyViewOnly && !lockSentPrompts && allowContinueFor(message)"
               :allow-fork="sessionCommands && !preview"
               :restore-nonce="restoreNonce"
               :restore-message-id="restoreMessageId"
@@ -2174,7 +2219,9 @@ defineExpose({
         :review-in-place="reviewInPlace"
         @open="emit('review-file', $event)"
       />
+      <slot name="above-composer" />
       <ChatComposer
+        v-if="!hideComposer"
         :key="composerStateKey()"
         ref="composerInput"
         dictation

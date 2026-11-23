@@ -28,7 +28,12 @@ import {
 } from "./merge-targets";
 
 const props = defineProps<{ workspace: Workspace; repository: GitRepositoryStatus }>();
-const emit = defineEmits<{ close: []; merged: [] }>();
+const emit = defineEmits<{
+  close: [];
+  merged: [];
+  /** 收件箱应切到合并会话聊天，并让右侧 Git 绑临时 Worktree */
+  mergeFocus: [payload: { inboxItemId: string | null; workspaceId: string; sessionId: string }];
+}>();
 
 const store = useAppStore();
 
@@ -214,7 +219,14 @@ async function start() {
       const outcome = await store.mergeIntoBranch(props.workspace.id, item.name, pushRequested && Boolean(item.preview?.remote));
       const status = outcome.status === "conflict" ? "conflict" : outcome.status;
       done.push({ name: item.name, status, result: outcome, error: "", pushRequested });
-      if (outcome.status === "conflict") hitConflict = true;
+      if (outcome.status === "conflict" && outcome.mergeSession) {
+        hitConflict = true;
+        emit("mergeFocus", {
+          inboxItemId: store.inboxItemIdForSession(outcome.mergeSession.sessionId),
+          workspaceId: outcome.mergeSession.workspaceId,
+          sessionId: outcome.mergeSession.sessionId,
+        });
+      }
     } catch (cause) {
       done.push({
         name: item.name,
@@ -235,13 +247,29 @@ const mergeId = computed(() => conflictOutcome.value?.result?.mergeSession?.id ?
 
 async function resolveWithAi() {
   if (!mergeId.value) return;
-  await store.resolveMergeWithAi(mergeId.value);
+  const merge = store.data?.mergeSessions?.find((item) => item.id === mergeId.value);
+  const inboxItemId = await store.resolveMergeWithAi(mergeId.value);
+  if (merge) {
+    emit("mergeFocus", {
+      inboxItemId,
+      workspaceId: merge.workspaceId,
+      sessionId: merge.sessionId,
+    });
+  }
   emit("close");
 }
 
 async function resolveManually() {
   if (!mergeId.value) return;
+  const merge = store.data?.mergeSessions?.find((item) => item.id === mergeId.value);
   await store.openMergeSession(mergeId.value);
+  if (merge) {
+    emit("mergeFocus", {
+      inboxItemId: store.inboxItemIdForSession(merge.sessionId),
+      workspaceId: merge.workspaceId,
+      sessionId: merge.sessionId,
+    });
+  }
   emit("close");
 }
 

@@ -38,6 +38,16 @@ enum Failure {
 }
 
 pub fn link_worktree_runtime(source: &Path, worktree: &Path) -> RuntimeLinkReport {
+    link_worktree_runtime_with(source, worktree, false)
+}
+
+/// `allow_stale_modules`：合并临时工作区里 package.json 常与主检出不同，但仍需要
+/// 主检出的 node_modules 才能跑 commit-msg / pre-push；允许时照样链接。
+pub fn link_worktree_runtime_with(
+    source: &Path,
+    worktree: &Path,
+    allow_stale_modules: bool,
+) -> RuntimeLinkReport {
     let mut report = RuntimeLinkReport::default();
     if source == worktree {
         return report;
@@ -62,7 +72,8 @@ pub fn link_worktree_runtime(source: &Path, worktree: &Path) -> RuntimeLinkRepor
         && source_modules.exists()
         && !worktree_modules.exists()
     {
-        if dependency_manifests_match(source, worktree) {
+        let manifests_match = dependency_manifests_match(source, worktree);
+        if manifests_match || (allow_stale_modules && hooks_need_node(worktree)) {
             match ensure_symlink(&source_modules, &worktree_modules, true) {
                 LinkResult::Linked => report.linked_node_modules = true,
                 LinkResult::Already => {}
@@ -142,7 +153,7 @@ pub fn explain_failure(operation: GitOperation, detail: &str, hooks_path: &str) 
         Failure::AuthOrNetwork => tr!("远程认证或网络失败：{detail}", detail = detail),
         Failure::RemoteRejected => remote_rejected(operation, detail),
         Failure::LocalHook { hook, offending } => {
-            let (message, repairable) = local_hook_message(operation, &hook, &offending);
+            let (message, repairable) = local_hook_message(operation, &hook, &offending, detail);
             let skippable = hook != "post-merge";
             diagnostic("local_hook", repairable, skippable, operation, &message)
         }
@@ -302,6 +313,17 @@ fn classify_failure(detail: &str, hooks_path: &str) -> Failure {
             offending: offending.trim().to_string(),
         };
     }
+    // 偶发只有 Node MODULE_NOT_FOUND、没有 husky 摘要行时，仍按本地钩子处理，便于 UI 提供跳过。
+    if detail.contains("MODULE_NOT_FOUND") || detail.contains("Cannot find module") {
+        return Failure::LocalHook {
+            hook: "commit-msg".to_string(),
+            offending: detail.lines().find(|line| line.contains("Cannot find module"))
+                .or_else(|| detail.lines().find(|line| line.contains("MODULE_NOT_FOUND")))
+                .unwrap_or("Cannot find module")
+                .trim()
+                .to_string(),
+        };
+    }
     Failure::Unknown
 }
 
@@ -337,13 +359,23 @@ fn extract_hook_name(line: &str) -> String {
     "hook".to_string()
 }
 
-fn local_hook_message(operation: GitOperation, hook: &str, offending: &str) -> (String, bool) {
+fn local_hook_message(
+    operation: GitOperation,
+    hook: &str,
+    offending: &str,
+    detail: &str,
+) -> (String, bool) {
     let mut lines = vec![blocked_by_hook(operation, hook)];
     let mut repairable = false;
-    if offending.contains("husky.sh") || offending.contains(".husky/_") {
+    // husky 摘要行往往只有 “commit-msg hook exited”；模块缺失在前面的 Node 堆栈里。
+    let blob = format!("{offending}\n{detail}");
+    if blob.contains("husky.sh") || blob.contains(".husky/_") {
         lines.push(tr!("缺少 .husky/_/husky.sh"));
         repairable = true;
-    } else if offending.contains("node_modules") || offending.contains("Cannot find module") {
+    } else if blob.contains("node_modules")
+        || blob.contains("Cannot find module")
+        || blob.contains("MODULE_NOT_FOUND")
+    {
         lines.push(tr!("缺少 node_modules"));
         repairable = true;
     } else {
@@ -421,6 +453,24 @@ error: failed to push some refs to 'http://example.test/pages.git'";
         assert!(message.contains("缺少 .husky/_/husky.sh"));
         assert!(message.contains("\"repairable\":true"));
         assert!(message.contains("\"operation\":\"push\""));
+    }
+
+    #[test]
+    fn finish_merge_commit_msg_module_not_found_is_skippable() {
+        let detail = "\
+Error: Cannot find module '/tmp/merge/node_modules/@fs/git-commit-lint/scripts/commitlint-zh.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+husky - commit-msg hook exited with code 1 (error)";
+        let message = explain_failure(GitOperation::Commit, detail, ".husky");
+        assert!(message.contains(DIAGNOSTIC_PREFIX));
+        assert!(message.contains("\"skippable\":true"));
+        assert!(message.contains("\"operation\":\"commit\""));
+        assert!(message.contains("提交被本地 commit-msg 拦住"));
+        assert!(message.contains("缺少 node_modules"));
     }
 
     #[test]
@@ -520,6 +570,37 @@ error: failed to push some refs to 'http://example.test/pages.git'";
         assert!(error.contains("依赖与主检出不同"));
         assert!(error.contains("\"kind\":\"deps_mismatch\""));
         assert!(error.contains("\"skippable\":true"));
+    }
+
+    #[test]
+    fn merge_worktree_can_link_stale_node_modules_for_hooks() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let worktree = temp.path().join("worktree");
+        fs::create_dir_all(source.join("node_modules/@fs")).unwrap();
+        fs::write(source.join("package.json"), "{\"name\":\"app\"}\n").unwrap();
+        fs::write(source.join("pnpm-lock.yaml"), "lock: source\n").unwrap();
+        fs::write(
+            source.join("node_modules/@fs/check.js"),
+            "module.exports = 1\n",
+        )
+        .unwrap();
+        fs::create_dir_all(worktree.join(".husky")).unwrap();
+        fs::write(worktree.join("package.json"), "{\"name\":\"app\",\"version\":\"2\"}\n").unwrap();
+        fs::write(worktree.join("pnpm-lock.yaml"), "lock: merge\n").unwrap();
+        fs::write(
+            worktree.join(".husky/commit-msg"),
+            "#!/bin/sh\nnode ./node_modules/@fs/check.js\n",
+        )
+        .unwrap();
+
+        let skipped = link_worktree_runtime(&source, &worktree);
+        assert!(skipped.skipped_node_modules);
+        assert!(!worktree.join("node_modules").exists());
+
+        let report = link_worktree_runtime_with(&source, &worktree, true);
+        assert!(report.linked_node_modules);
+        assert!(worktree.join("node_modules/@fs/check.js").is_file());
     }
 
     #[test]

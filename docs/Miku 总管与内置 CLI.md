@@ -84,7 +84,7 @@ Multara 是本地单用户桌面应用，不是多成员云工作区。下面这
 - 需要改代码、仓库、多轮、或以后要回来看 → **建任务**，让被指派的 run 去做。
 - 工作台（这次运行已绑需求工作区）：用户要求改代码时直接改。任务用来追踪、分派、多轮，不是改代码的前置条件。
 - 没有需求工作区的会话：不要改随机目录。先打开需求，或建任务并带上 `--project`。
-- 路由从小到大：自己 → 已有 specialist → 新建 specialist（先预览再确认）→ 小队 → 自动化。
+- 路由优先派给别人：已有 specialist → 小队 → 自己（无人更合适时）→ 新建 specialist（先预览再确认）→ 自动化。不要因为自己也能做就优先自己干。
 - 普通任务操作：用户说清楚了就可以做。
 - 创建/大改智能体、小队、自动化，以及破坏性操作：先预览，等人确认。
 - 动手前 load 对应 `multara-*` skill。
@@ -307,12 +307,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_system_key
 
 ```
 src-tauri/skills/
+  multara-lead/SKILL.md
   multara-onboarding/SKILL.md
   multara-working-on-tasks/SKILL.md
   multara-creating-agents/SKILL.md
   multara-projects-and-workspaces/SKILL.md
   multara-squads/SKILL.md
   multara-automations/SKILL.md
+  multara-workflows/SKILL.md
   multara-skill-importing/SKILL.md
 ```
 
@@ -333,12 +335,14 @@ brief 的 `## Skills` **只列名字**，并给出上面的绝对路径。Cursor
 
 | Skill | 教什么 |
 |---|---|
+| `multara-lead` | 这次是负责人还是被指派。负责人决定派给谁或自己做；被指派的人把交给自己的事做完 |
 | `multara-onboarding` | 仅欢迎会话。开场白已发出，不要再自我介绍。三个 starter play。默认一个任务指派给自己。 |
 | `multara-working-on-tasks` | 状态机、todo vs backlog、何时 `--status todo` 会开跑、进度写在任务会话 |
 | `multara-creating-agents` | `multara agent create` 字段、description 不进 prompt、不可伪造 Miku |
 | `multara-projects-and-workspaces` | 需求、工作区路径、隔离模式；绑定 project 才能改代码 |
 | `multara-squads` | 创建小队、队长分发（现有 `dispatch_squad_members`） |
 | `multara-automations` | 对应现有 schedule / webhook / interval |
+| `multara-workflows` | 工作流草稿的创建、节点、连线、入参、发布，以及节点里选下一步 |
 | `multara-skill-importing` | 以后若做 URL 导入；第一期可只 list 本机扫描结果 |
 
 `resources.rs` 扫描的 `owner=multara` 目录（`~/.multara/skills`）继续给 **用户** skill，不要和内置 `multara-*` 混在一个命名空间。内置前缀保留给二进制。

@@ -732,6 +732,10 @@ pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
             },
         )
         .map_err(|_| tr!("任务不存在"))?;
+    // 工作流运行的任务卡由工作流引擎推进，看板拖动不派智能体
+    if crate::workflow::is_workflow_session(&session_id) {
+        return Ok(false);
+    }
     let active: u32 = db
         .query_row(
             "SELECT COUNT(*) FROM agent_runs

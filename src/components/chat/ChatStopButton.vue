@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Square } from "@lucide/vue";
 import { t } from "../../i18n";
 
 withDefaults(defineProps<{
@@ -32,6 +31,7 @@ function onClick(event: MouseEvent) {
     @mousedown="onMouseDown"
     @click="onClick"
   >
-    <Square :size="14" />
+    <!-- 纯色方块：避免 Lucide Square 的 stroke+fill 在小圆钮里看起来偏心 -->
+    <span class="ds-stop-icon" aria-hidden="true" />
   </UiButton>
 </template>

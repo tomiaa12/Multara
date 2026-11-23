@@ -12,10 +12,11 @@ export const INBOX_TERMINAL_OPEN_KEY = "multara.inbox.terminalOpen";
 export const INBOX_SURFACES_KEY = "multara.inbox.surfaces";
 export const INBOX_TOOL_MIN_WIDTH = 280;
 export const INBOX_TOOL_DEFAULT_WIDTH = 420;
+export const INBOX_FILES_MIN_WIDTH = 160;
 export const INBOX_FILES_WIDTH = 280;
 export const INBOX_RAIL_WIDTH = 44;
 
-export const INBOX_SURFACES = ["changes", "uncommitted", "browser", "search", "details", "canvas"] as const;
+export const INBOX_SURFACES = ["changes", "uncommitted", "browser", "search", "details", "canvas", "requirements"] as const;
 export type InboxSurfaceId = (typeof INBOX_SURFACES)[number];
 
 export type InboxSurfaceTab = {
@@ -31,12 +32,12 @@ export function createInboxSurfaceTab(kind: InboxSurfaceId): InboxSurfaceTab {
 }
 
 export function isInboxSurfaceId(value: string | null): value is InboxSurfaceId {
-  return value === "changes" || value === "uncommitted" || value === "browser" || value === "search" || value === "details" || value === "canvas";
+  return value === "changes" || value === "uncommitted" || value === "browser" || value === "search" || value === "details" || value === "canvas" || value === "requirements";
 }
 
 /** 更改/未提交更改/属性/Canvas 只保留一个；浏览器和搜索可重复。 */
 function surfaceIsSingleton(kind: InboxSurfaceId) {
-  return kind === "changes" || kind === "uncommitted" || kind === "details" || kind === "canvas";
+  return kind === "changes" || kind === "uncommitted" || kind === "details" || kind === "canvas" || kind === "requirements";
 }
 
 export function isInboxToolId(value: string | null): value is InboxToolId {
@@ -79,7 +80,7 @@ export function readInboxPanelWidth(): number {
 
 export function readInboxFilesWidth(): number {
   const stored = Number(localStorage.getItem(INBOX_FILES_WIDTH_KEY));
-  if (stored >= INBOX_TOOL_MIN_WIDTH) return stored;
+  if (stored >= INBOX_FILES_MIN_WIDTH) return stored;
   return INBOX_FILES_WIDTH;
 }
 

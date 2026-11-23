@@ -4,12 +4,24 @@ import * as backend from "../services/backend";
 import { forgetTerminal, trackTerminal } from "./running-terminals";
 
 /** 工作台和收件箱共用的终端清单。卸掉画面不从这里删，只有用户在工作台关掉才删。 */
-export const terminalSessions = ref<TerminalTab[]>([]);
-export const activeTerminalSessionId = ref("");
+const devHost = import.meta.env.DEV
+  ? window as Window & {
+      __multaraTerminalSessions?: ReturnType<typeof ref<TerminalTab[]>>;
+      __multaraActiveTerminalId?: ReturnType<typeof ref<string>>;
+    }
+  : undefined;
+export const terminalSessions = devHost?.__multaraTerminalSessions ?? ref<TerminalTab[]>([]);
+export const activeTerminalSessionId = devHost?.__multaraActiveTerminalId ?? ref("");
+if (devHost) {
+  devHost.__multaraTerminalSessions = terminalSessions;
+  devHost.__multaraActiveTerminalId = activeTerminalSessionId;
+}
 
 const opening = new Map<string, Promise<TerminalTab>>();
 
 export function liveTerminalForWorkspace(workspaceId: string): TerminalTab | undefined {
+  const active = terminalSessions.value.find((item) => item.id === activeTerminalSessionId.value);
+  if (active?.workspaceId === workspaceId && active.live && !active.pending) return active;
   return [...terminalSessions.value].reverse().find((item) =>
     item.workspaceId === workspaceId && item.live && !item.pending,
   );
