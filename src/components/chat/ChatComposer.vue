@@ -26,6 +26,7 @@ import type { SelectOption } from "../ui/select-types";
 import type { ComposerFeishuChipNode, ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
 import { useCanvasStore } from "../../stores/canvas";
+import { useWorkflowsStore } from "../../stores/workflows";
 import { isCanvasEnabled } from "./genui/block";
 import { getCaretClientRect } from "./composer-caret";
 import { replaceSlashToken } from "./skill-slash";
@@ -127,6 +128,7 @@ const emit = defineEmits<{
 
 const store = useAppStore();
 const canvas = useCanvasStore();
+const workflows = useWorkflowsStore();
 const dictationStore = useDictationStore();
 const dictationTargetId = `composer-${crypto.randomUUID()}`;
 const rootEl = ref<HTMLElement | null>(null);
@@ -191,6 +193,7 @@ function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
   if (item.kind === "task") leading = "hash";
   if (item.kind === "requirement") leading = "requirement";
   if (item.kind === "session") leading = "session";
+  if (item.kind === "workflow") leading = "workflow";
   return {
     id: item.id,
     kind: item.kind,
@@ -309,6 +312,13 @@ watch(
   },
 );
 
+watch(
+  () => Boolean(suggestTrigger.value),
+  (open) => {
+    if (open) void workflows.loadList().catch(() => undefined);
+  },
+);
+
 async function loadFeishuContacts() {
   try {
     feishuContacts.value = await backend.listFeishuContacts();
@@ -395,6 +405,13 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       description: item.note,
       group: "requirements",
     })),
+    ...workflows.list.map((item) => ({
+      id: item.id,
+      kind: "workflow" as const,
+      label: item.name,
+      description: item.description,
+      group: "workflows",
+    })),
     ...(data?.sessions ?? [])
       .filter((item) => item.id !== currentSessionId)
       .map((item) => ({
@@ -432,6 +449,12 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     { id: "mcp", label: t("chat.context.mcp"), groups: [group("mcp", t("nav.mcp"))], emptyText: t("chat.context.mcpEmpty") },
     { id: "task", label: t("chat.context.tasks"), groups: [group("tasks", t("chat.context.tasks"))] },
     { id: "requirement", label: t("chat.context.requirements"), groups: [group("requirements", t("chat.context.requirements"))] },
+    {
+      id: "workflow",
+      label: t("chat.context.workflows"),
+      groups: [group("workflows", t("chat.context.workflows"))],
+      emptyText: t("chat.context.workflowsEmpty"),
+    },
   );
   // 「添加上下文 → Canvas...」（R15）：不产生附件，选中即打开或聚焦；页面内容只能经 __multara/context 进上下文
   const canvasOn = isCanvasEnabled(data?.settings);
@@ -556,7 +579,7 @@ function onComposerChange(nodes: ComposerNode[]) {
 }
 
 const ENTITY_KINDS = new Set<ComposerEntityKind>([
-  "agent", "squad", "skill", "mcp", "task", "requirement", "session",
+  "agent", "squad", "skill", "mcp", "task", "requirement", "session", "workflow",
 ]);
 
 function stripSuggestTrigger() {

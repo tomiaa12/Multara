@@ -34,6 +34,7 @@ export function devInvokeVitePlugin(): Plugin {
   let nextId = 1;
   const queued: InvokeCommand[] = [];
   const waiting = new Map<number, (value: unknown) => void>();
+  const events: Array<{ event: string; payload: unknown }> = [];
   let lastWorkerAt = 0;
 
   return {
@@ -75,6 +76,28 @@ export function devInvokeVitePlugin(): Plugin {
             finish(body);
           }
           json(res, 200, { ok: true });
+          return;
+        }
+
+        if (url === "/__multara/push-events" && req.method === "POST") {
+          const body = JSON.parse((await readBody(req)) || "[]") as Array<{
+            event?: string;
+            payload?: unknown;
+          }>;
+          if (Array.isArray(body)) {
+            for (const item of body) {
+              if (!item?.event) continue;
+              events.push({ event: item.event, payload: item.payload });
+            }
+            if (events.length > 400) events.splice(0, events.length - 400);
+          }
+          json(res, 200, { ok: true });
+          return;
+        }
+
+        if (url === "/__multara/events" && req.method === "GET") {
+          const batch = events.splice(0, events.length);
+          json(res, 200, batch);
           return;
         }
 

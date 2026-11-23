@@ -33,6 +33,7 @@ pub fn start(app: AppHandle) {
             for due in ids {
                 let _ = execute_scheduled_automation(&app, &due);
             }
+            crate::workflow::runtime::tick(&app);
         }
     });
 }

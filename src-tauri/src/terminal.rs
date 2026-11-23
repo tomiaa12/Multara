@@ -1098,6 +1098,34 @@ fn probe_output(command: &mut std::process::Command) -> Option<String> {
         .then(|| String::from_utf8_lossy(&bytes).into_owned())
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenTerminal {
+    pub id: String,
+    pub title: String,
+    pub cwd: String,
+    pub pid: u32,
+}
+
+/// 还活着的 PTY，带上最近一次画面快照里的标题和目录。
+pub fn list_open(app_data: Option<&Path>) -> Vec<OpenTerminal> {
+    let index = app_data.map(|dir| read_index(&dir.join(SNAPSHOT_DIR)));
+    alive_sessions()
+        .into_iter()
+        .map(|(id, pid)| {
+            let meta = index
+                .as_ref()
+                .and_then(|index| index.sessions.iter().find(|item| item.id == id));
+            OpenTerminal {
+                id,
+                title: meta.map(|item| item.title.clone()).unwrap_or_default(),
+                cwd: meta.map(|item| item.cwd.clone()).unwrap_or_default(),
+                pid,
+            }
+        })
+        .collect()
+}
+
 fn alive_sessions() -> Vec<(String, u32)> {
     let mut sessions = sessions();
     let mut alive = Vec::new();

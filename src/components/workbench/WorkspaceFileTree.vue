@@ -130,7 +130,7 @@ watch(() => props.workspace?.id ?? props.stateKey, () => {
 </script>
 
 <template>
-  <div class="workspace-file-tree" :class="embedded ? 'is-embedded' : 'file-tree vs-scroll'">
+  <div class="workspace-file-tree file-tree" :class="embedded ? 'is-embedded' : 'vs-scroll'">
     <p v-if="loading && !nodes.length" class="tree-empty">{{ t("scm.loadingStatus") }}</p>
     <p v-else-if="failed" class="tree-empty">{{ t("inbox.tool.emptyTree") }}</p>
     <p v-else-if="!nodes.length" class="tree-empty">{{ t("inbox.tool.emptyTree") }}</p>

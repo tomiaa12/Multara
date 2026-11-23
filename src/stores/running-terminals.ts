@@ -1,5 +1,5 @@
 import { ref, watch } from "vue";
-import { listen } from "@tauri-apps/api/event";
+import { onAppEvent } from "../dev/dev-events";
 import { terminalServices } from "../services/backend";
 import { decodeTerminalChunk } from "../utils/terminal-decode";
 
@@ -80,12 +80,10 @@ export function startRunningTerminalWatch() {
     { immediate: true },
   );
   document.addEventListener("visibilitychange", () => (document.hidden ? stopPortPolling() : startPortPolling()));
-  if (!("__TAURI_INTERNALS__" in window)) return;
-  void listen<{ id?: string; data?: string }>("terminal-data", (event) => {
+  void onAppEvent<{ id?: string; data?: string }>("terminal-data", (event) => {
     const id = event.payload?.id;
     const data = event.payload?.data;
     if (!id || !data) return;
-    if (!runningTerminals.value.some((item) => item.id === id)) return;
     const bytes = decodeTerminalChunk(data);
     if (!bytes.length) return;
     pushScrollback(id, bytes);

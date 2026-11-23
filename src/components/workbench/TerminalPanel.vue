@@ -8,7 +8,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { listen } from "@tauri-apps/api/event";
+import { onAppEvent } from "../../dev/dev-events";
 import "@xterm/xterm/css/xterm.css";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
@@ -26,7 +26,7 @@ import {
   terminalBlock,
   TERMINAL_SNAPSHOT_LINE_CAP,
 } from "./terminal-selection";
-import { decodeTerminalChunk } from "../../utils/terminal-decode";
+import { subscribeTerminalOutput, unsubscribeTerminalOutput } from "../../stores/running-terminals";
 import { ShellIntegration } from "./terminal-shell-integration";
 import { terminalCellSize, terminalScreenElement } from "./terminal-geometry";
 import {
@@ -600,9 +600,8 @@ async function mount(session: TerminalTab) {
     });
     const links = registerFileLinks(term, () => props.sessions.find((item) => item.id === session.id)?.cwd ?? session.cwd);
     resizeBackend(session.id, term);
-    const data = await listen<{ id: string; data: string }>("terminal-data", (event) => {
-      if (event.payload.id !== session.id) return;
-      term.write(decodeTerminalChunk(event.payload.data), () => {
+    const onOutput = (bytes: Uint8Array) => {
+      term.write(bytes, () => {
         schedulePublish(session.id);
         const busy = integration.isExecuting();
         if ((props.sessions.find((item) => item.id === session.id)?.busy ?? false) !== busy) {
@@ -611,18 +610,27 @@ async function mount(session: TerminalTab) {
         if (session.id === props.activeId) scheduleSuggest(session.id);
         updateSticky(session.id);
       });
-    });
+    };
+    // 先订上再补已经打出的画面，避免命令在面板挂上之前跑完，格子一直是空的。
+    const prior = subscribeTerminalOutput(session.id, onOutput);
+    if (prior.length) onOutput(prior);
+    else {
+      void backend.terminalReadScreen(session.id).then((text) => {
+        if (!text || !hosts.has(session.id)) return;
+        onOutput(new TextEncoder().encode(text.replace(/\n/g, "\r\n")));
+      }).catch(() => undefined);
+    }
     term.onSelectionChange(() => {
       if (pointerSelecting || session.id !== props.activeId) return;
       showAddChat();
     });
-    const exit = await listen<{ id: string; exitCode?: number }>("terminal-exit", (event) => {
+    const exit = await onAppEvent<{ id: string; exitCode?: number }>("terminal-exit", (event) => {
       if (event.payload.id !== session.id) return;
       const code = event.payload.exitCode ?? 1;
       term.write(`\r\n\x1b[90m${t("terminal.processExited", { code })}\x1b[0m\r\n`);
       emit("patch", session.id, { live: false, busy: false, exitCode: code });
     });
-    stops.push(data, exit, () => links.dispose());
+    stops.push(() => unsubscribeTerminalOutput(session.id, onOutput), exit, () => links.dispose());
   }
   hosts.set(session.id, {
     term,

@@ -12,9 +12,10 @@ import {
 } from "./schema";
 import { clearGenUiStateForTest, readGenUiState, writeGenUiState } from "./state";
 import { genUiEntry, genUiLabel, genUiToText } from "./registry";
-import { translate } from "../../../i18n";
+import { t, translate } from "../../../i18n";
 import { extractQuestions } from "../question-block";
 import { formatGenUiAction, genUiSendingIds, genUiSubmissions, sendGenUiAction } from "../ui-outbound";
+import { genUiReceipt } from "./receipt";
 import type { ChatMessage } from "../../../domain/types";
 
 const fence = (json: string, lang = "multara-ui") => `\`\`\`${lang}\n${json}\n\`\`\``;
@@ -313,5 +314,42 @@ describe("ui-outbound", () => {
       message({ sourceType: "feishu", sourceMeta: { messageId: "m1", blockId: "m1-b1" } }),
     ], "m1");
     expect([...submissions.entries()]).toEqual([["m1-b0", { action: "submit", values: { a: 1 } }]]);
+  });
+
+  it("shows a form submission as labeled choices instead of the raw payload", () => {
+    const assistant = [
+      "```multara-ui",
+      JSON.stringify({
+        type: "form",
+        title: "按企业端修正后的仓库",
+        props: {
+          fields: [{
+            name: "repos",
+            label: "仓库",
+            kind: "multiselect",
+            options: [
+              { value: "ent-cash-mgr", label: "ent-cash-mgr（企业现金通）" },
+              { value: "pay", label: "pay（公版 XCF）" },
+            ],
+          }],
+        },
+      }),
+      "```",
+    ].join("\n");
+    const receipt = genUiReceipt({
+      content: "[界面操作 · 按企业端修正后的仓库] submit\n{}",
+      sourceType: "genui",
+      sourceMeta: {
+        messageId: "m1",
+        blockId: "m1-b0",
+        action: "submit",
+        values: { repos: ["ent-cash-mgr", "pay"] },
+      },
+    }, assistant);
+    expect(receipt).toMatchObject({
+      title: "按企业端修正后的仓库",
+      actionLabel: t("genui.submitted"),
+      rows: [{ label: "仓库", values: ["ent-cash-mgr（企业现金通）", "pay（公版 XCF）"] }],
+    });
   });
 });

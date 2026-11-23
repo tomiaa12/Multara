@@ -44,6 +44,8 @@ const props = withDefaults(defineProps<{
   emptyText?: string;
   /** 每组首次展示及每次“查看更多”的数量；不传则展示全部。 */
   pageSize?: number;
+  /** 浮层最小宽度（像素）；默认至少与触发器同宽，可再加宽以容纳双行选项。 */
+  menuMinWidth?: number;
 }>(), {
   modelValue: undefined,
   options: undefined,
@@ -58,6 +60,7 @@ const props = withDefaults(defineProps<{
   variant: "default",
   emptyText: undefined,
   pageSize: undefined,
+  menuMinWidth: undefined,
 });
 
 const { t } = useI18n();
@@ -358,7 +361,7 @@ function updatePosition() {
   const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, window.innerWidth - popoverWidth - VIEWPORT_MARGIN));
   popoverStyle.value = {
     left: `${left}px`,
-    minWidth: `${rect.width}px`,
+    minWidth: `${Math.max(rect.width, props.menuMinWidth ?? 0)}px`,
     ...(placement.value === "top"
       ? { bottom: `${window.innerHeight - rect.top + POPOVER_GAP}px` }
       : { top: `${rect.bottom + POPOVER_GAP}px` }),
@@ -755,16 +758,23 @@ onBeforeUnmount(() => {
                   <AgentAvatar v-if="item.option.avatar" class="ds-avatar" :value="item.option.avatar" :size="null" />
                 </slot>
                 <span class="ds-select-option-body">
-                  <span class="ds-select-option-label">{{ item.label[0] }}<mark v-if="item.label[1]">{{ item.label[1] }}</mark>{{ item.label[2] }}</span>
-                  <span v-if="item.description" class="ds-select-option-desc">
-                    <slot
-                      name="option-description"
-                      :option="item.option"
-                      :parts="item.description"
-                    >
-                      {{ item.description[0] }}<mark v-if="item.description[1]">{{ item.description[1] }}</mark>{{ item.description[2] }}
-                    </slot>
-                  </span>
+                  <slot
+                    name="option"
+                    :option="item.option"
+                    :label="item.label"
+                    :description="item.description"
+                  >
+                    <span class="ds-select-option-label">{{ item.label[0] }}<mark v-if="item.label[1]">{{ item.label[1] }}</mark>{{ item.label[2] }}</span>
+                    <span v-if="item.description" class="ds-select-option-desc">
+                      <slot
+                        name="option-description"
+                        :option="item.option"
+                        :parts="item.description"
+                      >
+                        {{ item.description[0] }}<mark v-if="item.description[1]">{{ item.description[1] }}</mark>{{ item.description[2] }}
+                      </slot>
+                    </span>
+                  </slot>
                 </span>
                 <span v-if="item.option.meta" class="ds-select-option-meta">{{ item.option.meta }}</span>
                 <span class="ds-select-check"><Check :size="14" /></span>

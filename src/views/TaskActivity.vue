@@ -2,7 +2,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, provide, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { chatMessagesKey } from "../components/chat/context-usage";
-import { ArrowUp, LoaderCircle, Plus } from "@lucide/vue";
+import { ArrowUp, LoaderCircle, Plus, X } from "@lucide/vue";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
@@ -46,6 +46,10 @@ import { useDiffStore } from "../stores/diff";
 import { countMessagesFrom, reaskTouchesFiles } from "../stores/reask";
 import { confirmRollbackIfDirty, listDirtyEditorPaths } from "../components/workbench/unsaved-editor";
 import { t } from "../i18n";
+import Codicon from "../components/ui/Codicon.vue";
+import { registerComposerFiller } from "../components/chat/ui-outbound";
+import { useCanvasStore } from "../stores/canvas";
+import { BROWSER_ATTACH_IMAGE, browserImageFile, elementIsShown, type BrowserAttachImageDetail } from "./inbox/browser-chat-attach";
 
 const props = withDefaults(defineProps<{
   sessionId: string;
@@ -67,6 +71,9 @@ const selfScroll = computed(() => props.thread || props.docked);
 
 const store = useAppStore();
 const diffStore = useDiffStore();
+const canvas = useCanvasStore();
+const activityEl = ref<HTMLElement | null>(null);
+const uiContexts = computed(() => (props.historyViewOnly ? [] : canvas.contextsFor(props.sessionId)));
 const reaskTarget = ref<{ messageId: string; content: string; attachments: MessageAttachmentInput[] } | null>(null);
 const reshuffleOpen = ref(false);
 const dirtyRollbackOpen = ref(false);
@@ -82,6 +89,7 @@ const composer = ref<{
   clear: () => void;
   focus: () => void;
   insertChip: (item: EditorSelectionContext) => void;
+  insertText: (value: string) => void;
   openAttachMenu: (defaultCategory?: string) => void;
   restore: (nodes: ComposerNode[]) => void;
   serialize: () => { text: string; nodes: ComposerNode[]; empty: boolean };
@@ -230,6 +238,8 @@ onDeactivated(() => {
   pageActive.value = false;
 });
 onBeforeUnmount(() => {
+  unregisterFiller?.();
+  window.removeEventListener(BROWSER_ATTACH_IMAGE, onBrowserAttachImage);
   window.clearInterval(liveTimer);
   for (const image of pastes.value) URL.revokeObjectURL(image.previewUrl);
 });
@@ -524,15 +534,34 @@ function pinDockedLastExchange(force = false) {
   });
 }
 
-function revealDockedScroll(options: { force?: boolean; fromUserSend?: boolean } = {}) {
+function revealDockedScroll(options: {
+  force?: boolean;
+  fromUserSend?: boolean;
+  /** 仅初次展开历史时滚到未读分割线；后续消息增长不得再拽回前面。 */
+  preferUnread?: boolean;
+} = {}) {
   const list = logEl.value;
   if (!list || !selfScroll.value) return;
-  if (props.unreadMessageId && scrollListToMessage(list, props.unreadMessageId)) {
+  // 用户刚发送：必须贴最新一轮，不能被未读分割线拽到前几个回答。
+  if (options.fromUserSend) {
+    followBottom.value = true;
+    pinDockedLastExchange(true);
+    requestAnimationFrame(() => {
+      pinDockedLastExchange();
+      requestAnimationFrame(() => pinDockedLastExchange());
+    });
+    return;
+  }
+  if (
+    options.preferUnread
+    && props.unreadMessageId
+    && scrollListToMessage(list, props.unreadMessageId)
+  ) {
     followBottom.value = false;
     syncUserTurnPush(list);
     return;
   }
-  if (options.fromUserSend || options.force) followBottom.value = true;
+  if (options.force) followBottom.value = true;
   if (!followBottom.value) {
     // 仍刷新末轮 min-height，但不改 scrollTop，避免上滚阅读时被拽走
     syncStickyExchangeMinHeight(list, true);
@@ -547,14 +576,67 @@ function revealDockedScroll(options: { force?: boolean; fromUserSend?: boolean }
   });
 }
 
+function onBrowserAttachImage(event: Event) {
+  const detail = (event as CustomEvent<BrowserAttachImageDetail>).detail;
+  if (!detail || props.historyViewOnly || detail.sessionId !== props.sessionId) return;
+  if (!pageActive.value || !elementIsShown(activityEl.value)) return;
+  void pasteImages([browserImageFile(detail)]).then(() => composer.value?.focus());
+}
+
 onMounted(() => {
   void store.loadMessages(props.sessionId);
+  window.addEventListener(BROWSER_ATTACH_IMAGE, onBrowserAttachImage);
 });
 
 watch(() => props.sessionId, (sessionId) => {
   followBottom.value = true;
   void store.loadMessages(sessionId);
 });
+
+let unregisterFiller: (() => void) | null = null;
+watch(
+  () => (pageActive.value && !props.historyViewOnly ? props.sessionId : null),
+  (sessionId) => {
+    unregisterFiller?.();
+    unregisterFiller = null;
+    if (!sessionId) return;
+    unregisterFiller = registerComposerFiller(
+      sessionId,
+      (text) => {
+        if (!draftEmpty.value) return { ok: false, reason: "composer_not_empty" };
+        composer.value?.insertText(text);
+        composer.value?.focus();
+        return { ok: true };
+      },
+      () => elementIsShown(activityEl.value),
+    );
+  },
+  { immediate: true },
+);
+
+/** 任务详情 / 收件箱 thread：正在看时清掉该会话收件箱未读。 */
+watch(
+  () => (pageActive.value && !props.historyViewOnly ? props.sessionId : null),
+  (sessionId, _previous, onCleanup) => {
+    if (!sessionId) return;
+    const release = store.retainInboxSessionView(sessionId);
+    void store.markSessionInboxSeen(sessionId);
+    onCleanup(release);
+  },
+);
+
+watch(
+  () => {
+    if (!pageActive.value || props.historyViewOnly) return "";
+    const item = store.data?.inbox.find((entry) => entry.sessionId === props.sessionId);
+    if (!item) return "";
+    return `${item.id}:${item.read ? 1 : 0}:${item.unreadCount}:${item.readMessageId ?? ""}`;
+  },
+  (signature) => {
+    if (!signature) return;
+    void store.markSessionInboxSeen(props.sessionId);
+  },
+);
 
 watch(
   () => [props.unreadMessageId, messages.value.length, selfScroll.value] as const,
@@ -565,11 +647,13 @@ watch(
     const fromUserSend = lengthAfter > lengthBefore
       && messages.value.slice(lengthBefore).some((message) => message.role === "user");
     const historyFilled = lengthBefore === 0 && lengthAfter > 0;
+    const initialReveal = !previous || historyFilled;
     await nextTick();
     requestAnimationFrame(() => {
       revealDockedScroll({
-        force: historyFilled || !previous,
+        force: initialReveal && !props.unreadMessageId,
         fromUserSend,
+        preferUnread: initialReveal && !fromUserSend,
       });
     });
   },
@@ -578,7 +662,7 @@ watch(
 </script>
 
 <template>
-  <div class="task-activity" :class="{ 'is-thread': thread, 'is-docked': docked }">
+  <div ref="activityEl" class="task-activity" :class="{ 'is-thread': thread, 'is-docked': docked }">
     <!-- thread / docked 自管滚动；否则由任务详情外层滚动（旧布局兜底） -->
     <div
       v-if="messages.length"
@@ -713,6 +797,15 @@ watch(
         removable
         @remove="removePaste"
       />
+      <div v-if="uiContexts.length" class="composer-attachments">
+        <div v-for="item in uiContexts" :key="item.id" class="composer-attachment ui-context-chip">
+          <Codicon name="inspect" :size="12" />
+          <span>{{ t("inbox.browser.contextChip", { title: item.label }) }}</span>
+          <UiButton type="button" variant="ghost" size="icon" :tip="t('chat.removeAttachment')" @click="canvas.removeContext(item.sessionId, item.id)">
+            <X :size="10" />
+          </UiButton>
+        </div>
+      </div>
       <template #actions>
         <UiButton
           type="button"

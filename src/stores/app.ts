@@ -29,6 +29,7 @@ import { attachmentsAsInput, lastUnansweredUser } from "../components/chat/unans
 import { currentAppPath, inboxPreview, shouldNotifyInbox } from "../domain/inbox";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t, translate } from "../i18n";
+import { isWorkflowNodeSession, isWorkflowRunSession } from "../domain/workflow";
 
 // 跳过的提问按消息 id 记在本地，刷新后卡片不会再弹出来；只留最近 200 条
 const RUN_STATE_HISTORY_LIMIT = 30;
@@ -83,6 +84,8 @@ export const useAppStore = defineStore("app", () => {
   const activeSessionId = ref("welcome");
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
   const activeInboxSessionId = ref<string | null>(null);
+  /** 各聊天面正在展示的会话（引用计数）；用于结束时不标未读、以及看过即清未读。 */
+  const inboxSessionViewers = ref<Record<string, number>>({});
   /** requestedMode 在点击发送时冻结，排队期间切换模式不影响它；id/createdAt 用于落库恢复 */
   type QueuedMessage = {
     id: string;
@@ -174,26 +177,70 @@ export const useAppStore = defineStore("app", () => {
     data.value.stats.queued = queued;
   });
 
+  function rememberActiveRun(run: { id: string; sessionId: string; agentId: string; status: RunStatus }) {
+    if (!isLiveRunStatus(run.status) || runStates.value[run.id]) return;
+    runStates.value[run.id] = {
+      runId: run.id,
+      sessionId: run.sessionId,
+      agentId: run.agentId,
+      status: run.status,
+      chunk: null,
+      error: null,
+      timelineItem: null,
+      elapsedMs: null,
+    };
+  }
+
   async function seedActiveRuns() {
     try {
       const active = await backend.listActiveRuns();
-      for (const run of active) {
-        if (!isLiveRunStatus(run.status)) continue;
-        if (runStates.value[run.id]) continue;
-        runStates.value[run.id] = {
-          runId: run.id,
-          sessionId: run.sessionId,
-          agentId: run.agentId,
-          status: run.status,
-          chunk: null,
-          error: null,
-          timelineItem: null,
-          elapsedMs: null,
-        };
-      }
+      for (const run of active) rememberActiveRun(run);
     } catch (cause) {
       console.error("[app] seed active runs failed", cause);
     }
+  }
+
+  /** 浏览器没有 Tauri 事件。底栏的运行数只听 runStates，要自己跟库里的进行中运行对齐。 */
+  let browserSyncing = false;
+  async function syncActiveRuns() {
+    if (!backend.hasBackend() || browserSyncing) return;
+    browserSyncing = true;
+    const watched = new Set<string>(pendingRunSessions.value);
+    for (const event of Object.values(runStates.value)) {
+      if ((event.status === "queued" || event.status === "running") && !event.runId.startsWith("pending:")) {
+        watched.add(event.sessionId);
+      }
+    }
+    try {
+      const active = await backend.listActiveRuns();
+      const live = new Set(active.map((run) => run.id));
+      const liveSessions = new Set(active.map((run) => run.sessionId));
+      for (const run of active) rememberActiveRun(run);
+      for (const [id, event] of Object.entries(runStates.value)) {
+        if (id.startsWith("pending:")) continue;
+        if ((event.status === "queued" || event.status === "running") && !live.has(id)) {
+          runStates.value[id] = { ...event, status: "completed", chunk: null };
+        }
+      }
+      // 回复已经写进 run_events，但浏览器收不到 run-event。进行中也要读回来，否则抽屉一直停在「启动中」。
+      for (const sessionId of liveSessions) {
+        await reloadPersistedMessages(sessionId);
+      }
+      for (const sessionId of watched) {
+        if (sendingSessions.value.has(sessionId) || liveSessions.has(sessionId)) continue;
+        pendingRunSessions.value.delete(sessionId);
+        await reloadPersistedMessages(sessionId);
+      }
+    } catch (cause) {
+      console.error("[app] sync active runs failed", cause);
+    } finally {
+      browserSyncing = false;
+    }
+  }
+
+  function startBrowserRunSync() {
+    if (backend.inTauri() || !backend.hasBackend()) return;
+    window.setInterval(() => { void syncActiveRuns(); }, 1000);
   }
   function sessionProcessing(sessionId: string) {
     return sendingSessions.value.has(sessionId)
@@ -258,9 +305,10 @@ export const useAppStore = defineStore("app", () => {
       setFileIconTheme(data.value.settings.fileIconTheme);
       await registerRunEvents();
       await seedActiveRuns();
+      startBrowserRunSync();
       await restoreMessageQueue();
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
-        activeSessionId.value = data.value.sessions[0]?.id ?? "";
+        activeSessionId.value = data.value.sessions.find((session) => !isWorkflowNodeSession(session.id))?.id ?? "";
       }
       // 当前会话消息和 diff 数据后台补齐，不挡首屏
       if (activeSessionId.value) {
@@ -947,8 +995,39 @@ export const useAppStore = defineStore("app", () => {
     activeInboxSessionId.value = sessionId;
   }
 
+  function isInboxSessionViewed(sessionId: string) {
+    return (inboxSessionViewers.value[sessionId] ?? 0) > 0;
+  }
+
+  /** 聊天面开始展示某会话；返回释放函数，卸载或切走时调用。 */
+  function retainInboxSessionView(sessionId: string) {
+    const id = sessionId.trim();
+    if (!id) return () => {};
+    const current = inboxSessionViewers.value[id] ?? 0;
+    inboxSessionViewers.value = { ...inboxSessionViewers.value, [id]: current + 1 };
+    return () => {
+      const next = (inboxSessionViewers.value[id] ?? 1) - 1;
+      const copy = { ...inboxSessionViewers.value };
+      if (next <= 0) delete copy[id];
+      else copy[id] = next;
+      inboxSessionViewers.value = copy;
+    };
+  }
+
+  /** 用户已在任一聊天面看到该会话：推进已读游标并清掉未读数。 */
+  async function markSessionInboxSeen(sessionId: string) {
+    const id = sessionId.trim();
+    if (!id || !data.value) return;
+    const item = data.value.inbox.find((entry) => entry.sessionId === id);
+    if (!item) return;
+    const lastId = messages.value[id]?.at(-1)?.id ?? null;
+    await markInboxRead(item.id, lastId);
+  }
+
   async function captureInboxNotice(payload: RunEvent) {
     if (!data.value) return;
+    // 工作流节点会话是运行内部的，总览会话由引擎写入收件箱，这里不再各记一条聊天。
+    if (isWorkflowNodeSession(payload.sessionId) || isWorkflowRunSession(payload.sessionId)) return;
     // 自动化在后端自己落任务和收件箱；前端把看板/收件箱重新拉一遍即可。
     if (payload.sessionId.startsWith("automation-run:")) {
       await refreshTaskInboxSurfaces();
@@ -972,6 +1051,7 @@ export const useAppStore = defineStore("app", () => {
         ? "needs_permission"
         : payload.status;
     const path = currentAppPath();
+    const viewingSession = isInboxSessionViewed(session.id);
     const shouldNotify = shouldNotifyInbox({
       status,
       previousStatus: "running",
@@ -979,6 +1059,7 @@ export const useAppStore = defineStore("app", () => {
       projectId: session.projectId,
       taskId: task?.id ?? null,
       currentPath: path,
+      viewingSession,
       activeInboxSessionId: activeInboxSessionId.value,
       chatOpen: chatOpen.value,
       activeSessionId: activeSessionId.value,
@@ -1001,7 +1082,7 @@ export const useAppStore = defineStore("app", () => {
     if (index >= 0) data.value.inbox.splice(index, 1);
     data.value.inbox.unshift(item);
     if (!shouldNotify) {
-      await markInboxRead(item.id, transcript.at(-1)?.id ?? null);
+      await markSessionInboxSeen(session.id);
       return;
     }
     notifyDesktop(item.title, item.preview);
@@ -1020,16 +1101,20 @@ export const useAppStore = defineStore("app", () => {
 
   async function markInboxRead(id: string, messageId?: string | null) {
     const item = data.value?.inbox.find((entry) => entry.id === id);
-    if (!item || item.read) return;
+    if (!item) return;
+    const cursor = messageId?.trim() || null;
+    // 已读且无未读、游标无需推进时跳过；看过新消息后仍要推进游标 / 清计数。
+    if (item.read && item.unreadCount === 0 && (!cursor || cursor === item.readMessageId)) return;
     const previousCount = item.unreadCount;
+    const previousRead = item.read;
     const previousCursor = item.readMessageId;
     item.read = true;
     item.unreadCount = 0;
-    if (messageId) item.readMessageId = messageId;
+    if (cursor) item.readMessageId = cursor;
     try {
-      await backend.markInboxRead(id, messageId);
+      await backend.markInboxRead(id, cursor);
     } catch {
-      item.read = false;
+      item.read = previousRead;
       item.unreadCount = previousCount;
       item.readMessageId = previousCursor;
     }
@@ -1157,7 +1242,7 @@ export const useAppStore = defineStore("app", () => {
 
   function projectSessionIds(projectId: string | null | undefined) {
     return (data.value?.sessions ?? [])
-      .filter((session) => session.projectId === projectId)
+      .filter((session) => session.projectId === projectId && !isWorkflowNodeSession(session.id))
       .map((session) => session.id);
   }
 
@@ -1189,6 +1274,17 @@ export const useAppStore = defineStore("app", () => {
       [tabScope(projectId)]: openedSessionIds(projectId).filter((id) => !closing.has(id)),
     };
     persistOpenSessionTabs();
+  }
+
+  /**
+   * 嵌入式查看一个不在会话列表里的会话（如运行视图里的 `wf-node:` 节点会话）：
+   * 会话行不在 store 里时先刷新一次，再加载消息。不会把它设为 activeSessionId。
+   */
+  async function ensureSessionLoaded(sessionId: string) {
+    if (!data.value?.sessions.some((item) => item.id === sessionId)) {
+      await refreshTaskInboxSurfaces().catch(() => undefined);
+    }
+    await loadMessages(sessionId);
   }
 
   async function selectSession(sessionId: string) {
@@ -1525,6 +1621,32 @@ export const useAppStore = defineStore("app", () => {
     throw new Error(t("app.needAgentOrSquad"));
   }
 
+  /** 冲突合并会话进收件箱，方便在收件箱中间栏看聊天、右侧只绑临时 Worktree。 */
+  async function ensureMergeInboxItem(merge: MergeSession, title: string) {
+    if (!data.value) return null;
+    const target = merge.targetRemote
+      ? `${merge.targetRemote}/${merge.targetBranch}`
+      : merge.targetBranch;
+    const item = await backend.upsertInboxItem({
+      sessionId: merge.sessionId,
+      projectId: merge.projectId,
+      taskId: null,
+      title: title.trim() || t("inbox.merge.title", { source: merge.sourceLabel, target }),
+      preview: merge.conflicts.length
+        ? t("inbox.merge.conflictPreview", { count: merge.conflicts.length })
+        : t("inbox.merge.defaultPreview"),
+      status: "needs_input",
+    });
+    const index = data.value.inbox.findIndex((entry) => entry.sessionId === item.sessionId);
+    if (index >= 0) data.value.inbox.splice(index, 1);
+    data.value.inbox.unshift(item);
+    return item.id;
+  }
+
+  function inboxItemIdForSession(sessionId: string) {
+    return data.value?.inbox.find((item) => item.sessionId === sessionId)?.id ?? null;
+  }
+
   async function mergeIntoBranch(workspaceId: string, target: string, push: boolean) {
     if (!data.value) throw new Error(t("app.dataNotLoaded"));
     const workspace = data.value.workspaces.find((item) => item.id === workspaceId);
@@ -1543,15 +1665,17 @@ export const useAppStore = defineStore("app", () => {
       data.value.mergeSessions = [...(data.value.mergeSessions ?? []), result.mergeSession];
       messages.value[result.session.id] = [];
       addOpenSessionTab(result.session.projectId, result.session.id);
+      await ensureMergeInboxItem(result.mergeSession, result.session.title);
     }
     return result;
   }
 
   async function openMergeSession(mergeId: string) {
     const merge = data.value?.mergeSessions?.find((item) => item.id === mergeId);
-    if (!merge) return;
+    if (!merge) return null;
     addOpenSessionTab(merge.projectId, merge.sessionId);
     await selectSession(merge.sessionId);
+    return inboxItemIdForSession(merge.sessionId);
   }
 
   function mergeResolvePrompt(merge: MergeSession) {
@@ -1574,11 +1698,21 @@ export const useAppStore = defineStore("app", () => {
     ].join("\n");
   }
 
+  /** @returns 收件箱条目 id，便于收件箱切到合并会话聊天 */
   async function resolveMergeWithAi(mergeId: string) {
     const merge = data.value?.mergeSessions?.find((item) => item.id === mergeId);
-    if (!merge) return;
+    if (!merge) return null;
+    const session = data.value?.sessions.find((item) => item.id === merge.sessionId);
+    const target = merge.targetRemote
+      ? `${merge.targetRemote}/${merge.targetBranch}`
+      : merge.targetBranch;
+    const inboxItemId = await ensureMergeInboxItem(
+      merge,
+      session?.title || t("inbox.merge.title", { source: merge.sourceLabel, target }),
+    );
     await openMergeSession(mergeId);
     send(mergeResolvePrompt(merge), merge.sessionId);
+    return inboxItemId;
   }
 
   function dropMergeSession(mergeId: string) {
@@ -1587,11 +1721,13 @@ export const useAppStore = defineStore("app", () => {
     data.value.mergeSessions = (data.value.mergeSessions ?? []).filter((item) => item.id !== mergeId);
     if (merge) {
       data.value.workspaces = data.value.workspaces.filter((item) => item.id !== merge.workspaceId);
+      const inboxId = inboxItemIdForSession(merge.sessionId);
+      if (inboxId) void archiveInboxItem(inboxId);
     }
   }
 
-  async function finishMergeSession(mergeId: string) {
-    const result = await backend.gitFinishMergeSession(mergeId);
+  async function finishMergeSession(mergeId: string, skipVerify = false) {
+    const result = await backend.gitFinishMergeSession(mergeId, skipVerify);
     dropMergeSession(mergeId);
     return result;
   }
@@ -2081,6 +2217,9 @@ export const useAppStore = defineStore("app", () => {
     queueAddWorkspaces,
     loadMessages,
     markInboxRead,
+    markSessionInboxSeen,
+    retainInboxSessionView,
+    isInboxSessionViewed,
     markInboxUnread,
     markInboxAllRead,
     setActiveInboxSession,
@@ -2090,6 +2229,8 @@ export const useAppStore = defineStore("app", () => {
     compactSession,
     resolvePermission,
     selectSession,
+    ensureSessionLoaded,
+    reloadPersistedMessages,
     openSessionTabs,
     hasOpenSessionTabs,
     openedSessionIds,
@@ -2131,6 +2272,7 @@ export const useAppStore = defineStore("app", () => {
     mergeIntoBranch,
     openMergeSession,
     resolveMergeWithAi,
+    inboxItemIdForSession,
     finishMergeSession,
     abortMergeSession,
     stopActiveRun,

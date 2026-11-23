@@ -1,0 +1,109 @@
+[
+  {
+    "id": "example.simple",
+    "name": "示例 · 简单：智能体问答",
+    "description": "开始收集问题，智能体回答，然后结束。结果自动交给下一步。",
+    "definition": {
+      "schemaVersion": 2,
+      "inputs": [{ "name": "question", "label": "问题", "required": true, "primary": true }],
+      "workspaces": [],
+      "nodes": [
+        { "id": "start", "kind": "trigger", "title": "开始", "config": { "sources": ["manual", "channel"] }, "position": { "x": 80, "y": 160 } },
+        { "id": "ask", "kind": "agent", "title": "回答问题", "config": { "target": { "type": "agent", "id": "" }, "prompt": "用简洁清楚的话回答用户的问题。", "context": "previous", "route": "auto" }, "position": { "x": 420, "y": 160 } },
+        { "id": "end", "kind": "output", "title": "结束", "position": { "x": 760, "y": 160 } }
+      ],
+      "edges": [
+        { "id": "e1", "source": "start", "target": "ask" },
+        { "id": "e2", "source": "ask", "target": "end" }
+      ],
+      "settings": { "ownerAgentId": "miku", "maxParallelNodes": 4, "concurrency": "allow" }
+    }
+  },
+  {
+    "id": "example.fanout",
+    "name": "示例 · 完整：分流、选路与审批",
+    "description": "一个智能体把结果同时送给两步，一步只看上一步，一步看从头到现在，并允许创建子任务。汇合后再由智能体选择结束或人工审批，打回会回到写方案。",
+    "definition": {
+      "schemaVersion": 2,
+      "inputs": [{ "name": "topic", "label": "主题", "required": true, "primary": true, "default": "把一次发布拆成可执行的步骤" }],
+      "workspaces": [],
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "trigger",
+          "title": "开始",
+          "config": { "sources": ["manual", "channel"] },
+          "position": { "x": 80, "y": 200 }
+        },
+        {
+          "id": "split",
+          "kind": "agent",
+          "title": "拆开说明",
+          "config": {
+            "target": { "type": "agent", "id": "" },
+            "prompt": "把这次的主题整理成一段清楚的说明，后面两步都会用到。如果主题还能再拆，用 multara task create --title \"后续子任务\" --description \"要继续做的一件事\" 记一条子任务。",
+            "context": "previous",
+            "route": "all",
+            "allowTaskCommands": true
+          },
+          "position": { "x": 420, "y": 200 }
+        },
+        {
+          "id": "plan",
+          "kind": "agent",
+          "title": "写方案",
+          "config": {
+            "target": { "type": "agent", "id": "" },
+            "prompt": "根据上一步的说明，写一份简短可执行的方案。",
+            "context": "previous",
+            "route": "auto",
+            "allowTaskCommands": false
+          },
+          "position": { "x": 760, "y": 40 }
+        },
+        {
+          "id": "risk",
+          "kind": "agent",
+          "title": "写风险",
+          "config": {
+            "target": { "type": "agent", "id": "" },
+            "prompt": "根据从开始到现在的内容，列出主要风险和需要注意的点。",
+            "context": "all",
+            "route": "auto",
+            "allowTaskCommands": false
+          },
+          "position": { "x": 760, "y": 360 }
+        },
+        {
+          "id": "review",
+          "kind": "agent",
+          "title": "决定下一步",
+          "config": {
+            "target": { "type": "agent", "id": "" },
+            "prompt": "看完方案和风险后写出结论。这一步需要人确认后才会继续。",
+            "context": "all",
+            "route": "auto",
+            "humanConfirm": true,
+            "allowTaskCommands": false
+          },
+          "position": { "x": 1100, "y": 200 }
+        },
+        {
+          "id": "end",
+          "kind": "output",
+          "title": "结束",
+          "position": { "x": 1440, "y": 200 }
+        }
+      ],
+      "edges": [
+        { "id": "e1", "source": "start", "target": "split" },
+        { "id": "e2", "source": "split", "target": "plan" },
+        { "id": "e3", "source": "split", "target": "risk" },
+        { "id": "e4", "source": "plan", "target": "review" },
+        { "id": "e5", "source": "risk", "target": "review" },
+        { "id": "e6", "source": "review", "target": "end" }
+      ],
+      "settings": { "ownerAgentId": "miku", "maxParallelNodes": 4, "concurrency": "allow", "runTimeoutMinutes": 60 }
+    }
+  }
+]

@@ -437,9 +437,10 @@ pub async fn git_merge_into_branch(
             };
             if input.push {
                 // 推送会跑 pre-push：worktree 里缺 husky.sh / node_modules 时和普通推送一样先补链接。
-                crate::hook_runtime::link_worktree_runtime(
+                crate::hook_runtime::link_worktree_runtime_with(
                     std::path::Path::new(&workspace.source_path),
                     std::path::Path::new(&root),
+                    true,
                 );
             }
             match git_merge::apply(&git, &root, &target, &commit, input.push) {
@@ -692,10 +693,12 @@ pub async fn git_pull_merge_session(
 #[tauri::command]
 pub async fn git_finish_merge_session(
     merge_id: String,
+    skip_verify: Option<bool>,
     app: AppHandle,
 ) -> Result<MergeFinishResult, String> {
     let _span = crate::diag::span("git_finish_merge_session");
     off_main(app, move |state| {
+        let skip_verify = skip_verify.unwrap_or(false);
         let (merge, workspace, git) = {
             let db = state.lock_db()?;
             let merge = load_merge(&db, &merge_id)?;
@@ -707,11 +710,25 @@ pub async fn git_finish_merge_session(
             branch: merge.target_branch.clone(),
             remote: merge.target_remote.clone(),
         };
+        // 完成合并会跑 commit-msg；临时区常缺 node_modules，先按钩子需要补链接。
+        crate::hook_runtime::link_worktree_runtime_with(
+            std::path::Path::new(&workspace.source_path),
+            std::path::Path::new(&workspace.work_path),
+            true,
+        );
         let commit = git_merge::commit_resolution(
             &git,
             &workspace.work_path,
             &merge_message(&merge.source_label, &target),
-        )?;
+            skip_verify,
+        )
+        .map_err(|detail| {
+            crate::hook_runtime::explain_failure(
+                crate::hook_runtime::GitOperation::Commit,
+                &detail,
+                &crate::git::configured_hooks_path(&workspace.work_path, &git),
+            )
+        })?;
         let outcome = git_merge::apply(&git, &workspace.source_path, &target, &commit, merge.push)?;
         close_merge(state, &merge, &workspace, &git, "completed")?;
         Ok(MergeFinishResult {

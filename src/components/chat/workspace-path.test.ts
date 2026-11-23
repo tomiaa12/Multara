@@ -19,6 +19,19 @@ describe("splitWorkspacePaths", () => {
     const segments = splitWorkspacePaths("见 https://example.com/internal/job/client.go 和 internal/job");
     expect(segments.every((segment) => segment.type === "text")).toBe(true);
   });
+
+  test("links absolute paths outside the workspace", () => {
+    const segments = splitWorkspacePaths("打开 /tomiaa/demo/src/app.js:10 看看");
+    expect(segments.filter((segment) => segment.type === "path")).toEqual([
+      {
+        type: "path",
+        text: "/tomiaa/demo/src/app.js:10",
+        path: "/tomiaa/demo/src/app.js",
+        startLine: 10,
+        endLine: undefined,
+      },
+    ]);
+  });
 });
 
 describe("parseCodeFenceInfo", () => {

@@ -12,6 +12,8 @@ import type {
   MessageAttachmentInput,
 } from "../../domain/types";
 import * as backend from "../../services/backend";
+import { useAppStore } from "../../stores/app";
+import { genUiReceipt } from "./genui/receipt";
 import { watchOffscreen } from "../../ui/offscreen-pause";
 import type { ComposerNode } from "./composer-content";
 import { formatAgentPrompt, isFileChip, isPastedImage, parseUserPromptNodes } from "./composer-content";
@@ -47,6 +49,7 @@ const emit = defineEmits<{
   "target-change": [value: string];
   stop: [];
 }>();
+const store = useAppStore();
 const previews = ref<Record<string, string>>({});
 const removedAttachmentIds = ref(new Set<string>());
 const editNotice = ref("");
@@ -66,6 +69,14 @@ const OVERFLOW_TOLERANCE_PX = 1;
 let clipObserver: ResizeObserver | undefined;
 
 const nodes = computed(() => parseUserPromptNodes(props.message.content));
+const receipt = computed(() => {
+  if (props.message.sourceType !== "genui") return null;
+  const messageId = props.message.sourceMeta?.messageId;
+  const assistant = typeof messageId === "string"
+    ? store.messages[props.message.sessionId]?.find((item) => item.id === messageId)
+    : undefined;
+  return genUiReceipt(props.message, assistant?.content);
+});
 const keptAttachments = computed(() =>
   props.message.attachments.filter((item) => !removedAttachmentIds.value.has(item.id)),
 );
@@ -242,7 +253,20 @@ watch(
 <template>
   <article ref="root" class="chat-turn user-turn">
     <slot name="source" />
+    <div v-if="receipt" class="genui-receipt">
+      <header class="genui-receipt-head">
+        <strong v-if="receipt.title">{{ receipt.title }}</strong>
+        <span v-if="receipt.actionLabel">{{ receipt.actionLabel }}</span>
+      </header>
+      <div v-for="row in receipt.rows" :key="row.label" class="genui-receipt-row">
+        <span class="genui-receipt-label">{{ row.label }}</span>
+        <span class="genui-receipt-values">
+          <span v-for="value in row.values" :key="value" class="genui-receipt-chip">{{ value }}</span>
+        </span>
+      </div>
+    </div>
     <ChatComposer
+      v-else
       ref="composer"
       class="user-prompt"
       :class="{

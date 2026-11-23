@@ -233,6 +233,18 @@ describe("assignment / speaker collapse", () => {
     expect(subtaskEmbedForMessage([assignment, bridge, summary], 2)).toBeNull();
   });
 
+  it("工作流总览消息没有 agentId 时用会话负责人的名字和头像", () => {
+    const note = message({ id: "w1", role: "assistant", content: "工作流开始运行" });
+    const session = {
+      id: "wf-run:run-1",
+      targetType: "agent",
+      targetId: "lead",
+    } as ChatSession;
+    const speaker = speakerForMessage(note, agents, squads, null, { session });
+    expect(speaker?.name).toBe("队长甲");
+    expect(speaker?.avatar).toBe("L");
+  });
+
   it("任务评论显示写下它的智能体，没有作者时标成评论", () => {
     const authored = message({ id: "c1", role: "system", agentId: "member", content: "结论" });
     const anonymous = message({ id: "c2", role: "system", content: "结论" });

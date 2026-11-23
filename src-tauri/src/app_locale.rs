@@ -1,4 +1,7 @@
 //! 应用界面 / 内置提示词语言。与前端 `src/i18n` 的 Locale 对齐。
+//!
+//! 唯一来源：设置 → 通用 → 语言（`app_settings.language`）。
+//! `tr!` 读缓存的 `current()`；启动、bootstrap、保存设置、前端同步时刷新。
 
 use std::sync::RwLock;
 
@@ -17,6 +20,19 @@ pub fn set_current(locale: &'static str) {
     if let Ok(mut current) = CURRENT.write() {
         *current = locale;
     }
+}
+
+/// 接受前端已解析的具体 locale（`zh-CN` / `en` / …），与界面保持一致。
+/// 不接受 `system`：那是设置项，需先经 `resolve` / `from_db`。
+pub fn set_resolved(locale: &str) -> Result<&'static str, String> {
+    let trimmed = locale.trim();
+    let resolved = LOCALES
+        .iter()
+        .copied()
+        .find(|id| *id == trimmed)
+        .ok_or_else(|| format!("unsupported locale: {locale}"))?;
+    set_current(resolved);
+    Ok(resolved)
 }
 
 /// 从设置值（含 `system`）解析为具体 locale id。
@@ -38,6 +54,13 @@ pub fn from_db(db: &Connection) -> &'static str {
         )
         .unwrap_or_else(|_| "system".into());
     resolve(&setting)
+}
+
+/// 按数据库设置刷新 `current()`，返回解析后的 locale。
+pub fn refresh_from_db(db: &Connection) -> &'static str {
+    let locale = from_db(db);
+    set_current(locale);
+    locale
 }
 
 pub fn is_supported_setting(value: &str) -> bool {
@@ -147,18 +170,18 @@ fn normalize(raw: &str) -> &'static str {
 }
 
 fn system_language() -> String {
-    // C / POSIX / C.UTF-8 表示「未设语言」，macOS 从 Dock 启动时 LANG 经常是这个，
-    // 不能当成英文；前端跟随系统时用的是 navigator.language（如 zh-CN）。
+    // 与前端 `resolveLocale("system")` 对齐：跟 OS 界面首选语言（navigator.language），
+    // 不要被终端 / Cursor 注入的 LANG=en_US 带跑偏。
+    #[cfg(target_os = "macos")]
+    if let Some(locale) = macos_preferred_language() {
+        return locale;
+    }
     for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
         if let Ok(value) = std::env::var(key) {
             if env_language_usable(&value) {
                 return value;
             }
         }
-    }
-    #[cfg(target_os = "macos")]
-    if let Some(locale) = macos_preferred_language() {
-        return locale;
     }
     "en".into()
 }
@@ -170,16 +193,38 @@ fn env_language_usable(value: &str) -> bool {
 
 #[cfg(target_os = "macos")]
 fn macos_preferred_language() -> Option<String> {
-    let output = std::process::Command::new("defaults")
-        .args(["read", "-g", "AppleLocale"])
-        .output()
-        .ok()?;
+    // AppleLanguages 第一项更接近 navigator.language（如 zh-Hans-CN）。
+    if let Some(first) = macos_defaults_output(&["read", "-g", "AppleLanguages"])
+        .as_deref()
+        .and_then(first_apple_language)
+    {
+        return Some(first);
+    }
+    macos_defaults_output(&["read", "-g", "AppleLocale"]).filter(|value| !value.is_empty())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_defaults_output(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("defaults").args(args).output().ok()?;
     if !output.status.success() {
         return None;
     }
-    let locale = String::from_utf8(output.stdout).ok()?;
-    let trimmed = locale.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+#[cfg(target_os = "macos")]
+fn first_apple_language(plist_text: &str) -> Option<String> {
+    // `defaults read -g AppleLanguages` → ( "zh-Hans-CN", "en-CN", … )
+    for part in plist_text.split('"').skip(1).step_by(2) {
+        let tag = part.trim();
+        if !tag.is_empty() {
+            return Some(tag.to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -194,6 +239,7 @@ mod tests {
         assert_eq!(resolve("ja"), "ja");
         assert_eq!(resolve("ko"), "ko");
         assert_eq!(normalize("zh_HK"), "zh-TW");
+        assert_eq!(normalize("zh-Hans-CN"), "zh-CN");
         assert_eq!(normalize("en-US"), "en");
         assert_eq!(normalize("ja_JP"), "ja");
     }
@@ -205,5 +251,25 @@ mod tests {
         assert!(!env_language_usable("POSIX"));
         assert!(env_language_usable("zh_CN.UTF-8"));
         assert!(env_language_usable("en_US.UTF-8"));
+    }
+
+    #[test]
+    fn set_resolved_accepts_supported_locales_only() {
+        assert_eq!(set_resolved("zh-CN").unwrap(), "zh-CN");
+        assert_eq!(set_resolved("en").unwrap(), "en");
+        assert!(set_resolved("en-US").is_err());
+        assert!(set_resolved("system").is_err());
+        assert!(set_resolved("").is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parses_apple_languages_list() {
+        let sample = "(\n    \"zh-Hans-CN\",\n    \"en-CN\"\n)\n";
+        assert_eq!(
+            first_apple_language(sample).as_deref(),
+            Some("zh-Hans-CN")
+        );
+        assert_eq!(normalize("zh-Hans-CN"), "zh-CN");
     }
 }

@@ -1,0 +1,11 @@
+{
+  "text": ["text", "markdown", "any"],
+  "markdown": ["text", "markdown", "any"],
+  "number": ["text", "markdown", "number", "json", "any"],
+  "boolean": ["text", "markdown", "boolean", "json", "any"],
+  "json": ["text", "markdown", "json", "any"],
+  "url": ["text", "markdown", "url", "any"],
+  "file": ["text", "markdown", "file", "files", "any"],
+  "files": ["json", "files", "any"],
+  "any": ["text", "markdown", "number", "boolean", "json", "url", "file", "files", "any"]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "flow.answer",
+    "name": "问答",
+    "description": "开始收集问题，交给智能体回答，然后结束。",
+    "definition": {
+      "schemaVersion": 2,
+      "inputs": [{ "name": "question", "label": "问题", "required": true, "primary": true }],
+      "workspaces": [],
+      "nodes": [
+        { "id": "start", "kind": "trigger", "title": "开始", "config": { "sources": ["manual", "channel"] }, "position": { "x": 80, "y": 160 } },
+        { "id": "ask", "kind": "agent", "title": "回答", "config": { "target": { "type": "agent", "id": "" }, "prompt": "回答用户的问题。", "context": "previous", "route": "auto" }, "position": { "x": 420, "y": 160 } },
+        { "id": "end", "kind": "output", "title": "结束", "position": { "x": 760, "y": 160 } }
+      ],
+      "edges": [
+        { "id": "e1", "source": "start", "target": "ask" },
+        { "id": "e2", "source": "ask", "target": "end" }
+      ],
+      "settings": { "ownerAgentId": "miku", "maxParallelNodes": 4, "concurrency": "allow" }
+    }
+  }
+]

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -54,6 +55,36 @@ async function loop() {
   }
 }
 
+const FORWARDED_EVENTS = ["terminal-ctl", "terminal-data", "terminal-exit"];
+
+/** 把桌面窗口收到的界面事件交给同一套 Vite 上的浏览器。 */
+function forwardEvents(names: string[]) {
+  const queue: Array<{ event: string; payload: unknown }> = [];
+  let timer = 0;
+  const flush = () => {
+    timer = 0;
+    if (!queue.length) return;
+    const batch = queue.splice(0, queue.length);
+    void fetch("/__multara/push-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+    }).catch(() => undefined);
+  };
+  for (const name of names) {
+    void listen(name, (event) => {
+      queue.push({ event: name, payload: event.payload });
+      if (!timer) timer = window.setTimeout(flush, 40);
+    });
+  }
+}
+
 if (import.meta.env.DEV && inTauri()) {
   void loop();
+  // 浏览器开发模式还要把 terminal-ctl 交出去，因为隐藏窗口自己不处理。
+  // tauri:dev 的桌面窗口会自己处理 terminal-ctl，只把输出转给旁边的浏览器。
+  const names = import.meta.env.MULTARA_BROWSER_DEV
+    ? FORWARDED_EVENTS
+    : ["terminal-data", "terminal-exit"];
+  forwardEvents(names);
 }
