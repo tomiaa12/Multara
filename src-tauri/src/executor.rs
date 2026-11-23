@@ -64,6 +64,53 @@ struct NormalizedEvent {
     output_json: Option<Value>,
 }
 
+fn session_lead(app: &AppHandle, run: &QueuedRun) -> bool {
+    let workflow = run.session_id.starts_with(crate::workflow::WF_NODE_PREFIX)
+        || run.session_id.starts_with(crate::workflow::WF_RUN_PREFIX);
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return runtime_brief::is_lead(true, workflow, false, false);
+    };
+    let parent_run: bool = db
+        .query_row(
+            "SELECT parent_run_id IS NOT NULL FROM agent_runs WHERE id=?1",
+            [&run.id],
+            |row| row.get(0),
+        )
+        .unwrap_or(true);
+    let task_session: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM tasks WHERE session_id=?1 AND agent_id=?2)",
+            [&run.session_id, &run.agent_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    let session_agent = db
+        .query_row(
+            "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
+            [&run.session_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .ok()
+        .is_some_and(|(target_type, target_id)| {
+            if target_type == "agent" {
+                return target_id == run.agent_id;
+            }
+            if target_type == "squad" {
+                return db
+                    .query_row(
+                        "SELECT leader_agent_id FROM squads WHERE id=?1",
+                        [target_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .ok()
+                    .is_some_and(|leader| leader == run.agent_id);
+            }
+            false
+        });
+    runtime_brief::is_lead(parent_run, workflow, task_session, session_agent)
+}
+
 pub fn dispatch(app: AppHandle) {
     thread::spawn(move || dispatch_pending(app));
 }
@@ -943,15 +990,26 @@ fn is_stopped(app: &AppHandle, run_id: &str) -> bool {
 fn kill_process_group(pid: u32) {
     #[cfg(unix)]
     {
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
+        // procps 的 kill 会把 `-<pid>` 当成选项而不报错，要加 `--` 才会杀进程组；
+        // 不认识 `--` 的实现（少数 BSD）退回原来的写法
+        let group = format!("-{pid}");
+        let killed = Command::new("kill")
+            .args(["-KILL", "--", &group])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status();
+            .status()
+            .is_ok_and(|status| status.success());
+        if !killed {
+            let _ = Command::new("kill")
+                .args(["-KILL", &group])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
     }
 }
 
-fn kill_process(process: &mut Child) {
+pub(crate) fn kill_process(process: &mut Child) {
     let pid = process.id();
     kill_process_group(pid);
     #[cfg(windows)]
@@ -1244,7 +1302,10 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                         .lock_db()
                         .ok()
                         .is_some_and(|db| crate::ops::canvas::canvases_enabled(&db)),
+                terminal_enabled: workspace_context.2,
+                workflow_node: run.session_id.starts_with(crate::workflow::WF_NODE_PREFIX),
                 locale,
+                lead: Some(session_lead(&app, &run)),
             });
             let assignment = {
                 let extra = app
@@ -1386,6 +1447,9 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                     |row| row.get::<_, String>(0),
                 ) {
                     command.env("MULTARA_TASK_ID", task_id);
+                }
+                if let Ok(Some(node_run)) = crate::workflow::store::node_run_by_session(&db, &run.session_id) {
+                    command.env("MULTARA_NODE_RUN_ID", node_run.id);
                 }
             }
             if let Ok(data_dir) = app.path().app_data_dir() {
@@ -2495,7 +2559,8 @@ fn finish(
                 &completed_at.to_rfc3339(),
             );
         }
-        if status == "completed" {
+        // 工作流里单个智能体节点的回答不解析 @ 派活，避免串到流程外
+        if status == "completed" && !crate::workflow::is_plain_agent_node_session(&db, &run.session_id) {
             let now = completed_at.to_rfc3339();
             if let Ok(created) = dispatch_mentions(&db, &run.id, output, &now) {
                 member_runs = created;
@@ -2606,6 +2671,7 @@ fn finish(
     }
     crate::channel::outbound::on_run_finished(app, &run.session_id);
     crate::channel::feishu_send::notify_sends(app, &run.id);
+    crate::workflow::runtime::on_agent_run_finished(app, &run.session_id);
     dispatch(app.clone());
 }
 
@@ -3356,18 +3422,23 @@ fn workspace_context(
     ))
 }
 
-/// 没关联项目时，给这次会话一块应用数据目录里的工作目录。同一会话重复运行沿用同一目录。
-fn scratch_workdir(app: &AppHandle, session_id: &str) -> Result<String, String> {
+/// 没关联项目时，这次会话的工作目录：`{app_data}/task-workspaces/{session_id}`。
+pub fn session_scratch_dir(app: &AppHandle, session_id: &str) -> Result<std::path::PathBuf, String> {
     let session_id = session_id.trim();
     if session_id.is_empty() || session_id.contains(['/', '\\', '.']) || session_id.contains('\0') {
         return Err(tr!("会话标识无效，无法准备工作目录"));
     }
-    let dir = app
+    Ok(app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?
         .join("task-workspaces")
-        .join(session_id);
+        .join(session_id))
+}
+
+/// 没关联项目时，给这次会话一块应用数据目录里的工作目录。同一会话重复运行沿用同一目录。
+fn scratch_workdir(app: &AppHandle, session_id: &str) -> Result<String, String> {
+    let dir = session_scratch_dir(app, session_id)?;
     std::fs::create_dir_all(&dir)
         .map_err(|error| tr!("无法准备工作目录：{error}", error = error))?;
     Ok(dir.to_string_lossy().to_string())
@@ -3490,6 +3561,11 @@ fn describe_references(prompt: &str, scanned: &[crate::models::GlobalResource]) 
                 ),
                 "session" => tr!(
                     "[引用会话] {name}（id `{id}`）：用 `multara session history {id}` 查看对话内容",
+                    name = name,
+                    id = id
+                ),
+                "workflow" => tr!(
+                    "[引用工作流] {name}（id `{id}`）：用 `multara workflow draft {id}` 查看草稿。修改草稿用 `multara workflow node add|set|remove`、`multara workflow edge add|remove`、`multara workflow input add|set|remove`（节点类型只有 agent 和 output）。改的是草稿，打开着的编辑器会跟上。只有用户明确要求发布时才 `multara workflow publish {id}`",
                     name = name,
                     id = id
                 ),
@@ -5315,6 +5391,7 @@ mod tests {
         let prompt = "[实体引用] skill skill%3Amultara%3Arepo repo\n\
                       [实体引用] task t1 %E4%BF%AE%E6%8C%89%E9%92%AE\n\
                       [实体引用] session s1 %E6%97%A7%E4%BC%9A%E8%AF%9D\n\
+                      [实体引用] workflow wf1 %E5%BB%BA%E4%BB%93\n\
                       [实体引用] skill skill%3Amultara%3Agone gone\n\
                       \n\
                       改一下";
@@ -5323,6 +5400,8 @@ mod tests {
         assert!(described.contains("[引用 Skill] repo：/skills/repo/SKILL.md"));
         assert!(described.contains("[引用任务] 修按钮（id `t1`）：用 `multara task get t1` 查看"));
         assert!(described.contains("`multara session history s1`"));
+        assert!(described.contains("[引用工作流] 建仓（id `wf1`）：用 `multara workflow draft wf1` 查看草稿"));
+        assert!(described.contains("`multara workflow publish wf1`"));
         assert!(described.contains("[引用 Skill] gone：本机没有找到这个 Skill"));
         assert!(!described.contains("[实体引用]"));
         assert!(described.ends_with("改一下"));

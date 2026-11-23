@@ -227,4 +227,21 @@ describe("parseUserPromptNodes", () => {
     expect(visiblePromptText(content)).toBe("请让 @Miku 助手 处理");
     expect(visiblePromptText(content).startsWith("[实体引用]")).toBe(false);
   });
+
+  test("round-trips a workflow mention", () => {
+    const nodes: ComposerNode[] = [
+      { type: "text", value: "改一下 " },
+      {
+        type: "chip",
+        id: "workflow:wf-1",
+        referenceId: "wf-1",
+        referenceKind: "workflow",
+        label: "建仓",
+      },
+    ];
+    const content = formatAgentPrompt(nodes, { directMentions: true });
+    expect(content).toContain("[实体引用] workflow wf-1 ");
+    expect(parseUserPromptNodes(content)).toEqual(nodes);
+    expect(visiblePromptText(content)).toContain("建仓");
+  });
 });

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Plus, Search } from "@lucide/vue";
-import AgentLiveStatus from "../../components/AgentLiveStatus.vue";
 import ChatPanel from "../../components/ChatPanel.vue";
+import RequirementProjectRow from "../../components/dashboard/RequirementProjectRow.vue";
 import ContextMenu, { type ContextMenuItem } from "../../components/ui/ContextMenu.vue";
 import SegmentedTabs from "../../components/ui/SegmentedTabs.vue";
 import { t } from "../../i18n";
@@ -250,19 +250,12 @@ onBeforeUnmount(() => {
           @click="selectRow(row.id)"
           @contextmenu="onRowContext(row, $event)"
         >
-          <span class="req-run-item">
-            <strong class="req-run-name">{{ row.name }}</strong>
-            <span class="req-run-workers">
-              <AgentLiveStatus
-                :session-ids="row.sessionIds"
-                :fallback="homeWorkerItems(row)"
-                :idle-label="row.activityLabel"
-                :max="3"
-                :size="16"
-                :dialog-title="t('dashboard.col.workers')"
-              />
-            </span>
-          </span>
+          <RequirementProjectRow
+            :name="row.name"
+            :session-ids="row.sessionIds"
+            :workers="homeWorkerItems(row)"
+            :idle-label="row.activityLabel"
+          />
         </button>
       </li>
     </ul>

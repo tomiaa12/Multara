@@ -48,13 +48,6 @@ const CONSOLE_INIT_SCRIPT: &str = r#"(function(){
   console.debug = wrap('debug', console.debug.bind(console));
 })();"#;
 
-/// macOS WKWebsiteDataStore 隔离 id（固定，与 data_directory 配套）。
-#[cfg(target_os = "macos")]
-const DATA_STORE_ID: [u8; 16] = [
-    0x6d, 0x75, 0x6c, 0x74, 0x61, 0x72, 0x61, 0x2d, // "multara-"
-    0x69, 0x6e, 0x62, 0x6f, 0x78, 0x2d, 0x62, 0x72, // "inbox-br"
-];
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NavigatedPayload {
@@ -120,7 +113,7 @@ fn build_child(app: &AppHandle, url: Url) -> Result<WebviewBuilder<tauri::Wry>, 
     let data_dir = data_directory(app)?;
     let app_for_load = app.clone();
     let app_for_new = app.clone();
-    let mut builder = WebviewBuilder::new(WEBVIEW_LABEL, WebviewUrl::External(url))
+    let builder = WebviewBuilder::new(WEBVIEW_LABEL, WebviewUrl::External(url))
         .data_directory(data_dir)
         .initialization_script(CONSOLE_INIT_SCRIPT)
         .on_page_load(move |_webview, payload| {
@@ -139,11 +132,10 @@ fn build_child(app: &AppHandle, url: Url) -> Result<WebviewBuilder<tauri::Wry>, 
             true
         });
 
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.data_store_identifier(DATA_STORE_ID);
-    }
-
+    // 不用独立的 WKWebsiteDataStore。macOS 上子 WebView 一旦走
+    // dataStoreForIdentifier，主窗口新输入的中文会丢字体回退，变成方框。
+    // VS Code 的内嵌浏览器是 Chromium 的 WebContentsView，地址栏留在主页面，没有这条路径。
+    // 默认 store 仍然是顶层页面，Cookie 可以写。
     Ok(builder)
 }
 
@@ -183,7 +175,7 @@ pub async fn inbox_browser_set(
 
     let next = parsed_url.ok_or_else(|| tr!("请先输入地址"))?;
     let window = main_window(&app)?;
-    let builder = build_child(&app, next)?;
+    let builder = build_child(&app, next.clone())?;
     let webview = window
         .add_child(
             builder,
@@ -192,6 +184,8 @@ pub async fn inbox_browser_set(
         )
         .map_err(|error| error.to_string())?;
     webview.show().map_err(|error| error.to_string())?;
+    // wry 在 addSubview 之前就加载 URL，macOS 上第一帧会停在白屏。挂进窗口后再导航一次。
+    webview.navigate(next).map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -241,8 +235,14 @@ fn eval_string(webview: &tauri::Webview, script: &str) -> Result<String, String>
             let _ = tx.send(result);
         })
         .map_err(|error| error.to_string())?;
-    rx.recv_timeout(Duration::from_secs(5))
-        .map_err(|_| tr!("页面脚本执行超时"))
+    let raw = rx
+        .recv_timeout(Duration::from_secs(5))
+        .map_err(|_| tr!("页面脚本执行超时"))?;
+    // 回调值已经是 JSON。脚本返回字符串时再剥一层，否则菜单选择和元素结果对不上。
+    match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(serde_json::Value::String(text)) => Ok(text),
+        _ => Ok(raw),
+    }
 }
 
 /// 在子页面执行 JS，返回 JSON 字符串结果（供选元素 / 读控制台）。

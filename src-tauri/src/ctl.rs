@@ -3,7 +3,7 @@
 //! - 应用启动时在 `127.0.0.1:0` 起端点；每个 run 一个 128 位以上随机 token，登记
 //!   `token → { run_id, session_id, agent_id }`，注入 `MULTARA_CTL=http://127.0.0.1:<port>/<token>`。
 //!   run 结束即注销（R9）。端口和 token 不写盘、不进日志。
-//! - 接受 `POST /<token>/canvas.<method>` 与 `POST /<token>/terminal.<method>`；
+//! - 接受 `POST /<token>/canvas.<method>`、`terminal.<method>` 与 `surface.<method>`；
 //!   会话从 token 推出，忽略请求体里的会话 id。
 
 use std::{
@@ -24,7 +24,7 @@ use crate::{
     canvas_bridge,
     database::AppState,
     ops::canvas::{self as ops, Caller, CanvasError, OpenRequest},
-    terminal_ctl,
+    surface_ctl, terminal_ctl,
 };
 
 const MAX_BODY: usize = 1024 * 1024;
@@ -194,6 +194,10 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
             Err(error) => error.to_json(),
         },
         "terminal" => match terminal_ctl::dispatch(app, &ctx, &method, &args) {
+            Ok(value) => value,
+            Err(error) => error.to_json(),
+        },
+        "surface" => match surface_ctl::dispatch(app, &ctx, &method, &args) {
             Ok(value) => value,
             Err(error) => error.to_json(),
         },

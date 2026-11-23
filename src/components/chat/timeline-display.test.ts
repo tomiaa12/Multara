@@ -7,6 +7,8 @@ import {
   groupTimeline,
   liveWorkLabel,
   shellTranscript,
+  shellCardMode,
+  shellFailed,
   shellResultText,
   type TimelineBlock,
 } from "./timeline-display";
@@ -380,5 +382,32 @@ describe("shellTranscript", () => {
     expect(shellTranscript("go build ./internal/job/service/client/", output)).toBe(
       "$ go build ./internal/job/service/client/\ncommand not found: -e",
     );
+  });
+});
+
+describe("shell card visibility", () => {
+  const use = { seq: 1, eventType: "tool_use" as const, callId: "s", tool: "Shell", content: null, input: null, output: null, createdAt: "" };
+
+  test("stays a title while the command runs, then follows the result", () => {
+    expect(shellCardMode({ settled: false, failed: false, hasOutput: false, user: null })).toBe("hidden");
+    expect(shellCardMode({ settled: true, failed: false, hasOutput: true, user: null })).toBe("peek");
+    expect(shellCardMode({ settled: true, failed: false, hasOutput: false, user: null })).toBe("hidden");
+    expect(shellCardMode({ settled: true, failed: true, hasOutput: true, user: null })).toBe("full");
+    expect(shellCardMode({ settled: true, failed: true, hasOutput: true, user: "peek" })).toBe("peek");
+  });
+
+  test("treats an error status or a non-zero exit as a failure", () => {
+    expect(shellFailed({
+      use,
+      result: { ...use, eventType: "tool_result", status: "error", output: "" },
+    })).toBe(true);
+    expect(shellFailed({
+      use,
+      result: { ...use, eventType: "tool_result", status: "ok", output: JSON.stringify({ exitCode: 1, stdout: "no" }) },
+    })).toBe(true);
+    expect(shellFailed({
+      use,
+      result: { ...use, eventType: "tool_result", status: "ok", output: JSON.stringify({ exitCode: 0, stdout: "ok" }) },
+    })).toBe(false);
   });
 });

@@ -17,8 +17,9 @@ const NAME_CHARS = "A-Za-z0-9_.@+\\u4e00-\\u9fff-";
 /** 不带目录的单独文件名只认这些「像交付物」的扩展名，避免把 Node.js 之类误当文件。 */
 const BARE_EXT =
   "md|markdown|txt|html?|svg|png|jpe?g|gif|webp|bmp|mp3|wav|m4a|ogg|flac|mp4|mov|webm|mkv|pdf|docx?|xlsx?|pptx?|csv|json|zip";
+/** 相对路径、Unix 绝对路径（/a/b.js）、Windows 盘符路径（C:/a/b.js）。 */
 const PATH_PATTERN = new RegExp(
-  `((?:[${NAME_CHARS}]+\\/)+[${NAME_CHARS}]+\\.[A-Za-z0-9]+|[A-Za-z0-9_@+\\u4e00-\\u9fff-][${NAME_CHARS}]*\\.(?:${BARE_EXT})(?![A-Za-z0-9]))(?::(\\d+)(?:-(\\d+))?)?`,
+  `((?:[A-Za-z]:)?\\/?(?:[${NAME_CHARS}]+\\/)+[${NAME_CHARS}]+\\.[A-Za-z0-9]+|[A-Za-z0-9_@+\\u4e00-\\u9fff-][${NAME_CHARS}]*\\.(?:${BARE_EXT})(?![A-Za-z0-9]))(?::(\\d+)(?:-(\\d+))?)?`,
   "gi",
 );
 
@@ -101,6 +102,7 @@ export function splitWorkspacePaths(text: string): PathSegment[] {
   for (const match of text.matchAll(PATH_PATTERN)) {
     const index = match.index ?? 0;
     const previous = index > 0 ? text[index - 1] : "";
+    // 前一个字符仍是路径/URL 的一部分时跳过，避免把 https://host/a/b.js 里的 /a/b.js 单独链上。
     if (previous && /[\w./:\\-]/.test(previous)) continue;
     if (index > last) segments.push({ type: "text", text: text.slice(last, index) });
     const startLine = match[2] ? Number(match[2]) : undefined;
@@ -108,7 +110,7 @@ export function splitWorkspacePaths(text: string): PathSegment[] {
     segments.push({
       type: "path",
       text: match[0],
-      path: match[1],
+      path: (match[1] ?? "").replaceAll("\\", "/"),
       startLine,
       endLine,
     });

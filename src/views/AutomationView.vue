@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ChevronDown, ChevronUp, History, Pencil, Play, Plus, Trash2, Workflow, X } from "@lucide/vue";
 import type { Automation, AutomationRun, EditorSelectionContext, MessageAttachmentInput, WebhookDelivery } from "../domain/types";
-import { listAutomationRuns, listWebhookDeliveries, savePastedAttachment, selectFilesOrFolders } from "../services/backend";
+import { getWorkflow, listAutomationRuns, listWebhookDeliveries, savePastedAttachment, selectFilesOrFolders } from "../services/backend";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
@@ -12,6 +12,7 @@ import type { OsDroppedEntry, WorkspaceFileDragPayload } from "../components/cha
 import { fileToBase64 } from "../utils/file-base64";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
+import { useWorkflowsStore } from "../stores/workflows";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { runStatusLabel, runStatusTone } from "../components/run-log";
 import {
@@ -33,6 +34,7 @@ const PASTE_LIMIT = 8;
 const PASTE_MAX_BYTES = 25 * 1024 * 1024;
 
 const store = useAppStore();
+const workflows = useWorkflowsStore();
 const showForm = ref(false);
 const busy = ref(false);
 const error = ref("");
@@ -56,6 +58,7 @@ const form = reactive({
   projectId: "",
   target: "",
   prompt: "",
+  inputsTemplate: "",
   triggerType: "schedule" as Automation["triggerType"],
   eventName: "",
   signingSecret: "",
@@ -74,11 +77,20 @@ const squadTargets = computed(() =>
     avatar: store.data?.agents.find((agent) => agent.id === squad.leaderAgentId)?.avatar ?? "◉",
   })) ?? [],
 );
-const targets = computed(() => [...agentTargets.value, ...squadTargets.value]);
+// 只有发布过的工作流才能被自动化触发
+const workflowTargets = computed(() =>
+  workflows.list
+    .filter((item) => item.publishedVersion != null)
+    .map((item) => ({ value: `workflow:${item.id}`, label: item.name, description: item.description || undefined })),
+);
+const targets = computed(() => [...agentTargets.value, ...squadTargets.value, ...workflowTargets.value]);
+const isWorkflowTarget = computed(() => form.target.startsWith("workflow:"));
+const workflowNameById = computed(() => new Map(workflows.list.map((item) => [item.id, item.name])));
 const projectsById = computed(() => new Map((store.data?.projects ?? []).map((project) => [project.id, project])));
 const targetGroups = computed(() => [
   { label: t("automation.group.agent"), options: agentTargets.value },
   { label: t("automation.group.squad"), options: squadTargets.value },
+  { label: t("workflow.automation.group"), options: workflowTargets.value },
 ].filter((group) => group.options.length));
 
 const timezoneOptions = computed(() => {
@@ -105,6 +117,28 @@ const editOnlyTriggers = [
 ];
 
 
+onMounted(() => {
+  void workflows.loadList().catch(() => undefined);
+});
+
+/** 选中工作流且模板为空时，按它的入参生成示例映射：主入参 = {{ prompt }} */
+async function seedInputsTemplate() {
+  if (!isWorkflowTarget.value || form.inputsTemplate.trim()) return;
+  const id = form.target.slice("workflow:".length);
+  try {
+    const detail = await getWorkflow(id);
+    if (form.target !== `workflow:${id}` || form.inputsTemplate.trim()) return;
+    const inputs = (detail.published ?? detail.draft).inputs;
+    const primary = inputs.find((port) => port.primary) ?? inputs[0];
+    const lines = inputs.map((port) => `  ${JSON.stringify(port.name)}: ${port === primary ? '"{{ prompt }}"' : '""'}`);
+    form.inputsTemplate = inputs.length ? `{\n${lines.join(",\n")}\n}` : "{}";
+  } catch {
+    // 取不到定义时留空，后端会按主入参兜底
+  }
+}
+
+watch(() => form.target, () => void seedInputsTemplate());
+
 function clearPastes() {
   for (const image of pastes.value) URL.revokeObjectURL(image.previewUrl);
   pastes.value = [];
@@ -128,6 +162,7 @@ function edit(item?: Automation) {
     projectId: item?.projectId ?? "",
     target: item ? `${item.targetType}:${item.targetId}` : targets.value[0]?.value ?? "",
     prompt,
+    inputsTemplate: item?.inputsTemplate ?? "",
     triggerType: item?.triggerType ?? "schedule",
     eventName: item?.eventName ?? "",
     signingSecret: "",
@@ -254,8 +289,9 @@ async function save() {
     error.value = t("automation.targetRequired");
     return;
   }
-  const prompt = currentPrompt();
-  if (!prompt) {
+  const workflowTarget = targetType === "workflow";
+  const prompt = workflowTarget ? "" : currentPrompt();
+  if (!workflowTarget && !prompt) {
     error.value = t("automation.promptRequired");
     return;
   }
@@ -272,9 +308,10 @@ async function save() {
       id: form.id,
       name: form.name,
       projectId: form.projectId || null,
-      targetType: targetType as "agent" | "squad",
+      targetType: targetType as "agent" | "squad" | "workflow",
       targetId,
       prompt: form.prompt,
+      inputsTemplate: workflowTarget ? form.inputsTemplate : "",
       triggerType: form.triggerType,
       intervalMinutes,
       cronExpression,
@@ -402,7 +439,8 @@ function toggleWeekday(day: number) {
           <div class="grow">
             <strong>{{ item.name }}</strong>
             <small>{{ triggerLabel(item) }}<template v-if="item.projectId && projectsById.get(item.projectId)"> · {{ projectsById.get(item.projectId)?.name }}</template></small>
-            <p>{{ item.prompt }}</p>
+            <p v-if="item.targetType === 'workflow'">{{ t("workflow.automation.runs", { name: workflowNameById.get(item.targetId) ?? item.targetId }) }}</p>
+            <p v-else>{{ item.prompt }}</p>
             <div class="automation-times">
               <span>{{ t("automation.lastRun", { time: formatTime(item.lastRunAt) }) }}</span>
               <span v-if="item.nextRunAt">{{ t("automation.nextRun", { time: formatTime(item.nextRunAt) }) }}</span>
@@ -461,11 +499,25 @@ function toggleWeekday(day: number) {
               required
               :placeholder="t('automation.namePlaceholder')"
             />
-            <div class="automation-runbook-label">
+            <template v-if="isWorkflowTarget">
+              <div class="automation-runbook-label">
+                <span>{{ t("workflow.automation.inputsTemplate") }}</span>
+                <small>{{ t("workflow.automation.inputsHint") }}</small>
+              </div>
+              <UiTextarea
+                v-model="form.inputsTemplate"
+                class="automation-inputs-template"
+                rows="10"
+                spellcheck="false"
+                placeholder="{}"
+              />
+            </template>
+            <div v-show="!isWorkflowTarget" class="automation-runbook-label">
               <span>RUNBOOK</span>
               <small>{{ t("automation.promptHint") }}</small>
             </div>
             <ChatComposer
+              v-show="!isWorkflowTarget"
               :key="composerKey"
               ref="composer"
               class="automation-runbook"
@@ -695,3 +747,11 @@ function toggleWeekday(day: number) {
     </UiModal>
   </div>
 </template>
+
+<style scoped>
+.automation-inputs-template {
+  min-height: 220px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}
+</style>

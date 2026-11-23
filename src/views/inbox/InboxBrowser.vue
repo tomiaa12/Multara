@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, RotateCw } from "@lucide/vue";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
@@ -46,6 +47,7 @@ const chatMenuOpen = ref(false);
 const chatBusy = ref(false);
 const pickMode = ref<"" | "select" | "comment" | "area">("");
 
+const pageLive = ref(true);
 let resizeObserver: ResizeObserver | undefined;
 let unlistenNavigated: UnlistenFn | undefined;
 let syncTimer: ReturnType<typeof setTimeout> | undefined;
@@ -113,6 +115,29 @@ function onSubmit() {
   navigate(draft.value);
 }
 
+/** eval 结果有时是 JSON 字符串再套一层。菜单和选区都要解到对象。 */
+function evalJson<T>(raw: string): T | null {
+  let value: unknown = raw;
+  for (let depth = 0; depth < 2; depth += 1) {
+    if (typeof value !== "string") break;
+    const text = value.trim();
+    if (!text || text === "null") return null;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  return value as T;
+}
+
+/** 地址栏在主 WebView 里。子页面抢到第一响应者后，中文输入法会打出方框。对齐 VS Code：编辑地址时把焦点还给主页面。 */
+function focusHost() {
+  if (!useNative) return;
+  void getCurrentWebview().setFocus();
+}
+
 function openPicker(kind: "history" | "address") {
   picker.value = kind;
   pickerQuery.value = "";
@@ -175,6 +200,7 @@ async function syncNative(forceUrl: boolean) {
   const url = current.value;
   // 选元素 / 区域截图 / 页内悬浮菜单时必须保持 webview 可见
   const visible =
+    pageLive.value &&
     !!props.active &&
     !!url &&
     !picker.value &&
@@ -212,6 +238,10 @@ function onNativeNavigated(url: string) {
     index.value = stack.value.length - 1;
   }
   lastSyncedUrl = url;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active.classList.contains("inbox-browser-address")) {
+    focusHost();
+  }
 }
 
 watch(historyMatches, () => {
@@ -229,6 +259,18 @@ watch(
   () => [props.active, current.value, picker.value] as const,
   () => scheduleSync(false),
 );
+
+onActivated(() => {
+  pageLive.value = true;
+  scheduleSync(false);
+});
+
+onDeactivated(() => {
+  pageLive.value = false;
+  void closeChatMenu();
+  void stopPagePick();
+  scheduleSync(false);
+});
 
 onMounted(async () => {
   if (!useNative) return;
@@ -343,9 +385,9 @@ async function openChatMenu() {
         const raw = await backend.inboxBrowserEval(
           "window.__multaraChatMenu ? JSON.stringify(window.__multaraChatMenu) : 'null'",
         );
-        if (!raw || raw === "null") return;
+        const payload = evalJson<{ id?: string }>(raw);
+        if (!payload) return;
         await backend.inboxBrowserEval("window.__multaraChatMenu = null");
-        const payload = JSON.parse(raw) as { id?: string };
         stopChatMenuPolling();
         chatMenuOpen.value = false;
         const id = payload.id?.trim();
@@ -394,16 +436,16 @@ async function runElementPick(mode: "select" | "comment") {
         const raw = await backend.inboxBrowserEval(
           "window.__multaraPick ? JSON.stringify(window.__multaraPick) : 'null'",
         );
-        if (!raw || raw === "null") return;
-        await backend.inboxBrowserEval("window.__multaraPick = null");
-        const payload = JSON.parse(raw) as {
+        const payload = evalJson<{
           cancelled?: boolean;
           mode?: string;
           tag?: string;
           selector?: string;
           text?: string;
           html?: string;
-        };
+        }>(raw);
+        if (!payload) return;
+        await backend.inboxBrowserEval("window.__multaraPick = null");
         stopPickPolling();
         pickMode.value = "";
         if (payload.cancelled) return;
@@ -444,15 +486,15 @@ async function runAreaPick() {
         const raw = await backend.inboxBrowserEval(
           "window.__multaraArea ? JSON.stringify(window.__multaraArea) : 'null'",
         );
-        if (!raw || raw === "null") return;
-        await backend.inboxBrowserEval("window.__multaraArea = null");
-        const payload = JSON.parse(raw) as {
+        const payload = evalJson<{
           cancelled?: boolean;
           x?: number;
           y?: number;
           width?: number;
           height?: number;
-        };
+        }>(raw);
+        if (!payload) return;
+        await backend.inboxBrowserEval("window.__multaraArea = null");
         stopPickPolling();
         pickMode.value = "";
         if (payload.cancelled || payload.width == null || payload.height == null) return;
@@ -553,6 +595,8 @@ onBeforeUnmount(() => {
         spellcheck="false"
         :placeholder="t('inbox.tool.address')"
         :aria-label="t('inbox.tool.address')"
+        @pointerdown="focusHost"
+        @focus="focusHost"
       />
       <UiButton
         v-if="useNative"

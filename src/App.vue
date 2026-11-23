@@ -29,6 +29,7 @@ import {
   Square,
   Sun,
   Users,
+  GitBranch,
   Workflow,
   X,
 } from "@lucide/vue";
@@ -40,6 +41,7 @@ import UpdateNotification from "./components/UpdateNotification.vue";
 import { RunLogHost } from "./components/run-log";
 import UnsavedChangesDialog from "./components/workbench/UnsavedChangesDialog.vue";
 import UiConfirmDialog from "./components/ui/UiConfirmDialog.vue";
+import UiToastHost from "./components/ui/UiToastHost.vue";
 import {
   confirmDialog,
   finishConfirmDialog,
@@ -62,11 +64,19 @@ import ContextMenu, { type ContextMenuItem } from "./components/ui/ContextMenu.v
 import { editorZoomLabel } from "./components/workbench/monaco-zoom";
 import { isWorkbenchPath } from "./router";
 import { requirementHomeMode } from "./views/dashboard/requirement-home-mode";
+import {
+  buildHomeIndex,
+  buildHomeProject,
+  homeWorkerItems,
+  type HomeProject,
+} from "./views/dashboard/project-home";
+import RequirementProjectRow from "./components/dashboard/RequirementProjectRow.vue";
 import { t } from "./i18n";
 import { unreadBadgeLabel, unreadTotal } from "./domain/inbox";
 import SideNav, { type SideNavItem } from "./components/SideNav.vue";
 import TerminalActivity from "./components/workbench/TerminalActivity.vue";
 import { startRunningTerminalWatch } from "./stores/running-terminals";
+import { startSurfaceCtlWatch } from "./stores/surface-ctl";
 import { startTerminalCtlWatch } from "./stores/terminal-ctl";
 import TaskCreateDialog from "./views/TaskCreateDialog.vue";
 
@@ -119,22 +129,44 @@ const workbenchProjectId = computed(() => {
 const viewCacheKey = computed(() =>
   workbenchProjectId.value ? "project-workspace" : route.path,
 );
-const projectSwitchOptions = computed(() => {
-  const projects = store.data?.projects ?? [];
+/** 与需求首页同一套「谁在工作」数据，供面包屑切换下拉复用。 */
+const projectSwitchRows = computed(() => {
+  const data = store.data;
+  if (!data) return [] as HomeProject[];
   const currentId = workbenchProjectId.value;
-  const active = projects.filter((item) => !item.archivedAt);
-  const current = currentId ? projects.find((item) => item.id === currentId) : undefined;
+  const active = data.projects.filter((item) => !item.archivedAt);
+  const current = currentId ? data.projects.find((item) => item.id === currentId) : undefined;
   const list = current && current.archivedAt && !active.some((item) => item.id === current.id)
     ? [...active, current]
     : active;
+  const index = buildHomeIndex(data, store.runStates);
+  const now = Date.now();
   return [...list]
     .sort((a, b) => (b.openedAt || b.createdAt).localeCompare(a.openedAt || a.createdAt))
-    .map((item) => ({
-      value: item.id,
-      label: item.name || t("workbench.projectFallback"),
-      description: item.archivedAt ? t("dashboard.archivedBadge") : undefined,
-    }));
+    .map((item) => buildHomeProject(item, data, store.runStates, now, index));
 });
+
+const projectSwitchById = computed(() => {
+  const map = new Map<string, HomeProject>();
+  for (const row of projectSwitchRows.value) map.set(row.id, row);
+  return map;
+});
+
+const projectSwitchOptions = computed(() =>
+  projectSwitchRows.value.map((row) => ({
+    value: row.id,
+    label: row.name || t("workbench.projectFallback"),
+    // 占位以启用双行样式；实际内容由 option 插槽里的 RequirementProjectRow 渲染
+    description: row.activityLabel || row.workingMeta || row.workerSentence || "\u00a0",
+    keywords: row.workers.map((worker) => worker.name),
+  })),
+);
+
+function projectSwitchOptionRows(projectId: string | number | boolean | null | undefined) {
+  if (projectId == null || projectId === false) return [] as HomeProject[];
+  const row = projectSwitchById.value.get(String(projectId));
+  return row ? [row] : [];
+}
 
 function switchWorkbenchProject(projectId: string) {
   if (!projectId || projectId === workbenchProjectId.value) return;
@@ -408,6 +440,7 @@ const primary = computed(() => [
     icon: ListTodo,
     action: { tip: t("tasks.createShortcut"), run: () => store.openTaskCreate() },
   },
+  { to: "/workflows", label: t("nav.workflows"), icon: GitBranch },
   { to: "/automation", label: t("nav.automation"), icon: Workflow },
   { to: "/agents", label: t("nav.agents"), icon: Bot },
   { to: "/squads", label: t("nav.squads"), icon: Users },
@@ -476,6 +509,7 @@ onMounted(async () => {
   startOsFileDrop();
   startRunningTerminalWatch();
   startTerminalCtlWatch();
+  startSurfaceCtlWatch();
   store.initialize();
   // 设置页、store 初始化都会直接改 data-theme，这里统一监听以同步标题栏图标。
   themeObserver = new MutationObserver(() => {
@@ -595,10 +629,23 @@ onBeforeUnmount(() => {
             size="sm"
             :model-value="workbenchProjectId"
             :options="projectSwitchOptions"
+            :menu-min-width="280"
             :aria-label="t('workbench.switchProject')"
             searchable
             @update:model-value="switchWorkbenchProject"
-          />
+          >
+            <template #option="{ option }">
+              <RequirementProjectRow
+                v-for="row in projectSwitchOptionRows(option.value)"
+                :key="row.id"
+                :name="row.name"
+                :session-ids="row.sessionIds"
+                :workers="homeWorkerItems(row)"
+                :idle-label="row.activityLabel"
+                :badge="row.archived ? t('dashboard.archivedBadge') : ''"
+              />
+            </template>
+          </UiSelect>
         </template>
       </div>
       <!-- 三列网格占位，保持右侧按钮居右 -->
@@ -667,6 +714,7 @@ onBeforeUnmount(() => {
     <!-- Canvas 页面的 iframe 都在这一层（keep-alive 外面），切走页面也保持连接 -->
     <CanvasFrameHost />
     <UpdateNotification />
+    <UiToastHost />
     <UnsavedChangesDialog
       v-if="unsavedPrompt"
       :title="unsavedPrompt.title"

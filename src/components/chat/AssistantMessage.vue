@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { vDetailsMotion } from "../../ui/motion";
 import { RouterLink } from "vue-router";
 import type { ChatMessage, TimelineItem } from "../../domain/types";
@@ -30,6 +30,8 @@ import { genUiSendingIds, genUiSubmissions, sendGenUiAction } from "./ui-outboun
 import { toolResultUis } from "./genui/tool-ui";
 import McpAppFrame from "./McpAppFrame.vue";
 import { t } from "../../i18n";
+import { decideWorkflowGate } from "../../services/backend";
+import { runQuickAction, type QuickActionLike } from "./workflow-gate-action";
 
 const props = withDefaults(defineProps<{
   message: ChatMessage;
@@ -60,6 +62,45 @@ const emit = defineEmits<{
   "pick-action": [prompt: string];
 }>();
 const store = useAppStore();
+
+// 工作流审批：带 action 的快捷操作直接决定 gate，不发聊天消息
+const decidedGate = ref(false);
+const gateBusy = ref(false);
+const gateError = ref("");
+const commentPrompt = ref<{ action: QuickActionLike; resolve: (value: string | null) => void } | null>(null);
+const commentText = ref("");
+
+function promptComment(action: QuickActionLike) {
+  commentText.value = "";
+  return new Promise<string | null>((resolve) => {
+    commentPrompt.value = { action, resolve };
+  });
+}
+
+function closeCommentPrompt(value: string | null) {
+  const current = commentPrompt.value;
+  commentPrompt.value = null;
+  current?.resolve(value);
+}
+
+async function pickQuickAction(action: QuickActionLike) {
+  if (gateBusy.value || decidedGate.value) return;
+  gateBusy.value = true;
+  gateError.value = "";
+  try {
+    const result = await runQuickAction(action, {
+      promptComment,
+      decide: decideWorkflowGate,
+      onError: (cause) => {
+        gateError.value = cause instanceof Error ? cause.message : String(cause);
+      },
+    });
+    if (result === "not-handled") emit("pick-action", action.prompt);
+    else if (result === "done") decidedGate.value = true;
+  } finally {
+    gateBusy.value = false;
+  }
+}
 // 生成式界面开关：提问别名和界面块渲染都跟它走
 const genUiEnabled = computed(() => isGenUiEnabled(store.data?.settings));
 const liveText = computed(() => liveAssistantText(props.message.timeline));
@@ -148,8 +189,9 @@ const assignmentText = computed(() => {
 const showSpeaker = computed(() => Boolean(props.speaker) && !props.hideSpeaker);
 
 // 生成式界面（实验功能）：正文按 ```multara-ui 切片，界面块原地换成组件。关闭时整段仍按 Markdown 渲染。
+// 给负责人的回执也要换：否则表格会留在 mention-line 里变成代码块。
 const genUiSegments = computed(() => {
-  if (!genUiEnabled.value || isInternalReply.value) return null;
+  if (!genUiEnabled.value) return null;
   const { segments } = splitGenUi(bodyText.value);
   return segments.some((segment) => segment.kind !== "md") ? segments : null;
 });
@@ -264,7 +306,25 @@ const outboundRecipient = computed(() => {
     </div>
     <div v-if="isInternalReply" class="mention-line reply-text">
       <span v-if="audienceLabel" class="at-name">@{{ audienceLabel }}</span>
-      <RichContent v-if="bodyText.trim()" :content="bodyText" />
+      <template v-if="genUiSegments">
+        <template v-for="(segment, index) in genUiSegments" :key="segment.kind === 'md' ? `reply-md-${index}` : `reply-ui-${segment.index}`">
+          <RichContent v-if="segment.kind === 'md'" v-show="segment.text.trim()" :content="segment.text" />
+          <GenUiBlock
+            v-else
+            :segment="segment"
+            :message-id="message.id"
+            :state-id="message.runId || message.id"
+            :over-limit="segment.index >= GENUI_MAX_BLOCKS"
+            :submissions="genUiSubmitted"
+            :sending="genUiSending"
+            :disabled="genUiDisabled"
+            :disabled-reason="genUiDisabledReason"
+            :session-id="uiInteractive ? message.sessionId : undefined"
+            @action="onGenUiAction"
+          />
+        </template>
+      </template>
+      <RichContent v-else-if="bodyText.trim()" :content="bodyText" />
     </div>
     <div class="assistant-main">
       <ProcessFold
@@ -274,7 +334,7 @@ const outboundRecipient = computed(() => {
         :run-id="message.runId"
         :default-collapse-subagents="defaultCollapseSubagents"
       />
-      <template v-if="genUiSegments">
+      <template v-if="genUiSegments && !isInternalReply">
         <template v-for="(segment, index) in genUiSegments" :key="segment.kind === 'md' ? `md-${index}` : `ui-${segment.index}`">
           <RichContent v-if="segment.kind === 'md'" v-show="segment.text.trim()" :content="segment.text" />
           <GenUiBlock
@@ -363,9 +423,32 @@ const outboundRecipient = computed(() => {
           :key="action.label"
           :class="{ primary: action.primary }"
           type="button"
-          @click="emit('pick-action', action.prompt)"
+          :disabled="Boolean(action.action) && (gateBusy || decidedGate)"
+          @click="pickQuickAction(action)"
         >{{ action.label }}</UiButton>
+        <span v-if="gateError" class="quick-action-error">{{ gateError }}</span>
       </div>
+      <UiModal v-if="commentPrompt" @click.self="closeCommentPrompt(null)" @close="closeCommentPrompt(null)">
+        <form class="modal" @submit.prevent="closeCommentPrompt(commentText)">
+          <h2>{{ commentPrompt.action.label }}</h2>
+          <label>
+            {{ t("workflow.prompt.commentLabel") }}
+            <UiTextarea v-model="commentText" rows="4" required autofocus :placeholder="t('workflow.prompt.commentPlaceholder')" />
+          </label>
+          <div class="modal-actions">
+            <UiButton @click="closeCommentPrompt(null)">{{ t("common.cancel") }}</UiButton>
+            <UiButton type="submit" variant="primary" :disabled="!commentText.trim()">{{ t("workflow.prompt.submit") }}</UiButton>
+          </div>
+        </form>
+      </UiModal>
     </div>
   </article>
 </template>
+
+<style scoped>
+.quick-action-error {
+  align-self: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+}
+</style>

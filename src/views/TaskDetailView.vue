@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import WorkflowRunBar from "../components/workflow/WorkflowRunBar.vue";
+import { isWorkflowRunSession } from "../domain/workflow";
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowLeft, ListTodo, PanelRight, Trash2 } from "@lucide/vue";
@@ -119,6 +121,7 @@ async function removeTask() {
       <main class="task-issue-main">
         <div class="task-issue-hero">
           <div class="task-issue-content">
+            <WorkflowRunBar v-if="isWorkflowRunSession(task.sessionId)" :session-id="task.sessionId" />
             <textarea
               ref="titleEl"
               v-model="titleDraft"

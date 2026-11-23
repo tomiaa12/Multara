@@ -19,7 +19,7 @@ export type PromptWorkspace = {
   sourcePath?: string | null;
 };
 
-export type ComposerEntityKind = "agent" | "squad" | "skill" | "mcp" | "task" | "requirement" | "session";
+export type ComposerEntityKind = "agent" | "squad" | "skill" | "mcp" | "task" | "requirement" | "session" | "workflow";
 
 export type ComposerReferenceChipNode = {
   type: "chip";
@@ -79,7 +79,7 @@ export function fencedBlock(text: string) {
   return `${fence}\n${text}\n${fence}`;
 }
 const REFERENCE_PATTERN =
-  /\[实体引用\][ \t]+(agent|squad|skill|mcp|task|requirement|session)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
+  /\[实体引用\][ \t]+(agent|squad|skill|mcp|task|requirement|session|workflow)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
 const ASSIGNMENT_PATTERN =
   /\[指派要求\][^\n]*\n(?:-[^\n]*\n?)+/g;
 
@@ -133,6 +133,7 @@ const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
   task: "#",
   requirement: "",
   session: "",
+  workflow: "",
 };
 
 export function chipLabel(item: ComposerChipNode) {
@@ -140,6 +141,7 @@ export function chipLabel(item: ComposerChipNode) {
   if (isReferenceChip(item)) {
     if (item.referenceKind === "requirement") return t("chat.chip.requirement", { name: item.label });
     if (item.referenceKind === "session") return t("chat.chip.session", { name: item.label });
+    if (item.referenceKind === "workflow") return t("chat.chip.workflow", { name: item.label });
     const prefix = REFERENCE_PREFIX[item.referenceKind];
     return `${prefix}${item.label}`;
   }
@@ -235,7 +237,7 @@ export function formatAgentPrompt(
     .replace(/\u00a0/g, " ")
     .trim();
   const assignment = !options.directMentions && assignees.length
-    ? `[指派要求] 以下是用户明确选择的指派对象，请由当前 Miku 或小队队长按现有任务流程创建并指派可追踪的子任务，不要只在正文中口头声称已分配：\n${assignees.map((item) => `- ${item}`).join("\n")}`
+    ? `[指派要求] 以下是用户明确点名的人选。请由当前负责人（输入框左下角选中的智能体，或小队的队长）判断：能派就建成可追踪的任务并指派，可以同时派给多个；派不出去再自己做。不要只在正文中口头声称已分配：\n${assignees.map((item) => `- ${item}`).join("\n")}`
     : "";
   return [...citations, assignment, visible].filter((part) => part.trim()).join("\n\n");
 }

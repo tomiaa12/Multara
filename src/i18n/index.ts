@@ -54,16 +54,27 @@ function switchLocale(next: Locale) {
   }
 }
 
+function syncBackendLocale(next: Locale) {
+  // 动态导入避免 i18n ↔ backend 环依赖；失败不影响界面切换。
+  void import("../services/backend")
+    .then((backend) => backend.syncAppLocale(next))
+    .catch(() => undefined);
+}
+
 /** 已加载的语言同步切换；未加载的先加载再切换，避免瞬间回退成英文；连续切换时只认最后一次。 */
 export function applyLanguageSetting(setting?: string): Promise<void> {
   const next = resolveLocale(setting);
   requestedLocale = next;
   if (catalogs[next]) {
     switchLocale(next);
+    syncBackendLocale(next);
     return Promise.resolve();
   }
   return loadLocale(next).then(() => {
-    if (requestedLocale === next) switchLocale(next);
+    if (requestedLocale === next) {
+      switchLocale(next);
+      syncBackendLocale(next);
+    }
   });
 }
 

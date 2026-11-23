@@ -228,6 +228,49 @@ export function shellTranscript(command: string, output: string): string {
   return [commandBlock, output.trim()].filter(Boolean).join("\n");
 }
 
+function shellExitCode(value: unknown): number | null {
+  const record = asRecord(value);
+  const direct = record.exitCode ?? record.exit_code;
+  if (typeof direct === "number") return direct;
+  const nested = asRecord(record.success);
+  const nestedCode = nested.exitCode ?? nested.exit_code;
+  return typeof nestedCode === "number" ? nestedCode : null;
+}
+
+/** 工具结果标了失败，或输出里带了非 0 的退出码。 */
+export function shellFailed(item: PairedTool): boolean {
+  const result = item.result;
+  if (!result) return false;
+  if (result.status === "error") return true;
+  const raw = (result.output || result.content || "").trim();
+  if (!raw.startsWith("{") && !raw.startsWith("[")) return false;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    const record = asRecord(value);
+    if (record.isError === true || record.success === false) return true;
+    const code = shellExitCode(value);
+    return code != null && code !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/** 执行中只留标题。结束后：失败展开，有输出时给出预览，没有输出则等点击。 */
+export type ShellCardMode = "hidden" | "peek" | "full";
+
+export function shellCardMode(input: {
+  settled: boolean;
+  failed: boolean;
+  hasOutput: boolean;
+  user: ShellCardMode | null;
+}): ShellCardMode {
+  if (input.user) return input.user;
+  if (!input.settled) return "hidden";
+  if (input.failed) return "full";
+  if (input.hasOutput) return "peek";
+  return "hidden";
+}
+
 export function toolLineRange(item: TimelineItem | undefined): { start?: number; end?: number } {
   const input = resolvedInput(item);
   const start = numberField(input, ["offset", "start_line", "startLine", "line", "from"]);

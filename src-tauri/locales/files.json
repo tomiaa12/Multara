@@ -287,6 +287,36 @@
     "ja": "不明なサブコマンド：terminal {verb}",
     "ko": "알 수 없는 하위 명령: terminal {verb}"
   },
+  "不认识的子命令：surface {verb}": {
+    "en": "Unknown subcommand: surface {verb}",
+    "zh-TW": "不認識的子命令：surface {verb}",
+    "ja": "不明なサブコマンド：surface {verb}",
+    "ko": "알 수 없는 하위 명령: surface {verb}"
+  },
+  "缺少 --path": {
+    "en": "Missing --path",
+    "zh-TW": "缺少 --path",
+    "ja": "--path がありません",
+    "ko": "--path 가 없습니다"
+  },
+  "缺少 --url": {
+    "en": "Missing --url",
+    "zh-TW": "缺少 --url",
+    "ja": "--url がありません",
+    "ko": "--url 이 없습니다"
+  },
+  "当前界面不支持这项操作": {
+    "en": "This surface does not support that action",
+    "zh-TW": "目前介面不支援這項操作",
+    "ja": "この画面ではその操作はできません",
+    "ko": "이 화면에서는 그 작업을 지원하지 않습니다"
+  },
+  "界面没有打开这个会话": {
+    "en": "This chat is not open in the UI",
+    "zh-TW": "介面沒有打開這個會話",
+    "ja": "このチャットは画面で開いていません",
+    "ko": "이 채팅이 화면에 열려 있지 않습니다"
+  },
   "需要 Multara 应用在运行（缺少 MULTARA_CTL）": {
     "en": "Multara app must be running (MULTARA_CTL is missing)",
     "zh-TW": "需要 Multara 應用程式在執行（缺少 MULTARA_CTL）",

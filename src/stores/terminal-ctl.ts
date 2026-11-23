@@ -1,6 +1,7 @@
-import { listen } from "@tauri-apps/api/event";
+import { onAppEvent, pushDevEvent } from "../dev/dev-events";
 import * as backend from "../services/backend";
 import { useAppStore } from "./app";
+import { trackTerminal } from "./running-terminals";
 import {
   ensureWorkspaceTerminal,
   liveTerminalForWorkspace,
@@ -29,11 +30,54 @@ type TerminalCtlResult =
 
 let started = false;
 
+type ShownTerminal = {
+  id: string;
+  workspaceId: string;
+  projectId?: string;
+  cwd?: string;
+  title?: string;
+  pid?: number;
+};
+
+function showTerminalInBrowser(tab: ShownTerminal) {
+  pushDevEvent("terminal-shown", tab);
+}
+
+function adoptShownTerminal(tab: ShownTerminal) {
+  if (!tab?.id || !tab.workspaceId) return;
+  if (!terminalSessions.value.some((item) => item.id === tab.id)) {
+    terminalSessions.value = [...terminalSessions.value, {
+      id: tab.id,
+      title: tab.title || "终端",
+      cwd: tab.cwd || "",
+      workspaceId: tab.workspaceId,
+      live: true,
+      pending: false,
+      message: "",
+      groupId: tab.id,
+      pid: tab.pid,
+    }];
+    if (tab.projectId) {
+      trackTerminal({
+        id: tab.id,
+        title: tab.title || "终端",
+        projectId: tab.projectId,
+        workspaceId: tab.workspaceId,
+      });
+    }
+  }
+  selectTerminalSession(tab.id);
+  useAppStore().revealTerminal(tab.workspaceId, tab.id);
+}
+
 /** 监听控制通道发来的 terminal-ctl，在集成终端里开面板 / 跑命令。 */
 export function startTerminalCtlWatch() {
-  if (started || !("__TAURI_INTERNALS__" in window)) return;
+  if (started) return;
   started = true;
-  void listen<TerminalCtlPayload>("terminal-ctl", async (event) => {
+  void onAppEvent<ShownTerminal>("terminal-shown", (event) => {
+    adoptShownTerminal(event.payload);
+  });
+  void onAppEvent<TerminalCtlPayload>("terminal-ctl", async (event) => {
     const payload = event.payload;
     if (!payload?.requestId) return;
     const result = await handleTerminalCtl(payload);
@@ -52,6 +96,16 @@ async function handleTerminalCtl(payload: TerminalCtlPayload): Promise<TerminalC
       await backend.terminalWrite(id, payload.text ?? "");
       selectTerminalSession(id);
       useAppStore().revealTerminal(undefined, id);
+      const tab = terminalSessions.value.find((item) => item.id === id);
+      if (tab) {
+        showTerminalInBrowser({
+          id: tab.id,
+          workspaceId: tab.workspaceId,
+          cwd: tab.cwd,
+          title: tab.customTitle || tab.title,
+          pid: tab.pid,
+        });
+      }
       return { ok: true, value: { id } };
     }
 
@@ -76,6 +130,14 @@ async function handleTerminalCtl(payload: TerminalCtlPayload): Promise<TerminalC
 
     const opened = await openOrReuse(payload);
     useAppStore().revealTerminal(opened.workspaceId, opened.id);
+    showTerminalInBrowser({
+      id: opened.id,
+      workspaceId: opened.workspaceId,
+      projectId: payload.projectId,
+      cwd: opened.cwd,
+      title: opened.title,
+      pid: opened.pid,
+    });
     const command = payload.command?.trim();
     if (command) {
       // 等 shell 提示符落稳再写入，避免命令被吞进启动输出
@@ -109,7 +171,19 @@ async function openOrReuse(payload: TerminalCtlPayload) {
     error.reason = "no_workspace";
     throw error;
   }
+  // 跑服务用 --new：当前工作台里同名终端还在就接着用，否则单独开一个标签。
+  // 短命令不走这里，留在聊天卡片里。
   if (payload.newTab) {
+    const named = [...terminalSessions.value].reverse().find((item) =>
+      item.workspaceId === workspaceId
+      && item.live
+      && !item.pending
+      && (item.customTitle || item.title) === title,
+    );
+    if (named) {
+      selectTerminalSession(named.id);
+      return named;
+    }
     return openTerminalSession({ workspaceId, cwd, title, projectId });
   }
   const existing = liveTerminalForWorkspace(workspaceId);

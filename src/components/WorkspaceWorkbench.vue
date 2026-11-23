@@ -161,10 +161,12 @@ import { OS_DROP_EVENT, onOsDropHover, type OsDropDetail } from "./chat/os-file-
 import { isCanvasEnabled } from "./chat/genui/block";
 import { itemKind, toolPath } from "./chat/timeline-display";
 import * as backend from "../services/backend";
+import InboxBrowser from "../views/inbox/InboxBrowser.vue";
 import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "../stores/running-terminals";
 import { activeTerminalSessionId, terminalSessions } from "../stores/terminal-sessions";
 import { readProjectTerminalOpen, writeProjectTerminalOpen } from "../stores/terminal-layout";
 import { useAppStore } from "../stores/app";
+import { registerSurfaceCtl, type SurfaceCtlPayload, type SurfaceCtlResult } from "../stores/surface-ctl";
 import { useCanvasStore } from "../stores/canvas";
 import UiFrame from "./UiFrame.vue";
 import { useEditorStatusStore } from "../stores/editor-status";
@@ -335,13 +337,14 @@ const activeTerminalId = props.preview ? previewActiveTerminalId : activeTermina
 const visibleTerminalTabs = computed(() => {
   if (props.preview) return previewTerminals.value;
   const ids = new Set(workspaces.value.map((item) => item.id));
-  return terminalSessions.value.filter((item) => ids.has(item.workspaceId));
+  return terminalSessions.value.filter((item) => ids.has(item.workspaceId) && !item.pending);
 });
 const terminalProfiles = ref<backend.TerminalProfile[]>([]);
 const defaultTerminalProfile = ref(localStorage.getItem("multara.terminal.defaultProfile") || "");
 const pendingTerminalProfile = ref<string | undefined>();
 const terminalPanel = ref<{ focus: () => void; write: (id: string, text: string) => void } | null>(null);
 const terminalPick = ref(false);
+const terminalPickReuse = ref(false);
 const terminalPickQuery = ref("");
 const terminalPickIndex = ref(0);
 const terminalPickInput = ref<HTMLInputElement | null>(null);
@@ -748,6 +751,10 @@ const rightPanelWidth = ref(
 );
 const workbenchEl = ref<HTMLElement | null>(null);
 const editorAreaEl = ref<HTMLElement | null>(null);
+const workbenchLive = ref(true);
+const workbenchBrowser = ref(false);
+const workbenchBrowserUrls = ref<string[]>([]);
+const workbenchBrowserRequest = ref("");
 const fileTreeEl = ref<HTMLElement | null>(null);
 let stickyTreeObserver: ResizeObserver | null = null;
 
@@ -3512,7 +3519,7 @@ function handleWorkbenchShortcuts(event: KeyboardEvent) {
   }
   if (ctrl && !event.altKey && !event.shiftKey && event.code === "Backquote") {
     event.preventDefault();
-    toggleTerminal();
+    void openNewTerminalPicker(true);
     return;
   }
   // macOS 按住 Alt 时 event.key 会变成特殊字符，只能认物理键 KeyF。
@@ -3537,23 +3544,9 @@ function handleWorkbenchShortcuts(event: KeyboardEvent) {
   }
 }
 
-function toggleTerminal() {
-  if (terminalOpen.value) {
-    terminalOpen.value = false;
-    return;
-  }
-  terminalOpen.value = true;
-  const current = terminalTabs.value.find((item) => item.id === activeTerminalId.value);
-  if (!current || current.pending) {
-    const first = terminalTabs.value.find((item) => !item.pending) ?? terminalTabs.value[0];
-    if (first) void materializeTerminal(first);
-  }
-  void nextTick(() => terminalPanel.value?.focus());
-}
-
-async function openNewTerminalPicker() {
-  terminalOpen.value = true;
+async function openNewTerminalPicker(reuse = false) {
   if (!workspaces.value.length) return;
+  terminalPickReuse.value = reuse;
   if (workspaces.value.length === 1) {
     await openTerminalFor(workspaces.value[0]!, pendingTerminalProfile.value);
     return;
@@ -3563,19 +3556,6 @@ async function openNewTerminalPicker() {
   terminalPickIndex.value = 0;
   await nextTick();
   terminalPickInput.value?.focus();
-}
-
-function pendingTerminal(workspace: Workspace): TerminalTab {
-  return {
-    id: `pending:${workspace.id}`,
-    title: workspace.name,
-    cwd: workspace.workPath || workspace.sourcePath,
-    workspaceId: workspace.id,
-    live: false,
-    pending: true,
-    message: "",
-    groupId: `pending:${workspace.id}`,
-  };
 }
 
 async function startTerminal(
@@ -3646,10 +3626,22 @@ function selectTerminal(id: string) {
 }
 
 async function openTerminalFor(workspace: Workspace, profile?: string) {
+  const reuse = terminalPickReuse.value;
   terminalPick.value = false;
+  terminalPickReuse.value = false;
   terminalOpen.value = true;
   const chosen = profile ?? pendingTerminalProfile.value;
   pendingTerminalProfile.value = chosen;
+  if (reuse && !chosen) {
+    const existing = [...terminalTabs.value].reverse().find((tab) =>
+      tab.workspaceId === workspace.id && tab.live && !tab.pending,
+    );
+    if (existing) {
+      activeTerminalId.value = existing.id;
+      void nextTick(() => terminalPanel.value?.focus());
+      return;
+    }
+  }
   const pending = terminalTabs.value.find((tab) => tab.pending && tab.workspaceId === workspace.id);
   if (pending) {
     await materializeTerminal(pending);
@@ -3810,22 +3802,58 @@ function onTerminalPickOutside(event: PointerEvent) {
   terminalPick.value = false;
 }
 
+function workspaceOwnsCwd(cwd: string) {
+  const path = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+  return workspaces.value.find((workspace) => {
+    const root = (workspace.workPath || workspace.sourcePath).replace(/\\/g, "/").replace(/\/+$/, "");
+    return Boolean(root) && (path === root || path.startsWith(`${root}/`));
+  });
+}
+
+/** 服务还在听端口、但标签不在当前底栏时，把那个终端补回来。 */
+async function adoptRunningTerminals() {
+  if (props.preview || !workspaces.value.length) return;
+  const [open, services] = await Promise.all([
+    backend.terminalListOpen().catch(() => []),
+    backend.terminalServices().catch(() => []),
+  ]);
+  const serving = new Set(services.filter((item) => item.ports.length).map((item) => item.id));
+  const known = new Set(terminalTabs.value.map((item) => item.id));
+  const added: TerminalTab[] = [];
+  for (const item of open) {
+    if (!serving.has(item.id) || known.has(item.id) || !item.cwd) continue;
+    const workspace = workspaceOwnsCwd(item.cwd);
+    if (!workspace) continue;
+    added.push({
+      id: item.id,
+      title: item.title || workspace.name,
+      cwd: item.cwd,
+      workspaceId: workspace.id,
+      live: true,
+      pending: false,
+      message: "",
+      groupId: item.id,
+      pid: item.pid,
+    });
+    trackTerminal({
+      id: item.id,
+      title: item.title || workspace.name,
+      projectId: projectId.value,
+      workspaceId: workspace.id,
+    });
+  }
+  if (!added.length) return;
+  terminalTabs.value = [...terminalTabs.value, ...added];
+  terminalOpen.value = true;
+}
+
 watch(
   () => workspaces.value.map((workspace) => workspace.id).join("\0"),
   () => {
-    const list = workspaces.value;
-    if (!list.length) return;
-    // 切换需求时不关其它需求的 PTY：会话留在共享 store，切回去还能接着看。
-    for (const workspace of list) {
-      if (terminalTabs.value.some((tab) => tab.workspaceId === workspace.id)) continue;
-      terminalTabs.value = [...terminalTabs.value, pendingTerminal(workspace)];
-    }
+    if (!workspaces.value.length) return;
     syncActiveTerminalToVisible();
-    const visible = visibleTerminalTabs.value;
-    if (terminalOpen.value && !visible.some((tab) => tab.id === activeTerminalId.value && !tab.pending)) {
-      const first = visible[0];
-      if (first) void materializeTerminal(first);
-    }
+    if (terminalOpen.value && !visibleTerminalTabs.value.length) terminalOpen.value = false;
+    void adoptRunningTerminals();
   },
   { immediate: true },
 );
@@ -3874,7 +3902,10 @@ watch(() => store.terminalReveal?.nonce, () => {
 
 watch(terminalPick, (open) => {
   if (open) window.addEventListener("pointerdown", onTerminalPickOutside, true);
-  else window.removeEventListener("pointerdown", onTerminalPickOutside, true);
+  else {
+    terminalPickReuse.value = false;
+    window.removeEventListener("pointerdown", onTerminalPickOutside, true);
+  }
 });
 
 function confirmTerminalPick() {
@@ -4040,7 +4071,7 @@ async function openEditorFile(
         !isEditorTabDirty(existing));
     if (shouldReadDisk) {
       try {
-        const file = await backend.readWorkspaceFile(workspaceId, path);
+        const file = await readOpenableFile(workspaceId, path);
         if (options?.force || !userHoldsUnsavedEdits(existing, file.content)) {
           existing.detectedLanguage = file.language;
           adoptEditorModel(workspaceId, path, file.content);
@@ -4107,9 +4138,7 @@ async function openEditorFile(
   }
   error.value = "";
   try {
-    const file = props.preview
-      ? previewFileContent(path, workspaceId)
-      : await backend.readWorkspaceFile(workspaceId, path);
+    const file = await readOpenableFile(workspaceId, path);
     adoptEditorModel(workspaceId, path, file.content);
     const tab: EditorTab = {
       workspaceId,
@@ -4143,6 +4172,8 @@ async function openEditorFile(
       pendingReveal.value = null;
     }
   } catch (cause) {
+    // 工作区外绝对路径：读盘失败直接抛出，交给 fileReveal 回落成「找不到」。
+    if (!workspaceId) throw cause;
     const hasSnapshot = diffStore
       .listSnapshotFiles([workspaceId])
       .some((file) => file.filePath === path);
@@ -4246,7 +4277,7 @@ async function applyDiskToOpenTab(tab: EditorTab) {
   let content = "";
   let missing = false;
   try {
-    const file = await backend.readWorkspaceFile(tab.workspaceId, tab.path);
+    const file = await readOpenableFile(tab.workspaceId, tab.path);
     content = file.content;
   } catch (cause) {
     if (!(cause instanceof backend.FileMissingError)) return;
@@ -4304,21 +4335,19 @@ async function refreshActiveFile(force = false) {
   if (!activeFile.value) return;
   const tab = findEditorTab(activeFile.value.workspaceId, activeFile.value.path);
   try {
-    let file = props.preview
-      ? previewFileContent(activeFile.value.path, activeFile.value.workspaceId)
-      : await backend.readWorkspaceFile(
-          activeFile.value.workspaceId,
-          activeFile.value.path,
-        )        .catch((cause) => {
-          if (!(cause instanceof backend.FileMissingError)) throw cause;
-          diffStore.markFileMissing(activeFile.value!.workspaceId, activeFile.value!.path);
-          return {
-            ...activeFile.value!,
-            content: "",
-            size: 0,
-            readOnly: true,
-          };
-        });
+    let file = await readOpenableFile(
+      activeFile.value.workspaceId,
+      activeFile.value.path,
+    ).catch((cause) => {
+      if (!(cause instanceof backend.FileMissingError)) throw cause;
+      diffStore.markFileMissing(activeFile.value!.workspaceId, activeFile.value!.path);
+      return {
+        ...activeFile.value!,
+        content: "",
+        size: 0,
+        readOnly: true,
+      };
+    });
     if (!force && tab && userHoldsUnsavedEdits(tab, file.content)) {
       if (tabBuffer(tab) !== file.content) {
         externalChangeMessage.value = AGENT_DISK_CHANGE();
@@ -5386,6 +5415,13 @@ async function openFileAt(
   await openEditorFile(workspaceId, path, { start, end });
 }
 
+/** 工作区内相对路径走 workspace 读盘；空 workspaceId + 绝对路径走外部只读预览。 */
+async function readOpenableFile(workspaceId: string, path: string): Promise<FileContent> {
+  if (props.preview) return previewFileContent(path, workspaceId);
+  if (!workspaceId) return backend.readExternalFile(path);
+  return backend.readWorkspaceFile(workspaceId, path);
+}
+
 async function fileExists(workspaceId: string, path: string) {
   try {
     await backend.readWorkspaceFile(workspaceId, path);
@@ -5428,6 +5464,23 @@ async function locateWorkspaceFiles(raw: string): Promise<LocatedFile[]> {
   return found;
 }
 
+/** 明确绝对路径且不在当前工作区时，仍用只读标签预览；读盘失败则返回 false。 */
+async function tryOpenExternalAbsolute(
+  raw: string,
+  start?: number,
+  end?: number,
+): Promise<boolean> {
+  const path = normalizeFsPath(raw);
+  if (!path || !isAbsoluteFsPath(path) || props.preview) return false;
+  if (matchLongestWorkspaceRoot(path, workspacePathRoots())) return false;
+  try {
+    await openEditorFile("", path, { start, end });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function choosePickedFile(choice: LocatedFile) {
   const pick = filePick.value;
   filePick.value = null;
@@ -5455,11 +5508,27 @@ watch(
     const request = store.fileReveal;
     if (!request) return;
     const nonce = request.nonce;
-    const matches = request.workspaceId
+    const absolute = normalizeFsPath(request.path);
+    // 带了 workspaceId 但仍是绝对路径时，优先按根目录归属，避免把绝对路径当相对路径读。
+    const matches = request.workspaceId && !isAbsoluteFsPath(absolute)
       ? [{ workspaceId: request.workspaceId, path: request.path }]
       : await locateWorkspaceFiles(request.path);
     if (store.fileReveal?.nonce !== nonce) return;
     if (!matches.length || matches.some((match) => !match.path)) {
+      if (await tryOpenExternalAbsolute(request.path, request.startLine, request.endLine)) {
+        return;
+      }
+      const sessionId = store.activeSessionId;
+      if (sessionId && !isAbsoluteFsPath(absolute)) {
+        try {
+          const file = await backend.readSessionScratchFile(sessionId, request.path);
+          if (store.fileReveal?.nonce !== nonce) return;
+          if (await tryOpenExternalAbsolute(file.path, request.startLine, request.endLine)) return;
+        } catch {
+          // 不在这次会话目录里
+        }
+      }
+      if (store.fileReveal?.nonce !== nonce) return;
       const shown = pathWithoutWorktreeDir(request.path);
       store.reportComposerNotice(
         t("workbench.fileNotFound", { path: shown }),
@@ -5551,13 +5620,18 @@ function unbindGlobalKeys() {
 }
 
 onActivated(() => {
+  workbenchLive.value = true;
   // 首次挂载也会触发 onActivated，先移除再注册，保证同一处理器只挂一次。
   unbindGlobalKeys();
   bindGlobalKeys();
   activateUnsavedEditor(unsavedEditorOwner);
   codeIndex.setPaused(projectRunning.value);
 });
-onDeactivated(unbindGlobalKeys);
+onDeactivated(() => {
+  workbenchLive.value = false;
+  workbenchBrowser.value = false;
+  unbindGlobalKeys();
+});
 
 const stopOsHover = onOsDropHover((zone, point) => {
   if (zone?.getAttribute("data-workspace-drop") !== "explorer" || !point) {
@@ -5569,7 +5643,74 @@ const stopOsHover = onOsDropHover((zone, point) => {
 
 let unregisterCloseSurface: (() => void) | null = null;
 
+async function handleSurfaceCtl(payload: SurfaceCtlPayload): Promise<SurfaceCtlResult> {
+  if (payload.method === "list") {
+    const ids = new Set(workspaces.value.map((item) => item.id));
+    return {
+      ok: true,
+      value: {
+        tabs: editorTabs.value.map((tab) => ({ kind: tab.canvas ? "canvas" : "file", title: tab.path, path: tab.path })),
+        browsers: workbenchBrowserUrls.value.map((url) => ({ url })),
+        terminals: terminalSessions.value
+          .filter((item) => ids.has(item.workspaceId))
+          .map((item) => ({ id: item.id, title: item.title, cwd: item.cwd, live: item.live })),
+      },
+    };
+  }
+  if (payload.method === "open-file") {
+    const path = payload.path?.trim();
+    if (!path) return { ok: false, reason: "invalid", message: "缺少路径" };
+    const line = payload.line ?? undefined;
+    if (!isAbsoluteFsPath(path) && store.activeSessionId) {
+      try {
+        const file = await backend.readSessionScratchFile(store.activeSessionId, path);
+        await openEditorFile("", file.path, { pin: true, start: line, end: line });
+        return { ok: true, value: { path: file.path } };
+      } catch {
+        // 再按工作区打开
+      }
+    }
+    const matches = await locateWorkspaceFiles(path);
+    if (matches.length === 1 && matches[0].path) {
+      await openFileAt(matches[0].workspaceId, matches[0].path, line, line);
+      return { ok: true, value: { path: matches[0].path } };
+    }
+    return { ok: false, reason: "not_found", message: path };
+  }
+  if (payload.method === "browser-open") {
+    const url = payload.url?.trim();
+    if (!url) return { ok: false, reason: "invalid", message: "缺少地址" };
+    if (!workbenchBrowserUrls.value.includes(url)) workbenchBrowserUrls.value = [...workbenchBrowserUrls.value, url];
+    workbenchBrowserRequest.value = `${Date.now()}\n${url}`;
+    workbenchBrowser.value = true;
+    return { ok: true, value: { url } };
+  }
+  if (payload.method === "browser-list") {
+    return { ok: true, value: { browsers: workbenchBrowserUrls.value.map((url) => ({ url })) } };
+  }
+  if (payload.method === "browser-back" || payload.method === "browser-forward" || payload.method === "browser-reload") {
+    if (!workbenchBrowser.value) return { ok: false, reason: "not_open", message: "浏览器没有打开" };
+    try {
+      if (payload.method === "browser-back") await backend.inboxBrowserBack();
+      else if (payload.method === "browser-forward") await backend.inboxBrowserForward();
+      else await backend.inboxBrowserReload();
+      return { ok: true, value: { method: payload.method } };
+    } catch (error) {
+      return { ok: false, reason: "failed", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  if (payload.method.startsWith("browser")) return { ok: false, reason: "unsupported" };
+  return { ok: false, reason: "unsupported" };
+}
+
+let unregisterSurface: (() => void) | null = null;
+
 onMounted(() => {
+  unregisterSurface = registerSurfaceCtl({
+    priority: 1,
+    matches: (sessionId) => workbenchLive.value && !props.preview && store.activeSessionId === sessionId,
+    handle: handleSurfaceCtl,
+  });
   unregisterCloseSurface = registerCloseSurface({
     element: () => editorAreaEl.value,
     ignore: (element) => Boolean(element.closest(".bottom-panel")),
@@ -5604,6 +5745,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  unregisterSurface?.();
+  unregisterSurface = null;
   window.clearTimeout(autoSaveFocusTimer);
   window.removeEventListener("blur", onWindowFocusLoss);
   document.removeEventListener("visibilitychange", onWindowFocusLoss);
@@ -6475,7 +6618,25 @@ defineExpose({
             <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
           </EditorTabButton>
         </div>
+        <UiButton
+          variant="ghost"
+          size="icon"
+          class="editor-browser-toggle"
+          :tip="t('inbox.tool.browser')"
+          :aria-pressed="workbenchBrowser"
+          @click="workbenchBrowser = !workbenchBrowser"
+        >
+          <Codicon name="globe" :size="16" />
+        </UiButton>
       </header>
+      <InboxBrowser
+        v-if="workbenchBrowser"
+        class="editor-browser"
+        :links="[]"
+        :session-id="store.activeSessionId || ''"
+        :active="workbenchLive"
+        :open-url="workbenchBrowserRequest"
+      />
       <UiNotice
         v-if="error"
         class="editor-notice"
@@ -6755,9 +6916,6 @@ defineExpose({
         >
           <Codicon :name="workspace.kind === 'git' ? 'repo' : 'folder'" :size="16" />
           <span>{{ workspace.name }}</span>
-          <UiTooltip :content="workspace.workPath || workspace.sourcePath || ''">
-            <small>{{ workspace.workPath || workspace.sourcePath }}</small>
-          </UiTooltip>
         </button>
         <p v-if="!terminalPickChoices.length">{{ t('workbench.noMatchingProjects') }}</p>
       </div>

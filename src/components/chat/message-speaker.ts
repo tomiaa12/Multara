@@ -1,4 +1,5 @@
 import type { Agent, ChatMessage, ChatSession, Squad, Task } from "../../domain/types";
+import { isWorkflowRunSession } from "../../domain/workflow";
 import { t } from "../../i18n";
 
 export type SpeakerRole = "lead" | "member" | "solo";
@@ -197,9 +198,13 @@ export function speakerForMessage(
   options?: { messages?: ChatMessage[]; session?: ChatSession | null },
 ): SpeakerInfo | null {
   if (message.role !== "assistant" && message.role !== "system") return null;
+  // 工作流总览是引擎写入的，消息上没有 agentId，说话人用会话负责人。
+  const workflowOwnerId = isWorkflowRunSession(options?.session?.id) && !message.agentId
+    ? options?.session?.targetId
+    : "";
   const agentId = message.role === "system"
     ? (message.agentId || "")
-    : (message.agentId || fallbackAgentId || "");
+    : (message.agentId || fallbackAgentId || workflowOwnerId || "");
   if (message.role === "system" && !agentId) {
     return {
       agentId: "",

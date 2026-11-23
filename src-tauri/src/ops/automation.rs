@@ -13,7 +13,7 @@ pub fn load(db: &Connection) -> Result<Vec<Automation>, String> {
         .prepare(
             "SELECT a.id, a.name, a.project_id, a.target_type, a.target_id, a.prompt,
                     a.trigger_type, a.interval_minutes, a.event_name, a.enabled,
-                    a.last_run_at, a.created_at
+                    a.last_run_at, a.created_at, COALESCE(a.inputs_template, '')
              FROM automations a
              ORDER BY a.created_at DESC",
         )
@@ -39,6 +39,7 @@ pub fn load(db: &Connection) -> Result<Vec<Automation>, String> {
                 next_run_at: None,
                 webhook_token: None,
                 last_run_status: None,
+                inputs_template: row.get(12)?,
             })
         })
         .map_err(|error| error.to_string())?

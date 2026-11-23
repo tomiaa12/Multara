@@ -7,6 +7,8 @@ export type InboxNoticeInput = {
   projectId: string | null;
   taskId: string | null;
   currentPath: string;
+  /** 任一聊天面（气泡 / 工作台 / 收件箱 / 任务详情）正在展示该会话。 */
+  viewingSession?: boolean;
   /** 收件箱里当前打开的会话；正在看则不再当未读通知。 */
   activeInboxSessionId?: string | null;
   /** 右下角气泡是否打开，且当前会话就是这条。 */
@@ -27,6 +29,8 @@ export function shouldNotifyInbox(input: InboxNoticeInput): boolean {
     || input.status === "needs_permission";
   if (!finished || input.previousStatus !== "running") return false;
   if (input.sessionId.startsWith("automation-run:")) return false;
+  // 任一聊天面正在看：不标未读（覆盖执行模式 /projects、气泡里看需求会话等路径对不上的情况）
+  if (input.viewingSession) return false;
   if (
     input.currentPath === "/inbox"
     && input.activeInboxSessionId
@@ -34,10 +38,10 @@ export function shouldNotifyInbox(input: InboxNoticeInput): boolean {
   ) {
     return false;
   }
+  // 气泡打开且正是这条：即使带了 projectId / taskId 也不标未读
+  if (input.chatOpen && input.activeSessionId === input.sessionId) return false;
   if (input.taskId) return input.currentPath !== `/tasks/${input.taskId}`;
   if (input.projectId) return input.currentPath !== `/projects/${input.projectId}`;
-  // 右下角气泡 / 无需求会话：正在看这条就不标未读
-  if (input.chatOpen && input.activeSessionId === input.sessionId) return false;
   return true;
 }
 

@@ -72,6 +72,19 @@ describe("shouldNotifyInbox", () => {
     }))).toBe(false);
   });
 
+  it("stays quiet when any chat surface is viewing the session", () => {
+    expect(shouldNotifyInbox(notice({
+      currentPath: "/projects",
+      viewingSession: true,
+    }))).toBe(false);
+    expect(shouldNotifyInbox(notice({
+      projectId: "project-1",
+      currentPath: "/agents",
+      chatOpen: true,
+      activeSessionId: "session-1",
+    }))).toBe(false);
+  });
+
   it("ignores runs that are still going and automation sessions", () => {
     expect(shouldNotifyInbox(notice({ previousStatus: "queued" }))).toBe(false);
     expect(shouldNotifyInbox(notice({ status: "running" }))).toBe(false);
