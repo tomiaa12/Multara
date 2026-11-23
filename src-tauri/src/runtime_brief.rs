@@ -13,7 +13,13 @@ pub struct RuntimeBrief<'a> {
     pub genui_enabled: bool,
     /// Canvas 子开关：打开时速查段里多一行「自由布局用 Canvas」
     pub canvas_enabled: bool,
+    /// 这次会话有工作区，集成终端才能挂上去。没有工作区就不把终端命令写进说明。
+    pub terminal_enabled: bool,
+    /// 工作流节点会话不能操作聊天界面。
+    pub workflow_node: bool,
     pub locale: &'a str,
+    /// 这次是不是输入框左下角选中的负责人。`None` 是设置页预览，两种角色都写出来。
+    pub lead: Option<bool>,
 }
 
 /// 花名册描述截断长度（字符），避免小队名单过长。
@@ -176,7 +182,7 @@ fn brief_text(locale: &str) -> BriefText {
             no_workspace: "This run has no linked project and no writable working directory. Do not modify arbitrary directories.",
             task_id_note: "The current task id is in the `MULTARA_TASK_ID` environment variable; always pass `--parent` when spawning subtasks (or rely on automatic attachment).",
             cli_notes: "For other commands, run `multara <cmd> --help`. stdout is JSON; hints go to stderr. Do not use `2>&1` when parsing stdout.\n\
-Use `multara terminal run --command \"...\"` to open the integrated terminal panel and run long-lived commands there (dev servers, watchers) so the user can see output and stop the process. Prefer that over the Shell tool for services the user needs to watch. Short one-shot commands may still use Shell.\n\
+Long-running services (dev servers, watchers) use `multara terminal run --new --title <name> --cwd <repo> --command \"...\"`. That opens its own tab in the current workbench terminal panel so the user can see the output and stop it. If a terminal with that title is already open in that workspace, the command runs there. Short one-shot commands use Shell; their output stays in chat.\n\
 `terminal read` reads the screen of a terminal currently open in the workbench (without an id, it reads the one being viewed). When the user adds a terminal selection to a message, the message body includes a reference with the matching line numbers.",
             workflow_project: "\
 ## Workflow
@@ -185,14 +191,14 @@ This run is bound to a project workspace, and the user is in the workbench.
 - Task mode is still available: when the work needs an owner, status, and result, or should be handed to another agent or split across multiple rounds, create a task and then execute it. Creating a task is not a prerequisite for editing code.
 - If this run has already been assigned a task, execute it directly and record progress on the task.
 - Task status: as soon as you start delivering on the task, run `multara task status <id> in_progress`; when this round's delivery is done and awaits review, use `in_review`; when blocked, use `blocked`; use `done` only when the work is truly finished. Do not change the status when you are only answering questions. If a run finishes successfully while the task is still in progress, it moves to in review; it never becomes done automatically.
-- Delegation: the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump, so it is not the full set of candidates. Whether to do it yourself or delegate is your call; when you consider delegating, first run `multara agent list` / `squad list` (and get) to see which agents and squads exist, then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). Prefer @mention to delegate: start a separate paragraph of your reply with `[@Name](mention://agent/<agentId>)` followed by one or two sentences; that agent handles it right in this conversation and replies to you. Do not paste the current conversation or existing content. Create a subtask only for work that needs separate tracking, parallelism, or long-running effort. Once subtasks wrap up, the system wakes you to summarize.
+- Delegation: the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump, so it is not the full set of candidates. Delegate only when this run's role is the owner; an assignee does not hand the work on; when you consider delegating, first run `multara agent list` / `squad list` (and get) to see which agents and squads exist, then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). Prefer @mention to delegate: start a separate paragraph of your reply with `[@Name](mention://agent/<agentId>)` followed by one or two sentences; that agent handles it right in this conversation and replies to you. Do not paste the current conversation or existing content. Create a subtask only for work that needs separate tracking, parallelism, or long-running effort. Once subtasks wrap up, the system wakes you to summarize.
 - Only modify the workspace directories listed above. Files outside the workspace that are attached to the user's message may be read, but do not modify them.
 - When citing existing code locations in your answer, write the code fence info as startLine:endLine:relative/path (e.g. 118:122:src/foo.ts) so the UI can jump to it; do not paste code without a path.",
             workflow_plain: "\
 ## Workflow
 This run has no linked project. When creating or modifying files, only write to the working directory listed above; do not modify paths outside it. To change an existing repository, pick a project when creating the task, or ask the user to open a project.
 If this run has already been assigned a task, execute it directly. When you start delivering, run `multara task status <id> in_progress`; when delivery is done and awaits review, use `in_review`; use `done` only when the work is truly finished. If a run finishes successfully while the task is still in progress, it moves to in review; it never becomes done automatically.
-- Delegation: the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump, so it is not the full set of candidates. Whether to do it yourself or delegate is your call; when you consider delegating, first run `multara agent list` / `squad list` (and get) to see which agents and squads exist, then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). Prefer @mention to delegate: start a separate paragraph of your reply with `[@Name](mention://agent/<agentId>)` followed by one or two sentences; that agent handles it right in this conversation and replies to you. Do not paste the current conversation or existing content. Create a subtask only for work that needs separate tracking, parallelism, or long-running effort. Once subtasks wrap up, the system wakes you to summarize.
+- Delegation: the roster below is either this squad's members (squad chat) or a short CLI lookup hint — never a full workspace dump, so it is not the full set of candidates. Delegate only when this run's role is the owner; an assignee does not hand the work on; when you consider delegating, first run `multara agent list` / `squad list` (and get) to see which agents and squads exist, then `multara task create ... --assignee <agentId> --status todo` (add `--parent \"$MULTARA_TASK_ID\"` when you already have a task). Prefer @mention to delegate: start a separate paragraph of your reply with `[@Name](mention://agent/<agentId>)` followed by one or two sentences; that agent handles it right in this conversation and replies to you. Do not paste the current conversation or existing content. Create a subtask only for work that needs separate tracking, parallelism, or long-running effort. Once subtasks wrap up, the system wakes you to summarize.
 - When citing existing code locations in your answer, write the code fence info as startLine:endLine:relative/path (e.g. 118:122:src/foo.ts) so the UI can jump to it; do not paste code without a path.",
             asking: "\
 ## Asking the user
@@ -215,7 +221,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "這次執行沒有關聯專案，也沒有可寫的工作目錄。不要改隨機目錄。",
             task_id_note: "目前任務 id 在環境變數 `MULTARA_TASK_ID`；派生子任務務必帶 `--parent`（或依賴自動掛接）。",
             cli_notes: "其餘指令用 `multara <cmd> --help`。stdout 是 JSON；提示在 stderr。解析 stdout 時不要 `2>&1`。\n\
-長駐命令（開發伺服器、watch）用 `multara terminal run --command \"...\"` 在整合終端機面板執行，讓使用者能看到輸出並停止；不要只用 Shell 工具。短命令仍可用 Shell。\n\
+長駐服務（開發伺服器、watch）用 `multara terminal run --new --title <名字> --cwd <倉庫> --command \"...\"`。會在目前工作台底欄單獨開一個終端，讓使用者看到輸出並停止。這個工作區裡已有同名終端就在那裡執行。短命令用 Shell，輸出留在聊天裡。\n\
 `terminal read` 讀取工作台裡目前開啟的終端機畫面（不傳 id 則讀正在看的那個）。使用者把終端機選取範圍加進訊息時，正文裡會有對應行號的引用。",
             workflow_project: "\
 ## Workflow
@@ -224,14 +230,14 @@ When you do need to ask, do not write the options as a numbered list in the body
 - 任務模式仍然可用：工作要留下負責人、狀態和結果，或要交給別的智慧體、拆成多輪時，建成任務再執行。建任務不是修改程式碼的前置條件。
 - 本次執行已經被指派了一個任務時，直接執行，把進度寫在任務上。
 - 任務狀態：開始做本任務交付時立刻 `multara task status <id> in_progress`；本輪交付完等人審用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改狀態。執行成功結束若仍是進行中會落到審核中；不會自動變成 done。
-- 派工：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區，它不代表全部人選。自己做還是派給別人由你判斷；考慮派工時先用 `multara agent list` / `squad list`（及 get）看有哪些智慧體與小隊，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。派工首選 @：回答裡另起一段，以 `[@名稱](mention://agent/<agentId>)` 開頭，後面接一兩句要求，對方會在這段對話裡直接處理並回覆你；不要把目前對話或既有內容貼給對方。需要獨立追蹤、並行或長期推進的工作，才建子任務。子任務都收尾後系統會再喚起你彙總。
+- 派工：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區，它不代表全部人選。只有「這次的角色」是負責人時才派；被指派就不要再轉派；考慮派工時先用 `multara agent list` / `squad list`（及 get）看有哪些智慧體與小隊，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。派工首選 @：回答裡另起一段，以 `[@名稱](mention://agent/<agentId>)` 開頭，後面接一兩句要求，對方會在這段對話裡直接處理並回覆你；不要把目前對話或既有內容貼給對方。需要獨立追蹤、並行或長期推進的工作，才建子任務。子任務都收尾後系統會再喚起你彙總。
 - 只修改上面列出的工作區目錄。使用者訊息裡附帶的工作區外檔案可以閱讀，不要修改那些檔案。
 - 回答裡引用現有程式碼位置時，程式碼圍欄 info 寫成 startLine:endLine:相對路徑（例如 118:122:src/foo.ts），方便介面點擊跳轉；不要只貼程式碼不寫路徑。",
             workflow_plain: "\
 ## Workflow
 這次執行沒有關聯專案。產生或修改檔案時，只寫上面列出的工作目錄，不要修改目錄以外的路徑。要修改已有儲存庫，建立任務時選擇專案，或讓使用者開啟一個需求。
 本次執行已經被指派了一個任務時，直接執行該任務。開始做交付時 `multara task status <id> in_progress`；交付完等人審用 `in_review`；真正完成再用 `done`。執行成功結束若仍是進行中會落到審核中；不會自動變成 done。
-- 派工：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區，它不代表全部人選。自己做還是派給別人由你判斷；考慮派工時先用 `multara agent list` / `squad list`（及 get）看有哪些智慧體與小隊，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。派工首選 @：回答裡另起一段，以 `[@名稱](mention://agent/<agentId>)` 開頭，後面接一兩句要求，對方會在這段對話裡直接處理並回覆你；不要把目前對話或既有內容貼給對方。需要獨立追蹤、並行或長期推進的工作，才建子任務。子任務都收尾後系統會再喚起你彙總。
+- 派工：下方花名冊是小隊隊員（小隊會話）或簡短 CLI 查找指引——從不整表傾倒工作區，它不代表全部人選。只有「這次的角色」是負責人時才派；被指派就不要再轉派；考慮派工時先用 `multara agent list` / `squad list`（及 get）看有哪些智慧體與小隊，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任務時可加 `--parent \"$MULTARA_TASK_ID\"`）。派工首選 @：回答裡另起一段，以 `[@名稱](mention://agent/<agentId>)` 開頭，後面接一兩句要求，對方會在這段對話裡直接處理並回覆你；不要把目前對話或既有內容貼給對方。需要獨立追蹤、並行或長期推進的工作，才建子任務。子任務都收尾後系統會再喚起你彙總。
 - 回答裡引用現有程式碼位置時，程式碼圍欄 info 寫成 startLine:endLine:相對路徑（例如 118:122:src/foo.ts），方便介面點擊跳轉；不要只貼程式碼不寫路徑。",
             asking: "\
 ## 向使用者提問
@@ -254,7 +260,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "この実行には関連プロジェクトも書き込み可能な作業ディレクトリもありません。任意のディレクトリを変更しないでください。",
             task_id_note: "現在のタスク id は環境変数 `MULTARA_TASK_ID` にあります。サブタスクを作るときは必ず `--parent` を付けてください（または自動ひも付けに任せます）。",
             cli_notes: "その他のコマンドは `multara <cmd> --help` で確認してください。stdout は JSON、ヒントは stderr に出ます。stdout を解析するときは `2>&1` を付けないでください。\n\
-開発サーバーや watch など長時間動かす命令は `multara terminal run --command \"...\"` で統合ターミナルに出し、ユーザーが出力を見たり止めたりできるようにしてください。短いワンショットは Shell でも構いません。\n\
+開発サーバーや watch など長く動かすサービスは `multara terminal run --new --title <名前> --cwd <リポジトリ> --command \"...\"` を使います。現在のワークベンチのターミナル欄に専用タブが開き、ユーザーが出力を見て止められます。同じワークスペースに同名のターミナルがあればそこで実行します。短いワンショットは Shell を使い、出力はチャットに残します。\n\
 `terminal read` は作業台で現在開いているターミナルの画面を読み取ります（id を省略すると表示中のものを読みます）。ユーザーがターミナルの選択範囲をメッセージに追加すると、本文に対応する行番号付きの参照が入ります。",
             workflow_project: "\
 ## Workflow
@@ -263,14 +269,14 @@ When you do need to ask, do not write the options as a numbered list in the body
 - タスクモードも引き続き使えます。担当者・ステータス・結果を残す必要がある作業や、別のエージェントに渡す・複数ラウンドに分ける作業は、タスクを作ってから実行してください。タスク作成はコード変更の前提条件ではありません。
 - この実行にすでにタスクが割り当てられている場合は、そのまま実行し、進捗をタスクに記録してください。
 - タスクのステータス：このタスクの成果物に取りかかったらすぐ `multara task status <id> in_progress`。今回の成果物を出してレビュー待ちにするときは `in_review`、行き詰まったら `blocked`、本当に完了したときだけ `done` を使います。質問に答えるだけならステータスは変えないでください。実行が正常終了した時点でまだ進行中なら、レビュー中に移ります。自動で done にはなりません。
-- 作業の振り分け：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。これが候補のすべてではありません。自分でやるか任せるかはあなたが判断します。任せることを考えるときは、まず `multara agent list` / `squad list`（と get）でどのエージェントとスクワッドがいるかを確認し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。割り当ては @ を優先：返答の中で段落を改め、`[@名前](mention://agent/<agentId>)` で始めて一、二文の依頼を書くと、相手がこの会話内で処理して返信します。現在の会話や既存の内容は貼らないでください。個別に追跡・並行・長期で進めたい作業だけサブタスクにします。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
+- 作業の振り分け：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。これが候補のすべてではありません。今回の役割が担当者のときだけ割り当てます。割り当てられた人はさらに渡さないでください。任せることを考えるときは、まず `multara agent list` / `squad list`（と get）でどのエージェントとスクワッドがいるかを確認し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。割り当ては @ を優先：返答の中で段落を改め、`[@名前](mention://agent/<agentId>)` で始めて一、二文の依頼を書くと、相手がこの会話内で処理して返信します。現在の会話や既存の内容は貼らないでください。個別に追跡・並行・長期で進めたい作業だけサブタスクにします。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
 - 変更してよいのは上に挙げたワークスペースのディレクトリだけです。ユーザーのメッセージに添付されたワークスペース外のファイルは読んでもかまいませんが、変更しないでください。
 - 回答で既存コードの位置を引用するときは、コードフェンスの info を startLine:endLine:相対パス（例: 118:122:src/foo.ts）と書き、UI からクリックでジャンプできるようにしてください。パスなしでコードだけを貼らないでください。",
             workflow_plain: "\
 ## Workflow
 この実行には関連プロジェクトがありません。ファイルを生成・変更するときは、上に挙げた作業ディレクトリにだけ書き込み、その外のパスは変更しないでください。既存のリポジトリを変更したい場合は、タスク作成時にプロジェクトを選ぶか、ユーザーにプロジェクトを開いてもらってください。
 この実行にすでにタスクが割り当てられている場合は、そのタスクをそのまま実行してください。成果物に取りかかったら `multara task status <id> in_progress`、成果物を出してレビュー待ちにするときは `in_review`、本当に完了したときだけ `done` を使います。実行が正常終了した時点でまだ進行中なら、レビュー中に移ります。自動で done にはなりません。
-- 作業の振り分け：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。これが候補のすべてではありません。自分でやるか任せるかはあなたが判断します。任せることを考えるときは、まず `multara agent list` / `squad list`（と get）でどのエージェントとスクワッドがいるかを確認し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。割り当ては @ を優先：返答の中で段落を改め、`[@名前](mention://agent/<agentId>)` で始めて一、二文の依頼を書くと、相手がこの会話内で処理して返信します。現在の会話や既存の内容は貼らないでください。個別に追跡・並行・長期で進めたい作業だけサブタスクにします。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
+- 作業の振り分け：下の名簿はスクワッド会話時のメンバー名簿、または短い CLI 案内だけで、ワークスペース全員は載せません。これが候補のすべてではありません。今回の役割が担当者のときだけ割り当てます。割り当てられた人はさらに渡さないでください。任せることを考えるときは、まず `multara agent list` / `squad list`（と get）でどのエージェントとスクワッドがいるかを確認し、`multara task create ... --assignee <agentId> --status todo` で割り当ててください（既存タスクがあるときは `--parent \"$MULTARA_TASK_ID\"`）。割り当ては @ を優先：返答の中で段落を改め、`[@名前](mention://agent/<agentId>)` で始めて一、二文の依頼を書くと、相手がこの会話内で処理して返信します。現在の会話や既存の内容は貼らないでください。個別に追跡・並行・長期で進めたい作業だけサブタスクにします。サブタスクがすべて片付くと、システムがあなたを再度起動して取りまとめを依頼します。
 - 回答で既存コードの位置を引用するときは、コードフェンスの info を startLine:endLine:相対パス（例: 118:122:src/foo.ts）と書き、UI からクリックでジャンプできるようにしてください。パスなしでコードだけを貼らないでください。",
             asking: "\
 ## ユーザーへの質問
@@ -293,7 +299,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "이번 실행에는 연결된 프로젝트도, 쓸 수 있는 작업 디렉터리도 없습니다. 임의의 디렉터리를 수정하지 마세요.",
             task_id_note: "현재 작업 id는 환경 변수 `MULTARA_TASK_ID`에 있습니다. 하위 작업을 만들 때는 반드시 `--parent`를 붙이세요(또는 자동 연결에 맡기세요).",
             cli_notes: "다른 명령은 `multara <cmd> --help`로 확인하세요. stdout은 JSON이고 안내 메시지는 stderr로 나옵니다. stdout을 파싱할 때 `2>&1`을 쓰지 마세요.\n\
-개발 서버·watch처럼 오래 도는 명령은 `multara terminal run --command \"...\"`로 통합 터미널에서 실행해 사용자가 출력을 보고 멈출 수 있게 하세요. 짧은 일회성 명령은 Shell을 써도 됩니다.\n\
+개발 서버·watch처럼 오래 도는 서비스는 `multara terminal run --new --title <이름> --cwd <저장소> --command \"...\"`를 사용합니다. 현재 작업대 터미널 표시줄에 전용 탭이 열려 사용자가 출력을 보고 멈출 수 있습니다. 그 작업 영역에 같은 이름의 터미널이 있으면 거기서 실행합니다. 짧은 일회성 명령은 Shell을 쓰고 출력은 채팅에 남깁니다.\n\
 `terminal read`는 작업대에 현재 열려 있는 터미널 화면을 읽습니다(id를 생략하면 보고 있는 터미널을 읽습니다). 사용자가 터미널 선택 영역을 메시지에 추가하면 본문에 해당 줄 번호가 담긴 참조가 들어갑니다.",
             workflow_project: "\
 ## Workflow
@@ -302,14 +308,14 @@ When you do need to ask, do not write the options as a numbered list in the body
 - 작업 모드도 계속 쓸 수 있습니다. 담당자·상태·결과를 남겨야 하거나, 다른 에이전트에게 넘기거나 여러 라운드로 나눠야 하는 일은 작업을 만든 뒤 실행하세요. 작업 생성은 코드 수정의 전제 조건이 아닙니다.
 - 이번 실행에 이미 작업이 배정되어 있다면 바로 실행하고 진행 상황을 작업에 기록하세요.
 - 작업 상태: 이 작업의 결과물에 착수하면 즉시 `multara task status <id> in_progress`; 이번 라운드 결과물을 마치고 검토를 기다릴 때는 `in_review`; 막히면 `blocked`; 정말 끝났을 때만 `done`을 쓰세요. 질문에 답하기만 할 때는 상태를 바꾸지 마세요. 실행이 정상 종료됐는데 아직 진행 중이면 검토 중으로 넘어가며, 자동으로 done이 되지는 않습니다.
-- 작업 분배: 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 이것이 후보의 전부가 아닙니다. 직접 할지 넘길지는 당신이 판단합니다. 넘기는 것을 고려할 때는 먼저 `multara agent list` / `squad list`(및 get)로 어떤 에이전트와 스쿼드가 있는지 확인한 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 배정은 @를 우선하세요: 답변에서 문단을 바꿔 `[@이름](mention://agent/<agentId>)`로 시작하고 한두 문장을 쓰면, 상대가 이 대화 안에서 처리하고 답장합니다. 현재 대화나 기존 내용을 붙여넣지 마세요. 따로 추적·병렬·장기 작업만 하위 작업으로 만드세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
+- 작업 분배: 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 이것이 후보의 전부가 아닙니다. 이번 역할이 담당자일 때만 넘기세요. 배정받은 사람은 다시 넘기지 마세요. 넘기는 것을 고려할 때는 먼저 `multara agent list` / `squad list`(및 get)로 어떤 에이전트와 스쿼드가 있는지 확인한 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 배정은 @를 우선하세요: 답변에서 문단을 바꿔 `[@이름](mention://agent/<agentId>)`로 시작하고 한두 문장을 쓰면, 상대가 이 대화 안에서 처리하고 답장합니다. 현재 대화나 기존 내용을 붙여넣지 마세요. 따로 추적·병렬·장기 작업만 하위 작업으로 만드세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
 - 위에 나열된 작업 영역 디렉터리만 수정하세요. 사용자 메시지에 첨부된 작업 영역 밖의 파일은 읽어도 되지만 수정하지 마세요.
 - 답변에서 기존 코드 위치를 인용할 때는 코드 펜스 info를 startLine:endLine:상대경로(예: 118:122:src/foo.ts) 형식으로 적어 UI에서 클릭해 이동할 수 있게 하세요. 경로 없이 코드만 붙이지 마세요.",
             workflow_plain: "\
 ## Workflow
 이번 실행에는 연결된 프로젝트가 없습니다. 파일을 생성하거나 수정할 때는 위에 나열된 작업 디렉터리에만 쓰고, 그 밖의 경로는 수정하지 마세요. 기존 저장소를 수정하려면 작업을 만들 때 프로젝트를 선택하거나, 사용자에게 요구사항을 열어 달라고 하세요.
 이번 실행에 이미 작업이 배정되어 있다면 그 작업을 바로 실행하세요. 결과물에 착수하면 `multara task status <id> in_progress`; 결과물을 마치고 검토를 기다릴 때는 `in_review`; 정말 끝났을 때만 `done`을 쓰세요. 실행이 정상 종료됐는데 아직 진행 중이면 검토 중으로 넘어가며, 자동으로 done이 되지는 않습니다.
-- 작업 분배: 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 이것이 후보의 전부가 아닙니다. 직접 할지 넘길지는 당신이 판단합니다. 넘기는 것을 고려할 때는 먼저 `multara agent list` / `squad list`(및 get)로 어떤 에이전트와 스쿼드가 있는지 확인한 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 배정은 @를 우선하세요: 답변에서 문단을 바꿔 `[@이름](mention://agent/<agentId>)`로 시작하고 한두 문장을 쓰면, 상대가 이 대화 안에서 처리하고 답장합니다. 현재 대화나 기존 내용을 붙여넣지 마세요. 따로 추적·병렬·장기 작업만 하위 작업으로 만드세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
+- 작업 분배: 아래 명단은 스쿼드 대화 시 멤버 명단이거나 짧은 CLI 안내이며, 워크스페이스 전체를 넣지 않습니다. 이것이 후보의 전부가 아닙니다. 이번 역할이 담당자일 때만 넘기세요. 배정받은 사람은 다시 넘기지 마세요. 넘기는 것을 고려할 때는 먼저 `multara agent list` / `squad list`(및 get)로 어떤 에이전트와 스쿼드가 있는지 확인한 뒤 `multara task create ... --assignee <agentId> --status todo`로 배정하세요(이미 작업이 있으면 `--parent \"$MULTARA_TASK_ID\"`). 배정은 @를 우선하세요: 답변에서 문단을 바꿔 `[@이름](mention://agent/<agentId>)`로 시작하고 한두 문장을 쓰면, 상대가 이 대화 안에서 처리하고 답장합니다. 현재 대화나 기존 내용을 붙여넣지 마세요. 따로 추적·병렬·장기 작업만 하위 작업으로 만드세요. 하위 작업이 모두 마무리되면 시스템이 다시 당신을 깨워 결과를 종합하게 합니다.
 - 답변에서 기존 코드 위치를 인용할 때는 코드 펜스 info를 startLine:endLine:상대경로(예: 118:122:src/foo.ts) 형식으로 적어 UI에서 클릭해 이동할 수 있게 하세요. 경로 없이 코드만 붙이지 마세요.",
             asking: "\
 ## 사용자에게 질문하기
@@ -332,7 +338,7 @@ When you do need to ask, do not write the options as a numbered list in the body
             no_workspace: "这次运行没有关联项目，也没有可写的工作目录。不要改随机目录。",
             task_id_note: "当前任务 id 在环境变量 `MULTARA_TASK_ID`；派生子任务务必带 `--parent`（或依赖自动挂接）。",
             cli_notes: "其余命令用 `multara <cmd> --help`。stdout 是 JSON；提示在 stderr。解析 stdout 时不要 `2>&1`。\n\
-长驻命令（开发服务器、watch）用 `multara terminal run --command \"...\"` 在集成终端面板执行，让用户能看到输出并停止；不要只用 Shell 工具。短命令仍可用 Shell。\n\
+长驻服务（开发服务器、watch）用 `multara terminal run --new --title <名字> --cwd <仓库> --command \"...\"`。会在当前工作台底栏单独开一个终端，让用户看到输出并停止。这个工作区里已有同名终端就在那里执行。短命令用 Shell，输出留在聊天里。\n\
 `terminal read` 读取工作台里当前打开的终端画面（不传 id 则读正在看的那个）。用户把终端选区加进消息时，正文里会有对应行号的引用。",
             workflow_project: "\
 ## Workflow
@@ -341,14 +347,14 @@ When you do need to ask, do not write the options as a numbered list in the body
 - 任务模式仍然可用：工作要留下负责人、状态和结果，或要交给别的智能体、拆成多轮时，建成任务再执行。建任务不是改代码的前置条件。
 - 本次运行已经被指派了一个任务时，直接执行，把进度写在任务上。
 - 任务状态：开始做本任务交付时立刻 `multara task status <id> in_progress`；本轮交付完等人审用 `in_review`；卡住用 `blocked`；真正完成再用 `done`。只答疑不要改状态。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
-- 派活：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区，它不代表全部人选。自己做还是派给别人由你判断；考虑派活时先用 `multara agent list` / `squad list`（及 get）看有哪些智能体和小队，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。派活首选 @：回答里另起一段，以 `[@名称](mention://agent/<agentId>)` 开头，后面接一两句要求，对方会在这段对话里直接处理并回复你；不要把当前对话或已有内容贴给对方。需要独立跟踪、并行或长期推进的工作，才建子任务。子任务都收口后系统会再唤起你汇总。
+- 派活：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区，它不代表全部人选。只有「这次的角色」是负责人时才派；被指派就不要再转派；考虑派活时先用 `multara agent list` / `squad list`（及 get）看有哪些智能体和小队，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。派活首选 @：回答里另起一段，以 `[@名称](mention://agent/<agentId>)` 开头，后面接一两句要求，对方会在这段对话里直接处理并回复你；不要把当前对话或已有内容贴给对方。需要独立跟踪、并行或长期推进的工作，才建子任务。子任务都收口后系统会再唤起你汇总。
 - 只改上面列出的工作区目录。用户消息里附带的工作区外文件可以阅读，不要改那些文件。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。",
             workflow_plain: "\
 ## Workflow
 这次运行没有关联项目。生成或修改文件时，只写上面列出的工作目录，不要改目录以外的路径。要改已有仓库，创建任务时选择项目，或让用户打开一个需求。
 本次运行已经被指派了一个任务时，直接执行该任务。开始做交付时 `multara task status <id> in_progress`；交付完等人审用 `in_review`；真正完成再用 `done`。运行成功结束若仍是进行中会落到审核中；不会自动变成 done。
-- 派活：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区，它不代表全部人选。自己做还是派给别人由你判断；考虑派活时先用 `multara agent list` / `squad list`（及 get）看有哪些智能体和小队，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。派活首选 @：回答里另起一段，以 `[@名称](mention://agent/<agentId>)` 开头，后面接一两句要求，对方会在这段对话里直接处理并回复你；不要把当前对话或已有内容贴给对方。需要独立跟踪、并行或长期推进的工作，才建子任务。子任务都收口后系统会再唤起你汇总。
+- 派活：下方花名册是小队队员（小队会话）或简短 CLI 查找指引——从不整表倾倒工作区，它不代表全部人选。只有「这次的角色」是负责人时才派；被指派就不要再转派；考虑派活时先用 `multara agent list` / `squad list`（及 get）看有哪些智能体和小队，再用 `multara task create ... --assignee <agentId> --status todo` 指派（已有任务时可加 `--parent \"$MULTARA_TASK_ID\"`）。派活首选 @：回答里另起一段，以 `[@名称](mention://agent/<agentId>)` 开头，后面接一两句要求，对方会在这段对话里直接处理并回复你；不要把当前对话或已有内容贴给对方。需要独立跟踪、并行或长期推进的工作，才建子任务。子任务都收口后系统会再唤起你汇总。
 - 回答里引用现有代码位置时，代码围栏 info 写成 startLine:endLine:相对路径（例如 118:122:src/foo.ts），方便界面点击跳转；不要只贴代码不写路径。",
             // 无头 CLI 运行中拿不到用户输入（AskUserQuestion 已禁用），提问统一写成代码块，界面渲染成输入框上方的选项卡片。
             asking: "\
@@ -442,6 +448,127 @@ fn canvas_line(locale: &str) -> &'static str {
     }
 }
 
+/// 这次运行是不是输入框左下角那位负责人。
+pub fn is_lead(parent_run: bool, workflow_session: bool, task_session: bool, session_agent: bool) -> bool {
+    !parent_run && !workflow_session && !task_session && session_agent
+}
+
+pub fn mention_hint(locale: &str, mentioned: &[(String, String)]) -> String {
+    if mentioned.is_empty() {
+        return String::new();
+    }
+    let lines = mentioned
+        .iter()
+        .map(|(kind, id)| format!("- {kind}:{id}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let head = match locale {
+        "en" => "You are the owner of this chat. The people below were named with @. They are candidates, not already assigned. Assign to them when the work fits, including more than one; otherwise do it yourself. Do not claim it is assigned unless you create the task or write the @.",
+        "zh-TW" => "你是這次聊天的負責人。下面是使用者 @ 的人，只是人選，還沒有派出去。能派就派給這些人，可以多個；派不出去再自己做。不要只在正文裡聲稱已分配。",
+        "ja" => "あなたがこのチャットの担当者です。下はユーザーが @ した人で、候補であり、まだ割り当てられていません。任せられるなら任せてください。複数でも構いません。任せられないときは自分でやってください。タスクを作るか @ を書かずに、割り当てたと主張しないでください。",
+        "ko" => "당신이 이 대화의 담당자입니다. 아래는 사용자가 @한 사람이며, 후보이지 이미 배정된 것이 아닙니다. 넘길 수 있으면 넘기세요. 여러 명도 됩니다. 넘길 수 없으면 직접 하세요. 작업을 만들거나 @를 쓰지 않고서는 배정했다고 말하지 마세요.",
+        _ => "你是这次聊天的负责人。下面是用户 @ 的人，只是人选，还没有派出去。能派就派给这些人，可以多个；派不出去再自己做。不要只在正文里声称已分配。",
+    };
+    format!("{head}\n{lines}")
+}
+
+fn role_section(locale: &str, lead: Option<bool>) -> String {
+    let (owner, assignee) = match locale {
+        "en" => (
+            "You are the owner: the person selected at the bottom left of the composer. The user's message comes to you first. An @ only names a candidate, and there can be several. Assign first: run `multara agent list` / `squad list` and hand the work to whoever fits better, even when you have the same skill. Do it yourself only when the roster has nobody who can. Follow the `multara-lead` skill.",
+            "You were assigned this work. Finish it. Do not hand it on unless the assignment explicitly tells you to split it further. Follow the `multara-lead` skill.",
+        ),
+        "zh-TW" => (
+            "你是負責人：輸入框左下角選中的就是你。使用者的訊息先到你這裡。@ 只是點名的人選，可以有多個。優先指派：先用 `multara agent list` / `squad list` 看名單，有更合適的人就派給他，自己有同樣的技能也不要自己做。只有名單裡沒有能做的人，才自己做。步驟見 skill `multara-lead`。",
+            "你是被指派的人。把交給你的事做完。不要再轉派，除非指派內容明確讓你再分下去。步驟見 skill `multara-lead`。",
+        ),
+        "ja" => (
+            "あなたは担当者です。入力欄の左下で選ばれているのがあなたです。ユーザーのメッセージはまずあなたに届きます。@ は候補の名指しで、複数いても構いません。割り当てを優先します。まず `multara agent list` / `squad list` で名簿を見て、より適した人がいればその人に任せてください。同じスキルを持っていても自分でやらないでください。名簿にできる人がいないときだけ自分でやります。手順は skill `multara-lead` に従ってください。",
+            "あなたは割り当てられた人です。渡された仕事を終えてください。渡された内容がさらに分けるよう明示していない限り、別の人に渡さないでください。手順は skill `multara-lead` に従ってください。",
+        ),
+        "ko" => (
+            "당신이 담당자입니다. 입력창 왼쪽 아래에서 선택된 사람이 당신입니다. 사용자의 메시지는 먼저 당신에게 옵니다. @는 지목한 후보이며 여러 명일 수 있습니다. 배정을 우선합니다. 먼저 `multara agent list` / `squad list`로 명단을 보고, 더 적합한 사람이 있으면 그 사람에게 넘기세요. 같은 스킬이 있어도 직접 하지 마세요. 명단에 할 수 있는 사람이 없을 때만 직접 하세요. 절차는 skill `multara-lead`를 따르세요.",
+            "당신은 배정받은 사람입니다. 받은 일을 끝내세요. 받은 내용이 다시 나누라고 분명히 말하지 않았다면 다른 사람에게 넘기지 마세요. 절차는 skill `multara-lead`를 따르세요.",
+        ),
+        _ => (
+            "你是负责人：输入框左下角选中的就是你。用户的消息先到你这里。@ 只是点名的人选，可以有多个。优先指派：先用 `multara agent list` / `squad list` 看名单，有更合适的人就派给他，自己有同样的技能也不要自己做。只有名单里没有能做的人，才自己做。步骤见 skill `multara-lead`。",
+            "你是被指派的人。把交给你的事做完。不要再转派，除非指派内容明确让你再分下去。步骤见 skill `multara-lead`。",
+        ),
+    };
+    let heading = match locale {
+        "en" => "## This run's role",
+        "zh-TW" => "## 這次的角色",
+        "ja" => "## 今回の役割",
+        "ko" => "## 이번 역할",
+        _ => "## 这次的角色",
+    };
+    match lead {
+        Some(true) => format!("{heading}\n{owner}"),
+        Some(false) => format!("{heading}\n{assignee}"),
+        None => format!("{heading}\n{owner}\n\n{assignee}"),
+    }
+}
+
+fn ui_commands(locale: &str, _workflow_node: bool, terminal: bool) -> String {
+    let surface = match locale {
+        "en" => "\
+multara surface list
+multara surface open-file --path <path>
+multara surface browser open --url <url>
+multara surface browser list
+multara surface browser back|forward|reload
+This chat's UI: `surface list` shows open tabs and browsers. `surface open-file` previews a file (the inbox opens it in the side panel; a requirement workbench opens an editor tab). `surface browser` opens and drives the inbox browser.",
+        "zh-TW" => "\
+multara surface list
+multara surface open-file --path <路徑>
+multara surface browser open --url <url>
+multara surface browser list
+multara surface browser back|forward|reload
+這次聊天的介面：`surface list` 看已打開的標籤和瀏覽器。`surface open-file` 預覽檔案（收件箱在右側打開，需求工作台打開編輯器標籤）。`surface browser` 打開並操作收件箱裡的瀏覽器。",
+        "ja" => "\
+multara surface list
+multara surface open-file --path <path>
+multara surface browser open --url <url>
+multara surface browser list
+multara surface browser back|forward|reload
+このチャットの画面：`surface list` で開いているタブとブラウザを見ます。`surface open-file` でファイルをプレビューします（受信箱は右のパネル、要件ワークベンチはエディタタブ）。`surface browser` で受信箱のブラウザを開いて操作します。",
+        "ko" => "\
+multara surface list
+multara surface open-file --path <path>
+multara surface browser open --url <url>
+multara surface browser list
+multara surface browser back|forward|reload
+이 채팅의 화면: `surface list`로 열린 탭과 브라우저를 봅니다. `surface open-file`로 파일을 미리 봅니다(받은편지함은 오른쪽 패널, 요구사항 작업대는 편집기 탭). `surface browser`로 받은편지함 브라우저를 열고 조작합니다.",
+        _ => "\
+multara surface list
+multara surface open-file --path <路径>
+multara surface browser open --url <url>
+multara surface browser list
+multara surface browser back|forward|reload
+这次聊天的界面：`surface list` 看已打开的标签和浏览器。`surface open-file` 预览文件（收件箱在右侧打开，需求工作台打开编辑器标签）。`surface browser` 打开并操作收件箱里的浏览器。",
+    };
+    if !terminal {
+        return surface.to_string();
+    }
+    let terminals = match locale {
+        "en" => "\
+multara terminal list
+multara terminal read [id] [--start N] [--end N]
+multara terminal open [--cwd <path>] [--workspace <id>] [--new]
+multara terminal run --command \"...\" [--cwd <path>] [--workspace <id>] [--new]
+multara terminal write <id> --text \"...\"
+multara terminal focus [id]",
+        _ => "\
+multara terminal list
+multara terminal read [id] [--start N] [--end N]
+multara terminal open [--cwd <path>] [--workspace <id>] [--new]
+multara terminal run --command \"...\" [--cwd <path>] [--workspace <id>] [--new]
+multara terminal write <id> --text \"...\"
+multara terminal focus [id]",
+    };
+    format!("{terminals}\n{surface}")
+}
+
 pub fn build(brief: RuntimeBrief<'_>) -> String {
     let text = brief_text(brief.locale);
     let skills = if brief.skill_names.is_empty() {
@@ -459,6 +586,7 @@ pub fn build(brief: RuntimeBrief<'_>) -> String {
     } else {
         brief.workspace
     };
+    let role = role_section(brief.locale, brief.lead);
     let workflow = if brief.has_project_workspace {
         text.workflow_project
     } else {
@@ -512,13 +640,10 @@ multara squad get <id>
 multara project list
 multara project get <id>
 multara runtime list
-multara terminal list
-multara terminal read [id] [--start N] [--end N]
-multara terminal open [--cwd <path>] [--workspace <id>] [--new]
-multara terminal run --command \"...\" [--cwd <path>] [--workspace <id>] [--new]
-multara terminal write <id> --text \"...\"
-multara terminal focus [id]
+{ui_commands}
 {cli_notes}
+
+{role}
 
 {workflow}
 
@@ -546,7 +671,13 @@ multara terminal focus [id]
         skills = skills,
         skill_note = skill_note(brief.locale, brief.skill_root),
         task_id_note = text.task_id_note,
-        cli_notes = text.cli_notes,
+        ui_commands = ui_commands(brief.locale, brief.workflow_node, brief.terminal_enabled),
+        cli_notes = if brief.terminal_enabled {
+            text.cli_notes.to_string()
+        } else {
+            text.cli_notes.lines().next().unwrap_or("").to_string()
+        },
+        role = role,
         workflow = workflow,
         reply_style = reply_style(brief.locale),
         user_skills = user_skills_section,
@@ -556,6 +687,57 @@ multara terminal focus [id]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_follows_the_selected_owner() {
+        assert!(is_lead(false, false, false, true));
+        assert!(!is_lead(true, false, false, true));
+        assert!(!is_lead(false, true, false, true));
+        assert!(!is_lead(false, false, true, true));
+        let owner = build(RuntimeBrief {
+            agent_id: "docs",
+            agent_name: "文档",
+            identity_block: "文档助手",
+            workspace: "",
+            skill_names: &["multara-lead"],
+            skill_root: "/tmp/multara-builtin-skills",
+            user_skill_context: "",
+            roster: "",
+            has_project_workspace: false,
+            genui_enabled: false,
+            canvas_enabled: false,
+            terminal_enabled: false,
+            workflow_node: false,
+            locale: "zh-CN",
+            lead: Some(true),
+        });
+        assert!(owner.contains("你是负责人"));
+        assert!(owner.contains("优先指派"));
+        assert!(!owner.contains("你是被指派的人"));
+        let assignee = build(RuntimeBrief {
+            agent_id: "docs",
+            agent_name: "文档",
+            identity_block: "文档助手",
+            workspace: "",
+            skill_names: &["multara-lead"],
+            skill_root: "/tmp/multara-builtin-skills",
+            user_skill_context: "",
+            roster: "",
+            has_project_workspace: false,
+            genui_enabled: false,
+            canvas_enabled: false,
+            terminal_enabled: false,
+            workflow_node: false,
+            locale: "zh-CN",
+            lead: Some(false),
+        });
+        assert!(assignee.contains("你是被指派的人"));
+        assert!(!assignee.contains("你是负责人"));
+        assert!(!assignee.contains("优先指派"));
+        let hint = mention_hint("zh-CN", &[("agent".into(), "docs".into()), ("agent".into(), "qa".into())]);
+        assert!(hint.contains("agent:docs"));
+        assert!(hint.contains("agent:qa"));
+    }
 
     #[test]
     fn lists_skill_names_not_bodies() {
@@ -571,7 +753,10 @@ mod tests {
             has_project_workspace: false,
             genui_enabled: false,
             canvas_enabled: false,
+            terminal_enabled: false,
+            workflow_node: false,
             locale: "zh-CN",
+            lead: None,
         });
         assert!(brief.contains("**multara-working-on-tasks**"));
         assert!(brief.contains("/tmp/multara-builtin-skills"));
@@ -601,7 +786,10 @@ mod tests {
             has_project_workspace: true,
             genui_enabled: false,
             canvas_enabled: false,
+            terminal_enabled: false,
+            workflow_node: false,
             locale: "zh-CN",
+            lead: None,
         });
         assert!(brief.contains("人在工作台里"));
         assert!(brief.contains("直接改"));
@@ -609,7 +797,7 @@ mod tests {
         assert!(brief.contains("用户消息里附带的工作区外文件可以阅读"));
         assert!(brief.contains("工作区花名册"));
         assert!(brief.contains("审稿"));
-        assert!(brief.contains("自己做还是派给别人由你判断"));
+        assert!(brief.contains("只有「这次的角色」是负责人时才派；被指派就不要再转派"));
         assert!(!brief.contains("自己能做完就不必指派"));
         assert!(!brief.contains("不要访问列表外路径"));
         assert!(!brief.contains("不要在纯聊天回合里改仓库"));
@@ -631,7 +819,10 @@ mod tests {
                     has_project_workspace,
                     genui_enabled: true,
                     canvas_enabled: false,
+            terminal_enabled: false,
+            workflow_node: false,
                     locale,
+                    lead: None,
                 });
                 assert!(brief.contains("```multara-questions"), "{locale}");
                 assert!(brief.contains("```multara-ui"), "{locale}");
@@ -668,7 +859,10 @@ mod tests {
                 has_project_workspace: true,
                 genui_enabled,
                 canvas_enabled,
+                terminal_enabled: true,
+                workflow_node: false,
                 locale: "zh-CN",
+            lead: None,
             })
         };
         assert!(!make(false, false).contains("multara-ui"));

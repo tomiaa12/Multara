@@ -1,0 +1,20 @@
+[
+  {
+    "id": "builtin.answer",
+    "category": "agent",
+    "name": "回答问题",
+    "description": "根据这次运行的输入回答问题",
+    "recommends": { "skills": [], "mcp": [] },
+    "nodes": [{
+      "id": "ask", "kind": "agent", "title": "回答问题",
+      "config": {
+        "target": { "type": "agent", "id": "" },
+        "mode": "auto",
+        "context": "previous",
+        "route": "auto",
+        "prompt": "根据这次运行的输入，用简洁清楚的话回答。"
+      }
+    }],
+    "edges": []
+  }
+]

@@ -62,9 +62,10 @@ const emit = defineEmits<{
   updated: [repositories: GitRepositoryStatus[]];
   worktreeChanged: [workspaceId: string, paths: string[]];
   attachFile: [file: { workspaceId: string; path: string; isDirectory?: boolean }];
+  mergeFocus: [payload: { inboxItemId: string | null; workspaceId: string; sessionId: string }];
 }>();
 
-type HookPlanKind = "commit" | "commit-push" | "commit-sync" | "push" | "pull" | "sync";
+type HookPlanKind = "commit" | "commit-push" | "commit-sync" | "push" | "pull" | "sync" | "finish-merge";
 
 const store = useAppStore();
 const router = useRouter();
@@ -441,9 +442,13 @@ function pullMerge(workspace: Workspace) {
 function finishMerge(workspace: Workspace) {
   const merge = store.mergeSessionFor(workspace.id);
   if (!merge) return;
-  return run(`finish-merge:${workspace.id}`, async () => {
-    await store.finishMergeSession(merge.id);
-  });
+  return run(
+    `finish-merge:${workspace.id}`,
+    async () => {
+      await store.finishMergeSession(merge.id);
+    },
+    { workspaceId: workspace.id, kind: "finish-merge" },
+  );
 }
 
 async function abortMergeSession(workspace: Workspace) {
@@ -459,9 +464,15 @@ async function abortMergeSession(workspace: Workspace) {
   });
 }
 
-function resolveWithAi(workspace: Workspace) {
+async function resolveWithAi(workspace: Workspace) {
   const merge = store.mergeSessionFor(workspace.id);
-  if (merge) void store.resolveMergeWithAi(merge.id);
+  if (!merge) return;
+  const inboxItemId = await store.resolveMergeWithAi(merge.id);
+  emit("mergeFocus", {
+    inboxItemId,
+    workspaceId: merge.workspaceId,
+    sessionId: merge.sessionId,
+  });
 }
 
 async function repairHookRuntime() {
@@ -478,6 +489,12 @@ async function skipHooksOnce() {
   if (!failure?.skippable || !plan) return;
   const id = plan.workspaceId;
   return run(`skip:${id}`, async () => {
+    if (plan.kind === "finish-merge") {
+      const merge = store.mergeSessionFor(id);
+      if (!merge) throw new Error(t("scm.finishMergeTitle"));
+      await store.finishMergeSession(merge.id, true);
+      return;
+    }
     if (plan.kind === "push" || (plan.kind === "commit-push" && failure.operation === "push")) {
       await backend.gitPushWorkspace(id, true);
       return;
@@ -750,6 +767,7 @@ defineExpose({ refresh, revealCommit });
       :repository="mergeDialogItem.repository"
       @close="mergeDialogWorkspaceId = ''"
       @merged="onMerged"
+      @merge-focus="emit('mergeFocus', $event)"
     />
 
     <UiModal v-if="discardAsk" @click.self="discardAsk = null">

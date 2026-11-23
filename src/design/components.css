@@ -250,12 +250,16 @@
 /* Stop Button：与发送钮同尺寸圆形，底部输入 / 已发送折叠 / 点开后 footer 共用 */
 .ds-stop-button {
   --ds-stop-size: var(--control-height-md);
+  --ds-stop-icon-size: 10px;
   display: inline-grid;
   place-items: center;
+  place-content: center;
   width: var(--ds-stop-size);
   height: var(--ds-stop-size);
   min-width: var(--ds-stop-size);
   min-height: var(--ds-stop-size);
+  max-width: var(--ds-stop-size);
+  max-height: var(--ds-stop-size);
   padding: 0;
   overflow: hidden;
   border: 0;
@@ -263,16 +267,20 @@
   background: var(--color-text-strong);
   box-shadow: none;
   color: var(--color-bg);
+  line-height: 0;
   cursor: pointer;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease),
     color var(--motion-duration-fast) var(--motion-ease),
     box-shadow var(--motion-duration-fast) var(--motion-ease);
 }
-.ds-stop-button svg {
-  color: inherit;
-  stroke: currentColor;
-  fill: currentColor;
+.ds-stop-button .ds-stop-icon {
+  display: block;
+  width: var(--ds-stop-icon-size);
+  height: var(--ds-stop-icon-size);
+  margin: 0;
+  border-radius: 2px;
+  background: currentColor;
 }
 .ds-stop-button:hover:not(:disabled),
 .ds-stop-button.is-hover {
@@ -328,7 +336,9 @@
 .ui-input:not(.ui-checkbox),
 .ui-select,
 .ui-textarea,
-.ds-input {
+textarea.ui-textarea,
+.ds-input,
+textarea.ds-input {
   width: 100%;
   min-height: var(--control-height-md);
   padding: 0 var(--spacing-2-5);
@@ -344,6 +354,7 @@
     background-color var(--motion-duration-fast) var(--motion-ease);
 }
 .ui-textarea,
+textarea.ui-textarea,
 textarea.ds-input {
   min-height: 76px;
   padding: var(--spacing-2) var(--spacing-2-5);
@@ -2297,6 +2308,9 @@ form.modal:has(> .ds-scroll-fade) {
 }
 .ds-toast[data-tone="success"] > svg {
   color: var(--color-success);
+}
+.ds-toast[data-tone="warning"] > svg {
+  color: var(--color-warning);
 }
 .ds-toast[data-tone="error"] > svg {
   color: var(--color-error);

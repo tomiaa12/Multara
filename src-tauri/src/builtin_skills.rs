@@ -53,6 +53,22 @@ pub const ALL: &[BuiltinSkill] = &[
         ko: include_str!("../skills/multara-squads/SKILL.ko.md"),
     },
     BuiltinSkill {
+        name: "multara-lead",
+        zh_cn: include_str!("../skills/multara-lead/SKILL.md"),
+        en: include_str!("../skills/multara-lead/SKILL.en.md"),
+        zh_tw: include_str!("../skills/multara-lead/SKILL.zh-TW.md"),
+        ja: include_str!("../skills/multara-lead/SKILL.ja.md"),
+        ko: include_str!("../skills/multara-lead/SKILL.ko.md"),
+    },
+    BuiltinSkill {
+        name: "multara-workflows",
+        zh_cn: include_str!("../skills/multara-workflows/SKILL.md"),
+        en: include_str!("../skills/multara-workflows/SKILL.en.md"),
+        zh_tw: include_str!("../skills/multara-workflows/SKILL.zh-TW.md"),
+        ja: include_str!("../skills/multara-workflows/SKILL.ja.md"),
+        ko: include_str!("../skills/multara-workflows/SKILL.ko.md"),
+    },
+    BuiltinSkill {
         name: "multara-automations",
         zh_cn: include_str!("../skills/multara-automations/SKILL.md"),
         en: include_str!("../skills/multara-automations/SKILL.en.md"),
@@ -206,6 +222,8 @@ mod tests {
         assert!(names.contains(&GENUI_SKILL));
         assert!(!super::names(false).contains(&GENUI_SKILL));
         assert!(names.contains(&"multara-working-on-tasks"));
+        assert!(names.contains(&"multara-workflows"));
+        assert!(names.contains(&"multara-lead"));
         assert!(names.contains(&"multara-creating-agents"));
         for skill in ALL {
             for locale in ["zh-CN", "en", "zh-TW", "ja", "ko"] {

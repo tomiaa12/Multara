@@ -346,6 +346,8 @@ export interface FeishuContact {
   installationName: string;
   openId: string;
   displayName?: string | null;
+  note?: string | null;
+  sessionId?: string | null;
   sessionTitle?: string | null;
   pairedAt: string;
   activeAt?: string | null;
@@ -435,6 +437,8 @@ export interface QuickAction {
   label: string;
   prompt: string;
   primary: boolean;
+  /** 结构化动作（如 workflow.gate）；有它时前端执行动作而不是发送 prompt */
+  action?: Record<string, unknown> | null;
 }
 
 export interface MessageAttachment {
@@ -663,9 +667,11 @@ export interface Automation {
   id: string;
   name: string;
   projectId: string | null;
-  targetType: "agent" | "squad";
+  targetType: "agent" | "squad" | "workflow";
   targetId: string;
   prompt: string;
+  /** 目标为工作流时的入参映射（JSON 模板，可用 {{ payload }} / {{ prompt }}） */
+  inputsTemplate: string;
   triggerType: "manual" | "schedule" | "webhook" | "api";
   intervalMinutes: number | null;
   eventName: string | null;

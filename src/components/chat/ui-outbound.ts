@@ -10,15 +10,17 @@ export type UiSource = "canvas" | "mcp-app" | "browser";
 
 export type FillResult = { ok: true } | { ok: false; reason: "composer_not_empty" | "session_closed" };
 
-/** 当前在界面上打开了某个会话的输入框（ChatPanel 注册）；同一会话可能多处打开，取最近注册的 */
+/** 当前在界面上打开了某个会话的输入框。同一会话可能多处打开，优先当前看得到的。 */
 type ComposerFiller = (text: string) => FillResult;
-const fillers = new Map<string, ComposerFiller[]>();
+type ComposerEntry = { fill: ComposerFiller; shown?: () => boolean };
+const fillers = new Map<string, ComposerEntry[]>();
 
-export function registerComposerFiller(sessionId: string, filler: ComposerFiller) {
+export function registerComposerFiller(sessionId: string, filler: ComposerFiller, shown?: () => boolean) {
   const list = fillers.get(sessionId) ?? [];
-  fillers.set(sessionId, [...list, filler]);
+  const entry: ComposerEntry = { fill: filler, shown };
+  fillers.set(sessionId, [...list, entry]);
   return () => {
-    const next = (fillers.get(sessionId) ?? []).filter((item) => item !== filler);
+    const next = (fillers.get(sessionId) ?? []).filter((item) => item !== entry);
     if (next.length) fillers.set(sessionId, next);
     else fillers.delete(sessionId);
   };
@@ -26,10 +28,10 @@ export function registerComposerFiller(sessionId: string, filler: ComposerFiller
 
 /** 页面要往输入框里填一段话：输入框为空时填进去并聚焦，用户自己按发送 */
 export function fillComposerFromUi(input: { sessionId: string; source: UiSource; sourceId: string; text: string }): FillResult {
-  const list = fillers.get(input.sessionId);
-  const filler = list?.[list.length - 1];
-  if (!filler) return { ok: false, reason: "session_closed" };
-  return filler(input.text);
+  const list = fillers.get(input.sessionId) ?? [];
+  const entry = [...list].reverse().find((item) => item.shown?.() !== false);
+  if (!entry) return { ok: false, reason: "session_closed" };
+  return entry.fill(input.text);
 }
 
 /** 页面上下文附件的正文：带来源头，明确是数据不是指令 */
@@ -92,6 +94,7 @@ export function sendGenUiAction(send: Send, action: GenUiAction) {
         messageId: action.messageId,
         ...(action.agentId ? { agentId: action.agentId } : {}),
         type: action.type,
+        ...(action.title?.trim() ? { title: action.title.trim() } : {}),
         action: action.action,
         ...(action.values !== undefined ? { values: action.values } : {}),
       },

@@ -55,12 +55,15 @@ pub mod session_export;
 pub mod snapshot;
 pub mod snapshot_db;
 pub mod terminal;
+pub mod surface_cli;
+pub mod surface_ctl;
 pub mod terminal_cli;
 pub mod terminal_ctl;
 pub mod text_search;
 pub mod ui_host;
 pub mod usage;
 pub mod webhook;
+pub mod workflow;
 pub mod workspace;
 
 #[cfg(target_os = "macos")]
@@ -97,7 +100,7 @@ use commands::{
     list_workspace_directory, list_workspace_tree, load_active_diff_data, load_attachment_preview,
     load_session_diff_data, mark_inbox_all_read, mark_inbox_read, mark_inbox_unread,
     open_external_url, open_message_attachment, plan_action, probe_mcp, probe_runtime_command,
-    read_external_file, read_skill_file, read_workspace_file, receive_automation_webhook,
+    read_external_file, read_session_scratch_file, read_skill_file, read_workspace_file, receive_automation_webhook,
     rename_workspace_entry, resolve_permission, reveal_resource, reveal_workspace_path,
     run_automation, save_agent, save_automation, save_custom_runtime, save_file_baseline, save_mcp,
     save_message_queue,
@@ -105,8 +108,9 @@ use commands::{
     scan_workspace_candidates, schedule_mcp_tools_refresh, search_catalog, search_workspace,
     send_message, set_automation_enabled, set_mcp_enabled, set_message_feedback,
     set_project_archived, set_session_default_mode, set_skill_enabled, sign_out_mcp,
+    sync_app_locale,
     skill_file_count, stop_run, terminal_clipboard_text, terminal_close, terminal_command_names,
-    terminal_free_port, terminal_open, terminal_profiles, terminal_publish, terminal_resize,
+    terminal_free_port, terminal_list_open, terminal_open, terminal_profiles, terminal_publish, terminal_read_screen, terminal_resize,
     terminal_resolve_paths, terminal_services, terminal_write, test_runtime_connection,
     transfer_resource, trigger_automation_event, truncate_session_from_message,
     update_chat_session_target, update_chat_session_title, update_chunk_state, update_project,
@@ -299,7 +303,7 @@ pub fn run() {
                 message
             })?;
             let startup_theme = state.lock_db().ok().map(|db| {
-                app_locale::set_current(app_locale::from_db(&db));
+                app_locale::refresh_from_db(&db);
                 commands::setting_value(&db, "theme", "dark")
             });
             reveal_main_window(app, startup_theme.as_deref())?;
@@ -325,10 +329,48 @@ pub fn run() {
             executor::start_poller(app.handle().clone());
             channel::supervisor::start(app.handle().clone());
             channel::outbound::recover_pending(app.handle());
+            workflow::runtime::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            sync_app_locale,
+            workflow::commands::list_workflows,
+            workflow::commands::get_workflow,
+            workflow::commands::create_workflow,
+            workflow::commands::update_workflow_meta,
+            workflow::commands::set_workflow_enabled,
+            workflow::commands::save_workflow_draft,
+            workflow::commands::validate_workflow,
+            workflow::commands::publish_workflow,
+            workflow::commands::delete_workflow,
+            workflow::commands::duplicate_workflow,
+            workflow::commands::export_workflow,
+            workflow::commands::import_workflow,
+            workflow::commands::list_node_templates,
+            workflow::commands::save_node_template,
+            workflow::commands::delete_node_template,
+            workflow::commands::list_workflow_templates,
+            workflow::commands::reset_workflow_examples,
+            workflow::commands::workflow_render_preview,
+            workflow::commands::start_workflow_run,
+            workflow::commands::list_workflow_runs,
+            workflow::commands::get_workflow_run,
+            workflow::commands::get_workflow_node_values,
+            workflow::commands::get_workflow_node_log,
+            workflow::commands::list_workflow_events,
+            workflow::commands::cancel_workflow_run,
+            workflow::commands::retry_workflow_node,
+            workflow::commands::skip_workflow_node,
+            workflow::commands::confirm_workflow_node,
+            workflow::commands::workflow_outcome,
+            workflow::commands::set_workflow_tasks,
+            workflow::commands::list_workflow_directory,
+            workflow::commands::read_workflow_file,
+            workflow::commands::delete_workflow_run,
+            workflow::commands::list_workflow_secrets,
+            workflow::commands::set_workflow_secret,
+            workflow::commands::delete_workflow_secret,
             list_task_inbox_surfaces,
             list_agents_and_squads,
             list_projects_and_workspaces,
@@ -376,7 +418,9 @@ pub fn run() {
             lsp::lsp_send,
             lsp::lsp_stop,
             search_workspace,
+            terminal_list_open,
             terminal_open,
+            terminal_read_screen,
             terminal_profiles,
             terminal_free_port,
             terminal_resolve_paths,
@@ -392,6 +436,7 @@ pub fn run() {
             native_pick::select_files_or_folders,
             read_workspace_file,
             read_external_file,
+            read_session_scratch_file,
             write_workspace_file,
             create_workspace_file,
             create_workspace_directory,

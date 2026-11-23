@@ -61,10 +61,10 @@ const model = computed({
     :aria-label="t('scm.inspect.switchWorkspaceBranch')"
     :title="t('scm.inspect.switchWorkspaceBranch')"
   >
+    <!-- 收起态只显示项目名；展开列表仍是「项目名 + 分支」双行 -->
     <template #value="{ option }">
       <span class="scm-inspect-branch-value">
         <span class="scm-inspect-branch-project">{{ option?.label ?? "" }}</span>
-        <span class="scm-inspect-branch-ref">{{ option?.description ?? "" }}</span>
       </span>
     </template>
   </UiSelect>

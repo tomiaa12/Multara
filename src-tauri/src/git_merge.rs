@@ -457,7 +457,8 @@ pub fn start_conflict_worktree(
         &["worktree", "add", "--detach", &dir_text, base],
     )
     .map_err(|detail| tr!("创建合并工作区失败：{detail}", detail = detail))?;
-    crate::hook_runtime::link_worktree_runtime(Path::new(repository), dir);
+    // 合并工作区的 package.json 常与主检出不同；钩子仍需要主检出的 node_modules。
+    crate::hook_runtime::link_worktree_runtime_with(Path::new(repository), dir, true);
     // 有冲突时 git merge 以非零退出，这是预期的，之后用 MERGE_HEAD 判断是否真的进入了合并状态。
     let merged = exec(
         git,
@@ -531,7 +532,7 @@ pub fn incorporate_remote(
         ));
     }
     if rev(git, dir, "MERGE_HEAD").is_some() {
-        commit_resolution(git, dir, commit_message)?;
+        commit_resolution(git, dir, commit_message, false)?;
     }
     let remote = target
         .remote_ref()
@@ -554,7 +555,12 @@ pub fn incorporate_remote(
 }
 
 /// 暂存全部解决结果并提交合并；之前已经提交过（例如上次推送失败）时直接返回当前提交。
-pub fn commit_resolution(git: &str, dir: &str, message: &str) -> Result<String, String> {
+pub fn commit_resolution(
+    git: &str,
+    dir: &str,
+    message: &str,
+    skip_verify: bool,
+) -> Result<String, String> {
     if rev(git, dir, "MERGE_HEAD").is_some() {
         let unresolved = files_with_markers(dir, &conflict_files(git, dir));
         if !unresolved.is_empty() {
@@ -564,13 +570,11 @@ pub fn commit_resolution(git: &str, dir: &str, message: &str) -> Result<String, 
             ));
         }
         run_strings(git, dir, &["add", "-A"])?;
-        run_with_timeout(
-            git,
-            dir,
-            &["commit", "-m", message],
-            Duration::from_secs(120),
-            false,
-        )?;
+        let mut args = vec!["commit", "-m", message];
+        if skip_verify {
+            args.push("--no-verify");
+        }
+        run_with_timeout(git, dir, &args, Duration::from_secs(120), false)?;
     }
     head_commit(git, dir)
 }
@@ -752,9 +756,9 @@ mod tests {
         assert_eq!(conflicts, vec!["a.txt".to_string()]);
         assert_eq!(git(dir, &["branch", "--show-current"]), "feat");
 
-        assert!(commit_resolution("git", merge_root, "Merge feat into sit").is_err());
+        assert!(commit_resolution("git", merge_root, "Merge feat into sit", false).is_err());
         fs::write(merge_dir.join("a.txt"), "feat + sit\n").unwrap();
-        let commit = commit_resolution("git", merge_root, "Merge feat into sit").unwrap();
+        let commit = commit_resolution("git", merge_root, "Merge feat into sit", false).unwrap();
         apply("git", root, &target, &commit, false).unwrap();
         remove_worktree("git", root, merge_root);
 

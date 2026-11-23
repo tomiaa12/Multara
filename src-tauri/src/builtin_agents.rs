@@ -230,4 +230,16 @@ mod tests {
         assert!(text.starts_with("You are Miku,"));
         assert!(!text.contains("{{AGENT_NAME}}"));
     }
+
+    #[test]
+    fn routing_prefers_specialists_before_self() {
+        let zh = miku_system_instructions(MIKU_DEFAULT_NAME, "zh-CN");
+        assert!(zh.contains("别的智能体或小队能干就派给他们"));
+        assert!(zh.contains("已有的 specialist 智能体"));
+        let specialist = zh.find("已有的 specialist 智能体").expect("specialist rule");
+        let self_rule = zh.find("你自己，若没有更合适的人").expect("self as fallback");
+        assert!(specialist < self_rule);
+        let en = miku_system_instructions(MIKU_DEFAULT_NAME, "en");
+        assert!(en.contains("if another agent or squad can do it, hand it off"));
+    }
 }
