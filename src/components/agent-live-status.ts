@@ -1,10 +1,28 @@
-import type { ChatMessage, RunEvent } from "../domain/types";
+import type { Agent, ChatMessage, RunEvent, Runtime } from "../domain/types";
 
 export interface LiveRun {
   runId: string;
   sessionId: string;
   agentId: string;
   status: "queued" | "running";
+}
+
+/** 排队名额：智能体绑定的运行时，加上这个智能体自己的并发。都按全局 running 计。 */
+export interface LiveCapacity {
+  agents: Array<Pick<Agent, "id" | "runtimeId" | "maxConcurrentTasks">>;
+  runtimes: Array<Pick<Runtime, "id" | "maxConcurrent">>;
+}
+
+const EMPTY_CAPACITY: LiveCapacity = { agents: [], runtimes: [] };
+
+export function liveCapacity(data: {
+  agents?: LiveCapacity["agents"];
+  runtimes?: LiveCapacity["runtimes"];
+} | null | undefined): LiveCapacity {
+  return {
+    agents: data?.agents ?? [],
+    runtimes: data?.runtimes ?? [],
+  };
 }
 
 /** 给 liveWorkParts 的展示态：与对话内工作行共用，避免列表「排队中」/ 对话「启动中」不一致 */
@@ -17,38 +35,62 @@ function isLiveEvent(
     && !event.runId.startsWith("pending:");
 }
 
-function sessionHasRunning(
+function slotLimit(value: number | undefined): number {
+  return value && value > 0 ? value : 1;
+}
+
+/**
+ * 这条还在 queued，是因为名额满了，而不是 CLI 还没拉起。
+ * 名额看两处，都跨会话：它绑定的运行时已达到最大并发，或它自己已达到最大并发任务。
+ */
+export function isQueuedForCapacity(
+  run: Pick<RunEvent, "status" | "agentId" | "runId">,
   runStates: Record<string, RunEvent>,
-  sessionId: string,
-  exceptRunId?: string,
-) {
-  return Object.values(runStates).some((event) =>
-    event.sessionId === sessionId
-    && event.status === "running"
-    && !event.runId.startsWith("pending:")
-    && event.runId !== exceptRunId,
+  capacity: LiveCapacity = EMPTY_CAPACITY,
+): boolean {
+  if (run.status !== "queued" || run.runId.startsWith("pending:")) return false;
+  const agent = capacity.agents.find((item) => item.id === run.agentId);
+  const runtimeId = agent?.runtimeId ?? "";
+  const runtimeLimit = slotLimit(
+    capacity.runtimes.find((item) => item.id === runtimeId)?.maxConcurrent,
   );
+  const agentLimit = slotLimit(agent?.maxConcurrentTasks);
+  let runtimeRunning = 0;
+  let agentRunning = 0;
+  for (const event of Object.values(runStates)) {
+    if (event.status !== "running" || event.runId.startsWith("pending:")) continue;
+    if (run.agentId && event.agentId === run.agentId) agentRunning += 1;
+    if (!runtimeId || !event.agentId) continue;
+    const eventRuntime = capacity.agents.find((item) => item.id === event.agentId)?.runtimeId;
+    if (eventRuntime === runtimeId) runtimeRunning += 1;
+  }
+  const runtimeFull = Boolean(runtimeId) && runtimeRunning >= runtimeLimit;
+  const agentFull = Boolean(run.agentId) && agentRunning >= agentLimit;
+  return runtimeFull || agentFull;
 }
 
 /**
  * 会话级展示态（对话内工作行）。
- * DB 的 `queued` 在无人 running 时只是调度占位 / CLI 尚未拉起，应显示「启动中」；
- * 仅当同会话已有 running、自己还在 queued 时才是真「排队中」。
+ * 本会话已有 running 时跟那条走。只剩 queued 时：绑定运行时或智能体自己的全局名额满了才是「排队中」，
+ * 名额还在则是「启动中」。
  */
 export function resolveSessionLiveWorkStatus(options: {
   runStates: Record<string, RunEvent>;
   sessionId: string | null | undefined;
   processing?: boolean;
+  capacity?: LiveCapacity;
 }): LiveWorkStatus {
   const sessionId = options.sessionId;
   if (!sessionId) return options.processing ? "sending" : null;
+  const capacity = options.capacity ?? EMPTY_CAPACITY;
   const live = Object.values(options.runStates).filter(
     (event) => event.sessionId === sessionId && isLiveEvent(event),
   );
   if (live.some((event) => event.status === "running")) return "running";
-  if (live.some((event) => event.status === "queued")) {
-    // 仅有 queued：与 sending 一样走启动中（liveStageKey）
-    return "sending";
+  const queued = live.filter((event) => event.status === "queued");
+  if (queued.length) {
+    const waiting = queued.every((event) => isQueuedForCapacity(event, options.runStates, capacity));
+    return waiting ? "queued" : "sending";
   }
   if (options.processing) return "sending";
   return null;
@@ -56,14 +98,19 @@ export function resolveSessionLiveWorkStatus(options: {
 
 /**
  * 单条 run 在需求列表等处的展示态。
- * 同会话已有别的 running 时 queued 才是「排队中」，否则是启动占位。
+ * queued 且运行时 / 智能体全局名额已满 → 排队中；否则是启动占位。
  */
 export function resolveRunLiveWorkStatus(
-  run: Pick<LiveRun, "status" | "sessionId" | "runId">,
+  run: Pick<LiveRun, "status" | "runId" | "agentId">,
   runStates: Record<string, RunEvent>,
+  capacity: LiveCapacity = EMPTY_CAPACITY,
 ): Exclude<LiveWorkStatus, null> {
   if (run.status === "running") return "running";
-  return sessionHasRunning(runStates, run.sessionId, run.runId) ? "queued" : "sending";
+  return isQueuedForCapacity(
+    { status: "queued", agentId: run.agentId, runId: run.runId },
+    runStates,
+    capacity,
+  ) ? "queued" : "sending";
 }
 
 /**

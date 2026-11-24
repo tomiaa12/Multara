@@ -7,6 +7,7 @@ import type {
   Squad,
   Workspace,
 } from "../../domain/types";
+import { isQueuedForCapacity, liveCapacity } from "../../components/agent-live-status";
 import { formatRelativeTime } from "../../components/ui/relative-time";
 import { t } from "../../i18n";
 import { isWorkflowNodeSession } from "../../domain/workflow";
@@ -217,18 +218,29 @@ export function buildHomeProject(
   const working: HomeWorker[] = [];
   const queued: HomeWorker[] = [];
   const activeSeen = new Set<string>();
+  const queuedSeen = new Set<string>();
   const history: HomeWorker[] = [];
   const historySeen = new Set<string>();
 
   const projectSessionIds = new Set(sessions.map((item) => item.id));
+  const capacity = liveCapacity(data);
 
   for (const session of sessions) {
     const active = index.activeAgents.get(session.id);
     if (active) {
-      // DB queued 在无人 running 时只是启动占位，与对话内「启动中」一样归入 working；
-      // 真·排队文案由 AgentLiveStatus 按单条 run 判断。
       for (const agentId of active.agentIds) {
-        pushUniqueWorker(working, activeSeen, agentWorker(agentId, index));
+        const runs = Object.values(runStates).filter((event) =>
+          event.sessionId === session.id
+          && event.agentId === agentId
+          && (event.status === "running" || event.status === "queued")
+          && !event.runId.startsWith("pending:"),
+        );
+        const waiting = runs.length > 0 && runs.every((event) =>
+          event.status === "queued" && isQueuedForCapacity(event, runStates, capacity),
+        );
+        const worker = agentWorker(agentId, index);
+        if (waiting) pushUniqueWorker(queued, queuedSeen, worker);
+        else pushUniqueWorker(working, activeSeen, worker);
       }
     } else {
       const activity = index.activity.get(session.id);
@@ -236,6 +248,10 @@ export function buildHomeProject(
         pushUniqueWorker(working, activeSeen, targetWorker(session, index));
       }
     }
+  }
+  for (let indexOfQueued = queued.length - 1; indexOfQueued >= 0; indexOfQueued -= 1) {
+    const worker = queued[indexOfQueued];
+    if (worker && activeSeen.has(worker.key)) queued.splice(indexOfQueued, 1);
   }
 
   // 历史只收真正跑过 / 回复过的智能体：落库的 lastRun、内存里已结束的 run、任务执行者。
