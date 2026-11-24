@@ -267,4 +267,79 @@ describe("buildHomeProject workers", () => {
     expect(home.filters).toContain("running");
     expect(home.activityLabel).toBe("");
   });
+
+  it("运行时全局名额满了时，别的会话里等待的智能体算排队中", () => {
+    const data = baseData({
+      runtimes: [{
+        id: "rt",
+        name: "Cursor",
+        provider: "cursor",
+        command: "cursor-agent",
+        args: [],
+        path: null,
+        version: null,
+        status: "online",
+        maxConcurrent: 1,
+      }],
+      sessions: [
+        {
+          id: "s1",
+          projectId: "p1",
+          title: "审稿",
+          targetType: "agent",
+          targetId: "reviewer",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-02T00:00:00Z",
+        },
+        {
+          id: "s2",
+          projectId: "p1",
+          title: "Miku",
+          targetType: "agent",
+          targetId: "miku",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      workspaces: [
+        {
+          id: "w1",
+          projectId: "p1",
+          name: "repo",
+          kind: "folder",
+          sourcePath: "/tmp/repo",
+          workPath: "/tmp/repo",
+          branch: null,
+          isolationMode: "direct",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    const runs: Record<string, RunEvent> = {
+      running: {
+        runId: "running",
+        sessionId: "s1",
+        agentId: "reviewer",
+        status: "running",
+        chunk: null,
+        error: null,
+        timelineItem: null,
+        elapsedMs: null,
+      },
+      waiting: {
+        runId: "waiting",
+        sessionId: "s2",
+        agentId: "miku",
+        status: "queued",
+        chunk: null,
+        error: null,
+        timelineItem: null,
+        elapsedMs: null,
+      },
+    };
+    const home = buildHomeProject(project, data, runs);
+    expect(home.workerSentence).toMatch(/排队中|queued/);
+    expect(home.workerSentence).toContain("Miku");
+    expect(home.workers.map((item) => item.key).sort()).toEqual(["agent:miku", "agent:reviewer"]);
+  });
 });

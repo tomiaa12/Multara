@@ -6,7 +6,7 @@ import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import AgentAvatar from "./AgentAvatar.vue";
 import AvatarStack, { type AvatarStackItem } from "./ui/AvatarStack.vue";
-import { collectLiveRuns, liveRunMessage, resolveRunLiveWorkStatus } from "./agent-live-status";
+import { collectLiveRuns, liveCapacity, liveRunMessage, resolveRunLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 
 const props = withDefaults(defineProps<{
@@ -50,8 +50,8 @@ const liveLabel = computed(() => {
   const run = runs[0];
   if (!run) return "";
   const timeline = liveRunMessage(store.messages, run)?.timeline ?? [];
-  // 与对话内工作行共用展示态：单条 queued 是启动中，真排队才显示排队中
-  const status = resolveRunLiveWorkStatus(run, store.runStates);
+  // 与对话内工作行共用：运行时或智能体全局名额满了才是排队中
+  const status = resolveRunLiveWorkStatus(run, store.runStates, liveCapacity(store.data));
   return liveWorkParts(timeline, 0, { language: store.data?.settings.language, status })[0]?.label ?? "";
 });
 

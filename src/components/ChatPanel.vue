@@ -33,7 +33,7 @@ import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue
 import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
 import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
 import { exportChatDiagnostics } from "./chat/export-session-diagnostics";
-import { resolveSessionLiveWorkStatus } from "./agent-live-status";
+import { liveCapacity, resolveSessionLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
 import { useAppStore } from "../stores/app";
@@ -459,6 +459,7 @@ const liveRunStatus = computed(() => {
     runStates: store.runStates,
     sessionId: session.value?.id,
     processing: sessionProcessing.value || store.processingMessage,
+    capacity: liveCapacity(store.data),
   });
 });
 const liveAnchor = computed(() => {
