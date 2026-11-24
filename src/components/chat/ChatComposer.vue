@@ -496,6 +496,14 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
   return categories;
 });
 
+function composerBox() {
+  const host = rootEl.value;
+  const root = host instanceof HTMLElement
+    ? host
+    : (host as { $el?: HTMLElement } | null)?.$el ?? null;
+  return root?.getBoundingClientRect() ?? null;
+}
+
 async function refreshSuggestAnchor() {
   await nextTick();
   if (!suggestTrigger.value) {
@@ -504,9 +512,11 @@ async function refreshSuggestAnchor() {
   }
   const caret = getCaretClientRect();
   if (caret) {
+    const box = composerBox();
     suggestAnchor.value = {
       left: caret.left,
-      top: caret.top,
+      // 向上展开时贴着整个输入框，避免最后一行被输入框挡住
+      top: box ? Math.min(caret.top, box.top) : caret.top,
       bottom: caret.bottom,
       width: Math.max(caret.width, 160),
     };

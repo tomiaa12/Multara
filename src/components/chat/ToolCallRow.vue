@@ -3,12 +3,13 @@ import { computed } from "vue";
 import { vDetailsMotion } from "../../ui/motion";
 import { ChevronRight } from "@lucide/vue";
 import type { TimelineItem } from "../../domain/types";
-import { exploreDetail, inferToolName } from "./timeline-display";
+import { useAppStore } from "../../stores/app";
+import { toolCallLabel } from "./timeline-display";
 import ClipScroll from "./ClipScroll.vue";
 
 const props = defineProps<{ item: TimelineItem; running?: boolean; output?: string | null }>();
-const name = computed(() => inferToolName(props.item) || "Tool");
-const detail = computed(() => exploreDetail(props.item));
+const store = useAppStore();
+const label = computed(() => toolCallLabel(props.item, store.data?.settings.language));
 const output = computed(() => (props.output || props.item.output || "").trim());
 const failed = computed(() => props.item.status === "error");
 const expandable = computed(() => Boolean(props.item.input || props.item.content || output.value));
@@ -17,7 +18,7 @@ const expandable = computed(() => Boolean(props.item.input || props.item.content
 <template>
   <details v-details-motion class="read-row" :class="{ 'is-running': running }">
     <summary>
-      <UiShimmerText class="read-row-text" :text="`${name} ${detail}`" :active="Boolean(running)" />
+      <UiShimmerText class="read-row-text" :text="label" :active="Boolean(running)" />
       <ChevronRight v-if="expandable" :size="12" />
     </summary>
     <ClipScroll v-if="item.input" class="process-detail"><pre>{{ JSON.stringify(item.input, null, 2) }}</pre></ClipScroll>

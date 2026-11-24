@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
 import {
+  chipLabel,
   feishuRecipients,
   formatAgentPrompt,
   locatedChipPath,
@@ -141,6 +142,30 @@ describe("parseUserPromptNodes", () => {
     expect(content).toContain("[文件夹] /Users/tomiaa/Documents/work/pages/src");
     expect(locatedChipPath({ path: "/Users/tomiaa/Documents/work", workspaceId: "" }, workspaces))
       .toBe("/Users/tomiaa/Documents/work");
+  });
+
+  test("keeps the project name after a root directory chip is sent", () => {
+    const root: ComposerNode = {
+      type: "chip",
+      id: "ws:root",
+      path: "",
+      startLine: 0,
+      endLine: 0,
+      text: "opman-web-new",
+      isDirectory: true,
+      workspaceId: "ws-1",
+    };
+    const workspaces = [{
+      id: "ws-1",
+      workPath: "/Users/tomiaa/.multara/workspaces/496623bc-f766-4818-adcb-3b3c03ae94fb/2f182cb2-6e36-485a-941f-95ca5a653b38",
+      sourcePath: "",
+    }];
+    const content = formatAgentPrompt([root, { type: "text", value: "看这个项目" }], { workspaces });
+    const parsed = parseUserPromptNodes(content);
+    expect(parsed[0]).toMatchObject({ isDirectory: true, text: "opman-web-new" });
+    expect(parsed.filter((node) => node.type === "chip").map((node) => chipLabel(node))).toEqual(["opman-web-new"]);
+    expect(visiblePromptText(content)).toContain("opman-web-new");
+    expect(visiblePromptText(content)).not.toContain("2f182cb2-6e36-485a-941f-95ca5a653b38");
   });
 
   test("sends the workspace root when the chip path is empty", () => {

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { forwardWheel } from "./clip-scroll";
 
 const props = withDefaults(defineProps<{
   /** 折叠预览贴住末尾，看到最新输出，上面被挡住时出渐变。 */
   pinEnd?: boolean;
-}>(), { pinEnd: false });
+  /** 滚轮交给外层列表，这块区域不再单独吃掉滚动。 */
+  passWheel?: boolean;
+}>(), { pinEnd: false, passWheel: false });
 
 const CLIP_TOLERANCE_PX = 2;
 
@@ -22,10 +25,16 @@ function measure() {
   clipBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight > CLIP_TOLERANCE_PX;
 }
 
+function onWheel(event: WheelEvent) {
+  if (!props.passWheel) return;
+  forwardWheel(event, root.value);
+}
+
 onMounted(() => {
   measure();
   const el = root.value;
   if (!el) return;
+  el.addEventListener("wheel", onWheel, { passive: false });
   if (typeof ResizeObserver !== "undefined") {
     observer = new ResizeObserver(() => measure());
     observer.observe(el);
@@ -35,6 +44,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  root.value?.removeEventListener("wheel", onWheel);
   observer?.disconnect();
   mutations?.disconnect();
 });

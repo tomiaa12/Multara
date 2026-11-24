@@ -32,6 +32,7 @@ describe("merge targets", () => {
     });
     expect(groups.map((group) => group.label)).toEqual(["常用 · 上次选过", "本地分支", "远程分支"]);
     expect(groups[0]?.rows.map((row) => row.name)).toEqual(["main", "develop"]);
+    expect(groups[0]?.rows.every((row) => !row.localCopy)).toBe(true);
     expect(groups[1]?.rows.map((row) => row.name)).toEqual(["hotfix/pay"]);
   });
 
@@ -93,6 +94,7 @@ describe("merge targets", () => {
       selected: [],
     });
     expect(recent[0]?.rows.map((row) => row.name)).toEqual(["origin/main"]);
+    expect(recent[0]?.rows[0]?.localCopy).toBe(true);
   });
 
   test("conflicts run after clean targets, and recent picks stay in front", () => {

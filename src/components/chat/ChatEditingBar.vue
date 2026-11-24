@@ -5,6 +5,7 @@ import { ChevronRight } from "@lucide/vue";
 import FileTypeIcon from "../FileTypeIcon.vue";
 import { useDiffStore } from "../../stores/diff";
 import { useAppStore } from "../../stores/app";
+import ClipScroll from "./ClipScroll.vue";
 import { fileName } from "./timeline-display";
 import { workspaceFileLabel } from "../workbench/workspace-file-location";
 import { t } from "../../i18n";
@@ -146,15 +147,10 @@ async function keepAll() {
   busy.value = true;
   try {
     // 拷一份：保留过程中若写入完成刷出新文件，不会漏掉本轮已展示的项，也不会中途改迭代集合。
-    const pending = rows.value.slice();
-    for (const row of pending) {
-      const key = fileKey(row.workspaceId, row.filePath);
-      if (diffStore.missingFiles.has(key)) {
-        await diffStore.acceptMissingFile(row.workspaceId, row.filePath);
-      } else {
-        await diffStore.acceptAllChunks(row.workspaceId, row.filePath, contents.value.get(key));
-      }
-    }
+    await diffStore.acceptFiles(rows.value.map((row) => ({
+      workspaceId: row.workspaceId,
+      filePath: row.filePath,
+    })));
     await refreshContents();
   } finally {
     busy.value = false;
@@ -202,7 +198,7 @@ async function undoAll() {
       </span>
     </header>
     <UiCollapse>
-      <div v-if="expanded" class="chat-editing-files vs-scroll">
+      <ClipScroll v-if="expanded" class="chat-editing-files">
         <div v-for="row in rows" :key="fileKey(row.workspaceId, row.filePath)" class="chat-editing-file">
           <button type="button" class="chat-editing-file-name" @click="open(row.workspaceId, row.filePath)">
             <FileTypeIcon :name="fileName(row.filePath)" />
@@ -219,7 +215,7 @@ async function undoAll() {
             <UiButton variant="ghost" size="small" :tip="t('chat.editingUndoTitle')" :disabled="busy" @click="undo(row.workspaceId, row.filePath)">{{ t('chat.editingUndo') }}</UiButton>
           </span>
         </div>
-      </div>
+      </ClipScroll>
     </UiCollapse>
   </section>
 </template>

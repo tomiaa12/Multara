@@ -142,6 +142,26 @@ describe("diffStore", () => {
     expect(chunks[0].hunk).toMatchObject({ oldLines: ["B"], newLines: ["X"] });
   });
 
+  test("acceptFiles keeps every file and bumps the epoch once", async () => {
+    seedSession("s1", [{ messageId: "m1", files: { "a.ts": "A", "b.ts": "B" } }]);
+    disk.set(diskKey("ws", "a.ts"), "A2");
+    disk.set(diskKey("ws", "b.ts"), "B2");
+    const store = useDiffStore();
+    await store.loadSession("s1");
+    const contents = new Map([
+      [diskKey("ws", "a.ts"), "A2"],
+      [diskKey("ws", "b.ts"), "B2"],
+    ]);
+    expect(store.listPendingDiffFiles(["ws"], contents).map((file) => file.filePath)).toEqual(["a.ts", "b.ts"]);
+    const epoch = store.diskEpoch;
+    await store.acceptFiles([
+      { workspaceId: "ws", filePath: "a.ts" },
+      { workspaceId: "ws", filePath: "b.ts" },
+    ]);
+    expect(store.diskEpoch).toBe(epoch + 1);
+    expect(store.listPendingDiffFiles(["ws"], contents)).toEqual([]);
+  });
+
   test("accept all pending chunks of the open file", async () => {
     seedSession("s1", [{ messageId: "m1", files: { "a.ts": "A\nB\nC\nD\nE" } }]);
     const current = "A\nX\nC\nD\nY";

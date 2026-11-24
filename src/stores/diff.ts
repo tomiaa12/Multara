@@ -414,6 +414,51 @@ export const useDiffStore = defineStore("diff", () => {
     });
   }
 
+  /**
+   * 一次保留多个文件：写入并行做完，基线和列表只改一次。
+   * 对齐 VS Code `editingSession.accept`：先 Promise.all，再一次提交状态。
+   */
+  async function acceptFiles(files: Array<{ workspaceId: string; filePath: string }>) {
+    const seen = new Set<string>();
+    const unique = files.filter((file) => {
+      const key = fileKey(file.workspaceId, file.filePath);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const settled = await Promise.all(unique.map((file) => enqueueReview(
+      file.workspaceId,
+      file.filePath,
+      async () => {
+        const key = fileKey(file.workspaceId, file.filePath);
+        const missing = missingFiles.value.has(key);
+        if (!missing && !baselines.value.has(key)) return null;
+        await backend.deleteFileBaseline(file.workspaceId, file.filePath);
+        return { key, missing };
+      },
+    ).catch(() => null)));
+    const done = settled.filter((item): item is { key: string; missing: boolean } => Boolean(item));
+    if (!done.length) return;
+    const nextBaselines = new Map(baselines.value);
+    const nextAbsent = new Set(absentBaselines.value);
+    const nextDismissed = new Set(dismissedMissing.value);
+    const nextMissing = new Set(missingFiles.value);
+    for (const item of done) {
+      nextBaselines.delete(item.key);
+      nextAbsent.delete(item.key);
+      reviewMemory.delete(item.key);
+      if (item.missing) {
+        nextDismissed.add(item.key);
+        nextMissing.delete(item.key);
+      }
+    }
+    baselines.value = nextBaselines;
+    absentBaselines.value = nextAbsent;
+    dismissedMissing.value = nextDismissed;
+    missingFiles.value = nextMissing;
+    diskEpoch.value += 1;
+  }
+
   async function acceptAllChunks(
     workspaceId: string,
     filePath: string,
@@ -599,6 +644,7 @@ export const useDiffStore = defineStore("diff", () => {
     isMissingAccepted,
     acceptMissingFile,
     acceptChunk,
+    acceptFiles,
     acceptAllChunks,
     undoChunk,
     undoAllChunks,

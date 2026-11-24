@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { vDetailsMotion } from "../../ui/motion";
 import { ChevronDown } from "@lucide/vue";
 import type { ExploreEntry, FileRevealTarget, PairedTool } from "./timeline-display";
-import { exploreDetail, exploreTitle, exploreVerb, fileRevealTarget, itemKind } from "./timeline-display";
+import { exploreDetail, exploreLine, exploreTitle, fileRevealTarget, itemKind } from "./timeline-display";
 import ThinkingLine from "./ThinkingLine.vue";
 import ClipScroll from "./ClipScroll.vue";
 import { useAppStore } from "../../stores/app";
@@ -61,7 +61,7 @@ function entryKey(entry: ExploreEntry) {
           >
             <UiShimmerText
               class="read-row-text"
-              :text="`${exploreVerb(entry.item.use, language)} ${exploreDetail(entry.item.use)}`"
+              :text="exploreLine(entry.item.use, language)"
               :active="Boolean(running && !entry.item.result)"
             />
           </component>

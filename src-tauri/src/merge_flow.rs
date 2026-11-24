@@ -313,12 +313,31 @@ pub async fn git_merge_preview(
         {
             None => None,
             Some(value) => {
+                let picked_remote = crate::git::split_remote_tracking(&git, root, &value).is_some();
                 let target = git_merge::resolve_target(&git, root, &value)?;
+                // 选的是远程分支时先拉这一支的最新提交，预览才和 GitLab 上的合并请求一致。
+                if picked_remote {
+                    if let Err(error) = git_merge::fetch_target(&git, root, &target) {
+                        let missing = error.contains("couldn't find remote ref");
+                        if !missing {
+                            return Err(tr!(
+                                "获取 {branch} 失败：{error}",
+                                branch = target.display(),
+                                error = error
+                            ));
+                        }
+                    }
+                }
                 let remote_commit = target
                     .remote_ref()
                     .and_then(|reference| git_merge::rev(&git, root, &reference));
                 let local_commit = git_merge::rev(&git, root, &target.local_ref());
-                let compare_to = remote_commit.clone().or(local_commit.clone());
+                // 远程条目用刚拉下来的 tip；本地条目用本地分支，避免把 origin/sit5 当成 sit5。
+                let compare_to = if picked_remote {
+                    remote_commit.clone().or(local_commit.clone())
+                } else {
+                    local_commit.clone().or(remote_commit.clone())
+                };
                 let (commits, files) = compare_to
                     .as_deref()
                     .map(|commit| git_merge::compare(&git, root, commit, &head))
@@ -332,7 +351,11 @@ pub async fn git_merge_preview(
                     },
                 };
                 Some(MergeTargetPreview {
-                    display: target.display(),
+                    display: if picked_remote {
+                        target.display()
+                    } else {
+                        target.branch.clone()
+                    },
                     exists: compare_to.is_some(),
                     has_remote_branch: remote_commit.is_some(),
                     checked_out_at: git_merge::checked_out_path(&git, root, &target.branch),

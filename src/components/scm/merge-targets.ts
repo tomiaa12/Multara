@@ -18,6 +18,8 @@ export const MERGE_RECENT_KEY = "multara.merge.recent";
 export interface MergeBranchRow {
   name: string;
   remote: boolean;
+  /** 远程分支在本地还有同名分支。 */
+  localCopy: boolean;
 }
 
 export interface MergeBranchGroup {
@@ -105,10 +107,18 @@ export function mergeBranchGroups(input: {
   selected: string[];
 }): MergeBranchGroup[] {
   const remoteSet = new Set(input.remotes);
+  const localSet = new Set(input.locals);
   const known = new Set([...input.locals, ...input.remotes]);
   const needle = input.query.trim().toLowerCase();
   const match = (name: string) => !needle || name.toLowerCase().includes(needle);
-  const row = (name: string): MergeBranchRow => ({ name, remote: remoteSet.has(name) });
+  const row = (name: string): MergeBranchRow => {
+    const remote = remoteSet.has(name);
+    return {
+      name,
+      remote,
+      localCopy: remote && localSet.has(shortName(name, true)),
+    };
+  };
   const visible = (name: string) => known.has(name) && match(name);
 
   if (input.filter === MERGE_FILTER_SELECTED) {

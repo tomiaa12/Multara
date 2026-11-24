@@ -155,13 +155,16 @@ function updatePosition() {
   // 优先下方：下方够用，或比上方更宽裕时向下
   const placeBelow = spaceBelow >= Math.min(menuHeight, MIN_BELOW) || spaceBelow >= spaceAbove;
   placement.value = placeBelow ? "bottom" : "top";
+  const available = Math.max(160, placeBelow ? spaceBelow : spaceAbove);
+  const maxHeight = Math.min(MENU_MAX_HEIGHT, available);
   const width = Math.min(MENU_MAX_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
   const left = clamp(anchor.left, VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN);
   popoverStyle.value = {
     zIndex: String(layerZ),
     left: `${left}px`,
     width: `${width}px`,
-    maxHeight: `${MENU_MAX_HEIGHT}px`,
+    height: `${maxHeight}px`,
+    maxHeight: `${maxHeight}px`,
     ...(placement.value === "top"
       ? { bottom: `${window.innerHeight - anchor.top + POPOVER_GAP}px`, top: "auto" }
       : { top: `${anchor.bottom + POPOVER_GAP}px`, bottom: "auto" }),
@@ -212,6 +215,9 @@ function loadMore(group: ComposerSuggestGroup) {
   const key = `${activeCategory.value?.id}:${group.id}`;
   const total = filteredGroups.value.find((item) => item.id === group.id)?.items.length ?? 0;
   visibleCounts[key] = nextCascadeVisibleCount(visibleCounts[key], total, PAGE_SIZE);
+  const entries = navigationEntries.value;
+  const moreIndex = entries.findIndex((entry) => entry.more?.id === group.id);
+  activeIndex.value = moreIndex >= 0 ? moreIndex : Math.max(entries.length - 1, 0);
 }
 
 function handleKeydown(event: KeyboardEvent) {
