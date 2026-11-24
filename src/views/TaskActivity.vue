@@ -30,7 +30,7 @@ import {
   speakerForMessage,
   subtaskEmbedForMessage,
 } from "../components/chat/message-speaker";
-import { resolveSessionLiveWorkStatus } from "../components/agent-live-status";
+import { liveCapacity, resolveSessionLiveWorkStatus } from "../components/agent-live-status";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import {
   classifyClipboardEntry,
@@ -205,6 +205,7 @@ const liveRunStatus = computed(() => resolveSessionLiveWorkStatus({
   runStates: store.runStates,
   sessionId: props.sessionId,
   processing: sessionProcessing.value,
+  capacity: liveCapacity(store.data),
 }));
 const liveAnchor = computed(() => {
   const created = Date.parse(currentTurnAssistant.value?.createdAt ?? "");

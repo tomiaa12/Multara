@@ -4,6 +4,7 @@ import {
   collectLiveRuns,
   resolveRunLiveWorkStatus,
   resolveSessionLiveWorkStatus,
+  type LiveCapacity,
 } from "./agent-live-status";
 
 function run(runId: string, sessionId: string, agentId: string, status: RunEvent["status"]): RunEvent {
@@ -34,10 +35,48 @@ describe("collectLiveRuns", () => {
   });
 });
 
+const cursorCapacity: LiveCapacity = {
+  agents: [
+    { id: "ag1", runtimeId: "cursor", maxConcurrentTasks: 1 },
+    { id: "ag2", runtimeId: "cursor", maxConcurrentTasks: 3 },
+  ],
+  runtimes: [{ id: "cursor", maxConcurrent: 3 }],
+};
+
 describe("resolveSessionLiveWorkStatus", () => {
-  it("maps lone queued to sending (启动中), not queued", () => {
+  it("maps lone queued to sending (启动中) while the runtime still has a slot", () => {
     const states = { a: run("a", "s1", "ag1", "queued") };
-    expect(resolveSessionLiveWorkStatus({ runStates: states, sessionId: "s1" })).toBe("sending");
+    expect(resolveSessionLiveWorkStatus({
+      runStates: states,
+      sessionId: "s1",
+      capacity: cursorCapacity,
+    })).toBe("sending");
+  });
+
+  it("shows queued when the same agent is already running in another session", () => {
+    const states = {
+      a: run("a", "other", "ag1", "running"),
+      b: run("b", "s1", "ag1", "queued"),
+    };
+    expect(resolveSessionLiveWorkStatus({
+      runStates: states,
+      sessionId: "s1",
+      capacity: cursorCapacity,
+    })).toBe("queued");
+  });
+
+  it("shows queued when the bound runtime is globally full, even for another agent", () => {
+    const states = {
+      a: run("a", "s-a", "ag2", "running"),
+      b: run("b", "s-b", "ag2", "running"),
+      c: run("c", "s-c", "ag2", "running"),
+      d: run("d", "s1", "ag1", "queued"),
+    };
+    expect(resolveSessionLiveWorkStatus({
+      runStates: states,
+      sessionId: "s1",
+      capacity: cursorCapacity,
+    })).toBe("queued");
   });
 
   it("prefers running when present", () => {
@@ -45,7 +84,11 @@ describe("resolveSessionLiveWorkStatus", () => {
       a: run("a", "s1", "ag1", "running"),
       b: run("b", "s1", "ag2", "queued"),
     };
-    expect(resolveSessionLiveWorkStatus({ runStates: states, sessionId: "s1" })).toBe("running");
+    expect(resolveSessionLiveWorkStatus({
+      runStates: states,
+      sessionId: "s1",
+      capacity: cursorCapacity,
+    })).toBe("running");
   });
 
   it("falls back to sending while processing with no live runs", () => {
@@ -58,20 +101,24 @@ describe("resolveSessionLiveWorkStatus", () => {
 });
 
 describe("resolveRunLiveWorkStatus", () => {
-  it("shows starting for solo queued, queued only behind a running peer", () => {
-    const solo = { a: run("a", "s1", "ag1", "queued") };
+  it("shows starting while the runtime has a free slot, queued once that slot is full", () => {
+    const solo = { a: run("a", "s1", "ag2", "queued") };
     expect(resolveRunLiveWorkStatus(
-      { runId: "a", sessionId: "s1", status: "queued" },
+      { runId: "a", sessionId: "s1", agentId: "ag2", status: "queued" },
       solo,
+      cursorCapacity,
     )).toBe("sending");
 
-    const behind = {
-      a: run("a", "s1", "ag1", "running"),
-      b: run("b", "s1", "ag2", "queued"),
+    const full = {
+      a: run("a", "s-a", "ag2", "running"),
+      b: run("b", "s-b", "ag2", "running"),
+      c: run("c", "s-c", "ag2", "running"),
+      d: run("d", "s1", "ag1", "queued"),
     };
     expect(resolveRunLiveWorkStatus(
-      { runId: "b", sessionId: "s1", status: "queued" },
-      behind,
+      { runId: "d", sessionId: "s1", agentId: "ag1", status: "queued" },
+      full,
+      cursorCapacity,
     )).toBe("queued");
   });
 });
