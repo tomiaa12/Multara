@@ -3008,11 +3008,18 @@ fn resume_leader_after_members(
                 .join("\n")
         )
     };
-    let assignment = tr!(
-        "你刚才 @ 的成员已经回复，回复原文如下（用户在界面上已经能看到，不要复述）：\n\n{replies}\n\n{files}\n\n你是负责人，先对照你最初的要求检查成果。不满足就在回答里另起一段继续 @ 他，写清楚还差什么，不要自己动手改；满足了就用一两句话收尾，并用列表列出所有产出文件（每行一个文件名）。除了列表，不要复述成员的回复。",
-        replies = joined,
-        files = files_block
-    );
+    let assignment = if files.is_empty() {
+        tr!(
+            "你刚才 @ 的成员已经回复，回复原文如下：\n\n{replies}\n\n你是负责人，先对照你最初的要求检查成果。不满足就在回答里另起一段继续 @ 他，写清楚还差什么，不要自己动手改。",
+            replies = joined,
+        )
+    } else {
+        tr!(
+            "你刚才 @ 的成员已经回复，回复原文如下：\n\n{replies}\n\n{files}\n\n你是负责人，先对照你最初的要求检查成果。不满足就在回答里另起一段继续 @ 他，写清楚还差什么，不要自己动手改。满足了就用列表列出所有产出文件（每行一个文件名）。",
+            replies = joined,
+            files = files_block,
+        )
+    };
     let id = crate::ops::run::enqueue(
         db,
         crate::ops::run::Enqueue {

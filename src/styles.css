@@ -16306,10 +16306,11 @@ vite-error-overlay {
   color: var(--color-text);
   background: var(--color-surface-hover, transparent);
 }
-/* 仅 ChatPanel：屏外轮次跳过布局/绘制。任务详情 / 收件箱 thread 会挂全部历史，
+/* 仅 ChatPanel：更早的轮次跳过布局/绘制。任务详情 / 收件箱 thread 会挂全部历史，
  * 在 WKWebView 里 content-visibility 常把屏外高度算成 0，滚动条消失只剩末轮。
- * ChatPanel 已有「显示更早」窗口，历史不在 DOM 里，这里可以安全用。 */
-.shared-chat-panel .message-exchange:not(:last-child) {
+ * 列表末尾还有悬浮滚动条，不能用 :last-child。末轮和刚结束的上一轮必须真布局，
+ * 否则上一轮会停在末轮那一屏 min-height 上，新提问就落在这块空白下面。 */
+.shared-chat-panel .message-list > .message-exchange:nth-last-of-type(n + 3) {
   content-visibility: auto;
   contain-intrinsic-size: auto 480px;
 }
