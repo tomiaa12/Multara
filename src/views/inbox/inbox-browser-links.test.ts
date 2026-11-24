@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, TimelineItem } from "../../domain/types";
-import { inboxBrowserLinks, normalizeBrowserUrl } from "./inbox-browser-links";
+import { inboxBrowserLinks, normalizeBrowserUrl, sameBrowserUrl } from "./inbox-browser-links";
 
 function item(partial: Partial<TimelineItem>): TimelineItem {
   return {
@@ -49,6 +49,11 @@ describe("inbox browser links", () => {
   it("returns nothing when the transcript has no timeline urls", () => {
     expect(inboxBrowserLinks(undefined)).toEqual([]);
     expect(inboxBrowserLinks([message([])])).toEqual([]);
+  });
+
+  it("treats a trailing slash as the same address", () => {
+    expect(sameBrowserUrl("https://example.com", "https://example.com/")).toBe(true);
+    expect(sameBrowserUrl("https://example.com/a", "https://example.com/b")).toBe(false);
   });
 
   it("adds https when the address has no scheme", () => {

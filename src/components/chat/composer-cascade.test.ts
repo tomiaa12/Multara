@@ -4,6 +4,7 @@ import {
   matchesCascadeQuery,
   navigateCascade,
   nextCascadeVisibleCount,
+  scrollTopToReveal,
   type CascadeNavigationState,
 } from "./composer-cascade";
 
@@ -45,6 +46,12 @@ describe("composer cascade", () => {
     expect(matchesCascadeQuery("Miku", "Auto agent", "mIK")).toBe(true);
     expect(matchesCascadeQuery("产品开发小队", "把需求拆给界面和实现", "界面")).toBe(true);
     expect(matchesCascadeQuery("Miku", undefined, "Claude")).toBe(false);
+  });
+
+  it("scrolls a highlighted row back into the visible range", () => {
+    expect(scrollTopToReveal(80, 100, 300, 40, 80)).toBe(16);
+    expect(scrollTopToReveal(0, 100, 300, 280, 340)).toBe(44);
+    expect(scrollTopToReveal(20, 100, 300, 120, 180)).toBe(20);
   });
 
   it("loads one bounded page at a time", () => {

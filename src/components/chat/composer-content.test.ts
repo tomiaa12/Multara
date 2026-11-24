@@ -269,4 +269,21 @@ describe("parseUserPromptNodes", () => {
     expect(parseUserPromptNodes(content)).toEqual(nodes);
     expect(visiblePromptText(content)).toContain("建仓");
   });
+
+  test("round-trips an automation mention", () => {
+    const nodes: ComposerNode[] = [
+      { type: "text", value: "改一下 " },
+      {
+        type: "chip",
+        id: "automation:auto-1",
+        referenceId: "auto-1",
+        referenceKind: "automation",
+        label: "日报",
+      },
+    ];
+    const content = formatAgentPrompt(nodes, { directMentions: true });
+    expect(content).toContain("[实体引用] automation auto-1 ");
+    expect(parseUserPromptNodes(content)).toEqual(nodes);
+    expect(visiblePromptText(content)).toContain("日报");
+  });
 });

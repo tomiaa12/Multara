@@ -14,7 +14,7 @@ import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import { useWorkflowsStore } from "../stores/workflows";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
-import { runStatusLabel, runStatusTone } from "../components/run-log";
+import { runStatusTone } from "../components/run-log";
 import {
   COMMON_TIMEZONES,
   runbookTemplate,
@@ -373,6 +373,12 @@ function formatTime(value: string | null) {
   return value ? new Date(value).toLocaleString() : "—";
 }
 
+function automationEnumLabel(group: "automation.source" | "automation.run" | "automation.delivery" | "automation.reason", value: string) {
+  const key = `${group}.${value}`;
+  const text = t(key);
+  return text === key ? value : text;
+}
+
 async function toggleHistory(item: Automation, forceOpen = false) {
   if (!forceOpen && expandedId.value === item.id) {
     expandedId.value = null;
@@ -444,7 +450,7 @@ function toggleWeekday(day: number) {
             <div class="automation-times">
               <span>{{ t("automation.lastRun", { time: formatTime(item.lastRunAt) }) }}</span>
               <span v-if="item.nextRunAt">{{ t("automation.nextRun", { time: formatTime(item.nextRunAt) }) }}</span>
-              <span v-if="item.lastRunStatus" class="ds-badge" :data-tone="runStatusTone(item.lastRunStatus)">{{ t("automation.lastStatus", { status: runStatusLabel(item.lastRunStatus) }) }}</span>
+              <span v-if="item.lastRunStatus" class="ds-badge" :data-tone="runStatusTone(item.lastRunStatus)">{{ t("automation.lastStatus", { status: automationEnumLabel("automation.run", item.lastRunStatus) }) }}</span>
             </div>
             <UiTooltip v-if="item.triggerType === 'webhook' && item.webhookToken" :content="webhookUrl(item)">
               <code class="webhook-url">{{ webhookUrl(item) }}</code>
@@ -468,16 +474,16 @@ function toggleWeekday(day: number) {
         <div v-if="expandedId === item.id" class="automation-history">
           <div v-if="!histories[item.id]?.length" class="empty-inline">{{ t("automation.noHistory") }}</div>
           <div v-for="runItem in histories[item.id]" :key="runItem.id" class="history-row">
-            <span class="ds-badge">{{ runItem.source }}</span><strong><span class="ds-badge" :data-tone="runStatusTone(runItem.status)">{{ runStatusLabel(runItem.status) }}</span></strong>
+            <span class="ds-badge">{{ automationEnumLabel("automation.source", runItem.source) }}</span><strong><span class="ds-badge" :data-tone="runStatusTone(runItem.status)">{{ automationEnumLabel("automation.run", runItem.status) }}</span></strong>
             <span>{{ formatTime(runItem.triggeredAt) }}</span>
-            <small v-if="runItem.reasonCode">{{ runItem.reasonCode }}{{ runItem.failureReason ? ` · ${runItem.failureReason}` : "" }}</small>
+            <small v-if="runItem.reasonCode">{{ automationEnumLabel("automation.reason", runItem.reasonCode) }}{{ runItem.failureReason ? ` · ${runItem.failureReason}` : "" }}</small>
           </div>
           <template v-if="item.triggerType === 'webhook' && deliveries[item.id]?.length">
             <h4>{{ t("automation.webhookAudit") }}</h4>
             <div v-for="delivery in deliveries[item.id]" :key="delivery.id" class="history-row">
-              <span class="ds-badge">{{ delivery.status }}</span><strong>{{ delivery.event ?? t("automation.anyEvent") }}</strong>
+              <span class="ds-badge">{{ automationEnumLabel("automation.delivery", delivery.status) }}</span><strong>{{ delivery.event ?? t("automation.anyEvent") }}</strong>
               <span>{{ formatTime(delivery.createdAt) }}</span>
-              <small>{{ delivery.dedupeKey }}<template v-if="delivery.reasonCode"> · {{ delivery.reasonCode }}</template></small>
+              <small>{{ delivery.dedupeKey }}<template v-if="delivery.reasonCode"> · {{ automationEnumLabel("automation.reason", delivery.reasonCode) }}</template></small>
             </div>
           </template>
         </div>

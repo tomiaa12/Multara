@@ -28,7 +28,7 @@ multara — Multara 内置 CLI
   squad        list|get|create|update|member
   project      list|get|create|update
   workspace    list|add
-  automation   list|get|create
+  automation   list|get|create|update
   channel      list|get|enable|disable
   feishu       send --to <句柄> --text <正文>
   skill        list|get|builtin|import
@@ -518,6 +518,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
             ops::json(&ops::automation::get(db, &id)?)
         }
         ("automation", "create") => create_automation(db, &parsed),
+        ("automation", "update") => update_automation(db, &parsed),
         ("channel", "list") => {
             let rows = crate::channel::store::list_installations(db)?;
             ops::json(&rows.iter().map(channel_json).collect::<Vec<_>>())
@@ -609,6 +610,7 @@ fn ensure_write_allowed(
         ("project", "update"),
         ("workspace", "add"),
         ("automation", "create"),
+        ("automation", "update"),
         ("channel", "enable"),
         ("channel", "disable"),
         ("session", "resume"),
@@ -676,7 +678,7 @@ fn ensure_workflow_node_scope(
             | ("squad", "create" | "update" | "member")
             | ("project", "create" | "update")
             | ("workspace", "add")
-            | ("automation", "create")
+            | ("automation", "create" | "update")
             | ("channel", "enable" | "disable")
             | ("session", "resume")
             | ("workflow", "run" | "create" | "rename" | "delete" | "enable" | "disable" | "publish" | "duplicate" | "node" | "edge" | "input")
@@ -857,6 +859,121 @@ fn create_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String,
     }
     transaction.commit().map_err(|error| error.to_string())?;
     ops::json(&ops::automation::get(db, &id)?)
+}
+
+fn update_automation(db: &mut Connection, parsed: &ParsedArgs) -> Result<String, String> {
+    if parsed.flag(&["mode"]) == Some("plan") {
+        return Err(tr!("自动化不支持规划模式"));
+    }
+    let id = parsed
+        .positional
+        .get(2)
+        .ok_or_else(|| tr!("缺少自动化 id"))?;
+    let _ = ops::automation::get(db, id)?;
+    let mut changed = false;
+    if let Some(name) = parsed.flag(&["name"]) {
+        if name.trim().is_empty() {
+            return Err(tr!("自动化名称和任务内容不能为空"));
+        }
+        db.execute(
+            "UPDATE automations SET name=?1 WHERE id=?2",
+            rusqlite::params![name, id],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    if let Some(prompt) = parsed.flag(&["prompt"]) {
+        if prompt.trim().is_empty() {
+            return Err(tr!("自动化名称和任务内容不能为空"));
+        }
+        db.execute(
+            "UPDATE automations SET prompt=?1 WHERE id=?2",
+            rusqlite::params![prompt, id],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    if let Some(agent_id) = parsed.flag(&["agent-id", "assignee", "assignee-id"]) {
+        ops::require_agent(db, agent_id)?;
+        db.execute(
+            "UPDATE automations SET target_type='agent', target_id=?1 WHERE id=?2",
+            rusqlite::params![agent_id, id],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    if let Some(project_id) = parsed.flag(&["project-id", "project"]) {
+        ops::require_project(db, project_id)?;
+        db.execute(
+            "UPDATE automations SET project_id=?1 WHERE id=?2",
+            rusqlite::params![project_id, id],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    if let Some(enabled) = parsed.flag(&["enabled"]) {
+        db.execute(
+            "UPDATE automations SET enabled=?1 WHERE id=?2",
+            rusqlite::params![enabled != "false", id],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    let schedule = parsed.flag(&["schedule"]);
+    if schedule.is_none() && parsed.flags.contains_key("manual") {
+        db.execute(
+            "UPDATE automations SET trigger_type='manual', interval_minutes=NULL WHERE id=?1",
+            [id],
+        )
+        .map_err(|error| error.to_string())?;
+        db.execute(
+            "DELETE FROM automation_triggers WHERE automation_id=?1 AND kind='schedule'",
+            [id],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    if let Some(expression) = schedule {
+        let timezone = parsed.flag(&["timezone"]).unwrap_or(DEFAULT_TIMEZONE);
+        let next_run_at = next_schedule_run(expression, timezone)?;
+        let enabled: bool = db
+            .query_row(
+                "SELECT enabled FROM automations WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        db.execute(
+            "UPDATE automations SET trigger_type='interval' WHERE id=?1",
+            [id],
+        )
+        .map_err(|error| error.to_string())?;
+        db.execute(
+            "DELETE FROM automation_triggers WHERE automation_id=?1 AND kind='schedule'",
+            [id],
+        )
+        .map_err(|error| error.to_string())?;
+        db.execute(
+            "INSERT INTO automation_triggers
+             (id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, created_at)
+             VALUES (?1, ?2, 'schedule', ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                uuid::Uuid::new_v4().to_string(),
+                id,
+                enabled,
+                expression.trim(),
+                timezone,
+                next_run_at,
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+        changed = true;
+    }
+    if !changed {
+        return Err(tr!("没有要修改的字段"));
+    }
+    ops::json(&ops::automation::get(db, id)?)
 }
 
 const DEFAULT_TIMEZONE: &str = "UTC";
@@ -1532,6 +1649,31 @@ mod tests {
         assert_eq!(cron, "0 9 * * *");
         assert!(chrono::DateTime::parse_from_rfc3339(&next).is_ok());
         assert!(execute(&args("每天"), &mut db).is_err());
+        let id: String = db
+            .query_row("SELECT id FROM automations WHERE name='日报'", [], |row| row.get(0))
+            .unwrap();
+        execute(
+            &[
+                "automation".into(),
+                "update".into(),
+                id.clone(),
+                "--name".into(),
+                "晚报".into(),
+                "--prompt".into(),
+                "写晚报".into(),
+            ],
+            &mut db,
+        )
+        .unwrap();
+        let (name, prompt): (String, String) = db
+            .query_row(
+                "SELECT name, prompt FROM automations WHERE id=?1",
+                [&id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "晚报");
+        assert_eq!(prompt, "写晚报");
     }
 
     #[test]

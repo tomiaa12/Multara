@@ -19,7 +19,7 @@ export type PromptWorkspace = {
   sourcePath?: string | null;
 };
 
-export type ComposerEntityKind = "agent" | "squad" | "skill" | "mcp" | "task" | "requirement" | "session" | "workflow";
+export type ComposerEntityKind = "agent" | "squad" | "skill" | "mcp" | "task" | "requirement" | "session" | "workflow" | "automation";
 
 export type ComposerReferenceChipNode = {
   type: "chip";
@@ -79,7 +79,7 @@ export function fencedBlock(text: string) {
   return `${fence}\n${text}\n${fence}`;
 }
 const REFERENCE_PATTERN =
-  /\[实体引用\][ \t]+(agent|squad|skill|mcp|task|requirement|session|workflow)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
+  /\[实体引用\][ \t]+(agent|squad|skill|mcp|task|requirement|session|workflow|automation)[ \t]+([^\s]+)[ \t]+([^\n]+)/g;
 const ASSIGNMENT_PATTERN =
   /\[指派要求\][^\n]*\n(?:-[^\n]*\n?)+/g;
 
@@ -134,6 +134,7 @@ const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
   requirement: "",
   session: "",
   workflow: "",
+  automation: "",
 };
 
 function isOpaqueDirectoryId(name: string) {
@@ -146,6 +147,7 @@ export function chipLabel(item: ComposerChipNode) {
     if (item.referenceKind === "requirement") return t("chat.chip.requirement", { name: item.label });
     if (item.referenceKind === "session") return t("chat.chip.session", { name: item.label });
     if (item.referenceKind === "workflow") return t("chat.chip.workflow", { name: item.label });
+    if (item.referenceKind === "automation") return t("chat.chip.automation", { name: item.label });
     const prefix = REFERENCE_PREFIX[item.referenceKind];
     return `${prefix}${item.label}`;
   }

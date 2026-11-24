@@ -194,6 +194,7 @@ function suggestItem(item: ComposerEntityItem): ComposerSuggestItem {
   if (item.kind === "requirement") leading = "requirement";
   if (item.kind === "session") leading = "session";
   if (item.kind === "workflow") leading = "workflow";
+  if (item.kind === "automation") leading = "automation";
   return {
     id: item.id,
     kind: item.kind,
@@ -351,6 +352,13 @@ function feishuSuggestItems(): ComposerSuggestItem[] {
   });
 }
 
+function automationTriggerLabel(triggerType: string) {
+  const type = triggerType === "interval" ? "schedule" : triggerType;
+  const key = `automation.trigger.${type}`;
+  const label = t(key);
+  return label === key ? triggerType : label;
+}
+
 const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
   const data = store.data;
   const currentSessionId = props.modeSessionId;
@@ -412,6 +420,13 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       description: item.description,
       group: "workflows",
     })),
+    ...(data?.automations ?? []).map((item) => ({
+      id: item.id,
+      kind: "automation" as const,
+      label: item.name,
+      description: automationTriggerLabel(item.triggerType),
+      group: "automations",
+    })),
     ...(data?.sessions ?? [])
       .filter((item) => item.id !== currentSessionId)
       .map((item) => ({
@@ -454,6 +469,12 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       label: t("chat.context.workflows"),
       groups: [group("workflows", t("chat.context.workflows"))],
       emptyText: t("chat.context.workflowsEmpty"),
+    },
+    {
+      id: "automation",
+      label: t("chat.context.automations"),
+      groups: [group("automations", t("chat.context.automations"))],
+      emptyText: t("chat.context.automationsEmpty"),
     },
   );
   // 「添加上下文 → Canvas...」（R15）：不产生附件，选中即打开或聚焦；页面内容只能经 __multara/context 进上下文
@@ -589,7 +610,7 @@ function onComposerChange(nodes: ComposerNode[]) {
 }
 
 const ENTITY_KINDS = new Set<ComposerEntityKind>([
-  "agent", "squad", "skill", "mcp", "task", "requirement", "session", "workflow",
+  "agent", "squad", "skill", "mcp", "task", "requirement", "session", "workflow", "automation",
 ]);
 
 function stripSuggestTrigger() {

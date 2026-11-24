@@ -43,3 +43,8 @@ export function normalizeBrowserUrl(raw: string): string {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return `https://${trimmed}`;
 }
+
+/** 忽略末尾斜杠，避免跳转回写和再次导航互相触发。 */
+export function sameBrowserUrl(a: string, b: string): boolean {
+  return a.trim().replace(/\/+$/, "") === b.trim().replace(/\/+$/, "");
+}

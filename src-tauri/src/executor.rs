@@ -3576,6 +3576,11 @@ fn describe_references(prompt: &str, scanned: &[crate::models::GlobalResource]) 
                     name = name,
                     id = id
                 ),
+                "automation" => tr!(
+                    "[引用自动化] {name}（id `{id}`）：用 `multara automation get {id}` 查看。创建用 `multara automation create --name <名称> --agent-id <智能体id> --prompt <内容> --project-id <需求id> [--schedule <5字段Cron>] [--timezone <IANA>] [--enabled true|false]`。修改用 `multara automation update {id}`，可改 --name --prompt --agent-id --project-id --enabled --schedule --timezone；改成仅手动加 `--manual`",
+                    name = name,
+                    id = id
+                ),
                 "agent" => tr!("[点名智能体] {name}（id `{id}`）", name = name, id = id),
                 "squad" => tr!("[点名小队] {name}（id `{id}`）", name = name, id = id),
                 _ => line.to_string(),
@@ -5409,6 +5414,13 @@ mod tests {
         assert!(described.contains("`multara session history s1`"));
         assert!(described.contains("[引用工作流] 建仓（id `wf1`）：用 `multara workflow draft wf1` 查看草稿"));
         assert!(described.contains("`multara workflow publish wf1`"));
+        let automation = super::describe_references(
+            "[实体引用] automation a1 %E6%97%A5%E6%8A%A5\n改",
+            &[],
+        );
+        assert!(automation.contains("[引用自动化] 日报（id `a1`）"));
+        assert!(automation.contains("`multara automation get a1`"));
+        assert!(automation.contains("`multara automation update a1`"));
         assert!(described.contains("[引用 Skill] gone：本机没有找到这个 Skill"));
         assert!(!described.contains("[实体引用]"));
         assert!(described.ends_with("改一下"));

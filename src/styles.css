@@ -11046,8 +11046,11 @@ body.is-resizing-panels .inbox-files-resize::after {
 .inbox-rail-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--spacing-2);
+}
+.inbox-rail-title > :last-child:not(:first-child) {
+  margin-left: auto;
 }
 .inbox-page h1 {
   margin: 0;

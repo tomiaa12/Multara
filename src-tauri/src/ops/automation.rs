@@ -106,6 +106,19 @@ pub fn publish_result(db: &Connection, session_id: &str, status: &str) -> Result
             status: inbox_status.to_string(),
         },
     )?;
+    // 触发提示是这次运行自己写进会话的，不算未读；未读从这条用户消息之后算。
+    db.execute(
+        "UPDATE inbox_items
+         SET read_message_id = (
+           SELECT id FROM messages
+           WHERE session_id = ?1 AND role = 'user'
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT 1
+         )
+         WHERE session_id = ?1 AND read_message_id IS NULL",
+        [session_id],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(task)
 }
 
@@ -286,6 +299,20 @@ mod tests {
             )
             .unwrap();
         assert!(preview.contains("长沙今天晴"));
+        let unread: i64 = db
+            .query_row(
+                "SELECT CASE WHEN i.read != 0 THEN 0 ELSE (
+                   SELECT COUNT(*) FROM messages m
+                   LEFT JOIN messages anchor ON anchor.id = i.read_message_id
+                   WHERE m.session_id = i.session_id
+                     AND (anchor.id IS NULL OR (m.created_at, m.id) > (anchor.created_at, anchor.id))
+                 ) END
+                 FROM inbox_items i WHERE i.session_id='automation-run:run1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unread, 1);
         assert_eq!(
             publish_result(&db, "automation-run:run1", "completed")
                 .unwrap()

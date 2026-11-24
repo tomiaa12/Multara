@@ -69,3 +69,17 @@ export function matchesCascadeQuery(label: string, description: string | undefin
 export function nextCascadeVisibleCount(current: number | undefined, total: number, pageSize: number) {
   return Math.min((current ?? pageSize) + pageSize, total);
 }
+
+/** 目标超出可视区时，返回能把它露出来的 scrollTop。已经完全在里面则不变。 */
+export function scrollTopToReveal(
+  scrollTop: number,
+  viewTop: number,
+  viewBottom: number,
+  itemTop: number,
+  itemBottom: number,
+  pad = 4,
+): number {
+  if (itemTop < viewTop + pad) return scrollTop - (viewTop + pad - itemTop);
+  if (itemBottom > viewBottom - pad) return scrollTop + (itemBottom - (viewBottom - pad));
+  return scrollTop;
+}

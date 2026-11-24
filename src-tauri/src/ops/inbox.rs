@@ -10,6 +10,7 @@ SELECT i.id, i.session_id, i.project_id, i.task_id, i.title, i.preview, i.status
        CASE WHEN i.read != 0 THEN 0 ELSE (
          SELECT COUNT(*) FROM messages m
          WHERE m.session_id = i.session_id
+           AND m.role != 'user'
            AND (anchor.id IS NULL OR (m.created_at, m.id) > (anchor.created_at, anchor.id))
        ) END,
        i.archived_at,
@@ -217,7 +218,8 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(created.unread_count, 3);
+        // 自己发出的两条不算，只剩助手回复
+        assert_eq!(created.unread_count, 1);
         assert!(created.read_message_id.is_none());
 
         mark_read(&db, &created.id, Some("m1")).unwrap();
@@ -239,6 +241,6 @@ mod tests {
         .unwrap();
         assert!(!again.read);
         assert_eq!(again.read_message_id.as_deref(), Some("m1"));
-        assert_eq!(again.unread_count, 2);
+        assert_eq!(again.unread_count, 1);
     }
 }

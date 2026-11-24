@@ -1406,6 +1406,18 @@ fn after_terminal(db: &Connection, host: &dyn Host, run_id: &str) -> Result<Acts
                 preview: text.chars().take(200).collect(),
                 status: inbox_status.into(),
             });
+            // 「开始运行」已经在过程里出现，未读只留刚写入的结束结果。
+            let _ = db.execute(
+                "UPDATE inbox_items
+                 SET read_message_id = (
+                   SELECT id FROM messages
+                   WHERE session_id = ?1
+                   ORDER BY created_at DESC, rowid DESC
+                   LIMIT 1 OFFSET 1
+                 )
+                 WHERE session_id = ?1 AND read_message_id IS NULL",
+                [&run.overview_session_id],
+            );
             acts.push(Action::SessionChanged(run.overview_session_id.clone()));
         }
         if let Some(task_id) = &run.task_id {

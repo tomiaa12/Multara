@@ -6,6 +6,7 @@ import {
   CircleDot,
   FolderKanban,
   FolderOpen,
+  GitBranch,
   GitPullRequest,
   Hash,
   LayoutDashboard,
@@ -26,6 +27,7 @@ import {
   matchesCascadeQuery,
   navigateCascade,
   nextCascadeVisibleCount,
+  scrollTopToReveal,
   type CascadePane,
 } from "./composer-cascade";
 import { t } from "../../i18n";
@@ -37,7 +39,7 @@ export type ComposerSuggestItem = {
   description?: string;
   /** 有头像时按智能体下拉选项渲染（AgentAvatar + ds-select-option） */
   avatar?: string | null;
-  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker" | "canvas" | "mcp" | "feishu" | "workflow";
+  leading?: "bot" | "sparkles" | "hash" | "requirement" | "session" | "file" | "folder" | "picker" | "canvas" | "mcp" | "feishu" | "workflow" | "automation";
   owner?: string;
   isDirectory?: boolean;
 };
@@ -171,23 +173,35 @@ function updatePosition() {
   };
 }
 
+function clippedView(scroller: HTMLElement) {
+  const own = scroller.getBoundingClientRect();
+  let top = own.top;
+  let bottom = own.bottom;
+  let node = scroller.parentElement;
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    if (style.overflowY !== "visible") {
+      const rect = node.getBoundingClientRect();
+      top = Math.max(top, rect.top);
+      bottom = Math.min(bottom, rect.bottom);
+    }
+    node = node.parentElement;
+  }
+  return { top, bottom };
+}
+
 async function scrollActiveIntoView() {
   await nextTick();
-  const list = listEl.value;
-  const active = list?.querySelector<HTMLElement>(`[data-nav-index="${activeIndex.value}"]`);
-  if (!list || !active) return;
-  const listRect = list.getBoundingClientRect();
-  const activeRect = active.getBoundingClientRect();
-  const activeTop = list.scrollTop + activeRect.top - listRect.top;
-  const activeBottom = activeTop + activeRect.height;
-  if (activeTop < list.scrollTop) {
-    list.scrollTop = activeTop;
-    return;
-  }
-  const visibleBottom = list.scrollTop + list.clientHeight;
-  if (activeBottom > visibleBottom) {
-    list.scrollTop = activeBottom - list.clientHeight;
-  }
+  const scroller = activePane.value === "categories"
+    ? root.value?.querySelector<HTMLElement>(".composer-suggest-categories")
+    : listEl.value;
+  const target = activePane.value === "categories"
+    ? scroller?.querySelectorAll<HTMLElement>("button")[categoryIndex.value]
+    : listEl.value?.querySelector<HTMLElement>(`[data-nav-index="${activeIndex.value}"]`);
+  if (!scroller || !target) return;
+  const view = clippedView(scroller);
+  const item = target.getBoundingClientRect();
+  scroller.scrollTop = scrollTopToReveal(scroller.scrollTop, view.top, view.bottom, item.top, item.bottom);
 }
 
 async function layout() {
@@ -294,7 +308,7 @@ onBeforeUnmount(() => {
       :aria-label="ariaLabel"
       :style="popoverStyle"
     >
-      <nav class="composer-suggest-categories" aria-label="引用类型">
+      <nav class="composer-suggest-categories vs-scroll" aria-label="引用类型">
         <button
           v-for="(category, index) in categories"
           :key="category.id"
@@ -315,7 +329,8 @@ onBeforeUnmount(() => {
           <Network v-else-if="category.id === 'mcp'" :size="14" />
           <Hash v-else-if="category.id === 'task'" :size="14" />
           <FolderKanban v-else-if="category.id === 'requirement'" :size="14" />
-          <Workflow v-else-if="category.id === 'workflow'" :size="14" />
+          <GitBranch v-else-if="category.id === 'workflow'" :size="14" />
+          <Workflow v-else-if="category.id === 'automation'" :size="14" />
           <LayoutDashboard v-else-if="category.id === 'canvas'" :size="14" />
           <Paperclip v-else :size="14" />
           <span>{{ category.label }}</span>
@@ -332,7 +347,7 @@ onBeforeUnmount(() => {
             @keydown="handleKeydown"
           />
         </label>
-        <div ref="listEl" class="ds-select-list" @mousedown.prevent>
+        <div ref="listEl" class="ds-select-list vs-scroll" @mousedown.prevent>
           <template v-for="group in visibleGroups" :key="group.id">
             <div v-if="group.items.length" class="ds-select-group">
               <div v-if="group.label" class="ds-select-group-label">
@@ -370,7 +385,8 @@ onBeforeUnmount(() => {
                   <Sparkles v-else-if="item.leading === 'sparkles'" :size="14" />
                   <Hash v-else-if="item.leading === 'hash'" :size="14" />
                   <FolderKanban v-else-if="item.leading === 'requirement'" :size="14" />
-                  <Workflow v-else-if="item.leading === 'workflow'" :size="14" />
+                  <GitBranch v-else-if="item.leading === 'workflow'" :size="14" />
+                  <Workflow v-else-if="item.leading === 'automation'" :size="14" />
                   <MessageSquare v-else-if="item.leading === 'session' || item.leading === 'feishu'" :size="14" />
                   <FolderOpen v-else-if="item.leading === 'picker'" :size="14" />
                   <LayoutDashboard v-else-if="item.leading === 'canvas'" :size="14" />
