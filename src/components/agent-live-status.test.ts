@@ -104,7 +104,7 @@ describe("resolveRunLiveWorkStatus", () => {
   it("shows starting while the runtime has a free slot, queued once that slot is full", () => {
     const solo = { a: run("a", "s1", "ag2", "queued") };
     expect(resolveRunLiveWorkStatus(
-      { runId: "a", sessionId: "s1", agentId: "ag2", status: "queued" },
+      { runId: "a", agentId: "ag2", status: "queued" },
       solo,
       cursorCapacity,
     )).toBe("sending");
@@ -116,7 +116,7 @@ describe("resolveRunLiveWorkStatus", () => {
       d: run("d", "s1", "ag1", "queued"),
     };
     expect(resolveRunLiveWorkStatus(
-      { runId: "d", sessionId: "s1", agentId: "ag1", status: "queued" },
+      { runId: "d", agentId: "ag1", status: "queued" },
       full,
       cursorCapacity,
     )).toBe("queued");
