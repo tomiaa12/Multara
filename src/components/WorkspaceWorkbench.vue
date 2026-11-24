@@ -755,6 +755,7 @@ const workbenchEl = ref<HTMLElement | null>(null);
 const editorAreaEl = ref<HTMLElement | null>(null);
 const workbenchLive = ref(true);
 const workbenchBrowserRequest = ref("");
+const browserRequestTarget = ref("");
 const addTabMenu = ref<{ x: number; y: number } | null>(null);
 const fileTreeEl = ref<HTMLElement | null>(null);
 let stickyTreeObserver: ResizeObserver | null = null;
@@ -2858,7 +2859,6 @@ function activateEditorTab(tab: EditorTab) {
   activeEditorKey.value = key;
   // Canvas 标签没有文件：activeFile 置空，大纲、LSP、git 等跟着当前文件走的逻辑都不会拿假路径去请求
   activeFile.value = tab.canvas || tab.browser ? null : tab.file;
-  if (tab.browser?.url) workbenchBrowserRequest.value = `${Date.now()}\n${tab.browser.url}`;
   originalContent.value = tab.original;
   if (isVirtualTab(tab)) {
     externalChangePending.value = false;
@@ -3049,6 +3049,7 @@ const activeCanvas = computed(
 const activeBrowser = computed(
   () => editorTabs.value.find((tab) => tabKey(tab) === activeEditorKey.value)?.browser ?? null,
 );
+const browserTabs = computed(() => editorTabs.value.flatMap((tab) => (tab.browser ? [tab.browser] : [])));
 const browserTabUrls = computed(() =>
   editorTabs.value.flatMap((tab) => (tab.browser?.url ? [tab.browser.url] : [])),
 );
@@ -3075,7 +3076,10 @@ function openBrowserTab(url = "") {
   const tab = existing ?? makeBrowserTab(url);
   if (!existing) editorTabs.value = [...editorTabs.value, tab];
   activateEditorTab(tab);
-  if (url) workbenchBrowserRequest.value = `${Date.now()}\n${url}`;
+  if (url && tab.browser) {
+    browserRequestTarget.value = tab.browser.id;
+    workbenchBrowserRequest.value = `${Date.now()}\n${url}`;
+  }
 }
 
 function openAddTabMenu(event: MouseEvent) {
@@ -3085,8 +3089,8 @@ function openAddTabMenu(event: MouseEvent) {
   addTabMenu.value = { x: rect.left, y: rect.bottom + 4 };
 }
 
-function onBrowserNavigated(url: string) {
-  const browser = activeBrowser.value;
+function onBrowserNavigated(id: string, url: string) {
+  const browser = editorTabs.value.find((tab) => tab.browser?.id === id)?.browser;
   if (!browser || !url) return;
   browser.url = url;
 }
@@ -5725,11 +5729,12 @@ async function handleSurfaceCtl(payload: SurfaceCtlPayload): Promise<SurfaceCtlR
     return { ok: true, value: { browsers: browserTabUrls.value.map((url) => ({ url })) } };
   }
   if (payload.method === "browser-back" || payload.method === "browser-forward" || payload.method === "browser-reload") {
-    if (!activeBrowser.value) return { ok: false, reason: "not_open", message: "浏览器没有打开" };
+    const browserId = activeBrowser.value?.id ?? "";
+    if (!browserId) return { ok: false, reason: "not_open", message: "浏览器没有打开" };
     try {
-      if (payload.method === "browser-back") await backend.inboxBrowserBack();
-      else if (payload.method === "browser-forward") await backend.inboxBrowserForward();
-      else await backend.inboxBrowserReload();
+      if (payload.method === "browser-back") await backend.inboxBrowserBack(browserId);
+      else if (payload.method === "browser-forward") await backend.inboxBrowserForward(browserId);
+      else await backend.inboxBrowserReload(browserId);
       return { ok: true, value: { method: payload.method } };
     } catch (error) {
       return { ok: false, reason: "failed", message: error instanceof Error ? error.message : String(error) };
@@ -6675,13 +6680,17 @@ defineExpose({
         @close="addTabMenu = null"
       />
       <InboxBrowser
-        v-if="activeBrowser"
+        v-for="browser in browserTabs"
+        :key="browser.id"
+        v-show="activeBrowser?.id === browser.id"
         class="editor-browser"
         :links="[]"
         :session-id="store.activeSessionId || ''"
-        :active="workbenchLive"
-        :open-url="workbenchBrowserRequest"
-        @navigate="onBrowserNavigated"
+        :browser-id="browser.id"
+        :active="workbenchLive && activeBrowser?.id === browser.id"
+        log-label="编码"
+        :open-url="browserRequestTarget === browser.id ? workbenchBrowserRequest : ''"
+        @navigate="onBrowserNavigated(browser.id, $event)"
       />
       <UiNotice
         v-if="error"

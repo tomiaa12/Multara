@@ -527,6 +527,7 @@ onUnmounted(() => {
       :workspace-id="activeWorkspace?.id ?? ''"
       :session-id="selected.sessionId"
       :kind="railKind(selected)"
+      log-label="收件箱"
       :task-id="selected.taskId"
       @pick-workspace="pickedWorkspaceId = $event"
       @layout="onToolLayout"

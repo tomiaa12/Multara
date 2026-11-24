@@ -1138,65 +1138,73 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 export type InboxBrowserSetArgs = {
+  browserId: string;
   url?: string | null;
   x: number;
   y: number;
   width: number;
   height: number;
   visible: boolean;
+  logLabel?: string | null;
 };
 
 /** 桌面内嵌浏览器（child Webview）；浏览器预览无此能力。 */
 export async function inboxBrowserSet(args: InboxBrowserSetArgs): Promise<void> {
   if (!inTauri()) return;
   await invoke("inbox_browser_set", {
+    browserId: args.browserId,
     url: args.url ?? null,
     x: args.x,
     y: args.y,
     width: args.width,
     height: args.height,
     visible: args.visible,
+    logLabel: args.logLabel ?? null,
   });
 }
 
-export async function inboxBrowserBack(): Promise<void> {
+export async function inboxBrowserBack(browserId: string): Promise<void> {
   if (!inTauri()) return;
-  await invoke("inbox_browser_back");
+  await invoke("inbox_browser_back", { browserId });
 }
 
-export async function inboxBrowserForward(): Promise<void> {
+export async function inboxBrowserForward(browserId: string): Promise<void> {
   if (!inTauri()) return;
-  await invoke("inbox_browser_forward");
+  await invoke("inbox_browser_forward", { browserId });
 }
 
-export async function inboxBrowserReload(): Promise<void> {
+export async function inboxBrowserReload(browserId: string): Promise<void> {
   if (!inTauri()) return;
-  await invoke("inbox_browser_reload");
+  await invoke("inbox_browser_reload", { browserId });
 }
 
-export async function inboxBrowserDestroy(): Promise<void> {
+export async function inboxBrowserDestroy(browserId: string): Promise<void> {
   if (!inTauri()) return;
-  await invoke("inbox_browser_destroy");
+  await invoke("inbox_browser_destroy", { browserId });
 }
 
-export async function inboxBrowserEval(script: string): Promise<string> {
+export async function inboxBrowserEval(browserId: string, script: string): Promise<string> {
   if (!inTauri()) return "";
-  return invoke<string>("inbox_browser_eval", { script });
+  return invoke<string>("inbox_browser_eval", { browserId, script });
 }
 
-export async function inboxBrowserConsoleLogs(): Promise<string> {
+export async function inboxBrowserConsoleLogs(browserId: string): Promise<string> {
   if (!inTauri()) return "";
-  return invoke<string>("inbox_browser_console_logs");
+  return invoke<string>("inbox_browser_console_logs", { browserId });
 }
 
-export async function inboxBrowserScreenshot(rect?: {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-}): Promise<string> {
+export async function inboxBrowserScreenshot(
+  browserId: string,
+  rect?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  },
+): Promise<string> {
   if (!inTauri()) throw new Error("Browser screenshot requires the desktop app");
   return invoke<string>("inbox_browser_screenshot", {
+    browserId,
     x: rect?.x ?? null,
     y: rect?.y ?? null,
     width: rect?.width ?? null,

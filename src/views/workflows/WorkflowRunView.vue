@@ -247,6 +247,7 @@ watch(runId, () => {
         <div class="run-tool-host" :class="{ open: stageOpen }" :style="stageOpen ? { width: `${stageWidth}px` } : undefined">
           <InboxToolRail
             kind="workflow"
+            log-label="工作流"
             :workspaces="toolWorkspaces"
             workspace-id=""
             :session-id="detail.run.overviewSessionId"

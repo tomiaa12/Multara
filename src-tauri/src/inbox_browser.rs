@@ -4,8 +4,13 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     path::PathBuf,
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Mutex, OnceLock,
+    },
+    thread,
     time::Duration,
 };
 use tauri::{
@@ -15,28 +20,35 @@ use tauri::{
 use url::Url;
 use uuid::Uuid;
 
-pub const WEBVIEW_LABEL: &str = "inbox-browser";
+const LABEL_PREFIX: &str = "inbox-browser-";
 pub const NAVIGATED_EVENT: &str = "inbox-browser:navigated";
 
-/// 子页面里缓冲 console，供「控制台日志添加到聊天」。
+/// 子页面里缓冲 console，供「控制台日志添加到聊天」，并记下页面报错。
 const CONSOLE_INIT_SCRIPT: &str = r#"(function(){
   if (window.__multaraConsoleReady) return;
   window.__multaraConsoleReady = true;
   window.__multaraConsoleLogs = [];
   var cap = 500;
+  function push(level, message) {
+    try {
+      window.__multaraConsoleLogs.push({ level: level, ts: Date.now(), message: String(message) });
+      if (window.__multaraConsoleLogs.length > cap) {
+        window.__multaraConsoleLogs.splice(0, window.__multaraConsoleLogs.length - cap);
+      }
+    } catch (e) {}
+  }
+  function textOf(value) {
+    if (value instanceof Error) return value.stack || value.message || String(value);
+    if (typeof value === 'string') return value;
+    try { return JSON.stringify(value); }
+    catch (e) { return String(value); }
+  }
   function wrap(level, fn) {
     return function() {
       try {
         var parts = [];
-        for (var i = 0; i < arguments.length; i++) {
-          var a = arguments[i];
-          try { parts.push(typeof a === 'string' ? a : JSON.stringify(a)); }
-          catch (e) { parts.push(String(a)); }
-        }
-        window.__multaraConsoleLogs.push({ level: level, ts: Date.now(), message: parts.join(' ') });
-        if (window.__multaraConsoleLogs.length > cap) {
-          window.__multaraConsoleLogs.splice(0, window.__multaraConsoleLogs.length - cap);
-        }
+        for (var i = 0; i < arguments.length; i++) parts.push(textOf(arguments[i]));
+        push(level, parts.join(' '));
       } catch (e) {}
       return fn.apply(console, arguments);
     };
@@ -46,11 +58,227 @@ const CONSOLE_INIT_SCRIPT: &str = r#"(function(){
   console.warn = wrap('warn', console.warn.bind(console));
   console.error = wrap('error', console.error.bind(console));
   console.debug = wrap('debug', console.debug.bind(console));
+  window.addEventListener('error', function(event) {
+    push('error', (event.message || 'error') + ' @ ' + (event.filename || '') + ':' + (event.lineno || 0));
+  });
+  window.addEventListener('unhandledrejection', function(event) {
+    push('error', 'unhandledrejection ' + textOf(event.reason));
+  });
 })();"#;
+
+const PAGE_PROBE_SCRIPT: &str = r#"(function(){
+  try {
+    var nav = performance.getEntriesByType('navigation')[0] || null;
+    var body = document.body;
+    var text = '';
+    try { text = body ? (body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160) : ''; } catch (e) {}
+    var problems = (window.__multaraConsoleLogs || []).filter(function(item) {
+      return item && (item.level === 'error' || item.level === 'warn');
+    }).slice(-8).map(function(item) {
+      return { level: item.level, message: String(item.message || '').slice(0, 400) };
+    });
+    return JSON.stringify({
+      href: String(location.href || ''),
+      title: String(document.title || ''),
+      readyState: String(document.readyState || ''),
+      children: body ? body.childElementCount : 0,
+      text: text,
+      status: nav && typeof nav.responseStatus === 'number' ? nav.responseStatus : null,
+      problems: problems
+    });
+  } catch (error) {
+    return JSON.stringify({
+      href: String(location.href || ''),
+      title: '',
+      readyState: '',
+      children: 0,
+      text: '',
+      status: null,
+      problems: [{ level: 'error', message: String(error && (error.stack || error.message) || error) }]
+    });
+  }
+})()"#;
+
+#[derive(Default)]
+struct Slot {
+    source: String,
+    visible: bool,
+    known: bool,
+    load_gen: u64,
+    inflight: u32,
+}
+
+static SLOTS: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
+static LOAD_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn slots() -> std::sync::MutexGuard<'static, HashMap<String, Slot>> {
+    SLOTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+}
+
+fn webview_label(id: &str) -> Result<String, String> {
+    let id = id.trim();
+    if id.is_empty()
+        || id.len() > 80
+        || !id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':'))
+    {
+        return Err(tr!("浏览器标识无效"));
+    }
+    let safe: String = id.chars().map(|ch| if ch == ':' { '-' } else { ch }).collect();
+    Ok(format!("{LABEL_PREFIX}{safe}"))
+}
+
+fn browser_log(label: &str, message: &str) {
+    let source = slots()
+        .get(label)
+        .map(|slot| slot.source.clone())
+        .unwrap_or_default();
+    let line = if source.is_empty() {
+        format!("BROWSER {message}")
+    } else {
+        format!("BROWSER [{source}] {message}")
+    };
+    crate::diag::echo(&line);
+}
+
+fn remember_source(label: &str, source: Option<String>) {
+    let Some(source) = source
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    slots().entry(label.to_string()).or_default().source = source;
+}
+
+fn note_visible(label: &str, visible: bool, x: f64, y: f64, width: f64, height: f64) {
+    let changed = {
+        let mut map = slots();
+        let slot = map.entry(label.to_string()).or_default();
+        let changed = !slot.known || slot.visible != visible;
+        slot.known = true;
+        slot.visible = visible;
+        changed
+    };
+    if !changed {
+        return;
+    }
+    if !visible {
+        browser_log(label, "隐藏");
+        return;
+    }
+    if width < 2.0 || height < 2.0 || x < -100.0 || y < -100.0 {
+        browser_log(
+            label,
+            &format!("显示异常 {width:.0}x{height:.0} @ {x:.0},{y:.0}"),
+        );
+    } else {
+        browser_log(label, &format!("显示 {width:.0}x{height:.0} @ {x:.0},{y:.0}"));
+    }
+}
+
+fn arm_load_watch(label: &str, url: String) {
+    let gen = LOAD_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
+    let label = label.to_string();
+    {
+        let mut map = slots();
+        let slot = map.entry(label.clone()).or_default();
+        slot.load_gen = gen;
+        slot.inflight = slot.inflight.saturating_add(1);
+    }
+    thread::Builder::new()
+        .name("multara-browser-load".into())
+        .spawn(move || {
+            thread::sleep(Duration::from_secs(8));
+            let pending = slots()
+                .get(&label)
+                .is_some_and(|slot| slot.load_gen == gen && slot.inflight > 0);
+            if pending {
+                browser_log(&label, &format!("加载失败 8s 内没有完成 {url}"));
+            }
+        })
+        .ok();
+}
+
+fn note_load_finished(label: &str) {
+    if let Some(slot) = slots().get_mut(label) {
+        slot.inflight = slot.inflight.saturating_sub(1);
+    }
+}
+
+fn schedule_probe(webview: tauri::Webview, label: String) {
+    thread::Builder::new()
+        .name("multara-browser-probe".into())
+        .spawn(move || {
+            thread::sleep(Duration::from_millis(500));
+            match eval_string(&webview, PAGE_PROBE_SCRIPT) {
+                Ok(raw) => {
+                    for line in format_page_probe(&raw) {
+                        browser_log(&label, &line);
+                    }
+                }
+                Err(error) => browser_log(&label, &format!("页面探测失败 {error}")),
+            }
+        })
+        .ok();
+}
+
+fn clip(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let clipped: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{clipped}…")
+    } else {
+        clipped
+    }
+}
+
+fn format_page_probe(raw: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return vec![format!("页面探测结果无法解析 {}", clip(raw, 200))];
+    };
+    let href = value.get("href").and_then(|item| item.as_str()).unwrap_or("");
+    let title = value.get("title").and_then(|item| item.as_str()).unwrap_or("");
+    let ready = value.get("readyState").and_then(|item| item.as_str()).unwrap_or("");
+    let children = value.get("children").and_then(|item| item.as_u64()).unwrap_or(0);
+    let text = value.get("text").and_then(|item| item.as_str()).unwrap_or("");
+    let status = value.get("status").and_then(|item| item.as_i64());
+    let status_text = status.map(|code| code.to_string()).unwrap_or_else(|| "未知".into());
+    let mut lines = vec![format!(
+        "页面 title={} ready={} 状态={} 节点={} href={}",
+        clip(title, 80),
+        ready,
+        status_text,
+        children,
+        href
+    )];
+    if let Some(code) = status {
+        if code >= 400 {
+            lines.push(format!("页面出错 HTTP {code} {href}"));
+        }
+    }
+    if ready == "complete" && children == 0 && text.is_empty() {
+        lines.push(format!("页面空白 {href}"));
+    }
+    if let Some(problems) = value.get("problems").and_then(|item| item.as_array()) {
+        for item in problems.iter().take(8) {
+            let level = item.get("level").and_then(|value| value.as_str()).unwrap_or("error");
+            let message = item.get("message").and_then(|value| value.as_str()).unwrap_or("");
+            let kind = if level == "warn" { "页面警告" } else { "页面出错" };
+            lines.push(format!("{kind} {}", clip(message, 400)));
+        }
+    }
+    lines
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NavigatedPayload {
+    id: String,
     url: String,
 }
 
@@ -100,35 +328,58 @@ fn hide_webview(webview: &tauri::Webview) -> Result<(), String> {
     webview.hide().map_err(|error| error.to_string())
 }
 
-fn emit_navigated(app: &AppHandle, url: &str) {
+fn emit_navigated(app: &AppHandle, id: &str, url: &str) {
     let _ = app.emit(
         NAVIGATED_EVENT,
         NavigatedPayload {
+            id: id.to_string(),
             url: url.to_string(),
         },
     );
 }
 
-fn build_child(app: &AppHandle, url: Url) -> Result<WebviewBuilder<tauri::Wry>, String> {
+fn build_child(
+    app: &AppHandle,
+    id: String,
+    label: String,
+    url: Url,
+) -> Result<WebviewBuilder<tauri::Wry>, String> {
     let data_dir = data_directory(app)?;
     let app_for_load = app.clone();
     let app_for_new = app.clone();
-    let builder = WebviewBuilder::new(WEBVIEW_LABEL, WebviewUrl::External(url))
+    let label_for_load = label.clone();
+    let label_for_nav = label.clone();
+    let label_for_window = label.clone();
+    let id_for_load = id.clone();
+    let id_for_nav = id;
+    let builder = WebviewBuilder::new(label.as_str(), WebviewUrl::External(url))
         .data_directory(data_dir)
         .initialization_script(CONSOLE_INIT_SCRIPT)
-        .on_page_load(move |_webview, payload| {
-            if payload.event() != PageLoadEvent::Finished {
-                return;
+        .on_page_load(move |webview, payload| {
+            let href = payload.url().as_str().to_string();
+            match payload.event() {
+                PageLoadEvent::Started => {
+                    browser_log(&label_for_load, &format!("加载开始 {href}"));
+                }
+                PageLoadEvent::Finished => {
+                    note_load_finished(&label_for_load);
+                    browser_log(&label_for_load, &format!("加载完成 {href}"));
+                    emit_navigated(&app_for_load, &id_for_load, &href);
+                    schedule_probe(webview, label_for_load.clone());
+                }
             }
-            emit_navigated(&app_for_load, payload.url().as_str());
         })
         .on_new_window(move |url, _features| {
             let href = url.as_str().to_string();
+            browser_log(&label_for_window, &format!("新窗口改由系统浏览器打开 {href}"));
             let _ = crate::commands::open_external_url(href);
             NewWindowResponse::Deny
         })
         .on_navigation(move |url| {
-            emit_navigated(&app_for_new, url.as_str());
+            let href = url.as_str().to_string();
+            browser_log(&label_for_nav, &format!("导航 {href}"));
+            arm_load_watch(&label_for_nav, href.clone());
+            emit_navigated(&app_for_new, &id_for_nav, &href);
             true
         });
 
@@ -144,28 +395,46 @@ fn build_child(app: &AppHandle, url: Url) -> Result<WebviewBuilder<tauri::Wry>, 
 #[tauri::command]
 pub async fn inbox_browser_set(
     app: AppHandle,
+    browser_id: String,
     url: Option<String>,
     x: f64,
     y: f64,
     width: f64,
     height: f64,
     visible: bool,
+    log_label: Option<String>,
 ) -> Result<(), String> {
-    let parsed_url = match url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(raw) => Some(validate_http_url(raw)?),
+    let label = webview_label(&browser_id)?;
+    remember_source(&label, log_label);
+    let parsed_url = match url.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        Some(raw) => Some(validate_http_url(raw).map_err(|error| {
+            browser_log(&label, &format!("地址无效 {raw}: {error}"));
+            error
+        })?),
         None => None,
     };
 
-    if let Some(existing) = app.get_webview(WEBVIEW_LABEL) {
+    if let Some(existing) = app.get_webview(&label) {
         if let Some(next) = parsed_url {
-            existing.navigate(next).map_err(|error| error.to_string())?;
+            navigate_logged(&label, &existing, next)?;
         }
         if visible {
-            apply_bounds(&existing, x, y, width, height)?;
-            existing.show().map_err(|error| error.to_string())?;
+            apply_bounds(&existing, x, y, width, height).map_err(|error| {
+                browser_log(&label, &format!("调整位置失败 {error}"));
+                error
+            })?;
+            existing.show().map_err(|error| {
+                let error = error.to_string();
+                browser_log(&label, &format!("显示失败 {error}"));
+                error
+            })?;
         } else {
-            hide_webview(&existing)?;
+            hide_webview(&existing).map_err(|error| {
+                browser_log(&label, &format!("隐藏失败 {error}"));
+                error
+            })?;
         }
+        note_visible(&label, visible, x, y, width, height);
         return Ok(());
     }
 
@@ -173,59 +442,90 @@ pub async fn inbox_browser_set(
         return Ok(());
     }
 
-    let next = parsed_url.ok_or_else(|| tr!("请先输入地址"))?;
-    let window = main_window(&app)?;
-    let builder = build_child(&app, next.clone())?;
+    let next = parsed_url.ok_or_else(|| {
+        browser_log(&label, "创建失败 没有地址");
+        tr!("请先输入地址")
+    })?;
+    browser_log(&label, &format!("创建 {}", next.as_str()));
+    let window = main_window(&app).map_err(|error| {
+        browser_log(&label, &format!("创建失败 {error}"));
+        error
+    })?;
+    let builder = build_child(&app, browser_id, label.clone(), next.clone())?;
     let webview = window
         .add_child(
             builder,
             LogicalPosition::new(x, y),
             LogicalSize::new(width.max(1.0), height.max(1.0)),
         )
-        .map_err(|error| error.to_string())?;
-    webview.show().map_err(|error| error.to_string())?;
-    // wry 在 addSubview 之前就加载 URL，macOS 上第一帧会停在白屏。挂进窗口后再导航一次。
-    webview.navigate(next).map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            let error = error.to_string();
+            browser_log(&label, &format!("创建失败 {error}"));
+            error
+        })?;
+    webview.show().map_err(|error| {
+        let error = error.to_string();
+        browser_log(&label, &format!("显示失败 {error}"));
+        error
+    })?;
+    // wry 在挂进窗口之前就开始加载，macOS 上会停在白屏。挂上之后再导航一次才会画出来。
+    navigate_logged(&label, &webview, next)?;
+    note_visible(&label, true, x, y, width, height);
     Ok(())
 }
 
-#[tauri::command]
-pub async fn inbox_browser_back(app: AppHandle) -> Result<(), String> {
-    let webview = app
-        .get_webview(WEBVIEW_LABEL)
-        .ok_or_else(|| tr!("浏览器未打开"))?;
-    webview
-        .eval("history.back()")
-        .map_err(|error| error.to_string())
+fn navigate_logged(label: &str, webview: &tauri::Webview, url: Url) -> Result<(), String> {
+    let href = url.to_string();
+    webview.navigate(url).map_err(|error| {
+        let error = error.to_string();
+        browser_log(label, &format!("导航失败 {href}: {error}"));
+        error
+    })
 }
 
 #[tauri::command]
-pub async fn inbox_browser_forward(app: AppHandle) -> Result<(), String> {
-    let webview = app
-        .get_webview(WEBVIEW_LABEL)
-        .ok_or_else(|| tr!("浏览器未打开"))?;
-    webview
-        .eval("history.forward()")
-        .map_err(|error| error.to_string())
+pub async fn inbox_browser_back(app: AppHandle, browser_id: String) -> Result<(), String> {
+    let (webview, label) = require_webview(&app, &browser_id)?;
+    webview.eval("history.back()").map_err(|error| {
+        let error = error.to_string();
+        browser_log(&label, &format!("后退失败 {error}"));
+        error
+    })
 }
 
 #[tauri::command]
-pub async fn inbox_browser_reload(app: AppHandle) -> Result<(), String> {
-    let webview = app
-        .get_webview(WEBVIEW_LABEL)
-        .ok_or_else(|| tr!("浏览器未打开"))?;
-    webview.reload().map_err(|error| error.to_string())
+pub async fn inbox_browser_forward(app: AppHandle, browser_id: String) -> Result<(), String> {
+    let (webview, label) = require_webview(&app, &browser_id)?;
+    webview.eval("history.forward()").map_err(|error| {
+        let error = error.to_string();
+        browser_log(&label, &format!("前进失败 {error}"));
+        error
+    })
 }
 
 #[tauri::command]
-pub async fn inbox_browser_destroy(app: AppHandle) -> Result<(), String> {
-    destroy(&app);
+pub async fn inbox_browser_reload(app: AppHandle, browser_id: String) -> Result<(), String> {
+    let (webview, label) = require_webview(&app, &browser_id)?;
+    webview.reload().map_err(|error| {
+        let error = error.to_string();
+        browser_log(&label, &format!("刷新失败 {error}"));
+        error
+    })
+}
+
+#[tauri::command]
+pub async fn inbox_browser_destroy(app: AppHandle, browser_id: String) -> Result<(), String> {
+    let label = webview_label(&browser_id)?;
+    close_label(&app, &label);
     Ok(())
 }
 
-fn require_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
-    app.get_webview(WEBVIEW_LABEL)
-        .ok_or_else(|| tr!("浏览器未打开"))
+fn require_webview(app: &AppHandle, browser_id: &str) -> Result<(tauri::Webview, String), String> {
+    let label = webview_label(browser_id)?;
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| tr!("浏览器未打开"))?;
+    Ok((webview, label))
 }
 
 fn eval_string(webview: &tauri::Webview, script: &str) -> Result<String, String> {
@@ -247,18 +547,22 @@ fn eval_string(webview: &tauri::Webview, script: &str) -> Result<String, String>
 
 /// 在子页面执行 JS，返回 JSON 字符串结果（供选元素 / 读控制台）。
 #[tauri::command]
-pub async fn inbox_browser_eval(app: AppHandle, script: String) -> Result<String, String> {
+pub async fn inbox_browser_eval(
+    app: AppHandle,
+    browser_id: String,
+    script: String,
+) -> Result<String, String> {
     if script.trim().is_empty() {
         return Err(tr!("脚本为空"));
     }
-    let webview = require_webview(&app)?;
+    let (webview, _) = require_webview(&app, &browser_id)?;
     eval_string(&webview, &script)
 }
 
 /// 读取缓冲的 console 日志，拼成纯文本。
 #[tauri::command]
-pub async fn inbox_browser_console_logs(app: AppHandle) -> Result<String, String> {
-    let webview = require_webview(&app)?;
+pub async fn inbox_browser_console_logs(app: AppHandle, browser_id: String) -> Result<String, String> {
+    let (webview, _) = require_webview(&app, &browser_id)?;
     let raw = eval_string(
         &webview,
         "JSON.stringify(window.__multaraConsoleLogs || [])",
@@ -287,12 +591,13 @@ pub async fn inbox_browser_console_logs(app: AppHandle) -> Result<String, String
 #[tauri::command]
 pub async fn inbox_browser_screenshot(
     app: AppHandle,
+    browser_id: String,
     x: Option<f64>,
     y: Option<f64>,
     width: Option<f64>,
     height: Option<f64>,
 ) -> Result<String, String> {
-    let webview = require_webview(&app)?;
+    let (webview, _) = require_webview(&app, &browser_id)?;
     let window = main_window(&app)?;
     let origin = window
         .inner_position()
@@ -344,16 +649,33 @@ pub async fn inbox_browser_screenshot(
     }
 }
 
-pub fn destroy(app: &AppHandle) {
-    if let Some(webview) = app.get_webview(WEBVIEW_LABEL) {
+fn close_label(app: &AppHandle, label: &str) {
+    if app.get_webview(label).is_none() {
+        return;
+    }
+    browser_log(label, "销毁");
+    slots().remove(label);
+    if let Some(webview) = app.get_webview(label) {
         let _ = webview.hide();
         let _ = webview.close();
     }
 }
 
+pub fn destroy(app: &AppHandle) {
+    let labels: Vec<String> = app
+        .webviews()
+        .keys()
+        .filter(|label| label.starts_with(LABEL_PREFIX))
+        .cloned()
+        .collect();
+    for label in labels {
+        close_label(app, &label);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_http_url;
+    use super::{format_page_probe, validate_http_url, webview_label};
 
     #[test]
     fn rejects_non_http_and_unsafe_chars() {
@@ -368,5 +690,45 @@ mod tests {
             validate_http_url(" https://example.com/path ").unwrap().as_str(),
             "https://example.com/path"
         );
+    }
+
+    #[test]
+    fn page_probe_reports_http_error_blank_page_and_console_error() {
+        let lines = format_page_probe(
+            r#"{"href":"https://example.com/missing","title":"Missing","readyState":"complete","children":0,"text":"","status":404,"problems":[{"level":"error","message":"boom"},{"level":"warn","message":"careful"}]}"#,
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "页面 title=Missing ready=complete 状态=404 节点=0 href=https://example.com/missing",
+                "页面出错 HTTP 404 https://example.com/missing",
+                "页面空白 https://example.com/missing",
+                "页面出错 boom",
+                "页面警告 careful",
+            ]
+        );
+    }
+
+    #[test]
+    fn page_probe_keeps_a_loaded_page_quiet() {
+        let lines = format_page_probe(
+            r#"{"href":"https://example.com/","title":"Example","readyState":"complete","children":2,"text":"hello","status":200,"problems":[]}"#,
+        );
+        assert_eq!(
+            lines,
+            vec!["页面 title=Example ready=complete 状态=200 节点=2 href=https://example.com/"]
+        );
+    }
+
+    #[test]
+    fn webview_labels_are_per_tab_and_reject_unsafe_ids() {
+        assert_eq!(webview_label("browser:1").unwrap(), "inbox-browser-browser-1");
+        assert_eq!(
+            webview_label("6f0c2b7e-1").unwrap(),
+            "inbox-browser-6f0c2b7e-1"
+        );
+        assert!(webview_label("").is_err());
+        assert!(webview_label("a/b").is_err());
+        assert!(webview_label("a b").is_err());
     }
 }

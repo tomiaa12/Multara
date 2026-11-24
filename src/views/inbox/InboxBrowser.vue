@@ -26,8 +26,12 @@ const props = withDefaults(
     openUrl?: string;
     /** 当前 surface 是否可见；切走时隐藏子 Webview */
     active?: boolean;
+    /** 终端诊断里区分收件箱、执行、编码 */
+    logLabel?: string;
+    /** 每个标签一个原生视口，互不共用页面 */
+    browserId: string;
   }>(),
-  { active: true },
+  { active: true, logLabel: "" },
 );
 
 const emit = defineEmits<{
@@ -86,10 +90,14 @@ function navigate(raw: string) {
   void nextTick(() => scheduleSync(true));
 }
 
+function browserEval(script: string) {
+  return backend.inboxBrowserEval(props.browserId, script);
+}
+
 function back() {
   if (!canBack.value) return;
   if (useNative) {
-    void backend.inboxBrowserBack();
+    void backend.inboxBrowserBack(props.browserId);
     return;
   }
   index.value -= 1;
@@ -99,7 +107,7 @@ function back() {
 function forward() {
   if (!canForward.value) return;
   if (useNative) {
-    void backend.inboxBrowserForward();
+    void backend.inboxBrowserForward(props.browserId);
     return;
   }
   index.value += 1;
@@ -109,7 +117,7 @@ function forward() {
 function reload() {
   if (!current.value) return;
   if (useNative) {
-    void backend.inboxBrowserReload();
+    void backend.inboxBrowserReload(props.browserId);
     return;
   }
   reloadNonce.value += 1;
@@ -210,27 +218,35 @@ async function syncNative(forceUrl: boolean) {
     !picker.value &&
     document.visibilityState !== "hidden";
   const bounds = readBounds();
-  if (!visible || !bounds) {
+  try {
+    if (!visible || !bounds) {
+      await backend.inboxBrowserSet({
+        browserId: props.browserId,
+        url: null,
+        x: -10_000,
+        y: -10_000,
+        width: 1,
+        height: 1,
+        visible: false,
+        logLabel: props.logLabel,
+      });
+      return;
+    }
+    const nextUrl = forceUrl || url !== lastSyncedUrl ? url : null;
     await backend.inboxBrowserSet({
-      url: null,
-      x: -10_000,
-      y: -10_000,
-      width: 1,
-      height: 1,
-      visible: false,
+      browserId: props.browserId,
+      url: nextUrl,
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      visible: true,
+      logLabel: props.logLabel,
     });
-    return;
+    if (nextUrl) lastSyncedUrl = nextUrl;
+  } catch (error) {
+    console.error(`[browser:${props.logLabel || "浏览器"}]`, error);
   }
-  const nextUrl = forceUrl || url !== lastSyncedUrl ? url : null;
-  await backend.inboxBrowserSet({
-    url: nextUrl,
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    visible: true,
-  });
-  if (nextUrl) lastSyncedUrl = nextUrl;
 }
 
 function onNativeNavigated(url: string) {
@@ -285,9 +301,11 @@ onMounted(async () => {
   }
   window.addEventListener("resize", onWindowResize);
   document.addEventListener("visibilitychange", onVisibility);
-  unlistenNavigated = await listen<{ url: string }>("inbox-browser:navigated", (event) => {
+  unlistenNavigated = await listen<{ id?: string; url: string }>("inbox-browser:navigated", (event) => {
+    if (event.payload?.id !== props.browserId) return;
     onNativeNavigated(event.payload?.url ?? "");
   });
+  if (props.openUrl) openUrlFromProp(props.openUrl);
   scheduleSync(true);
 });
 
@@ -325,7 +343,7 @@ async function closeChatMenu() {
   chatMenuOpen.value = false;
   if (!useNative) return;
   try {
-    await backend.inboxBrowserEval(`(() => {
+    await browserEval(`(() => {
       const menu = document.getElementById('__multara-chat-menu');
       if (menu) menu.remove();
       window.__multaraChatMenuActive = false;
@@ -342,7 +360,7 @@ async function stopPagePick() {
   pickMode.value = "";
   if (useNative) {
     try {
-      await backend.inboxBrowserEval(STOP_PICK_SCRIPT);
+      await browserEval(STOP_PICK_SCRIPT);
     } catch {
       // 页面可能已卸载
     }
@@ -358,7 +376,7 @@ async function openChatMenu() {
   await stopPagePick();
   chatMenuOpen.value = true;
   await syncNative(false);
-  await backend.inboxBrowserEval(
+  await browserEval(
     chatMenuScript([
       {
         id: "element",
@@ -387,12 +405,12 @@ async function openChatMenu() {
   chatMenuPollTimer = setInterval(() => {
     void (async () => {
       try {
-        const raw = await backend.inboxBrowserEval(
+        const raw = await browserEval(
           "window.__multaraChatMenu ? JSON.stringify(window.__multaraChatMenu) : 'null'",
         );
         const payload = evalJson<{ id?: string }>(raw);
         if (!payload) return;
-        await backend.inboxBrowserEval("window.__multaraChatMenu = null");
+        await browserEval("window.__multaraChatMenu = null");
         stopChatMenuPolling();
         chatMenuOpen.value = false;
         const id = payload.id?.trim();
@@ -417,7 +435,7 @@ function attachBrowserContext(label: string, sourceId: string, text: string, dat
 }
 
 async function attachScreenshot(rect?: { x: number; y: number; width: number; height: number }) {
-  const base64 = await backend.inboxBrowserScreenshot(rect);
+  const base64 = await backend.inboxBrowserScreenshot(props.browserId, rect);
   attachBrowserImage({
     sessionId: props.sessionId,
     name: rect ? "browser-area.png" : "browser.png",
@@ -433,12 +451,12 @@ async function runElementPick(mode: "select" | "comment") {
   }
   await stopPagePick();
   pickMode.value = mode;
-  await backend.inboxBrowserEval(elementPickScript(mode));
+  await browserEval(elementPickScript(mode));
   stopPickPolling();
   pickPollTimer = setInterval(() => {
     void (async () => {
       try {
-        const raw = await backend.inboxBrowserEval(
+        const raw = await browserEval(
           "window.__multaraPick ? JSON.stringify(window.__multaraPick) : 'null'",
         );
         const payload = evalJson<{
@@ -450,7 +468,7 @@ async function runElementPick(mode: "select" | "comment") {
           html?: string;
         }>(raw);
         if (!payload) return;
-        await backend.inboxBrowserEval("window.__multaraPick = null");
+        await browserEval("window.__multaraPick = null");
         stopPickPolling();
         pickMode.value = "";
         if (payload.cancelled) return;
@@ -483,12 +501,12 @@ async function runAreaPick() {
   }
   await stopPagePick();
   pickMode.value = "area";
-  await backend.inboxBrowserEval(AREA_PICK_SCRIPT);
+  await browserEval(AREA_PICK_SCRIPT);
   stopPickPolling();
   pickPollTimer = setInterval(() => {
     void (async () => {
       try {
-        const raw = await backend.inboxBrowserEval(
+        const raw = await browserEval(
           "window.__multaraArea ? JSON.stringify(window.__multaraArea) : 'null'",
         );
         const payload = evalJson<{
@@ -499,7 +517,7 @@ async function runAreaPick() {
           height?: number;
         }>(raw);
         if (!payload) return;
-        await backend.inboxBrowserEval("window.__multaraArea = null");
+        await browserEval("window.__multaraArea = null");
         stopPickPolling();
         pickMode.value = "";
         if (payload.cancelled || payload.width == null || payload.height == null) return;
@@ -532,7 +550,7 @@ async function onChatMenuSelect(id: string) {
       return;
     }
     if (id === "console") {
-      const logs = await backend.inboxBrowserConsoleLogs();
+      const logs = await backend.inboxBrowserConsoleLogs(props.browserId);
       if (!logs.trim()) {
         attachBrowserContext(
           t("inbox.browser.consoleLogs"),
@@ -577,7 +595,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", onVisibility);
   resizeObserver?.disconnect();
   void unlistenNavigated?.();
-  if (useNative) void backend.inboxBrowserDestroy();
+  if (useNative) void backend.inboxBrowserDestroy(props.browserId);
 });
 </script>
 

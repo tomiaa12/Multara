@@ -98,6 +98,8 @@ const props = defineProps<{
   extraSessionIds?: string[];
   /** 悬浮按钮挂到哪个容器。 */
   floatHostSelector?: string;
+  /** 内嵌浏览器诊断日志里的来源，例如收件箱、执行。 */
+  logLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -158,6 +160,7 @@ const editorTabs = ref<EditorTab[]>([]);
 const activeEditorKey = ref("");
 const activeSurfaceKey = ref("");
 const browserRequest = ref("");
+const browserRequestTarget = ref("");
 const browserUrls = ref<string[]>([]);
 const terminalHeight = ref(readTerminalHeight());
 const profiles = ref<TerminalProfile[]>([]);
@@ -1108,15 +1111,16 @@ function setDefaultProfile(id: string) {
 function showBrowser(url: string) {
   const next = url.trim();
   if (next && !browserUrls.value.includes(next)) browserUrls.value = [...browserUrls.value, next];
-  browserRequest.value = `${Date.now()}\n${url}`;
   const current = activeSurface.value?.kind === "browser" ? activeSurface.value : null;
   const existing = current ?? surfaces.value.find((item) => item.kind === "browser") ?? null;
+  if (!existing) openSurface("browser", "fresh");
+  const target = existing?.key ?? activeSurfaceKey.value;
+  browserRequestTarget.value = target;
+  browserRequest.value = `${Date.now()}\n${url}`;
   if (existing) {
     activeSurfaceKey.value = existing.key;
     writeLayout();
-    return;
   }
-  openSurface("browser", "fresh");
 }
 
 function openTerminalPath(payload: { path: string; isDirectory: boolean }) {
@@ -1295,10 +1299,12 @@ async function handleSurfaceCtl(payload: SurfaceCtlPayload): Promise<SurfaceCtlR
     return { ok: true, value: { browsers: browserUrls.value.map((url) => ({ url })) } };
   }
   if (payload.method === "browser-back" || payload.method === "browser-forward" || payload.method === "browser-reload") {
+    const browserId = activeSurface.value?.kind === "browser" ? activeSurface.value.key : "";
+    if (!browserId) return { ok: false, reason: "not_open", message: "浏览器没有打开" };
     try {
-      if (payload.method === "browser-back") await backend.inboxBrowserBack();
-      else if (payload.method === "browser-forward") await backend.inboxBrowserForward();
-      else await backend.inboxBrowserReload();
+      if (payload.method === "browser-back") await backend.inboxBrowserBack(browserId);
+      else if (payload.method === "browser-forward") await backend.inboxBrowserForward(browserId);
+      else await backend.inboxBrowserReload(browserId);
       return { ok: true, value: { method: payload.method } };
     } catch (error) {
       return { ok: false, reason: "failed", message: error instanceof Error ? error.message : String(error) };
@@ -1448,7 +1454,9 @@ onBeforeUnmount(() => {
             :links="links"
             :session-id="sessionId"
             :active="activeSurfaceKey === tab.key"
-            :open-url="activeSurfaceKey === tab.key ? browserRequest : ''"
+            :browser-id="tab.key"
+            :open-url="browserRequestTarget === tab.key ? browserRequest : ''"
+            :log-label="logLabel"
           />
           <UncommittedChanges
             v-else-if="tab.kind === 'uncommitted'"

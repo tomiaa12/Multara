@@ -302,6 +302,7 @@ onBeforeUnmount(() => {
       :workspace-id="activeWorkspace?.id ?? ''"
       :session-id="sessionId"
       kind="project"
+      log-label="执行"
       :task-id="null"
       @pick-workspace="pickedWorkspaceId = $event"
       @layout="emit('layout', $event)"

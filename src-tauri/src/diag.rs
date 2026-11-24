@@ -130,6 +130,15 @@ fn should_echo(message: &str) -> bool {
         || message.contains(" SLOW")
 }
 
+/// 立刻打到终端，文件缓冲留给后台刷新。导航回调里不能在这里同步刷盘。
+pub fn echo(message: &str) {
+    let line = format_line(message);
+    eprintln!("{line}");
+    if let Some(mut logger) = logger() {
+        logger.append(&line, false);
+    }
+}
+
 pub fn span(name: &'static str) -> Span {
     write(&format!("ENTER {name}"));
     Span {
