@@ -3,6 +3,7 @@ import { computed, reactive, ref, shallowRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import type { GitRepositoryStatus, Workspace } from "../domain/types";
 import UiButton from "./ui/UiButton.vue";
+import UiModal from "./ui/UiModal.vue";
 import UiPane from "./ui/UiPane.vue";
 import UiPaneView from "./ui/UiPaneView.vue";
 import ScmChangesView from "./scm/ScmChangesView.vue";
@@ -78,6 +79,8 @@ const discardAsk = ref<{
 const repositories = shallowRef<GitRepositoryStatus[]>([]);
 /** 正在打开「合并到其他分支」弹窗的工作区 */
 const mergeDialogWorkspaceId = ref("");
+const mergeBatch = ref<{ pending: string[]; push: boolean; workspaceId: string } | null>(null);
+const mergeDoneOpen = ref(false);
 const mergeDialogItem = computed(() =>
   items.value.find((item) => item.workspace.id === mergeDialogWorkspaceId.value && item.repository) ?? null,
 );
@@ -439,13 +442,43 @@ function pullMerge(workspace: Workspace) {
   });
 }
 
+function onMergeDefer(payload: { workspaceId: string; pending: string[]; push: boolean }) {
+  mergeDialogWorkspaceId.value = "";
+  mergeBatch.value = payload;
+}
+
+async function continueMergeBatch(sourceWorkspaceId: string) {
+  const batch = mergeBatch.value;
+  if (!batch || batch.workspaceId !== sourceWorkspaceId) {
+    mergeDoneOpen.value = true;
+    return;
+  }
+  while (batch.pending.length) {
+    const name = batch.pending.shift()!;
+    const outcome = await store.mergeIntoBranch(sourceWorkspaceId, name, batch.push);
+    if (outcome.status === "conflict" && outcome.mergeSession) {
+      mergeBatch.value = { ...batch };
+      emit("mergeFocus", {
+        inboxItemId: store.inboxItemIdForSession(outcome.mergeSession.sessionId),
+        workspaceId: outcome.mergeSession.workspaceId,
+        sessionId: outcome.mergeSession.sessionId,
+      });
+      return;
+    }
+  }
+  mergeBatch.value = null;
+  mergeDoneOpen.value = true;
+}
+
 function finishMerge(workspace: Workspace) {
   const merge = store.mergeSessionFor(workspace.id);
   if (!merge) return;
+  const sourceWorkspaceId = mergeBatch.value?.workspaceId ?? "";
   return run(
     `finish-merge:${workspace.id}`,
     async () => {
       await store.finishMergeSession(merge.id);
+      if (sourceWorkspaceId) await continueMergeBatch(sourceWorkspaceId);
     },
     { workspaceId: workspace.id, kind: "finish-merge" },
   );
@@ -460,6 +493,7 @@ async function abortMergeSession(workspace: Workspace) {
   ))) return;
   return run(`abort-merge:${workspace.id}`, async () => {
     await store.abortMergeSession(merge.id);
+    if (mergeBatch.value?.workspaceId) mergeBatch.value = null;
     notice.value = t("scm.abortMergeDone");
   });
 }
@@ -493,6 +527,8 @@ async function skipHooksOnce() {
       const merge = store.mergeSessionFor(id);
       if (!merge) throw new Error(t("scm.finishMergeTitle"));
       await store.finishMergeSession(merge.id, true);
+      const sourceWorkspaceId = mergeBatch.value?.workspaceId ?? "";
+      if (sourceWorkspaceId) await continueMergeBatch(sourceWorkspaceId);
       return;
     }
     if (plan.kind === "push" || (plan.kind === "commit-push" && failure.operation === "push")) {
@@ -767,8 +803,21 @@ defineExpose({ refresh, revealCommit });
       :repository="mergeDialogItem.repository"
       @close="mergeDialogWorkspaceId = ''"
       @merged="onMerged"
+      @refresh="refresh()"
+      @defer="onMergeDefer"
       @merge-focus="emit('mergeFocus', $event)"
     />
+    <UiModal v-if="mergeDoneOpen" class="merge-backdrop" @click.self="mergeDoneOpen = false">
+      <section class="modal merge-done" role="dialog" :aria-label="t('scm.merge.doneTitle')">
+        <div class="modal-heading">
+          <h2>{{ t("scm.merge.doneTitle") }}</h2>
+        </div>
+        <p class="merge-note">{{ t("scm.merge.doneBody") }}</p>
+        <div class="modal-actions">
+          <UiButton variant="primary" @click="mergeDoneOpen = false">{{ t("common.close") }}</UiButton>
+        </div>
+      </section>
+    </UiModal>
 
     <UiModal v-if="discardAsk" @click.self="discardAsk = null">
       <div class="modal" role="dialog" aria-modal="true" :aria-label="t('scm.discardConfirmTitle')">

@@ -136,6 +136,10 @@ const REFERENCE_PREFIX: Record<ComposerEntityKind, string> = {
   workflow: "",
 };
 
+function isOpaqueDirectoryId(name: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name);
+}
+
 export function chipLabel(item: ComposerChipNode) {
   if (isFeishuChip(item)) return `@${item.label}`;
   if (isReferenceChip(item)) {
@@ -146,7 +150,12 @@ export function chipLabel(item: ComposerChipNode) {
     return `${prefix}${item.label}`;
   }
   if (item.source === "terminal") return t("chat.chip.terminal", { range: lineRange(item) });
-  if (item.isDirectory || isWholeFileChip(item)) return fileName(item.path) || item.text || item.path;
+  if (item.isDirectory || isWholeFileChip(item)) {
+    const base = fileName(item.path);
+    const alias = item.isDirectory && item.text && !item.text.includes("\n") ? item.text : "";
+    if (alias && (!base || isOpaqueDirectoryId(base))) return alias;
+    return base || alias || item.path;
+  }
   return `${fileName(item.path)} ${lineRange(item)}`;
 }
 
@@ -321,10 +330,22 @@ export function parseUserPromptNodes(content: string): ComposerNode[] {
   const nodes: ComposerNode[] = [];
   let rest = visible.trim();
   for (const citation of citations) {
-    const label = chipLabel(citation);
-    const marked = markedChipLabel(citation);
-    const markedIndex = rest.indexOf(marked);
-    const index = markedIndex >= 0 ? markedIndex : rest.indexOf(label);
+    let label = chipLabel(citation);
+    let marked = markedChipLabel(citation);
+    let markedIndex = rest.indexOf(marked);
+    let index = markedIndex >= 0 ? markedIndex : rest.indexOf(label);
+    // 项目根目录发出去后路径落在工作区 id 上，显示名留在正文标记里。
+    if (index < 0 && isFileChip(citation) && citation.isDirectory) {
+      const token = new RegExp(`${CHIP_MARK}([^${CHIP_MARK}]+)${CHIP_MARK}`).exec(rest);
+      const alias = token?.[1] ?? "";
+      if (alias && alias !== label) {
+        citation.text = alias;
+        label = alias;
+        marked = `${CHIP_MARK}${alias}${CHIP_MARK}`;
+        markedIndex = rest.indexOf(marked);
+        index = markedIndex;
+      }
+    }
     const consumed = markedIndex >= 0 ? marked.length : label.length;
     if (index >= 0) {
       const before = cleanVisibleText(rest.slice(0, index));

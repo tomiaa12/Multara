@@ -30,6 +30,10 @@ const props = withDefaults(
   { active: true },
 );
 
+const emit = defineEmits<{
+  navigate: [url: string];
+}>();
+
 const canvas = useCanvasStore();
 
 const useNative = inTauri();
@@ -238,6 +242,7 @@ function onNativeNavigated(url: string) {
     index.value = stack.value.length - 1;
   }
   lastSyncedUrl = url;
+  emit("navigate", url);
   const active = document.activeElement;
   if (active instanceof HTMLElement && active.classList.contains("inbox-browser-address")) {
     focusHost();

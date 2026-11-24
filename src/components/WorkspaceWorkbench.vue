@@ -265,16 +265,18 @@ type EditorTab = {
   };
   /** Canvas 标签（生成式界面 L2）：归属会话，切会话时整组换出换进；关标签只改可见性 */
   canvas?: { sessionId: string; instanceId: string; title: string };
+  /** 编辑器里的浏览器页，和文件标签并列 */
+  browser?: { id: string; url: string };
 };
 const editorTabs = ref<EditorTab[]>([]);
 /** 不是磁盘文件的标签（diff、Canvas）：不读写编辑器内容、不保存、不重载 */
 function isVirtualTab(tab: EditorTab) {
-  return Boolean(tab.gitDiff || tab.canvas);
+  return Boolean(tab.gitDiff || tab.canvas || tab.browser);
 }
 provide(
   composerOpenEditorsKey,
   computed(() =>
-    editorTabs.value.filter((tab) => !tab.canvas).map((tab) => ({
+    editorTabs.value.filter((tab) => !tab.canvas && !tab.browser).map((tab) => ({
       workspaceId: tab.workspaceId,
       path: tab.path,
       isDirectory: false,
@@ -752,9 +754,8 @@ const rightPanelWidth = ref(
 const workbenchEl = ref<HTMLElement | null>(null);
 const editorAreaEl = ref<HTMLElement | null>(null);
 const workbenchLive = ref(true);
-const workbenchBrowser = ref(false);
-const workbenchBrowserUrls = ref<string[]>([]);
 const workbenchBrowserRequest = ref("");
+const addTabMenu = ref<{ x: number; y: number } | null>(null);
 const fileTreeEl = ref<HTMLElement | null>(null);
 let stickyTreeObserver: ResizeObserver | null = null;
 
@@ -1819,12 +1820,23 @@ function treeGitBadgeTitle(workspaceId: string, entry: FileEntry) {
   return count > 0 ? t("git.folderDirty", { count }) : gitStatusTitle(letter);
 }
 
+function browserTabLabel(url: string) {
+  if (!url) return t("workbench.browserTab");
+  try {
+    return new URL(url).host || t("workbench.browserTab");
+  } catch {
+    return t("workbench.browserTab");
+  }
+}
+
 function editorTabName(tab: EditorTab) {
+  if (tab.browser) return browserTabLabel(tab.browser.url);
   if (tab.canvas) return tab.canvas.title;
   return tab.gitDiff?.tabName || fileNameOf(tab.path);
 }
 
 function editorTabTitle(tab: EditorTab) {
+  if (tab.browser) return tab.browser.url || t("workbench.browserTab");
   if (tab.canvas) return t("canvas.tabTitle", { title: tab.canvas.title });
   if (tab.gitDiff?.tabName) return tab.gitDiff.tabName;
   const diff = tab.gitDiff ? ` · ${tab.gitDiff.label}` : "";
@@ -2790,31 +2802,9 @@ async function acceptAllPendingFiles() {
   if (!files.length) return;
   diffFileActionBusy.value = true;
   try {
-    const contents = new Map(pendingFileContents.value);
-    for (const tab of editorTabs.value) {
-      if (isVirtualTab(tab)) continue;
-      contents.set(diffFileKey(tab.workspaceId, tab.path), tab.file.content);
-    }
-    if (activeFile.value) {
-      contents.set(
-        diffFileKey(activeFile.value.workspaceId, activeFile.value.path),
-        activeFile.value.content,
-      );
-    }
+    await diffStore.acceptFiles(files);
     const nextContents = new Map(pendingFileContents.value);
-    for (const file of files) {
-      const key = diffFileKey(file.workspaceId, file.filePath);
-      if (diffStore.missingFiles.has(key)) {
-        await diffStore.acceptMissingFile(file.workspaceId, file.filePath);
-      } else {
-        await diffStore.acceptAllChunks(
-          file.workspaceId,
-          file.filePath,
-          contents.get(key),
-        );
-      }
-      nextContents.delete(key);
-    }
+    for (const file of files) nextContents.delete(diffFileKey(file.workspaceId, file.filePath));
     pendingFileContents.value = nextContents;
   } finally {
     diffFileActionBusy.value = false;
@@ -2867,7 +2857,8 @@ function activateEditorTab(tab: EditorTab) {
   const key = tabKey(tab);
   activeEditorKey.value = key;
   // Canvas 标签没有文件：activeFile 置空，大纲、LSP、git 等跟着当前文件走的逻辑都不会拿假路径去请求
-  activeFile.value = tab.canvas ? null : tab.file;
+  activeFile.value = tab.canvas || tab.browser ? null : tab.file;
+  if (tab.browser?.url) workbenchBrowserRequest.value = `${Date.now()}\n${tab.browser.url}`;
   originalContent.value = tab.original;
   if (isVirtualTab(tab)) {
     externalChangePending.value = false;
@@ -3055,6 +3046,50 @@ const canvasViewId = `workbench-${crypto.randomUUID()}`;
 const activeCanvas = computed(
   () => editorTabs.value.find((tab) => tabKey(tab) === activeEditorKey.value)?.canvas ?? null,
 );
+const activeBrowser = computed(
+  () => editorTabs.value.find((tab) => tabKey(tab) === activeEditorKey.value)?.browser ?? null,
+);
+const browserTabUrls = computed(() =>
+  editorTabs.value.flatMap((tab) => (tab.browser?.url ? [tab.browser.url] : [])),
+);
+
+function makeBrowserTab(url = ""): EditorTab {
+  const id = crypto.randomUUID();
+  const path = `browser://${id}`;
+  return {
+    workspaceId: "",
+    path,
+    pinned: true,
+    file: { workspaceId: "", path, content: "", language: "plaintext", size: 0, readOnly: true },
+    original: "",
+    detectedLanguage: "plaintext",
+    browser: { id, url },
+  };
+}
+
+function openBrowserTab(url = "") {
+  addTabMenu.value = null;
+  const existing = url
+    ? editorTabs.value.find((tab) => tab.browser?.url === url)
+    : undefined;
+  const tab = existing ?? makeBrowserTab(url);
+  if (!existing) editorTabs.value = [...editorTabs.value, tab];
+  activateEditorTab(tab);
+  if (url) workbenchBrowserRequest.value = `${Date.now()}\n${url}`;
+}
+
+function openAddTabMenu(event: MouseEvent) {
+  const target = event.currentTarget;
+  if (!(target instanceof HTMLElement)) return;
+  const rect = target.getBoundingClientRect();
+  addTabMenu.value = { x: rect.left, y: rect.bottom + 4 };
+}
+
+function onBrowserNavigated(url: string) {
+  const browser = activeBrowser.value;
+  if (!browser || !url) return;
+  browser.url = url;
+}
 
 function canvasTabPath(sessionId: string, instanceId: string) {
   return `canvas://${sessionId}/${instanceId}`;
@@ -5629,7 +5664,6 @@ onActivated(() => {
 });
 onDeactivated(() => {
   workbenchLive.value = false;
-  workbenchBrowser.value = false;
   unbindGlobalKeys();
 });
 
@@ -5649,8 +5683,12 @@ async function handleSurfaceCtl(payload: SurfaceCtlPayload): Promise<SurfaceCtlR
     return {
       ok: true,
       value: {
-        tabs: editorTabs.value.map((tab) => ({ kind: tab.canvas ? "canvas" : "file", title: tab.path, path: tab.path })),
-        browsers: workbenchBrowserUrls.value.map((url) => ({ url })),
+        tabs: editorTabs.value.map((tab) => ({
+          kind: tab.browser ? "browser" : tab.canvas ? "canvas" : "file",
+          title: editorTabName(tab),
+          path: tab.path,
+        })),
+        browsers: browserTabUrls.value.map((url) => ({ url })),
         terminals: terminalSessions.value
           .filter((item) => ids.has(item.workspaceId))
           .map((item) => ({ id: item.id, title: item.title, cwd: item.cwd, live: item.live })),
@@ -5680,16 +5718,14 @@ async function handleSurfaceCtl(payload: SurfaceCtlPayload): Promise<SurfaceCtlR
   if (payload.method === "browser-open") {
     const url = payload.url?.trim();
     if (!url) return { ok: false, reason: "invalid", message: "缺少地址" };
-    if (!workbenchBrowserUrls.value.includes(url)) workbenchBrowserUrls.value = [...workbenchBrowserUrls.value, url];
-    workbenchBrowserRequest.value = `${Date.now()}\n${url}`;
-    workbenchBrowser.value = true;
+    openBrowserTab(url);
     return { ok: true, value: { url } };
   }
   if (payload.method === "browser-list") {
-    return { ok: true, value: { browsers: workbenchBrowserUrls.value.map((url) => ({ url })) } };
+    return { ok: true, value: { browsers: browserTabUrls.value.map((url) => ({ url })) } };
   }
   if (payload.method === "browser-back" || payload.method === "browser-forward" || payload.method === "browser-reload") {
-    if (!workbenchBrowser.value) return { ok: false, reason: "not_open", message: "浏览器没有打开" };
+    if (!activeBrowser.value) return { ok: false, reason: "not_open", message: "浏览器没有打开" };
     try {
       if (payload.method === "browser-back") await backend.inboxBrowserBack();
       else if (payload.method === "browser-forward") await backend.inboxBrowserForward();
@@ -6613,7 +6649,8 @@ defineExpose({
             @close="closeEditorTab(tab, $event)"
             @contextmenu="openTabMenu(tab, $event)"
           >
-            <Codicon v-if="tab.canvas" name="dashboard" :size="15" />
+            <Codicon v-if="tab.browser" name="globe" :size="15" />
+            <Codicon v-else-if="tab.canvas" name="dashboard" :size="15" />
             <Codicon v-else-if="tab.gitDiff?.commitFiles?.length" name="diff-multiple" :size="15" />
             <FileTypeIcon v-else :name="fileNameOf(tab.path)" />
           </EditorTabButton>
@@ -6621,21 +6658,30 @@ defineExpose({
         <UiButton
           variant="ghost"
           size="icon"
-          class="editor-browser-toggle"
-          :tip="t('inbox.tool.browser')"
-          :aria-pressed="workbenchBrowser"
-          @click="workbenchBrowser = !workbenchBrowser"
+          class="editor-add-tab"
+          :tip="t('workbench.addTab')"
+          :aria-expanded="Boolean(addTabMenu)"
+          @click="openAddTabMenu"
         >
-          <Codicon name="globe" :size="16" />
+          <Codicon name="add" :size="16" />
         </UiButton>
       </header>
+      <ContextMenu
+        v-if="addTabMenu"
+        :x="addTabMenu.x"
+        :y="addTabMenu.y"
+        :items="[{ id: 'browser', label: t('workbench.newBrowserTab'), icon: 'globe' }]"
+        @select="openBrowserTab()"
+        @close="addTabMenu = null"
+      />
       <InboxBrowser
-        v-if="workbenchBrowser"
+        v-if="activeBrowser"
         class="editor-browser"
         :links="[]"
         :session-id="store.activeSessionId || ''"
         :active="workbenchLive"
         :open-url="workbenchBrowserRequest"
+        @navigate="onBrowserNavigated"
       />
       <UiNotice
         v-if="error"
@@ -6655,7 +6701,7 @@ defineExpose({
         >
       </div>
       <UiFrame
-        v-if="activeCanvas"
+        v-if="activeCanvas && !activeBrowser"
         :key="`${activeCanvas.sessionId}/${activeCanvas.instanceId}`"
         class="editor-canvas"
         :session-id="activeCanvas.sessionId"
@@ -6665,12 +6711,12 @@ defineExpose({
         @close="closeActiveCanvasInstance"
       />
       <EditorBreadcrumbs
-        v-if="activeFile && !activeCanvas"
+        v-if="activeFile && !activeCanvas && !activeBrowser"
         :parts="activeBreadcrumbs"
         :symbol="activeSymbol"
         @reveal="(line) => editorWithDiff?.reveal(line)"
       />
-      <div v-if="activeFile && !activeCanvas" class="editor-main">
+      <div v-if="activeFile && !activeCanvas && !activeBrowser" class="editor-main">
         <div
           v-if="markdownToggleVisible"
           class="md-editor-switch"
@@ -6842,7 +6888,7 @@ defineExpose({
         />
         </template>
       </div>
-      <div v-else-if="!activeCanvas" class="editor-welcome">
+      <div v-else-if="!activeCanvas && !activeBrowser" class="editor-welcome">
         <ul class="editor-shortcut-hints">
           <li v-for="item in editorShortcutHints" :key="item.label">
             <span>{{ item.label }}</span>

@@ -18,9 +18,9 @@ First see whether the work can be assigned. Assign first. Do not do it yourself 
 - The user named people with @: prefer them. If there are several, split the work and assign each part.
 - Nobody was named: run `multara agent list` / `squad list` before acting, even when you have the same skill.
 - It can be assigned: when it needs an owner, a status, and a result, or several rounds or parallel work, use `multara task create --assignee <agentId> --status todo`. For one turn in this conversation, start a new paragraph with `[@Name](mention://agent/<agentId>)` and one or two sentences.
-- Nobody on the roster can do it: do it yourself.
+- Nobody on the roster can do it: do it yourself. Do not say nobody is a fit.
 
-Do not say you assigned it unless you created the task or wrote the @.
+Looking up the roster and deciding whether to assign stays out of the reply. Do not say you will decide whether to do it yourself or hand it to someone. If someone fits, assign them. If not, just do the work. Do not say you assigned it unless you created the task or wrote the @.
 
 ## Assignee
 

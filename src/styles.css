@@ -2500,13 +2500,15 @@ body:has(.canvas-modal) .canvas-frame-host {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
-.chat-editing-files {
+.clip-scroll.chat-editing-files {
+  --clip-fade: var(--color-surface-raised);
+  /* 约 6 行，再多就滚动，避免把聊天区挤没 */
+  max-height: 142px;
+}
+.chat-editing-files > .clip-scroll-view {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* 约 6 行，再多就滚动，避免把聊天区挤没 */
-  max-height: 142px;
-  overflow-y: auto;
   overscroll-behavior: contain;
 }
 .chat-editing-overview {
@@ -5317,6 +5319,16 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .merge-picker .ds-segmented {
   width: 100%;
 }
+.merge-search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.merge-search .ui-input,
+.merge-search input {
+  flex: 1;
+  min-width: 0;
+}
 .merge-picker .ds-segmented > button {
   flex: 1 1 0;
   justify-content: center;
@@ -5347,6 +5359,15 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   gap: var(--spacing-2);
   min-width: 0;
   font-weight: var(--font-weight-regular);
+}
+.modal label.merge-branch .merge-branch-name {
+  min-width: 0;
+}
+.merge-branch-mark {
+  flex: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-style: normal;
 }
 .modal label.merge-branch span {
   overflow: hidden;
@@ -5490,8 +5511,8 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--color-success);
-  color: var(--color-on-primary);
+  background: var(--color-success-subtle);
+  color: var(--color-success);
 }
 .merge-result.is-conflict .merge-result-mark,
 .merge-result.is-error .merge-result-mark,
@@ -7512,7 +7533,7 @@ body.is-dragging-workspace-file * {
   grid-row: 1;
   grid-column: 1;
 }
-.editor-browser-toggle {
+.editor-add-tab {
   flex: none;
   align-self: center;
   margin-right: 4px;
@@ -7522,7 +7543,6 @@ body.is-dragging-workspace-file * {
   grid-column: 1;
   min-width: 0;
   min-height: 0;
-  z-index: 2;
 }
 .editor-area > .editor-breadcrumbs {
   grid-row: 2;
@@ -11584,11 +11604,12 @@ body.is-dragging-inbox-float * {
 .composer-suggest-menu.ds-select-popover.is-floating {
   display: grid;
   grid-template-columns: 148px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   width: 520px;
   max-width: min(520px, calc(100vw - 24px));
   height: min(360px, calc(100vh - 24px));
-  max-height: 360px;
+  max-height: min(360px, calc(100vh - 24px));
   padding: 0;
   overflow: hidden;
   text-align: left;
@@ -11596,6 +11617,8 @@ body.is-dragging-inbox-float * {
 .composer-suggest-categories {
   display: grid;
   align-content: start;
+  min-height: 0;
+  overflow-y: auto;
   gap: var(--spacing-1);
   padding: var(--spacing-2);
   border-right: 1px solid var(--color-border);
@@ -11630,7 +11653,9 @@ body.is-dragging-inbox-float * {
 .composer-suggest-results {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 .composer-suggest-results .ds-select-search {
@@ -11638,9 +11663,12 @@ body.is-dragging-inbox-float * {
 }
 .composer-suggest-menu .ds-select-list {
   width: 100%;
+  height: 100%;
   min-width: 0;
-  max-height: none;
+  min-height: 0;
+  max-height: 100%;
   overflow-x: hidden;
+  overflow-y: auto;
   justify-items: stretch;
   text-align: left;
 }

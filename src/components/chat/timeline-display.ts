@@ -102,6 +102,7 @@ export function toolKind(name: string | null | undefined): ToolKind {
   if (["delete", "deletefile", "removefile"].some((tool) => n === tool || n.includes(tool))) return "delete";
   if (n.includes("generateimage") || n.includes("imagegen") || (n.includes("image") && n.includes("generat"))) return "image";
   if (n.includes("askquestion") || n === "question" || n.includes("askuser")) return "question";
+  if (n.includes("lint")) return "other";
   if (["read", "readfile", "readpath", "viewfile"].some((tool) => n.includes(tool))) return "read";
   if (["grep", "glob", "search", "listdir", "listdirectory", "find", "explore", "semanticsearch"].some((tool) => n.includes(tool))) {
     return "search";
@@ -297,12 +298,12 @@ export function readLabel(item: TimelineItem): string {
 
 export function searchLabel(item: TimelineItem): string {
   const input = resolvedInput(item);
-  return stringField(input, ["pattern", "query", "glob", "search", "url"]) || fileName(toolPath(item) || "");
+  return stringField(input, ["pattern", "query", "glob", "search", "searchTerm", "search_term", "url"]) || fileName(toolPath(item) || "");
 }
 
 export function browserLabel(item: TimelineItem): string {
   const input = resolvedInput(item);
-  return stringField(input, ["url", "query", "title", "selector", "text"]) || inferToolName(item);
+  return stringField(input, ["url", "query", "title", "selector", "text"]);
 }
 
 export function exploreVerb(item: TimelineItem, language?: string): string {
@@ -330,7 +331,91 @@ export function exploreDetail(item: TimelineItem): string {
   if (kind === "read") return readLabel(item);
   if (kind === "search") return searchLabel(item);
   if (kind === "browser") return browserLabel(item);
-  return toolPath(item) ? readLabel(item) : searchLabel(item) || inferToolName(item);
+  return toolPath(item) ? readLabel(item) : searchLabel(item);
+}
+
+const TOOL_VERBS: Record<string, MessageKey> = {
+  getmcptools: "chat.tool.lookup",
+  await: "chat.tool.await",
+  readlints: "chat.tool.lint",
+  sendmessage: "chat.tool.send",
+  skill: "chat.tool.skill",
+  exitplanmode: "chat.tool.exitPlan",
+  taskcreate: "chat.tool.taskCreate",
+  taskget: "chat.tool.taskGet",
+  taskupdate: "chat.tool.taskUpdate",
+  tasklist: "chat.tool.taskList",
+  switchmode: "chat.tool.switchMode",
+  createplan: "chat.tool.plan",
+};
+
+function normalizedToolKey(item: TimelineItem): string {
+  return inferToolName(item).toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function firstListedPath(input: Record<string, unknown>): string {
+  const paths = input.paths;
+  if (!Array.isArray(paths)) return "";
+  const first = paths.find((path) => typeof path === "string" && path.trim());
+  return typeof first === "string" ? fileName(first) : "";
+}
+
+function planTitle(plan: string): string {
+  const line = plan.split("\n").map((row) => row.trim()).find(Boolean) ?? "";
+  return line.replace(/^#+\s*/, "");
+}
+
+function modeName(id: string, language?: string): string {
+  if (id === "plan" || id === "agent" || id === "auto") return translate(`chat.mode.${id}`, language);
+  return id;
+}
+
+function mcpCallName(item: TimelineItem): string {
+  const named = stringField(resolvedInput(item), ["name"]) || inferToolName(item);
+  const parts = named.split("__").filter(Boolean);
+  return parts.at(-1) || named;
+}
+
+function callDetail(item: TimelineItem, language?: string): string {
+  const key = normalizedToolKey(item);
+  const input = resolvedInput(item);
+  if (key === "getmcptools") return stringField(input, ["toolName", "server", "pattern"]);
+  if (key === "await") return stringField(input, ["taskId", "task_id"]);
+  if (key === "readlints") return firstListedPath(input);
+  if (key === "sendmessage") return stringField(input, ["content", "message", "text"]);
+  if (key === "skill") return stringField(input, ["skill", "name"]);
+  if (key === "taskcreate") return stringField(input, ["subject", "description"]);
+  if (key === "taskget" || key === "taskupdate") return stringField(input, ["taskId", "task_id"]);
+  if (key === "switchmode") return modeName(stringField(input, ["targetModeId", "mode"]), language);
+  if (key === "createplan") return planTitle(stringField(input, ["plan", "name", "title"]));
+  if (itemKind(item) === "mcp") return mcpCallName(item);
+  if (itemKind(item) === "delete") {
+    const path = toolPath(item);
+    return path ? fileName(path) : "";
+  }
+  return "";
+}
+
+/** 工具行：中文动作加一个详情。没有详情时只留动作，不再把英文名再写一遍。 */
+export function toolCallLabel(item: TimelineItem, language?: string): string {
+  const raw = inferToolName(item);
+  const key = normalizedToolKey(item);
+  const kind = itemKind(item);
+  const verbKey = TOOL_VERBS[key]
+    ?? (kind === "mcp" ? "chat.tool.call" : undefined)
+    ?? (kind === "delete" ? "chat.tool.delete" : undefined);
+  const verb = verbKey ? translate(verbKey, language) : raw || translate("chat.tool", language);
+  const detail = truncateLiveDetail(callDetail(item, language));
+  if (!detail || detail === verb || detail.toLowerCase() === raw.toLowerCase()) return verb;
+  return `${verb} ${detail}`;
+}
+
+export function exploreLine(item: TimelineItem, language?: string): string {
+  const verb = exploreVerb(item, language);
+  const detail = exploreDetail(item);
+  const name = inferToolName(item);
+  if (!detail || detail === verb || detail === name) return verb;
+  return `${verb} ${detail}`;
 }
 
 export function exploreTitle(items: ExploreEntry[], language?: string): string {

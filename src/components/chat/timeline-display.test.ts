@@ -7,9 +7,11 @@ import {
   groupTimeline,
   liveWorkLabel,
   shellTranscript,
+  exploreLine,
   shellCardMode,
   shellFailed,
   shellResultText,
+  toolCallLabel,
   type TimelineBlock,
 } from "./timeline-display";
 
@@ -29,6 +31,27 @@ function item(
     createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
+
+describe("toolCallLabel", () => {
+  test("gives unnamed tools a verb and does not repeat the english name", () => {
+    expect(toolCallLabel(item("tool_use", "GetMcpTools", { server: "cursor", toolName: "TodoWrite" }), "zh-CN")).toBe("查看工具 TodoWrite");
+    expect(toolCallLabel(item("tool_use", "GetMcpTools", { pattern: "multara" }), "zh-CN")).toBe("查看工具 multara");
+    expect(toolCallLabel(item("tool_use", "Mcp", { name: "lark-project-search_work_items" }), "zh-CN")).toBe("调用 lark-project-search_work_items");
+    expect(toolCallLabel(item("tool_use", "mcp__weather-demo__show_weather", { city: "Paris" }), "zh-CN")).toBe("调用 show_weather");
+    expect(toolCallLabel(item("tool_use", "Await", { taskId: "594945" }), "zh-CN")).toBe("等待 594945");
+    expect(toolCallLabel(item("tool_use", "ReadLints", { paths: ["apps/a/src/main.ts"] }), "zh-CN")).toBe("检查 main.ts");
+    expect(toolCallLabel(item("tool_use", "Skill", { skill: "claude-api" }), "zh-CN")).toBe("技能 claude-api");
+    expect(toolCallLabel(item("tool_use", "ExitPlanMode", {}), "zh-CN")).toBe("退出规划");
+    expect(toolCallLabel(item("tool_use", "SendMessage", { content: "现场已捕获" }), "zh-CN")).toBe("发送 现场已捕获");
+    expect(toolCallLabel(item("tool_use", "TaskCreate", { subject: "梳理设计系统并确定原型布局" }), "zh-CN")).toBe("新建任务 梳理设计系统并确定原型布局");
+    expect(toolCallLabel(item("tool_use", "TaskList", {}), "zh-CN")).toBe("列出任务");
+    expect(toolCallLabel(item("tool_use", "SwitchMode", { targetModeId: "plan" }), "zh-CN")).toBe("切换模式 规划");
+    expect(toolCallLabel(item("tool_use", "CreatePlan", { plan: "# Agent 在终端跑服务\n\n正文" }), "zh-CN")).toBe("编写计划 Agent 在终端跑服务");
+    expect(toolCallLabel(item("tool_use", "Delete", { path: "tmp/a.ts" }), "zh-CN")).toBe("删除 a.ts");
+    expect(toolCallLabel(item("tool_use", "SomethingNew", {}), "zh-CN")).toBe("SomethingNew");
+    expect(exploreLine(item("tool_use", "WebSearch", { searchTerm: "chrome rules" }), "zh-CN")).toBe("搜索 chrome rules");
+  });
+});
 
 describe("liveWorkLabel", () => {
   test("stays on the latest open action and keeps the elapsed clock visible", () => {

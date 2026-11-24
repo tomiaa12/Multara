@@ -31,6 +31,9 @@ const props = defineProps<{ workspace: Workspace; repository: GitRepositoryStatu
 const emit = defineEmits<{
   close: [];
   merged: [];
+  refresh: [];
+  /** 先去解决冲突，弹窗关掉；剩下的冲突分支等这次解决完再继续 */
+  defer: [payload: { workspaceId: string; pending: string[]; push: boolean }];
   /** 收件箱应切到合并会话聊天，并让右侧 Git 绑临时 Worktree */
   mergeFocus: [payload: { inboxItemId: string | null; workspaceId: string; sessionId: string }];
 }>();
@@ -62,6 +65,7 @@ const origin = ref<MergePreview["origin"]>(null);
 const dirty = ref(false);
 const previewError = ref("");
 const running = ref(false);
+const refreshing = ref(false);
 const error = ref("");
 const outcomes = ref<MergeOutcome[]>([]);
 const dragIndex = ref(-1);
@@ -221,11 +225,14 @@ async function start() {
       done.push({ name: item.name, status, result: outcome, error: "", pushRequested });
       if (outcome.status === "conflict" && outcome.mergeSession) {
         hitConflict = true;
+        const pending = queue.slice(queue.indexOf(item) + 1).map((row) => row.name);
+        emit("defer", { workspaceId: props.workspace.id, pending, push: pushRequested });
         emit("mergeFocus", {
           inboxItemId: store.inboxItemIdForSession(outcome.mergeSession.sessionId),
           workspaceId: outcome.mergeSession.workspaceId,
           sessionId: outcome.mergeSession.sessionId,
         });
+        emit("close");
       }
     } catch (cause) {
       done.push({
@@ -286,6 +293,20 @@ async function abort() {
   }
 }
 
+async function refreshBranches() {
+  if (refreshing.value || running.value) return;
+  refreshing.value = true;
+  previewError.value = "";
+  try {
+    await backend.gitFetchWorkspace(props.workspace.id);
+    emit("refresh");
+  } catch (cause) {
+    previewError.value = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    refreshing.value = false;
+  }
+}
+
 function outcomeLines(item: MergeOutcome) {
   return mergeResultLines({
     status: item.status,
@@ -295,9 +316,10 @@ function outcomeLines(item: MergeOutcome) {
   });
 }
 
-onMounted(async () => {
+onMounted(() => {
   recent.value = readRecent();
-  await loadSource();
+  void refreshBranches();
+  void loadSource();
 });
 </script>
 
@@ -332,7 +354,12 @@ onMounted(async () => {
 
           <div class="merge-body">
             <div class="merge-picker">
-              <UiInput v-model="query" type="search" spellcheck="false" :placeholder="t('workspace.searchBranch')" :aria-label="t('workspace.searchBranch')" />
+              <div class="merge-search">
+                <UiInput v-model="query" type="search" spellcheck="false" :placeholder="t('workspace.searchBranch')" :aria-label="t('workspace.searchBranch')" />
+                <UiButton size="small" :disabled="refreshing || running" @click="refreshBranches">
+                  {{ refreshing ? t("scm.merge.refreshing") : t("scm.merge.refresh") }}
+                </UiButton>
+              </div>
               <SegmentedTabs v-model="filter" :items="filterTabs" :label="t('scm.merge.branchFilter')" />
               <div class="merge-branch-list vs-scroll">
                 <p v-if="!groups.length" class="merge-empty">{{ t('scm.merge.noMatch') }}</p>
@@ -344,7 +371,8 @@ onMounted(async () => {
                       :model-value="isPicked(row.name)"
                       @update:model-value="toggle(row.name, Boolean($event))"
                     />
-                    <span>{{ row.name }}</span>
+                    <span class="merge-branch-name">{{ row.name }}</span>
+                    <em v-if="row.localCopy" class="merge-branch-mark">{{ t('scm.merge.alsoLocal') }}</em>
                   </label>
                 </section>
               </div>

@@ -58,6 +58,7 @@ function expandFromPreview() {
     </button>
     <ClipScroll
       v-if="showBody"
+      pass-wheel
       class="shell-body"
       :class="{ 'is-collapsed': !open }"
       :pin-end="!open"
