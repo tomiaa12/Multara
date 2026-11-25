@@ -42,8 +42,6 @@ const anchor = ref("");
 const menu = ref<{ x: number; y: number; group: ScmGroupId; paths: string[] } | null>(null);
 const draggingPath = ref("");
 
-const DRAG_GROUPS = new Set<ScmGroupId>(["changes", "untracked"]);
-
 const menuItems = computed<ContextMenuItem[]>(() => {
   if (!menu.value) return [];
   const many = menu.value.paths.length > 1;
@@ -230,7 +228,6 @@ function rowStatusTitle(group: ScmGroupId, row: Row) {
 }
 
 function onRowPointerDown(group: ScmGroupId, row: Row, event: PointerEvent) {
-  if (!DRAG_GROUPS.has(group)) return;
   const target = event.target;
   if (target instanceof Element && target.closest("button, a, input, .scm-file-actions")) return;
   const path = row.kind === "dir" ? row.path : row.file.path;

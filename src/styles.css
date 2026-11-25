@@ -4087,9 +4087,9 @@ button.read-row-line.is-clickable:hover .read-row-text {
   gap: 5px;
   max-width: 220px;
   padding: 4px 5px 4px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid color-mix(in srgb, var(--color-info) 40%, transparent);
   border-radius: var(--radius-md);
-  background: var(--color-bg-tertiary);
+  background: color-mix(in srgb, var(--color-info) 18%, var(--color-field));
   font-size: var(--font-size-xs);
 }
 .composer-attachment span {
@@ -4112,14 +4112,16 @@ button.read-row-line.is-clickable:hover .read-row-text {
   gap: 3px;
   max-width: 260px;
   padding: 0 1px 0 5px;
-  border-color: var(--color-border-strong);
+  border-color: var(--color-purple-border);
   border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-purple) 20%, var(--color-field));
+  color: var(--color-purple);
   line-height: 18px;
 }
 .composer-attachment.ui-context-chip .codicon {
   flex: 0 0 auto;
   font-size: 12px !important;
-  color: var(--color-text-secondary);
+  color: inherit;
 }
 .composer-attachment.ui-context-chip .ui-button {
   min-height: 16px;
@@ -4312,7 +4314,7 @@ button.read-row-line.is-clickable:hover .read-row-text {
   padding: 0 2px 0 2px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-text) 14%, var(--color-field));
+  background: var(--color-surface-active);
   color: var(--color-text);
   vertical-align: -2px;
   user-select: none;
@@ -4369,13 +4371,31 @@ button.read-row-line.is-clickable:hover .read-row-text {
 .composer-field[contenteditable="false"] .composer-chip-remove {
   display: none;
 }
-.composer-chip[data-chip-kind="file"] {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text);
+.composer-chip[data-chip-kind="file"],
+.composer-chip[data-chip-kind="line"] {
+  background: color-mix(in srgb, var(--color-info) 22%, var(--color-field));
+  border-color: color-mix(in srgb, var(--color-info) 42%, transparent);
+  color: var(--color-info);
 }
-.composer-chip[data-chip-kind="folder"] {
-  background: var(--color-warning-subtle);
+.composer-chip[data-chip-kind="folder"],
+.composer-chip[data-chip-kind="task"],
+.composer-chip[data-chip-kind="requirement"] {
+  background: color-mix(in srgb, var(--color-warning) 22%, var(--color-field));
+  border-color: var(--color-warning-border);
   color: var(--color-warning);
+}
+.composer-chip[data-chip-kind="terminal"],
+.composer-chip[data-chip-kind="workflow"] {
+  background: color-mix(in srgb, var(--color-purple) 22%, var(--color-field));
+  border-color: var(--color-purple-border);
+  color: var(--color-purple);
+}
+.composer-chip[data-chip-kind="feishu"],
+.composer-chip[data-chip-kind="mcp"],
+.composer-chip[data-chip-kind="automation"] {
+  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-field));
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
 }
 .shared-chat-panel.compact .composer-field {
   max-height: calc(var(--composer-line-height) * 11);
@@ -11752,17 +11772,14 @@ body.is-dragging-inbox-float * {
 }
 .composer-chip[data-chip-kind="agent"],
 .composer-chip[data-chip-kind="squad"] {
-  background: var(--color-primary-subtle);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-field));
+  border-color: var(--color-primary-border);
   color: var(--color-primary);
 }
 .composer-chip[data-chip-kind="skill"] {
-  background: var(--color-success-subtle);
+  background: color-mix(in srgb, var(--color-success) 22%, var(--color-field));
+  border-color: var(--color-success-border);
   color: var(--color-success);
-}
-.composer-chip[data-chip-kind="task"],
-.composer-chip[data-chip-kind="requirement"] {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
 }
 .skill-source-mark {
   display: grid;
