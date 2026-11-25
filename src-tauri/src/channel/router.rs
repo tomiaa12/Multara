@@ -273,9 +273,13 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
     let command = parts.next().unwrap_or_default().to_lowercase();
     let argument = parts.next().unwrap_or_default().trim();
 
-    if let Some(reply) =
-        crate::workflow::runtime::channel_command(app, &installation.id, &message.chat_id, command.as_str(), argument)
-    {
+    if let Some(reply) = crate::workflow::runtime::channel_command(
+        app,
+        &installation.id,
+        &message.chat_id,
+        command.as_str(),
+        argument,
+    ) {
         send_notice(app, installation, message, &reply);
         return true;
     }
@@ -503,12 +507,7 @@ fn stop_session_runs(
     for run_id in &run_ids {
         let _ = crate::executor::stop(app, run_id);
     }
-    send_notice(
-        app,
-        installation,
-        message,
-        &tr!("已请求停止当前运行。"),
-    );
+    send_notice(app, installation, message, &tr!("已请求停止当前运行。"));
 }
 
 fn route_key(message: &InboundMessage) -> String {

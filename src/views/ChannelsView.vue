@@ -66,6 +66,7 @@ async function refresh() {
 }
 
 let unlistenPaired: UnlistenFn | null = null;
+let unlistenProfile: UnlistenFn | null = null;
 let unmounted = false;
 
 /** 有人配对成功：后端已换新码，同步到卡片上；授权用户弹窗开着就顺便刷新列表。 */
@@ -92,8 +93,22 @@ onMounted(async () => {
       if (event.payload?.installationId) void onPaired(event.payload);
     },
   );
-  if (unmounted) unlisten();
-  else unlistenPaired = unlisten;
+  const unlistenBot = await listen<{ installationId: string; botName: string; botAvatar: string }>(
+    "channel-profile",
+    (event) => {
+      const item = installations.value.find((entry) => entry.id === event.payload?.installationId);
+      if (!item) return;
+      item.botName = event.payload.botName || null;
+      item.botAvatar = event.payload.botAvatar || null;
+    },
+  );
+  if (unmounted) {
+    unlisten();
+    unlistenBot();
+  } else {
+    unlistenPaired = unlisten;
+    unlistenProfile = unlistenBot;
+  }
 });
 
 onBeforeUnmount(() => {
@@ -101,7 +116,16 @@ onBeforeUnmount(() => {
   weixinPoll += 1;
   unlistenPaired?.();
   unlistenPaired = null;
+  unlistenProfile?.();
+  unlistenProfile = null;
 });
+
+function identityHint(item: ChannelInstallation) {
+  if (item.botAvatar) return "";
+  if (item.channelType === "dingtalk") return t("channels.identityDingtalk");
+  if (item.channelType === "weixin") return t("channels.identityWeixin");
+  return "";
+}
 
 function statusLabel(status: ChannelInstallation["status"]) {
   if (status === "connected") return t("channels.connected");
@@ -481,10 +505,12 @@ function projectName(item: ChannelInstallation) {
                 {{ statusLabel(item.status) }}
               </span>
               <span v-if="item.botName" class="channel-bot">
-                <AgentAvatar :value="item.botAvatar" :name="item.botName" :size="18" />
+                <AgentAvatar v-if="item.botAvatar" :value="item.botAvatar" :name="item.botName" :size="18" />
+                <ChannelMark v-else :type="item.channelType" />
                 {{ item.botName }}
               </span>
             </p>
+            <p v-if="identityHint(item)" class="channel-hint">{{ identityHint(item) }}</p>
             <p v-if="item.lastError" class="form-error">{{ item.lastError }}</p>
             <p class="channel-code">
               {{ t("channels.pairingCode") }}
@@ -676,6 +702,7 @@ function projectName(item: ChannelInstallation) {
 .channel-status.connected { background: var(--success, #3fb950); }
 .channel-status.error { background: var(--danger, #f85149); }
 .channel-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); margin: 6px 0; }
+.channel-hint { margin: 0 0 6px; color: var(--text-muted); font-size: var(--font-size-sm); }
 .channel-code { display: flex; gap: 6px; align-items: center; color: var(--text-muted); }
 .channel-code code { font-size: 14px; letter-spacing: 2px; color: var(--text-primary); }
 .weixin-login { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

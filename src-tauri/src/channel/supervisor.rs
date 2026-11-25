@@ -117,16 +117,15 @@ fn run_loop(app: AppHandle, installation: Installation, stop: Arc<AtomicBool>) {
             break;
         }
         // panic 不能杀掉这个线程：注册表项还在，指纹不变就永远不会重启
-        let connected = panic::catch_unwind(AssertUnwindSafe(|| {
-            link::run(&app, &installation, &stop)
-        }))
-        .unwrap_or_else(|_| {
-            crate::diag::write(&format!(
-                "CHANNEL {} {} 接收线程 panic，稍后重连",
-                installation.channel_type, installation.id
-            ));
-            false
-        });
+        let connected =
+            panic::catch_unwind(AssertUnwindSafe(|| link::run(&app, &installation, &stop)))
+                .unwrap_or_else(|_| {
+                    crate::diag::write(&format!(
+                        "CHANNEL {} {} 接收线程 panic，稍后重连",
+                        installation.channel_type, installation.id
+                    ));
+                    false
+                });
         if stop.load(Ordering::SeqCst) {
             break;
         }

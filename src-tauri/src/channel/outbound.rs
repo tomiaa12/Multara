@@ -207,7 +207,8 @@ fn run_tree_ids(db: &rusqlite::Connection, run_ids: &[String]) -> Vec<String> {
             continue;
         }
         out.push(id.clone());
-        let Ok(mut statement) = db.prepare("SELECT id FROM agent_runs WHERE parent_run_id=?1") else {
+        let Ok(mut statement) = db.prepare("SELECT id FROM agent_runs WHERE parent_run_id=?1")
+        else {
             continue;
         };
         let Ok(rows) = statement.query_map([&id], |row| row.get::<_, String>(0)) else {
@@ -247,11 +248,7 @@ fn assistant_parts_for_turns(
     if turn_ids.is_empty() {
         return Vec::new();
     }
-    let placeholders = turn_ids
-        .iter()
-        .map(|_| "?")
-        .collect::<Vec<_>>()
-        .join(",");
+    let placeholders = turn_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
         "SELECT m.content, COALESCE(a.name, '')
          FROM messages m
@@ -286,11 +283,7 @@ fn assistant_parts_for_runs(
     if run_ids.is_empty() {
         return Vec::new();
     }
-    let placeholders = run_ids
-        .iter()
-        .map(|_| "?")
-        .collect::<Vec<_>>()
-        .join(",");
+    let placeholders = run_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
         "SELECT m.content, COALESCE(a.name, '')
          FROM messages m
@@ -367,7 +360,12 @@ fn send_plain(
         record_reply(app, &installation.id, &sent, &delivery.run_id, "reply");
     }
     if !questions.is_empty() {
-        let sent = super::link::send_delivery(app, &installation, delivery, &questions_as_text(&questions))?;
+        let sent = super::link::send_delivery(
+            app,
+            &installation,
+            delivery,
+            &questions_as_text(&questions),
+        )?;
         record_reply(app, &installation.id, &sent, &delivery.run_id, "question");
     }
     if let Some(plan) = plan_text(app, &delivery.run_id) {
@@ -377,7 +375,13 @@ fn send_plain(
     Ok(())
 }
 
-fn record_reply(app: &AppHandle, installation_id: &str, message_id: &str, run_id: &str, kind: &str) {
+fn record_reply(
+    app: &AppHandle,
+    installation_id: &str,
+    message_id: &str,
+    run_id: &str,
+    kind: &str,
+) {
     let state = app.state::<AppState>();
     if let Ok(db) = state.lock_db() {
         store::record_outbound(&db, installation_id, message_id, Some(run_id), kind);
@@ -396,7 +400,10 @@ fn questions_as_text(questions: &[serde_json::Value]) -> String {
         if !prompt.is_empty() {
             lines.push(format!("{}. {prompt}", index + 1));
         }
-        if let Some(options) = question.get("options").and_then(serde_json::Value::as_array) {
+        if let Some(options) = question
+            .get("options")
+            .and_then(serde_json::Value::as_array)
+        {
             for option in options {
                 let label = option
                     .as_str()
@@ -424,8 +431,14 @@ fn plan_text(app: &AppHandle, run_id: &str) -> Option<String> {
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
     })?;
-    let title = plan.get("title").and_then(serde_json::Value::as_str).unwrap_or("");
-    let summary = plan.get("summary").and_then(serde_json::Value::as_str).unwrap_or("");
+    let title = plan
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let summary = plan
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
     let text = format!("{title}\n{summary}").trim().to_string();
     (!text.is_empty()).then_some(tr!("计划：{text}", text = text))
 }
@@ -715,10 +728,7 @@ fn card_to_text(props: &serde_json::Value) -> String {
                 .get("label")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default();
-            let value = field
-                .get("value")
-                .map(json_cell)
-                .unwrap_or_default();
+            let value = field.get("value").map(json_cell).unwrap_or_default();
             if !label.is_empty() {
                 lines.push(format!("{label}: {value}"));
             }
@@ -933,14 +943,14 @@ fn form_to_text(props: &serde_json::Value) -> String {
 }
 
 fn question_to_text(props: &serde_json::Value) -> String {
-    let questions = if let Some(items) = props.get("questions").and_then(serde_json::Value::as_array)
-    {
-        items.as_slice()
-    } else if let Some(items) = props.as_array() {
-        items.as_slice()
-    } else {
-        std::slice::from_ref(props)
-    };
+    let questions =
+        if let Some(items) = props.get("questions").and_then(serde_json::Value::as_array) {
+            items.as_slice()
+        } else if let Some(items) = props.as_array() {
+            items.as_slice()
+        } else {
+            std::slice::from_ref(props)
+        };
     questions
         .iter()
         .filter_map(|question| {
@@ -1168,7 +1178,9 @@ pub fn on_permission_request(
             };
             if !super::is_feishu(&installation.channel_type) {
                 let notice = tr!("需要在 Multara 里确认：{tool}", tool = tool.clone());
-                if let Ok(sent) = super::link::send_delivery(&app, &installation, &delivery, &notice) {
+                if let Ok(sent) =
+                    super::link::send_delivery(&app, &installation, &delivery, &notice)
+                {
                     record_reply(&app, &installation.id, &sent, &run_id, "permission");
                 }
                 continue;

@@ -33,7 +33,8 @@ pub fn load(app: &AppHandle, installation_id: &str) -> Result<(Installation, Str
         store::get_installation(&db, installation_id)?
     }
     .ok_or_else(|| tr!("渠道连接不存在"))?;
-    let secret = secret::load(app, installation_id).ok_or_else(|| tr!("渠道凭据缺失，请重新填写"))?;
+    let secret =
+        secret::load(app, installation_id).ok_or_else(|| tr!("渠道凭据缺失，请重新填写"))?;
     Ok((installation, secret))
 }
 
@@ -46,7 +47,12 @@ pub fn run(app: &AppHandle, installation: &Installation, stop: &AtomicBool) -> b
         TYPE_TELEGRAM => telegram::run(app, &installation.id, stop),
         TYPE_WEIXIN => weixin::run(app, &installation.id, stop),
         _ => {
-            mark(app, installation, "error", Some(&tr!("暂不支持这个渠道类型")));
+            mark(
+                app,
+                installation,
+                "error",
+                Some(&tr!("暂不支持这个渠道类型")),
+            );
             false
         }
     }

@@ -297,7 +297,13 @@ pub fn consume_pairing_code(
     if current.is_empty() || current != candidate {
         return Ok(None);
     }
-    add_allowed_user(&transaction, installation_id, user_id, display_name, "owner")?;
+    add_allowed_user(
+        &transaction,
+        installation_id,
+        user_id,
+        display_name,
+        "owner",
+    )?;
     let mut config = installation.config.clone();
     config.pairing_code = next_code.to_string();
     set_config(&transaction, installation_id, &config)?;
@@ -625,7 +631,10 @@ mod tests {
         let db = db();
         add_allowed_user(&db, "inst", "ou_a", None, "owner").unwrap();
         set_allowed_user_note(&db, "inst", "ou_a", Some("产品")).unwrap();
-        assert_eq!(allowed_user(&db, "inst", "ou_a").unwrap().note.as_deref(), Some("产品"));
+        assert_eq!(
+            allowed_user(&db, "inst", "ou_a").unwrap().note.as_deref(),
+            Some("产品")
+        );
         set_allowed_user_note(&db, "inst", "ou_a", None).unwrap();
         assert_eq!(allowed_user(&db, "inst", "ou_a").unwrap().note, None);
         assert!(set_allowed_user_note(&db, "inst", "ou_missing", None).is_err());
@@ -635,14 +644,18 @@ mod tests {
     fn allowed_user_target_round_trips() {
         let db = db();
         add_allowed_user(&db, "inst", "ou_a", None, "owner").unwrap();
-        assert!(!user_has_target(&allowed_user(&db, "inst", "ou_a").unwrap()));
+        assert!(!user_has_target(
+            &allowed_user(&db, "inst", "ou_a").unwrap()
+        ));
         set_allowed_user_target(&db, "inst", "ou_a", Some("agent"), Some("a1")).unwrap();
         let user = allowed_user(&db, "inst", "ou_a").unwrap();
         assert!(user_has_target(&user));
         assert_eq!(user.target_type.as_deref(), Some("agent"));
         assert_eq!(user.target_id.as_deref(), Some("a1"));
         set_allowed_user_target(&db, "inst", "ou_a", None, None).unwrap();
-        assert!(!user_has_target(&allowed_user(&db, "inst", "ou_a").unwrap()));
+        assert!(!user_has_target(
+            &allowed_user(&db, "inst", "ou_a").unwrap()
+        ));
     }
 
     #[test]

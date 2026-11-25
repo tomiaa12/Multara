@@ -84,7 +84,11 @@ fn run_once(
     Ok(())
 }
 
-pub fn send(app: &AppHandle, installation: &Installation, target: &TextTarget<'_>) -> Result<String, String> {
+pub fn send(
+    app: &AppHandle,
+    installation: &Installation,
+    target: &TextTarget<'_>,
+) -> Result<String, String> {
     let (_, secret) = link::load(app, &installation.id)?;
     let tokens = parse_secret(&secret)?;
     let mut last = String::new();
@@ -150,16 +154,22 @@ fn slack_call(token: &str, method: &str, body: &str) -> Result<Value, String> {
         &url,
         &[
             ("Authorization".to_string(), format!("Bearer {token}")),
-            ("Content-Type".to_string(), "application/json; charset=utf-8".to_string()),
+            (
+                "Content-Type".to_string(),
+                "application/json; charset=utf-8".to_string(),
+            ),
         ],
         Some(body),
         20,
     )
     .map_err(|error| link::scrub(error, token))?;
-    let value: Value = serde_json::from_str(&response.body)
-        .map_err(|_| tr!("Slack 返回了无法解析的内容"))?;
+    let value: Value =
+        serde_json::from_str(&response.body).map_err(|_| tr!("Slack 返回了无法解析的内容"))?;
     if value.get("ok").and_then(Value::as_bool) != Some(true) {
-        let error = value.get("error").and_then(Value::as_str).unwrap_or("unknown");
+        let error = value
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
         return Err(tr!("Slack 拒绝了请求：{error}", error = error));
     }
     Ok(value)
@@ -178,7 +188,11 @@ fn remember_bot(app: &AppHandle, installation: &Installation, identity: &Identit
     };
 }
 
-pub fn decode_event(payload: &Value, installation_id: &str, bot_user: &str) -> Option<InboundMessage> {
+pub fn decode_event(
+    payload: &Value,
+    installation_id: &str,
+    bot_user: &str,
+) -> Option<InboundMessage> {
     let event = payload.get("event").unwrap_or(payload);
     let kind = event.get("type").and_then(Value::as_str).unwrap_or("");
     if kind != "message" && kind != "app_mention" {
@@ -191,11 +205,18 @@ pub fn decode_event(payload: &Value, installation_id: &str, bot_user: &str) -> O
     if user.is_empty() || user == bot_user {
         return None;
     }
-    let text = event.get("text").and_then(Value::as_str).unwrap_or("").trim();
+    let text = event
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if text.is_empty() {
         return None;
     }
-    let channel_type = event.get("channel_type").and_then(Value::as_str).unwrap_or("");
+    let channel_type = event
+        .get("channel_type")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let chat_type = if channel_type == "im" {
         ChatType::P2p
     } else {
@@ -209,9 +230,21 @@ pub fn decode_event(payload: &Value, installation_id: &str, bot_user: &str) -> O
     }
     Some(InboundMessage {
         installation_id: installation_id.to_string(),
-        event_id: event.get("ts").and_then(Value::as_str).unwrap_or("").to_string(),
-        message_id: event.get("ts").and_then(Value::as_str).unwrap_or("").to_string(),
-        chat_id: event.get("channel").and_then(Value::as_str).unwrap_or("").to_string(),
+        event_id: event
+            .get("ts")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        message_id: event
+            .get("ts")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        chat_id: event
+            .get("channel")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
         chat_type,
         thread_id: event
             .get("thread_ts")

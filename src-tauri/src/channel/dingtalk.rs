@@ -39,6 +39,7 @@ fn run_once(
     let mut conn = link::connect_ws(&url)?;
     *connected = true;
     link::mark_connected(app, installation);
+    refresh_identity(app, installation, secret);
     let events = link::spawn_workers(app, installation);
     while !stop.load(Ordering::SeqCst) {
         match conn.read_binary() {
@@ -112,7 +113,11 @@ fn pong(message_id: &str, data: &str) -> Value {
     })
 }
 
-pub fn send(app: &AppHandle, installation: &Installation, target: &TextTarget<'_>) -> Result<String, String> {
+pub fn send(
+    app: &AppHandle,
+    installation: &Installation,
+    target: &TextTarget<'_>,
+) -> Result<String, String> {
     let (_, secret) = link::load(app, &installation.id)?;
     let robot = installation.config.app_id.clone();
     let mut last = String::new();
@@ -151,7 +156,21 @@ pub fn send(app: &AppHandle, installation: &Installation, target: &TextTarget<'_
 
 pub fn probe(app_key: &str, secret: &str) -> Result<(String, String), String> {
     let _ = access_token(app_key, secret)?;
-    Ok((app_key.to_string(), app_key.to_string()))
+    match fetch_profile(app_key, secret) {
+        Ok(Some(profile)) => {
+            stash_avatar(app_key, &profile.avatar);
+            Ok((app_key.to_string(), profile.name))
+        }
+        _ => Ok((app_key.to_string(), String::new())),
+    }
+}
+
+pub fn cached_avatar(app_key: &str) -> String {
+    avatar_cache()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(app_key).cloned())
+        .unwrap_or_default()
 }
 
 fn open_connection(app_key: &str, secret: &str) -> Result<String, String> {
@@ -199,9 +218,9 @@ fn post_robot(app_key: &str, secret: &str, path: &str, body: &Value) -> Result<S
 
 fn access_token(app_key: &str, secret: &str) -> Result<String, String> {
     if let Some(hit) = cache().lock().ok().and_then(|cache| {
-        cache.get(app_key).and_then(|item| {
-            (item.expires > Instant::now()).then(|| item.token.clone())
-        })
+        cache
+            .get(app_key)
+            .and_then(|item| (item.expires > Instant::now()).then(|| item.token.clone()))
     }) {
         return Ok(hit);
     }
@@ -218,7 +237,10 @@ fn access_token(app_key: &str, secret: &str) -> Result<String, String> {
     if token.is_empty() {
         return Err(tr!("钉钉没有返回访问令牌"));
     }
-    let expire = value.get("expireIn").and_then(Value::as_u64).unwrap_or(7200);
+    let expire = value
+        .get("expireIn")
+        .and_then(Value::as_u64)
+        .unwrap_or(7200);
     if let Ok(mut cache) = cache().lock() {
         cache.insert(
             app_key.to_string(),
@@ -249,20 +271,260 @@ fn post_json(url: &str, token: Option<&str>, body: &Value) -> Result<Value, Stri
     serde_json::from_str(&response.body).map_err(|_| tr!("钉钉返回了无法解析的内容"))
 }
 
-fn remember_bot(app: &AppHandle, installation: &Installation, bot_user: &str) {
-    if installation.config.bot_open_id.as_deref() == Some(bot_user) {
+struct Profile {
+    name: String,
+    avatar: String,
+}
+
+enum ProfileError {
+    Permission,
+    Other(String),
+}
+
+fn avatar_cache() -> &'static Mutex<HashMap<String, String>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn denial_cache() -> &'static Mutex<HashMap<String, Instant>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn stash_avatar(app_key: &str, avatar: &str) {
+    if avatar.is_empty() {
         return;
     }
-    let mut config = installation.config.clone();
-    config.bot_open_id = Some(bot_user.to_string());
+    if let Ok(mut cache) = avatar_cache().lock() {
+        cache.insert(app_key.to_string(), avatar.to_string());
+    }
+}
+
+fn permission_cooled(app_key: &str) -> bool {
+    denial_cache().lock().ok().is_some_and(|cache| {
+        cache
+            .get(app_key)
+            .is_some_and(|until| *until > Instant::now())
+    })
+}
+
+fn mark_permission(app_key: &str) {
+    if let Ok(mut cache) = denial_cache().lock() {
+        cache.insert(
+            app_key.to_string(),
+            Instant::now() + Duration::from_secs(30 * 60),
+        );
+    }
+}
+
+fn clear_permission(app_key: &str) {
+    if let Ok(mut cache) = denial_cache().lock() {
+        cache.remove(app_key);
+    }
+}
+
+/// 钉钉没有按 robotCode 单独查资料的接口。群列表和群内机器人都要
+/// `qyapi_chat_manage`，并且机器人已经在内部群里。缺权限或还没进群时连接照常。
+fn refresh_identity(app: &AppHandle, installation: &Installation, secret: &str) {
+    let named = installation
+        .config
+        .bot_name
+        .as_deref()
+        .is_some_and(|name| !name.is_empty());
+    let pictured = installation
+        .config
+        .bot_avatar
+        .as_deref()
+        .is_some_and(|avatar| avatar.starts_with("https://"));
+    if (named && pictured) || permission_cooled(&installation.config.app_id) {
+        return;
+    }
+    match fetch_profile(&installation.config.app_id, secret) {
+        Ok(Some(profile)) => {
+            clear_permission(&installation.config.app_id);
+            stash_avatar(&installation.config.app_id, &profile.avatar);
+            save_profile(app, &installation.id, &profile);
+        }
+        Err(ProfileError::Permission) => mark_permission(&installation.config.app_id),
+        Ok(None) => {}
+        Err(ProfileError::Other(error)) => {
+            crate::diag::write(&format!(
+                "CHANNEL dingtalk {} 没有读到机器人资料：{error}",
+                installation.id
+            ));
+        }
+    }
+}
+
+fn fetch_profile(app_key: &str, secret: &str) -> Result<Option<Profile>, ProfileError> {
+    let groups = post_profile(
+        app_key,
+        secret,
+        "/v1.0/robot/groups/query",
+        &json!({ "robotCode": app_key, "pageNumber": 1, "pageSize": 20 }),
+    )?;
+    let ids = groups
+        .get("openConversationIds")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for id in ids.iter().filter_map(Value::as_str).take(5) {
+        let bots = post_profile(
+            app_key,
+            secret,
+            "/v1.0/robot/groups/robots/query",
+            &json!({ "openConversationId": id }),
+        )?;
+        if let Some(profile) = parse_group_bots(&bots, app_key) {
+            return Ok(Some(profile));
+        }
+    }
+    Ok(None)
+}
+
+fn post_profile(
+    app_key: &str,
+    secret: &str,
+    path: &str,
+    body: &Value,
+) -> Result<Value, ProfileError> {
+    let mut last = ProfileError::Other(String::new());
+    for attempt in 0..2 {
+        let token = access_token(app_key, secret).map_err(ProfileError::Other)?;
+        let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
+        headers.push(("x-acs-dingtalk-access-token".to_string(), token));
+        let response = crate::http_client::request(
+            "POST",
+            &format!("{API}{path}"),
+            &headers,
+            Some(&body.to_string()),
+            20,
+        )
+        .map_err(ProfileError::Other)?;
+        if response.status == 401 && attempt == 0 {
+            cache().lock().ok().map(|mut cache| cache.remove(app_key));
+            last = ProfileError::Other(tr!("钉钉拒绝了凭据（401）"));
+            continue;
+        }
+        if let Some(scope) = permission_scope(&response.body) {
+            if scope == "qyapi_chat_manage" {
+                return Err(ProfileError::Permission);
+            }
+        }
+        if !(200..300).contains(&response.status) {
+            return Err(ProfileError::Other(tr!(
+                "钉钉请求失败（{status}）",
+                status = response.status.to_string()
+            )));
+        }
+        return serde_json::from_str(&response.body)
+            .map_err(|_| ProfileError::Other(tr!("钉钉返回了无法解析的内容")));
+    }
+    Err(last)
+}
+
+fn permission_scope(body: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(body).ok()?;
+    let code = value.get("code").and_then(Value::as_str).unwrap_or("");
+    if !code.contains("PermissionDenied") {
+        return None;
+    }
+    value
+        .pointer("/accessdenieddetail/requiredScopes")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            let message = value.get("message").and_then(Value::as_str).unwrap_or("");
+            message
+                .contains("qyapi_chat_manage")
+                .then(|| "qyapi_chat_manage".to_string())
+        })
+}
+
+fn parse_group_bots(value: &Value, robot_code: &str) -> Option<Profile> {
+    let list = value.get("chatbotInstanceVOList")?.as_array()?;
+    for bot in list {
+        let code = bot.get("robotCode").and_then(Value::as_str).unwrap_or("");
+        if code != robot_code {
+            continue;
+        }
+        let name = bot
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let avatar = https_avatar(
+            bot.get("downloadIconURL")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+        if name.is_empty() && avatar.is_empty() {
+            return None;
+        }
+        return Some(Profile { name, avatar });
+    }
+    None
+}
+
+fn https_avatar(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.starts_with("https://") && !raw.chars().any(char::is_whitespace) {
+        raw.to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn save_profile(app: &AppHandle, installation_id: &str, profile: &Profile) {
     let state = app.state::<crate::database::AppState>();
-    if let Ok(db) = state.lock_db() {
-        let _ = super::store::set_config(&db, &installation.id, &config);
+    let saved = {
+        let Ok(db) = state.lock_db() else {
+            return;
+        };
+        let Ok(Some(current)) = super::store::get_installation(&db, installation_id) else {
+            return;
+        };
+        let mut config = current.config;
+        if !profile.name.is_empty() {
+            config.bot_name = Some(profile.name.clone());
+        }
+        if !profile.avatar.is_empty() {
+            config.bot_avatar = Some(profile.avatar.clone());
+        }
+        let name = config.bot_name.clone().unwrap_or_default();
+        let avatar = config.bot_avatar.clone().unwrap_or_default();
+        if super::store::set_config(&db, installation_id, &config).is_err() {
+            return;
+        }
+        (name, avatar)
     };
+    super::emit_profile(app, installation_id, &saved.0, &saved.1);
+}
+
+fn remember_bot(app: &AppHandle, installation: &Installation, bot_user: &str) {
+    let state = app.state::<crate::database::AppState>();
+    let Ok(db) = state.lock_db() else {
+        return;
+    };
+    let Ok(Some(current)) = super::store::get_installation(&db, &installation.id) else {
+        return;
+    };
+    if current.config.bot_open_id.as_deref() == Some(bot_user) {
+        return;
+    }
+    let mut config = current.config;
+    config.bot_open_id = Some(bot_user.to_string());
+    let _ = super::store::set_config(&db, &installation.id, &config);
 }
 
 pub fn decode_callback(body: &Value, installation_id: &str) -> Option<InboundMessage> {
-    let sender = body.get("senderStaffId").and_then(Value::as_str).unwrap_or("");
+    let sender = body
+        .get("senderStaffId")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if sender.is_empty() {
         return None;
     }
@@ -279,13 +541,20 @@ pub fn decode_callback(body: &Value, installation_id: &str) -> Option<InboundMes
     if text.is_empty() {
         return None;
     }
-    let conversation = body.get("conversationType").and_then(Value::as_str).unwrap_or("1");
+    let conversation = body
+        .get("conversationType")
+        .and_then(Value::as_str)
+        .unwrap_or("1");
     let chat_type = if conversation == "2" {
         ChatType::Group
     } else {
         ChatType::P2p
     };
-    let addressed = chat_type == ChatType::P2p || body.get("isInAtList").and_then(Value::as_bool).unwrap_or(false);
+    let addressed = chat_type == ChatType::P2p
+        || body
+            .get("isInAtList")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
     let text = if chat_type == ChatType::Group {
         strip_leading_mention(&text)
     } else {
@@ -294,7 +563,11 @@ pub fn decode_callback(body: &Value, installation_id: &str) -> Option<InboundMes
     if text.is_empty() {
         return None;
     }
-    let message_id = body.get("msgId").and_then(Value::as_str).unwrap_or("").to_string();
+    let message_id = body
+        .get("msgId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     Some(InboundMessage {
         installation_id: installation_id.to_string(),
         event_id: message_id.clone(),
@@ -333,7 +606,7 @@ fn strip_leading_mention(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_callback;
+    use super::{decode_callback, parse_group_bots, permission_scope};
     use crate::channel::ChatType;
 
     #[test]
@@ -353,5 +626,37 @@ mod tests {
         assert_eq!(message.chat_type, ChatType::Group);
         assert!(message.addressed_to_bot);
         assert_eq!(message.sender_name.as_deref(), Some("张三"));
+    }
+
+    #[test]
+    fn reads_only_the_matching_robot() {
+        let value = serde_json::json!({
+            "chatbotInstanceVOList": [
+                { "robotCode": "other", "name": "别人", "downloadIconURL": "https://example.com/a.png" },
+                { "robotCode": "ding", "name": "发布助手", "downloadIconURL": "https://example.com/b.png" }
+            ]
+        });
+        let profile = parse_group_bots(&value, "ding").unwrap();
+        assert_eq!(profile.name, "发布助手");
+        assert_eq!(profile.avatar, "https://example.com/b.png");
+        assert!(parse_group_bots(&value, "missing").is_none());
+    }
+
+    #[test]
+    fn drops_non_https_icons() {
+        let value = serde_json::json!({
+            "chatbotInstanceVOList": [
+                { "robotCode": "ding", "name": "发布助手", "downloadIconURL": "http://example.com/a.png" }
+            ]
+        });
+        let profile = parse_group_bots(&value, "ding").unwrap();
+        assert_eq!(profile.avatar, "");
+    }
+
+    #[test]
+    fn permission_error_names_the_scope() {
+        let body = r#"{"code":"Forbidden.AccessDenied.AccessTokenPermissionDenied","message":"应用尚未开通所需的权限：[qyapi_chat_manage]","accessdenieddetail":{"requiredScopes":["qyapi_chat_manage"]}}"#;
+        assert_eq!(permission_scope(body).as_deref(), Some("qyapi_chat_manage"));
+        assert!(permission_scope(r#"{"code":"InvalidAction.NotFound"}"#).is_none());
     }
 }

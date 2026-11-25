@@ -53,13 +53,29 @@ pub fn supports_group(channel_type: &str) -> bool {
     channel_type != TYPE_WEIXIN
 }
 
-pub fn emit_status(app: &AppHandle, installation: &Installation, status: &str, error: Option<&str>) {
+pub fn emit_status(
+    app: &AppHandle,
+    installation: &Installation,
+    status: &str,
+    error: Option<&str>,
+) {
     let _ = app.emit(
         "channel-status",
         serde_json::json!({
             "installationId": installation.id,
             "status": status,
             "lastError": error,
+        }),
+    );
+}
+
+pub fn emit_profile(app: &AppHandle, installation_id: &str, name: &str, avatar: &str) {
+    let _ = app.emit(
+        "channel-profile",
+        serde_json::json!({
+            "installationId": installation_id,
+            "botName": name,
+            "botAvatar": avatar,
         }),
     );
 }

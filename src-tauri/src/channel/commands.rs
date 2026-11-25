@@ -396,12 +396,31 @@ pub async fn test_channel_installation(
             let (open_id, name) = super::link::probe(&app, &id)?;
             let installation = store::get_installation(&*state.lock_db()?, &id)?
                 .ok_or_else(|| tr!("渠道连接不存在"))?;
-            (installation, open_id, name, String::new())
+            let avatar = if installation.channel_type == super::TYPE_DINGTALK {
+                super::dingtalk::cached_avatar(&installation.config.app_id)
+            } else {
+                String::new()
+            };
+            (installation, open_id, name, avatar)
         };
         let mut config: ChannelConfig = installation.config.clone();
-        config.bot_open_id = (!open_id.is_empty()).then(|| open_id.clone());
-        config.bot_name = (!name.is_empty()).then(|| name.clone());
-        config.bot_avatar = (!avatar.is_empty()).then_some(avatar);
+        // 钉钉的探测 id 是 AppKey，不能盖掉消息里记下的 chatbotUserId。
+        // 没读到名字或头像时保留已有值，避免一次失败把飞书以外的资料清掉。
+        if super::is_feishu(&installation.channel_type) {
+            config.bot_open_id = (!open_id.is_empty()).then(|| open_id.clone());
+            config.bot_name = (!name.is_empty()).then(|| name.clone());
+            config.bot_avatar = (!avatar.is_empty()).then_some(avatar);
+        } else {
+            if installation.channel_type != super::TYPE_DINGTALK && !open_id.is_empty() {
+                config.bot_open_id = Some(open_id.clone());
+            }
+            if !name.is_empty() {
+                config.bot_name = Some(name.clone());
+            }
+            if !avatar.is_empty() {
+                config.bot_avatar = Some(avatar);
+            }
+        }
         store::set_config(&*state.lock_db()?, &id, &config)?;
         let mut result = HashMap::new();
         result.insert("openId".to_string(), open_id);

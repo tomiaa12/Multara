@@ -95,8 +95,13 @@ fn read_loop(
                 };
                 let cmd = frame.get("cmd").and_then(Value::as_str).unwrap_or("");
                 if cmd == "ping" {
-                    let req = frame.pointer("/headers/req_id").and_then(Value::as_str).unwrap_or("");
-                    let _ = conn.send_text(&json!({ "cmd": "pong", "headers": { "req_id": req } }).to_string());
+                    let req = frame
+                        .pointer("/headers/req_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let _ = conn.send_text(
+                        &json!({ "cmd": "pong", "headers": { "req_id": req } }).to_string(),
+                    );
                     continue;
                 }
                 if cmd != "aibot_msg_callback" {
@@ -105,7 +110,8 @@ fn read_loop(
                 let body = frame.get("body").cloned().unwrap_or(Value::Null);
                 let Some(message) = decode_callback(&body, &installation.id) else {
                     if let Some(notice) = unsupported_target(&body) {
-                        let _ = write_markdown(conn, &notice.0, notice.1, &tr!("目前只处理文字消息。"));
+                        let _ =
+                            write_markdown(conn, &notice.0, notice.1, &tr!("目前只处理文字消息。"));
                     }
                     continue;
                 };
@@ -148,7 +154,10 @@ fn subscribe(conn: &mut WsConn, bot_id: &str, secret: &str) -> Result<String, St
         match conn.read_binary() {
             Ok(data) => {
                 let frame: Value = serde_json::from_slice(&data).unwrap_or(Value::Null);
-                let echoed = frame.pointer("/headers/req_id").and_then(Value::as_str).unwrap_or("");
+                let echoed = frame
+                    .pointer("/headers/req_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 if echoed != req_id {
                     continue;
                 }
@@ -166,7 +175,11 @@ fn subscribe(conn: &mut WsConn, bot_id: &str, secret: &str) -> Result<String, St
 }
 
 pub fn send(installation: &Installation, target: &TextTarget<'_>) -> Result<String, String> {
-    let chat_type = if target.chat_type == ChatType::Group { 2 } else { 1 };
+    let chat_type = if target.chat_type == ChatType::Group {
+        2
+    } else {
+        1
+    };
     let mut last = String::new();
     for chunk in link::chunk_text(target.text, link::TEXT_LIMIT) {
         let frame = json!({
@@ -195,7 +208,12 @@ fn push(installation_id: &str, frame: &str) -> Result<(), String> {
         .map_err(|_| tr!("企业微信发送队列已满"))
 }
 
-fn write_markdown(conn: &mut WsConn, chat_id: &str, chat_type: i64, text: &str) -> Result<(), String> {
+fn write_markdown(
+    conn: &mut WsConn,
+    chat_id: &str,
+    chat_type: i64,
+    text: &str,
+) -> Result<(), String> {
     conn.send_text(
         &json!({
             "cmd": "aibot_send_msg",
@@ -221,8 +239,14 @@ pub fn probe(bot_id: &str, secret: &str) -> Result<(String, String), String> {
 pub fn decode_callback(body: &Value, installation_id: &str) -> Option<InboundMessage> {
     let kind = body.get("msgtype").and_then(Value::as_str).unwrap_or("");
     let text = match kind {
-        "text" => body.pointer("/text/content").and_then(Value::as_str).unwrap_or(""),
-        "voice" => body.pointer("/voice/content").and_then(Value::as_str).unwrap_or(""),
+        "text" => body
+            .pointer("/text/content")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        "voice" => body
+            .pointer("/voice/content")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
         _ => return None,
     }
     .trim()
@@ -230,11 +254,17 @@ pub fn decode_callback(body: &Value, installation_id: &str) -> Option<InboundMes
     if text.is_empty() {
         return None;
     }
-    let sender = body.pointer("/from/userid").and_then(Value::as_str).unwrap_or("");
+    let sender = body
+        .pointer("/from/userid")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if sender.is_empty() {
         return None;
     }
-    let chat_type_raw = body.get("chattype").and_then(Value::as_str).unwrap_or("single");
+    let chat_type_raw = body
+        .get("chattype")
+        .and_then(Value::as_str)
+        .unwrap_or("single");
     let chat_type = if chat_type_raw == "group" {
         ChatType::Group
     } else {
@@ -246,7 +276,11 @@ pub fn decode_callback(body: &Value, installation_id: &str) -> Option<InboundMes
         .filter(|value| !value.is_empty())
         .unwrap_or(sender)
         .to_string();
-    let message_id = body.get("msgid").and_then(Value::as_str).unwrap_or("").to_string();
+    let message_id = body
+        .get("msgid")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     Some(InboundMessage {
         installation_id: installation_id.to_string(),
         event_id: message_id.clone(),
@@ -270,7 +304,10 @@ fn unsupported_target(body: &Value) -> Option<(String, i64)> {
     if kind.is_empty() || kind == "text" || kind == "voice" {
         return None;
     }
-    let sender = body.pointer("/from/userid").and_then(Value::as_str).unwrap_or("");
+    let sender = body
+        .pointer("/from/userid")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let chat_id = body
         .get("chatid")
         .and_then(Value::as_str)

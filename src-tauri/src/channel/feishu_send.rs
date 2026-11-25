@@ -407,7 +407,8 @@ pub fn list_feishu_contacts(state: State<'_, AppState>) -> Result<FeishuContactP
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
     let mut listed = Vec::new();
-    for (installation_id, installation_name, open_id, display_name, note, paired_at) in contacts.drain(..)
+    for (installation_id, installation_name, open_id, display_name, note, paired_at) in
+        contacts.drain(..)
     {
         let session = p2p_session(&db, &installation_id, &open_id)?;
         let sent_at = latest_send_at(&db, &installation_id, &open_id)?;

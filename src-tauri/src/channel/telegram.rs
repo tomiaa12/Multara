@@ -36,7 +36,10 @@ fn run_once(
             Err(error) => return Err(error),
         };
         for update in updates {
-            let update_id = update.get("update_id").and_then(Value::as_i64).unwrap_or(offset);
+            let update_id = update
+                .get("update_id")
+                .and_then(Value::as_i64)
+                .unwrap_or(offset);
             if update_id >= offset {
                 offset = update_id + 1;
             }
@@ -49,7 +52,11 @@ fn run_once(
     Ok(())
 }
 
-pub fn send(app: &AppHandle, installation: &Installation, target: &TextTarget<'_>) -> Result<String, String> {
+pub fn send(
+    app: &AppHandle,
+    installation: &Installation,
+    target: &TextTarget<'_>,
+) -> Result<String, String> {
     let (_, secret) = link::load(app, &installation.id)?;
     let mut last = String::new();
     for chunk in link::chunk_text(target.text, link::TEXT_LIMIT) {
@@ -135,8 +142,8 @@ fn call(secret: &str, method: &str, body: &Value, timeout: u32) -> Result<Value,
     if response.status == 409 {
         return Err(tr!("这个 Bot Token 正在被另一个程序轮询，请先停掉那边"));
     }
-    let value: Value = serde_json::from_str(&response.body)
-        .map_err(|_| tr!("Telegram 返回了无法解析的内容"))?;
+    let value: Value =
+        serde_json::from_str(&response.body).map_err(|_| tr!("Telegram 返回了无法解析的内容"))?;
     if value.get("ok").and_then(Value::as_bool) != Some(true) {
         let description = value
             .get("description")
@@ -191,7 +198,10 @@ fn decode_update(update: &Value, installation_id: &str, bot: &Bot) -> Option<Inb
     if text.is_empty() {
         return None;
     }
-    let chat_kind = message.pointer("/chat/type").and_then(Value::as_str).unwrap_or("");
+    let chat_kind = message
+        .pointer("/chat/type")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let chat_type = if chat_kind == "private" {
         ChatType::P2p
     } else {
@@ -205,7 +215,10 @@ fn decode_update(update: &Value, installation_id: &str, bot: &Bot) -> Option<Inb
         == Some(bot.id.clone());
     let addressed = chat_type == ChatType::P2p
         || reply_to_bot
-        || (!bot.username.is_empty() && text.to_ascii_lowercase().contains(&mention.to_ascii_lowercase()));
+        || (!bot.username.is_empty()
+            && text
+                .to_ascii_lowercase()
+                .contains(&mention.to_ascii_lowercase()));
     let cleaned = if bot.username.is_empty() {
         text
     } else {
@@ -214,16 +227,32 @@ fn decode_update(update: &Value, installation_id: &str, bot: &Bot) -> Option<Inb
     if cleaned.is_empty() {
         return None;
     }
-    let chat_id = message.pointer("/chat/id").and_then(Value::as_i64)?.to_string();
-    let message_id = message.get("message_id").and_then(Value::as_i64)?.to_string();
+    let chat_id = message
+        .pointer("/chat/id")
+        .and_then(Value::as_i64)?
+        .to_string();
+    let message_id = message
+        .get("message_id")
+        .and_then(Value::as_i64)?
+        .to_string();
     let name = {
-        let first = message.pointer("/from/first_name").and_then(Value::as_str).unwrap_or("");
-        let last = message.pointer("/from/last_name").and_then(Value::as_str).unwrap_or("");
+        let first = message
+            .pointer("/from/first_name")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let last = message
+            .pointer("/from/last_name")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         format!("{first} {last}").trim().to_string()
     };
     Some(InboundMessage {
         installation_id: installation_id.to_string(),
-        event_id: update.get("update_id").and_then(Value::as_i64).unwrap_or(0).to_string(),
+        event_id: update
+            .get("update_id")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .to_string(),
         message_id,
         chat_id,
         chat_type,
@@ -248,7 +277,11 @@ mod tests {
     use crate::channel::ChatType;
 
     fn bot() -> Bot {
-        Bot { id: "9".to_string(), username: "multara_bot".to_string(), name: "Multara".to_string() }
+        Bot {
+            id: "9".to_string(),
+            username: "multara_bot".to_string(),
+            name: "Multara".to_string(),
+        }
     }
 
     #[test]

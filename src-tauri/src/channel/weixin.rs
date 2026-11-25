@@ -10,7 +10,9 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use super::link::{self, TextTarget};
-use super::{secret, store, supervisor, ChatType, InboundEvent, InboundMessage, Installation, TYPE_WEIXIN};
+use super::{
+    secret, store, supervisor, ChatType, InboundEvent, InboundMessage, Installation, TYPE_WEIXIN,
+};
 
 const DEFAULT_BASE: &str = "https://ilinkai.weixin.qq.com";
 const CLIENT_VERSION: &str = "132106";
@@ -52,18 +54,21 @@ pub fn begin(name: &str, project_id: Option<String>) -> Result<LoginView, String
         image_url: qr.image.clone(),
         installation_id: None,
     };
-    logins().lock().map_err(|_| tr!("微信登录状态不可用"))?.insert(
-        session_id,
-        Login {
-            qrcode: qr.code,
-            image: qr.image,
-            base_url: DEFAULT_BASE.to_string(),
-            name: name.to_string(),
-            project_id: project_id.filter(|value| !value.is_empty()),
-            verify_code: String::new(),
-            started: Instant::now(),
-        },
-    );
+    logins()
+        .lock()
+        .map_err(|_| tr!("微信登录状态不可用"))?
+        .insert(
+            session_id,
+            Login {
+                qrcode: qr.code,
+                image: qr.image,
+                base_url: DEFAULT_BASE.to_string(),
+                name: name.to_string(),
+                project_id: project_id.filter(|value| !value.is_empty()),
+                verify_code: String::new(),
+                started: Instant::now(),
+            },
+        );
     Ok(view)
 }
 
@@ -73,7 +78,9 @@ pub fn submit_code(session_id: &str, code: &str) -> Result<(), String> {
         return Err(tr!("请输入手机上显示的数字验证码"));
     }
     let mut logins = logins().lock().map_err(|_| tr!("微信登录状态不可用"))?;
-    let login = logins.get_mut(session_id).ok_or_else(|| tr!("二维码已失效，请重新生成"))?;
+    let login = logins
+        .get_mut(session_id)
+        .ok_or_else(|| tr!("二维码已失效，请重新生成"))?;
     login.verify_code = code.to_string();
     Ok(())
 }
@@ -81,7 +88,9 @@ pub fn submit_code(session_id: &str, code: &str) -> Result<(), String> {
 pub fn poll(app: &AppHandle, session_id: &str) -> Result<LoginView, String> {
     let (qrcode, image, mut base, verify, name, project_id, started) = {
         let logins = logins().lock().map_err(|_| tr!("微信登录状态不可用"))?;
-        let login = logins.get(session_id).ok_or_else(|| tr!("二维码已失效，请重新生成"))?;
+        let login = logins
+            .get(session_id)
+            .ok_or_else(|| tr!("二维码已失效，请重新生成"))?;
         if login.started.elapsed() > Duration::from_secs(300) {
             return Ok(LoginView {
                 session_id: session_id.to_string(),
@@ -103,7 +112,10 @@ pub fn poll(app: &AppHandle, session_id: &str) -> Result<LoginView, String> {
     let _ = started;
     let status = qr_status(&base, &qrcode, &verify)?;
     if status.status == "scaned_but_redirect" {
-        if let Some(host) = status.redirect_host.filter(|host| host.ends_with(".weixin.qq.com")) {
+        if let Some(host) = status
+            .redirect_host
+            .filter(|host| host.ends_with(".weixin.qq.com"))
+        {
             base = format!("https://{host}");
             if let Ok(mut logins) = logins().lock() {
                 if let Some(login) = logins.get_mut(session_id) {
@@ -138,7 +150,15 @@ pub fn poll(app: &AppHandle, session_id: &str) -> Result<LoginView, String> {
     let bot_id = status.bot_id.ok_or_else(|| tr!("微信没有返回机器人"))?;
     let user_id = status.user_id.ok_or_else(|| tr!("微信没有返回账号"))?;
     let base_url = validate_base(status.base_url.as_deref().unwrap_or(&base))?;
-    let installation_id = save_account(app, &name, project_id.as_deref(), &bot_id, &user_id, &base_url, &token)?;
+    let installation_id = save_account(
+        app,
+        &name,
+        project_id.as_deref(),
+        &bot_id,
+        &user_id,
+        &base_url,
+        &token,
+    )?;
     if let Ok(mut logins) = logins().lock() {
         logins.remove(session_id);
     }
@@ -181,7 +201,10 @@ fn save_account(
         .map(|item| item.target_id.clone())
         .unwrap_or_default();
     let previous_project = previous.as_ref().and_then(|item| item.project_id.clone());
-    let mut config = previous.as_ref().map(|item| item.config.clone()).unwrap_or_default();
+    let mut config = previous
+        .as_ref()
+        .map(|item| item.config.clone())
+        .unwrap_or_default();
     config.app_id = bot_id.to_string();
     config.bot_open_id = Some(user_id.to_string());
     config.bot_name = Some(tr!("微信"));
@@ -319,7 +342,11 @@ fn updates(base: &str, token: &str, cursor: &str) -> Result<UpdateBatch, String>
     Ok(UpdateBatch { messages, cursor })
 }
 
-pub fn send(app: &AppHandle, installation: &Installation, target: &TextTarget<'_>) -> Result<String, String> {
+pub fn send(
+    app: &AppHandle,
+    installation: &Installation,
+    target: &TextTarget<'_>,
+) -> Result<String, String> {
     let (fresh, token) = link::load(app, &installation.id)?;
     let context = fresh.config.context_token.trim();
     if context.is_empty() {
@@ -366,7 +393,10 @@ pub fn probe(installation: &Installation, secret: &str) -> Result<(String, Strin
         .bot_name
         .clone()
         .unwrap_or_else(|| tr!("微信"));
-    Ok((installation.config.bot_open_id.clone().unwrap_or_default(), name))
+    Ok((
+        installation.config.bot_open_id.clone().unwrap_or_default(),
+        name,
+    ))
 }
 
 fn disable(app: &AppHandle, installation_id: &str) {
@@ -427,7 +457,11 @@ fn qr_code(base: &str, tokens: &[String]) -> Result<Qr, String> {
         20,
     )?;
     check_result(&value)?;
-    let code = value.get("qrcode").and_then(Value::as_str).unwrap_or("").to_string();
+    let code = value
+        .get("qrcode")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let content = value
         .get("qrcode_img_content")
         .and_then(Value::as_str)
@@ -484,18 +518,48 @@ fn qr_status(base: &str, qrcode: &str, verify: &str) -> Result<QrStatus, String>
     let value = request(base, "GET", &query, None, None, 40)?;
     check_result(&value)?;
     Ok(QrStatus {
-        status: value.get("status").and_then(Value::as_str).unwrap_or("").to_string(),
-        token: value.get("bot_token").and_then(Value::as_str).map(str::to_string),
-        bot_id: value.get("ilink_bot_id").and_then(Value::as_str).map(str::to_string),
-        user_id: value.get("ilink_user_id").and_then(Value::as_str).map(str::to_string),
-        base_url: value.get("baseurl").and_then(Value::as_str).map(str::to_string),
-        redirect_host: value.get("redirect_host").and_then(Value::as_str).map(str::to_string),
+        status: value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        token: value
+            .get("bot_token")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        bot_id: value
+            .get("ilink_bot_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        user_id: value
+            .get("ilink_user_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        base_url: value
+            .get("baseurl")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        redirect_host: value
+            .get("redirect_host")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
 fn notify(base: &str, token: &str, start: bool) -> Result<(), String> {
-    let endpoint = if start { "msg/notifystart" } else { "msg/notifystop" };
-    let value = request(base, "POST", endpoint, Some(token), Some(&json!({ "base_info": base_info() })), 15)?;
+    let endpoint = if start {
+        "msg/notifystart"
+    } else {
+        "msg/notifystop"
+    };
+    let value = request(
+        base,
+        "POST",
+        endpoint,
+        Some(token),
+        Some(&json!({ "base_info": base_info() })),
+        15,
+    )?;
     check_result(&value)
 }
 
@@ -511,11 +575,17 @@ fn request(
     let url = format!("{base}/ilink/bot/{endpoint}");
     let mut headers = vec![
         ("iLink-App-Id".to_string(), "bot".to_string()),
-        ("iLink-App-ClientVersion".to_string(), CLIENT_VERSION.to_string()),
+        (
+            "iLink-App-ClientVersion".to_string(),
+            CLIENT_VERSION.to_string(),
+        ),
     ];
     if method == "POST" {
         headers.push(("Content-Type".to_string(), "application/json".to_string()));
-        headers.push(("AuthorizationType".to_string(), "ilink_bot_token".to_string()));
+        headers.push((
+            "AuthorizationType".to_string(),
+            "ilink_bot_token".to_string(),
+        ));
         headers.push(("X-WECHAT-UIN".to_string(), random_uin()));
     }
     if let Some(token) = token {
@@ -525,7 +595,10 @@ fn request(
     let response = crate::http_client::request(method, &url, &headers, payload.as_deref(), timeout)
         .map_err(|error| link::scrub(error, token.unwrap_or("")))?;
     if !(200..300).contains(&response.status) {
-        return Err(tr!("微信请求失败（{status}）", status = response.status.to_string()));
+        return Err(tr!(
+            "微信请求失败（{status}）",
+            status = response.status.to_string()
+        ));
     }
     serde_json::from_str(&response.body).map_err(|_| tr!("微信返回了无法解析的内容"))
 }
@@ -568,11 +641,21 @@ fn urlencoding(value: &str) -> String {
 }
 
 pub fn decode_message(value: &Value) -> Option<InboundMessage> {
-    if value.get("group_id").and_then(Value::as_str).is_some_and(|id| !id.is_empty()) {
+    if value
+        .get("group_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty())
+    {
         return None;
     }
-    let sender = value.get("from_user_id").and_then(Value::as_str).unwrap_or("");
-    let to = value.get("to_user_id").and_then(Value::as_str).unwrap_or("");
+    let sender = value
+        .get("from_user_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let to = value
+        .get("to_user_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if sender.is_empty() || sender == to {
         return None;
     }
@@ -596,7 +679,10 @@ pub fn decode_message(value: &Value) -> Option<InboundMessage> {
     if text.is_empty() {
         return None;
     }
-    let message_id = value.get("message_id").map(value_id).filter(|id| !id.is_empty())?;
+    let message_id = value
+        .get("message_id")
+        .map(value_id)
+        .filter(|id| !id.is_empty())?;
     Some(InboundMessage {
         installation_id: String::new(),
         event_id: message_id.clone(),
