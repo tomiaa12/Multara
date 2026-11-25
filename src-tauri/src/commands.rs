@@ -4076,10 +4076,17 @@ pub fn update_chat_session_title(
 #[tauri::command]
 pub async fn generate_chat_session_title(prompt: String, app: AppHandle) -> Result<String, String> {
     let _span = crate::diag::span("generate_chat_session_title");
-    let title =
-        tauri::async_runtime::spawn_blocking(move || executor::generate_chat_title(&app, &prompt))
-            .await
-            .map_err(|error| error.to_string())??;
+    let handle = app.clone();
+    let title = tauri::async_runtime::spawn_blocking(move || {
+        let source = {
+            let state = handle.state::<AppState>();
+            let db = state.lock_db()?;
+            helper_source_from_db(&db, "commit")
+        };
+        executor::generate_chat_title(&handle, &prompt, &source)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     sanitize_session_title(&title)
 }
 

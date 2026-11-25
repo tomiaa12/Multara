@@ -162,7 +162,11 @@ fn reap_orphaned_runs(app: &AppHandle) {
     }
 }
 
-pub fn generate_chat_title(app: &AppHandle, prompt: &str) -> Result<String, String> {
+pub fn generate_chat_title(
+    app: &AppHandle,
+    prompt: &str,
+    source: &HelperSource,
+) -> Result<String, String> {
     let clipped: String = prompt.chars().take(800).collect();
     let instruction = tr!(
         "根据用户的第一句提问，生成一个简短对话标题。\
@@ -170,12 +174,13 @@ pub fn generate_chat_title(app: &AppHandle, prompt: &str) -> Result<String, Stri
          中文不超过 16 个字，英文不超过 6 个单词。\n\n{clipped}",
         clipped = clipped
     );
+    // 对话回合已经占着运行时，再拉起一次 CLI 经常超过 8 秒。
     let title = generate_plain_line(
         app,
         &instruction,
         &tr!("对话标题"),
-        Duration::from_secs(8),
-        None,
+        Duration::from_secs(45),
+        Some(source),
     )?;
     let title = title
         .trim_matches(|ch: char| {
