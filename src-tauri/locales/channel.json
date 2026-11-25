@@ -658,5 +658,113 @@
     "zh-TW": "私訊 · {name}",
     "ja": "個別チャット · {name}",
     "ko": "1:1 채팅 · {name}"
+  },
+  "对端关闭了长连接（{code}）": {
+    "en": "The remote side closed the long connection ({code})",
+    "zh-TW": "對端關閉了長連線（{code}）",
+    "ja": "相手側が常時接続を閉じました（{code}）",
+    "ko": "상대 측이 장기 연결을 닫았습니다({code})"
+  },
+  "对端关闭了长连接（{code}：{detail}）": {
+    "en": "The remote side closed the long connection ({code}: {detail})",
+    "zh-TW": "對端關閉了長連線（{code}：{detail}）",
+    "ja": "相手側が常時接続を閉じました（{code}：{detail}）",
+    "ko": "상대 측이 장기 연결을 닫았습니다({code}: {detail})"
+  },
+  "QQ 要求重新连接": {
+    "en": "QQ asked to reconnect",
+    "zh-TW": "QQ 要求重新連線",
+    "ja": "QQ が再接続を要求しました",
+    "ko": "QQ가 다시 연결하라고 했습니다"
+  },
+  "QQ 没有返回长连接地址": {
+    "en": "QQ did not return a gateway address",
+    "zh-TW": "QQ 沒有返回長連線位址",
+    "ja": "QQ が常時接続のアドレスを返しませんでした",
+    "ko": "QQ가 장기 연결 주소를 반환하지 않았습니다"
+  },
+  "QQ 返回了无法解析的内容": {
+    "en": "QQ returned a response that could not be parsed",
+    "zh-TW": "QQ 返回了無法解析的內容",
+    "ja": "QQ が解析できない内容を返しました",
+    "ko": "QQ가 해석할 수 없는 내용을 반환했습니다"
+  },
+  "QQ 拒绝了凭据（{code}）": {
+    "en": "QQ rejected the credentials ({code})",
+    "zh-TW": "QQ 拒絕了憑證（{code}）",
+    "ja": "QQ が資格情報を拒否しました（{code}）",
+    "ko": "QQ가 자격 증명을 거부했습니다({code})"
+  },
+  "QQ 没有返回访问凭证": {
+    "en": "QQ did not return an access token",
+    "zh-TW": "QQ 沒有返回存取憑證",
+    "ja": "QQ がアクセストークンを返しませんでした",
+    "ko": "QQ가 액세스 토큰을 반환하지 않았습니다"
+  },
+  "QQ 请求失败（{status}）": {
+    "en": "QQ request failed ({status})",
+    "zh-TW": "QQ 請求失敗（{status}）",
+    "ja": "QQ リクエストが失敗しました（{status}）",
+    "ko": "QQ 요청이 실패했습니다({status})"
+  },
+  "QQ 拒绝了请求（{code}）": {
+    "en": "QQ rejected the request ({code})",
+    "zh-TW": "QQ 拒絕了請求（{code}）",
+    "ja": "QQ がリクエストを拒否しました（{code}）",
+    "ko": "QQ가 요청을 거부했습니다({code})"
+  },
+  "QQ 没有开通单聊或群消息事件，连接已被关闭": {
+    "en": "QQ closed the connection because private or group message events are not enabled",
+    "zh-TW": "QQ 沒有開通單聊或群訊息事件，連線已被關閉",
+    "ja": "QQ が単聊またはグループメッセージのイベント未開通のため接続を閉じました",
+    "ko": "QQ가 1:1 또는 그룹 메시지 이벤트가 열리지 않아 연결을 닫았습니다"
+  },
+  "QQ 拒绝了当前的事件订阅": {
+    "en": "QQ rejected the current event subscription",
+    "zh-TW": "QQ 拒絕了目前的事件訂閱",
+    "ja": "QQ が現在のイベント購読を拒否しました",
+    "ko": "QQ가 현재 이벤트 구독을 거부했습니다"
+  },
+  "QQ 拒绝了机器人凭据": {
+    "en": "QQ rejected the bot credentials",
+    "zh-TW": "QQ 拒絕了機器人憑證",
+    "ja": "QQ がボットの資格情報を拒否しました",
+    "ko": "QQ가 봇 자격 증명을 거부했습니다"
+  },
+  "这个 QQ 机器人还没上线，平台断开了连接": {
+    "en": "This QQ bot is not published, so the platform closed the connection",
+    "zh-TW": "這個 QQ 機器人還沒上線，平台中斷了連線",
+    "ja": "この QQ ボットは未公開のため、プラットフォームが接続を切りました",
+    "ko": "이 QQ 봇이 아직 출시되지 않아 플랫폼이 연결을 끊었습니다"
+  },
+  "这个 QQ 机器人已被封禁": {
+    "en": "This QQ bot has been banned",
+    "zh-TW": "這個 QQ 機器人已被封禁",
+    "ja": "この QQ ボットは停止されています",
+    "ko": "이 QQ 봇은 차단되었습니다"
+  },
+  "QQ 会话过期，正在重新连接": {
+    "en": "The QQ session expired and is reconnecting",
+    "zh-TW": "QQ 工作階段過期，正在重新連線",
+    "ja": "QQ セッションの期限が切れたため再接続しています",
+    "ko": "QQ 세션이 만료되어 다시 연결하는 중입니다"
+  },
+  "QQ 连接已断开：{reason}": {
+    "en": "QQ disconnected: {reason}",
+    "zh-TW": "QQ 連線已中斷：{reason}",
+    "ja": "QQ 接続が切れました：{reason}",
+    "ko": "QQ 연결이 끊어졌습니다: {reason}"
+  },
+  "QQ 登录还没完成连接就断了：{reason}": {
+    "en": "QQ disconnected before login finished: {reason}",
+    "zh-TW": "QQ 登入還沒完成連線就斷了：{reason}",
+    "ja": "QQ はログイン完了前に接続が切れました：{reason}",
+    "ko": "QQ 로그인이 끝나기 전에 연결이 끊겼습니다: {reason}"
+  },
+  "请填写 AppID": {
+    "en": "Enter the AppID",
+    "zh-TW": "請填寫 AppID",
+    "ja": "AppID を入力してください",
+    "ko": "AppID를 입력하세요"
   }
 }

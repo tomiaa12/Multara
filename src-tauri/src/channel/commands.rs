@@ -195,6 +195,7 @@ fn apply_credentials(
         return Err(match channel_type {
             super::TYPE_DINGTALK => tr!("请填写 AppKey"),
             super::TYPE_WECOM => tr!("请填写 Bot ID"),
+            super::TYPE_QQ => tr!("请填写 AppID"),
             _ => tr!("请填写 App ID"),
         });
     }
@@ -214,6 +215,14 @@ fn apply_credentials(
         super::dingtalk::probe(app_id, &secret)?;
     } else if channel_type == super::TYPE_WECOM {
         super::wecom::probe(app_id, &secret)?;
+    } else if channel_type == super::TYPE_QQ {
+        let (id, name) = super::qq::probe(app_id, &secret)?;
+        config.bot_open_id = Some(id);
+        config.bot_name = Some(name);
+        let avatar = super::qq::cached_avatar(app_id);
+        if !avatar.is_empty() {
+            config.bot_avatar = Some(avatar);
+        }
     }
     config.credential_rev = config.credential_rev.saturating_add(1);
     Ok(Some(secret))
@@ -398,6 +407,8 @@ pub async fn test_channel_installation(
                 .ok_or_else(|| tr!("渠道连接不存在"))?;
             let avatar = if installation.channel_type == super::TYPE_DINGTALK {
                 super::dingtalk::cached_avatar(&installation.config.app_id)
+            } else if installation.channel_type == super::TYPE_QQ {
+                super::qq::cached_avatar(&installation.config.app_id)
             } else {
                 String::new()
             };

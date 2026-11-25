@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AlertTriangle, Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
-import type { ChannelInstallation, ChannelInstallationInput, ChannelType, ChannelUser } from "../domain/types";
+import type { ChannelInstallation, ChannelInstallationInput, ChannelStatus, ChannelType, ChannelUser } from "../domain/types";
 import { channelSourceLabel } from "../components/chat/message-speaker";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
@@ -67,6 +67,7 @@ async function refresh() {
 
 let unlistenPaired: UnlistenFn | null = null;
 let unlistenProfile: UnlistenFn | null = null;
+let unlistenStatus: UnlistenFn | null = null;
 let unmounted = false;
 
 /** 有人配对成功：后端已换新码，同步到卡片上；授权用户弹窗开着就顺便刷新列表。 */
@@ -102,12 +103,23 @@ onMounted(async () => {
       item.botAvatar = event.payload.botAvatar || null;
     },
   );
+  const unlistenState = await listen<{ installationId: string; status: ChannelStatus; lastError?: string | null }>(
+    "channel-status",
+    (event) => {
+      const item = installations.value.find((entry) => entry.id === event.payload?.installationId);
+      if (!item || !event.payload?.status) return;
+      item.status = event.payload.status;
+      item.lastError = event.payload.lastError ?? null;
+    },
+  );
   if (unmounted) {
     unlisten();
     unlistenBot();
+    unlistenState();
   } else {
     unlistenPaired = unlisten;
     unlistenProfile = unlistenBot;
+    unlistenStatus = unlistenState;
   }
 });
 
@@ -118,6 +130,8 @@ onBeforeUnmount(() => {
   unlistenPaired = null;
   unlistenProfile?.();
   unlistenProfile = null;
+  unlistenStatus?.();
+  unlistenStatus = null;
 });
 
 function identityHint(item: ChannelInstallation) {
@@ -172,6 +186,7 @@ function choosePlatform(type: ChannelType) {
     form.name = channelSourceLabel(type);
   }
   form.channelType = type;
+  if (!form.id) form.groupEnabled = type === "qq";
   error.value = "";
   step.value = "form";
 }
@@ -335,7 +350,7 @@ async function copyCode(item: ChannelInstallation) {
 
 const weixinImage = computed(() => weixin.imageUrl.trim());
 
-const pickerPlatforms: ChannelType[] = ["feishu", "slack", "dingtalk", "wecom", "telegram", "weixin"];
+const pickerPlatforms: ChannelType[] = ["feishu", "slack", "dingtalk", "wecom", "telegram", "weixin", "qq"];
 
 const credential = computed(() => {
   switch (form.channelType) {
@@ -382,6 +397,17 @@ const credential = computed(() => {
         secretPlaceholder: "",
         secret: true,
         hint: t("channels.setupHintWecom"),
+      };
+    case "qq":
+      return {
+        showId: true,
+        showSecret: true,
+        idLabel: "AppID",
+        secretLabel: "AppSecret",
+        idPlaceholder: "",
+        secretPlaceholder: "",
+        secret: true,
+        hint: t("channels.setupHintQq"),
       };
     case "weixin":
       return {

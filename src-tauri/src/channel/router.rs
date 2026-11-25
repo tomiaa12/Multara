@@ -53,6 +53,10 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
 
     if message.chat_type == ChatType::Group {
         if !installation.config.group_enabled {
+            crate::diag::write(&format!(
+                "CHANNEL {} {} 群消息已忽略，群聊开关是关的",
+                installation.channel_type, installation.id
+            ));
             return;
         }
         if !message.addressed_to_bot && !is_reply_to_bot(app, installation, &message) {

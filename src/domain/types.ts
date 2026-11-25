@@ -890,7 +890,8 @@ export type ChannelType =
   | "dingtalk"
   | "wecom"
   | "telegram"
-  | "weixin";
+  | "weixin"
+  | "qq";
 export type ChannelStatus = "connected" | "connecting" | "disconnected" | "error";
 
 export interface ChannelInstallation {

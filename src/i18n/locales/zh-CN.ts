@@ -2460,7 +2460,7 @@ const catalog: MessageCatalog = {
   "explorer.action.readPath": "读取本机路径",
 
   "channels.title": "集成",
-  "channels.subtitle": "在飞书、Slack、微信、钉钉、企业微信、Telegram 里直接和智能体对话，消息和回复都会保存到 Multara。",
+  "channels.subtitle": "在飞书、Slack、微信、钉钉、企业微信、Telegram、QQ 里直接和智能体对话，消息和回复都会保存到 Multara。",
   "channels.add": "添加集成",
   "channels.edit": "编辑集成",
   "channels.name": "名称",
@@ -2475,6 +2475,8 @@ const catalog: MessageCatalog = {
   "channels.desc.wecom": "在企业微信中与智能体对话，无需公网回调地址。",
   "channels.desc.telegram": "在 Telegram 私聊或群里和智能体对话。",
   "channels.desc.weixin": "用自己的微信扫码。只接收这个账号的私聊。",
+  "channels.desc.qq": "在 QQ 单聊或群里 @ 机器人，和智能体对话。使用官方机器人长连接，不需要公网地址。",
+  "channels.setupHintQq": "在 QQ 开放平台创建机器人，事件订阅选择 WebSocket，填入 AppID 和 AppSecret。",
   "channels.dingtalk": "钉钉",
   "channels.wecom": "企业微信",
   "channels.botToken": "Bot Token",

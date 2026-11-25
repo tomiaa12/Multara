@@ -2460,7 +2460,7 @@ Who is this for? Any constraints?
   "explorer.action.readPath": "read local paths",
 
   "channels.title": "Integrations",
-  "channels.subtitle": "Talk to agents from Feishu, Slack, WeChat, DingTalk, WeCom, or Telegram. Replies are saved in Multara as normal conversations.",
+  "channels.subtitle": "Talk to agents from Feishu, Slack, WeChat, DingTalk, WeCom, Telegram, or QQ. Replies are saved in Multara as normal conversations.",
   "channels.add": "Add integration",
   "channels.edit": "Edit integration",
   "channels.name": "Name",
@@ -2475,6 +2475,8 @@ Who is this for? Any constraints?
   "channels.desc.wecom": "Talk to an agent in WeCom. No public callback URL is required.",
   "channels.desc.telegram": "Talk to an agent in a Telegram private chat or group.",
   "channels.desc.weixin": "Scan with your own WeChat account. Only that account's private chats are received.",
+  "channels.desc.qq": "Talk to an agent in a QQ private chat, or mention the bot in a group. Uses the official bot WebSocket and needs no public URL.",
+  "channels.setupHintQq": "Create a bot on the QQ Open Platform, choose WebSocket for events, and paste the AppID and AppSecret.",
   "channels.dingtalk": "DingTalk",
   "channels.wecom": "WeCom",
   "channels.botToken": "Bot Token",

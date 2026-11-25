@@ -12,7 +12,8 @@ use super::feishu::ws::WsConn;
 use super::store::{self, Delivery};
 use super::{
     dingtalk, feishu, secret, slack, telegram, wecom, weixin, ChatType, InboundEvent, Installation,
-    TYPE_DINGTALK, TYPE_FEISHU, TYPE_LARK, TYPE_SLACK, TYPE_TELEGRAM, TYPE_WECOM, TYPE_WEIXIN,
+    qq, TYPE_DINGTALK, TYPE_FEISHU, TYPE_LARK, TYPE_QQ, TYPE_SLACK, TYPE_TELEGRAM, TYPE_WECOM,
+    TYPE_WEIXIN,
 };
 
 pub const TEXT_LIMIT: usize = 3500;
@@ -46,6 +47,7 @@ pub fn run(app: &AppHandle, installation: &Installation, stop: &AtomicBool) -> b
         TYPE_WECOM => wecom::run(app, &installation.id, stop),
         TYPE_TELEGRAM => telegram::run(app, &installation.id, stop),
         TYPE_WEIXIN => weixin::run(app, &installation.id, stop),
+        TYPE_QQ => qq::run(app, &installation.id, stop),
         _ => {
             mark(
                 app,
@@ -108,6 +110,7 @@ pub fn send_text(
         TYPE_WECOM => wecom::send(installation, &target),
         TYPE_TELEGRAM => telegram::send(app, installation, &target),
         TYPE_WEIXIN => weixin::send(app, installation, &target),
+        TYPE_QQ => qq::send(app, installation, &target),
         _ => Err(tr!("这个渠道不能按纯文本回复")),
     }
 }
@@ -145,6 +148,7 @@ pub fn probe(app: &AppHandle, installation_id: &str) -> Result<(String, String),
         TYPE_WECOM => wecom::probe(&installation.config.app_id, &secret),
         TYPE_TELEGRAM => telegram::probe(&secret),
         TYPE_WEIXIN => weixin::probe(&installation, &secret),
+        TYPE_QQ => qq::probe(&installation.config.app_id, &secret),
         _ => Err(tr!("暂不支持这个渠道类型")),
     }
 }

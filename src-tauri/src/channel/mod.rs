@@ -13,6 +13,7 @@ pub mod feishu;
 pub mod feishu_send;
 pub mod link;
 pub mod outbound;
+pub mod qq;
 mod pairing;
 pub mod router;
 pub mod secret;
@@ -30,6 +31,7 @@ pub const TYPE_DINGTALK: &str = "dingtalk";
 pub const TYPE_WECOM: &str = "wecom";
 pub const TYPE_TELEGRAM: &str = "telegram";
 pub const TYPE_WEIXIN: &str = "weixin";
+pub const TYPE_QQ: &str = "qq";
 
 pub fn is_feishu(channel_type: &str) -> bool {
     channel_type == TYPE_FEISHU || channel_type == TYPE_LARK
@@ -45,6 +47,7 @@ pub fn is_known(channel_type: &str) -> bool {
             | TYPE_WECOM
             | TYPE_TELEGRAM
             | TYPE_WEIXIN
+            | TYPE_QQ
     )
 }
 

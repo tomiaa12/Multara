@@ -261,7 +261,7 @@ export function sentTargetForMessage(
   };
 }
 
-const CHANNEL_SOURCES = new Set(["feishu", "lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]);
+const CHANNEL_SOURCES = new Set(["feishu", "lark", "slack", "dingtalk", "wecom", "telegram", "weixin", "qq"]);
 
 export function channelSourceLabel(type: string) {
   switch (type) {
@@ -279,6 +279,8 @@ export function channelSourceLabel(type: string) {
       return "Telegram";
     case "weixin":
       return t("channels.weixin");
+    case "qq":
+      return "QQ";
     default:
       return type;
   }

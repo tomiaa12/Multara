@@ -77,11 +77,13 @@ impl WsConn {
                 .complete_io(&mut stream.sock)
                 .map_err(|error| tr!("TLS 握手失败：{error}", error = error))?;
         }
-        handshake_stream(&mut stream, &host, port, &path)?;
+        // 网关经常把第一条 Hello 跟 101 响应打在同一个包里。读过响应头的字节要留住，
+        // 否则登录帧被丢掉，对端会直接掐掉连接。
+        let leftover = handshake_stream(&mut stream, &host, port, &path)?;
         let _ = stream.sock.set_read_timeout(Some(Duration::from_secs(2)));
         Ok(WsConn {
             stream,
-            buffer: Vec::new(),
+            buffer: leftover,
             fragments: Vec::new(),
             pending: None,
         })
@@ -124,7 +126,7 @@ impl WsConn {
                         self.pending = Some(frame.opcode);
                     }
                     0x8 => {
-                        return Err(WsError::Closed(tr!("对端关闭了长连接")));
+                        return Err(WsError::Closed(close_message(&frame.payload)));
                     }
                     0x9 => {
                         let payload = frame.payload;
@@ -276,7 +278,7 @@ fn handshake_stream<S: Read + Write>(
     host: &str,
     port: u16,
     path: &str,
-) -> Result<(), String> {
+) -> Result<Vec<u8>, String> {
     let key = base64_encode(&random_bytes(16));
     let host_header = if port == 443 || port == 80 {
         host.to_string()
@@ -314,14 +316,39 @@ fn handshake_stream<S: Read + Write>(
             return Err(tr!("WebSocket 握手响应过大"));
         }
     }
-    let text = String::from_utf8_lossy(&response);
-    if !text.starts_with("HTTP/1.1 101") && !text.starts_with("HTTP/1.0 101") {
+    let status_line = String::from_utf8_lossy(&response)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !status_line.starts_with("HTTP/1.1 101") && !status_line.starts_with("HTTP/1.0 101") {
         return Err(tr!(
             "长连接网关拒绝了握手：{status}",
-            status = text.lines().next().unwrap_or("").trim()
+            status = status_line
         ));
     }
-    Ok(())
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| index + 4)
+        .unwrap_or(response.len());
+    Ok(response.split_off(header_end))
+}
+
+fn close_message(payload: &[u8]) -> String {
+    if payload.len() < 2 {
+        return tr!("对端关闭了长连接");
+    }
+    let code = u16::from_be_bytes([payload[0], payload[1]]);
+    let detail = String::from_utf8_lossy(&payload[2..]);
+    let detail = detail.trim();
+    if detail.is_empty() {
+        tr!("对端关闭了长连接（{code}）", code = code)
+    } else {
+        let detail: String = detail.chars().take(80).collect();
+        tr!("对端关闭了长连接（{code}：{detail}）", code = code, detail = detail)
+    }
 }
 
 fn rustls_config() -> Result<std::sync::Arc<rustls::ClientConfig>, String> {
