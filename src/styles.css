@@ -10427,7 +10427,7 @@ body.is-dragging-task * {
 }
 .inbox-page {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: var(--inbox-rail, 340px) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -10462,22 +10462,22 @@ body.is-dragging-task * {
   width: 100%;
 }
 .inbox-page.has-file-review {
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 4px var(--inbox-review-width, 420px);
+  grid-template-columns: var(--inbox-rail, 340px) minmax(0, 1fr) 4px var(--inbox-review-width, 420px);
 }
 .inbox-page.has-task-side {
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 300px;
+  grid-template-columns: var(--inbox-rail, 340px) minmax(0, 1fr) 300px;
 }
 .inbox-page.has-task-side > .task-issue-side {
   min-height: 0;
 }
 .inbox-page.has-stage {
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) var(--inbox-stage-width, 420px);
+  grid-template-columns: var(--inbox-rail, 340px) minmax(0, 1fr) var(--inbox-stage-width, 420px);
 }
 .inbox-page.has-task-side.has-stage {
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 300px var(--inbox-stage-width, 420px);
+  grid-template-columns: var(--inbox-rail, 340px) minmax(0, 1fr) 300px var(--inbox-stage-width, 420px);
 }
 .inbox-page.has-file-review.has-stage {
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 4px var(--inbox-review-width, 420px) var(--inbox-stage-width, 420px);
+  grid-template-columns: var(--inbox-rail, 340px) minmax(0, 1fr) 4px var(--inbox-review-width, 420px) var(--inbox-stage-width, 420px);
 }
 .inbox-page.req-run {
   grid-template-columns: var(--req-run-rail, 300px) minmax(0, 1fr);
@@ -11029,12 +11029,20 @@ body.is-resizing-panels .inbox-files-resize::after {
   background: var(--color-bg);
 }
 .inbox-rail {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   border-right: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
+}
+.inbox-rail-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
 }
 .inbox-rail header {
   display: grid;
@@ -11464,7 +11472,8 @@ body.is-dragging-inbox-float * {
     position: relative;
     grid-template-columns: minmax(0, 1fr);
   }
-  .req-run-rail-resize {
+  .req-run-rail-resize,
+  .inbox-rail-resize {
     display: none;
   }
   .inbox-stage,

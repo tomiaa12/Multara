@@ -4,6 +4,7 @@ import type { TimelineItem } from "../../domain/types";
 import { subAgentFailureLine, subAgentStatus, subAgentSummary, subAgentTallyLabel } from "./subagent-display";
 import {
   editDiff,
+  formatLiveElapsed,
   groupTimeline,
   liveWorkLabel,
   shellTranscript,
@@ -12,6 +13,7 @@ import {
   shellFailed,
   shellResultText,
   toolCallLabel,
+  workFoldLabel,
   type TimelineBlock,
 } from "./timeline-display";
 
@@ -432,5 +434,20 @@ describe("shell card visibility", () => {
       use,
       result: { ...use, eventType: "tool_result", status: "ok", output: JSON.stringify({ exitCode: 0, stdout: "ok" }) },
     })).toBe(false);
+  });
+});
+
+describe("work duration", () => {
+  test("keeps seconds, then folds in minutes and hours", () => {
+    expect(formatLiveElapsed(45, "zh-CN")).toBe("45 秒");
+    expect(formatLiveElapsed(125, "zh-CN")).toBe("2 分 5 秒");
+    expect(formatLiveElapsed(120, "zh-CN")).toBe("2 分");
+    expect(formatLiveElapsed(3600, "zh-CN")).toBe("1 小时");
+    expect(formatLiveElapsed(3665, "zh-CN")).toBe("1 小时 1 分 5 秒");
+    expect(formatLiveElapsed(3605, "zh-CN")).toBe("1 小时 5 秒");
+    expect(workFoldLabel(45_400, "zh-CN")).toBe("工作了 45 秒");
+    expect(workFoldLabel(125_000, "zh-CN")).toBe("工作了 2 分 5 秒");
+    expect(workFoldLabel(3_665_000, "zh-CN")).toBe("工作了 1 小时 1 分 5 秒");
+    expect(workFoldLabel(null, "zh-CN")).toBe("查看工作过程");
   });
 });

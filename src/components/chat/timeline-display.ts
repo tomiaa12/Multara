@@ -462,17 +462,19 @@ export function thinkingSummary(item: TimelineItem, running?: boolean, language?
 export function workFoldLabel(elapsedMs?: number | null, language?: string): string {
   if (elapsedMs == null) return translate("chat.worked", language);
   const seconds = Math.max(1, Math.round(elapsedMs / 1000));
-  return translate("chat.workedFor", language).replace("{seconds}", String(seconds));
+  return translate("chat.workedFor", language, { time: formatLiveElapsed(seconds, language) });
 }
 
 export function formatLiveElapsed(seconds: number, language?: string): string {
   const elapsed = Math.max(0, Math.floor(seconds));
-  if (elapsed < 60) return translate("chat.elapsedSec", language, { n: elapsed });
-  const minutes = Math.floor(elapsed / 60);
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
   const rest = elapsed % 60;
-  return rest
-    ? translate("chat.elapsedMinSec", language, { m: minutes, s: rest })
-    : translate("chat.elapsedMin", language, { n: minutes });
+  const parts: string[] = [];
+  if (hours) parts.push(translate("chat.elapsedHour", language, { n: hours }));
+  if (minutes) parts.push(translate("chat.elapsedMin", language, { n: minutes }));
+  if (rest || parts.length === 0) parts.push(translate("chat.elapsedSec", language, { n: rest }));
+  return parts.join(" ");
 }
 
 function latestWorkItem(items: TimelineItem[]): TimelineItem | undefined {

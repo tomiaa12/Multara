@@ -27,8 +27,13 @@ const threadPanel = ref<{ focus: () => void } | null>(null);
 const dividerMessageId = ref<string | null>(null);
 const REVIEW_MIN_WIDTH = 240;
 const REVIEW_DEFAULT_WIDTH = 420;
+const RAIL_MIN_WIDTH = 260;
+const RAIL_MAX_WIDTH = 560;
+const RAIL_DEFAULT_WIDTH = 340;
+const RAIL_WIDTH_KEY = "multara.inbox.railWidth";
 const reviewFile = ref<{ workspaceId: string; filePath: string } | null>(null);
 const reviewWidth = ref(REVIEW_DEFAULT_WIDTH);
+const railWidth = ref(readRailWidth());
 const reviewPane = ref<{ layout: () => void } | null>(null);
 const toolRail = ref<{ closeAll: () => void } | null>(null);
 const stageContent = ref(false);
@@ -279,6 +284,36 @@ async function select(item: InboxItem) {
   await store.markInboxRead(item.id, ids.at(-1) ?? null);
 }
 
+function readRailWidth() {
+  const stored = Number(localStorage.getItem(RAIL_WIDTH_KEY));
+  if (stored >= RAIL_MIN_WIDTH && stored <= RAIL_MAX_WIDTH) return stored;
+  return RAIL_DEFAULT_WIDTH;
+}
+
+function beginRailResize(event: PointerEvent) {
+  const handle = event.currentTarget;
+  if (!(handle instanceof HTMLElement)) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  const startX = event.clientX;
+  const startWidth = railWidth.value;
+  document.body.classList.add("is-resizing-panels");
+  const move = (moveEvent: PointerEvent) => {
+    railWidth.value = Math.min(RAIL_MAX_WIDTH, Math.max(RAIL_MIN_WIDTH, startWidth + (moveEvent.clientX - startX)));
+  };
+  const finish = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", finish);
+    handle.removeEventListener("pointercancel", finish);
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    document.body.classList.remove("is-resizing-panels");
+    localStorage.setItem(RAIL_WIDTH_KEY, String(railWidth.value));
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+}
+
 function beginReviewResize(event: PointerEvent) {
   const handle = event.currentTarget;
   if (!(handle instanceof HTMLElement)) return;
@@ -386,6 +421,7 @@ onUnmounted(() => {
       'has-terminal': selected && stageTerminal,
     }"
     :style="{
+      '--inbox-rail': `${railWidth}px`,
       ...(reviewFile ? { '--inbox-review-width': `${reviewWidth}px` } : {}),
       ...(stageWidth ? { '--inbox-stage-width': `${stageWidth}px` } : {}),
     }"
@@ -447,6 +483,17 @@ onUnmounted(() => {
         <h3>{{ t("inbox.empty") }}</h3>
         <p>{{ t("inbox.emptyHint") }}</p>
       </div>
+      <div
+        class="panel-resize-handle inbox-rail-resize"
+        role="separator"
+        :aria-label="t('app.resizeSidebar')"
+        aria-orientation="vertical"
+        :aria-valuemin="RAIL_MIN_WIDTH"
+        :aria-valuemax="RAIL_MAX_WIDTH"
+        :aria-valuenow="railWidth"
+        tabindex="0"
+        @pointerdown="beginRailResize"
+      />
     </aside>
 
     <section v-if="selected && selectedRunId" class="inbox-detail inbox-run">
