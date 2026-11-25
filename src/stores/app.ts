@@ -178,7 +178,14 @@ export const useAppStore = defineStore("app", () => {
   });
 
   function rememberActiveRun(run: { id: string; sessionId: string; agentId: string; status: RunStatus }) {
-    if (!isLiveRunStatus(run.status) || runStates.value[run.id]) return;
+    if (!isLiveRunStatus(run.status)) return;
+    const current = runStates.value[run.id];
+    if (current) {
+      if (isLiveRunStatus(current.status) && current.status !== run.status) {
+        runStates.value[run.id] = { ...current, status: run.status };
+      }
+      return;
+    }
     runStates.value[run.id] = {
       runId: run.id,
       sessionId: run.sessionId,
@@ -189,6 +196,33 @@ export const useAppStore = defineStore("app", () => {
       timelineItem: null,
       elapsedMs: null,
     };
+  }
+
+  /** 桌面端事件偶发对不齐库里的进行中运行（集成消息不在当前页）。只补状态，不重拉消息。 */
+  let reconcilingRuns = false;
+  async function reconcileActiveRuns() {
+    if (!backend.inTauri() || reconcilingRuns) return;
+    reconcilingRuns = true;
+    try {
+      const active = await backend.listActiveRuns();
+      const live = new Set(active.map((run) => run.id));
+      for (const run of active) rememberActiveRun(run);
+      for (const [id, event] of Object.entries(runStates.value)) {
+        if (id.startsWith("pending:")) continue;
+        if ((event.status === "queued" || event.status === "running") && !live.has(id)) {
+          runStates.value[id] = { ...event, status: "completed", chunk: null, timelineItem: null };
+        }
+      }
+    } catch (cause) {
+      console.error("[app] reconcile active runs failed", cause);
+    } finally {
+      reconcilingRuns = false;
+    }
+  }
+
+  function startRunReconcile() {
+    if (!backend.inTauri()) return;
+    window.setInterval(() => { void reconcileActiveRuns(); }, 2000);
   }
 
   async function seedActiveRuns() {
@@ -306,6 +340,7 @@ export const useAppStore = defineStore("app", () => {
       await registerRunEvents();
       await seedActiveRuns();
       startBrowserRunSync();
+      startRunReconcile();
       await restoreMessageQueue();
       if (!data.value.sessions.some((session) => session.id === activeSessionId.value)) {
         activeSessionId.value = data.value.sessions.find((session) => !isWorkflowNodeSession(session.id))?.id ?? "";

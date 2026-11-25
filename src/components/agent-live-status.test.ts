@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../domain/types";
 import {
+  collectAllLiveRuns,
   collectLiveRuns,
   resolveRunLiveWorkStatus,
   resolveSessionLiveWorkStatus,
@@ -23,6 +24,14 @@ describe("collectLiveRuns", () => {
     };
     const live = collectLiveRuns(states, ["s1", "s2"]);
     expect(live.map((item) => [item.agentId, item.status])).toEqual([["ag1", "running"], ["ag2", "queued"]]);
+  });
+
+  it("counts a channel session that is not on the current page", () => {
+    const states = {
+      a: run("a", "channel-session", "ag1", "running"),
+      b: run("b", "local", "ag2", "completed"),
+    };
+    expect(collectAllLiveRuns(states).map((item) => item.agentId)).toEqual(["ag1"]);
   });
 
   it("ignores other sessions, finished runs and pending placeholders", () => {

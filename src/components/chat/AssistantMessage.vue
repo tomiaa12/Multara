@@ -24,7 +24,7 @@ import { plansInMessage } from "./plan-state";
 import { useAppStore } from "../../stores/app";
 import { CONTINUE_ASSIGNMENT } from "../../domain/continue-task";
 import { extractQuestions } from "./question-block";
-import { GENUI_MAX_BLOCKS, isGenUiEnabled, isMcpAppsEnabled, splitGenUi } from "./genui/block";
+import { GENUI_MAX_BLOCKS, isGenUiEnabled, isMcpAppsEnabled, renderGenUi } from "./genui/block";
 import GenUiBlock from "./genui/GenUiBlock.vue";
 import { genUiSendingIds, genUiSubmissions, sendGenUiAction } from "./ui-outbound";
 import { toolResultUis } from "./genui/tool-ui";
@@ -192,7 +192,7 @@ const showSpeaker = computed(() => Boolean(props.speaker) && !props.hideSpeaker)
 // 给负责人的回执也要换：否则表格会留在 mention-line 里变成代码块。
 const genUiSegments = computed(() => {
   if (!genUiEnabled.value) return null;
-  const { segments } = splitGenUi(bodyText.value);
+  const { segments } = renderGenUi(bodyText.value, Boolean(props.running));
   return segments.some((segment) => segment.kind !== "md") ? segments : null;
 });
 const genUiSubmitted = computed(() =>

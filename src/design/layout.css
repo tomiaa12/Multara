@@ -496,12 +496,6 @@ button.statusbar-item {
   background: var(--color-surface-hover);
   color: var(--color-text);
 }
-.statusbar-running {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1-5);
-  padding-left: var(--spacing-2);
-}
 
 /* ════════════════════════════════════════════════════════════════
  * Page skeleton

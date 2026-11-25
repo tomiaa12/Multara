@@ -112,6 +112,15 @@ export function resolveRunLiveWorkStatus(
  * 这些会话里正在排队 / 运行的 run，每个智能体只留一条（排到的 running 优先于 queued）。
  * `pending:` 开头的是前端占位，不算。
  */
+/** 全部进行中的 run，不限会话。集成消息的会话不在当前页面上，也要算进右下角。 */
+export function collectAllLiveRuns(runStates: Record<string, RunEvent>): LiveRun[] {
+  const sessionIds: string[] = [];
+  for (const event of Object.values(runStates)) {
+    if (isLiveEvent(event)) sessionIds.push(event.sessionId);
+  }
+  return collectLiveRuns(runStates, sessionIds);
+}
+
 export function collectLiveRuns(
   runStates: Record<string, RunEvent>,
   sessionIds: Iterable<string>,

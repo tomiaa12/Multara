@@ -75,6 +75,7 @@ import { t } from "./i18n";
 import { unreadBadgeLabel, unreadTotal } from "./domain/inbox";
 import SideNav, { type SideNavItem } from "./components/SideNav.vue";
 import TerminalActivity from "./components/workbench/TerminalActivity.vue";
+import RunningStatus from "./components/RunningStatus.vue";
 import { startRunningTerminalWatch } from "./stores/running-terminals";
 import { startSurfaceCtlWatch } from "./stores/surface-ctl";
 import { startTerminalCtlWatch } from "./stores/terminal-ctl";
@@ -785,10 +786,7 @@ onBeforeUnmount(() => {
           <span class="statusbar-item">{{ editorZoomLabel }}</span>
         </UiTooltip>
         <TerminalActivity />
-        <span class="statusbar-running">
-          <i class="ds-dot" :data-tone="store.runningCount > 0 ? 'success' : undefined" />
-          {{ t("app.runningCount", { n: store.runningCount }) }}
-        </span>
+        <RunningStatus />
       </div>
     </footer>
     <EditorLanguagePicker

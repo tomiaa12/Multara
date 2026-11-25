@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { genUiBlockId, parseSpecs, scanFences, splitGenUi } from "./block";
+import { genUiBlockId, parseSpecs, renderGenUi, scanFences, splitGenUi } from "./block";
 import { niceTicks, pieSlices, barRects, valueRange } from "./chart-geometry";
 import {
   initialFormValue,
@@ -48,6 +48,19 @@ describe("splitGenUi", () => {
     const { segments, streaming } = splitGenUi('intro\n```multara-ui\n{"type":"ta');
     expect(streaming).toBe(true);
     expect(segments.map((segment) => segment.kind)).toEqual(["md", "pending"]);
+  });
+
+  it("keeps the skeleton only while the reply is still running", () => {
+    const text = 'intro\n```multara-ui\n{"type":"ta';
+    expect(renderGenUi(text, true).segments.map((segment) => segment.kind)).toEqual(["md", "pending"]);
+    const settled = renderGenUi(text, false);
+    expect(settled.streaming).toBe(false);
+    const ui = settled.segments[1];
+    expect(ui.kind).toBe("ui");
+    if (ui.kind !== "ui") return;
+    expect(ui.specs).toBeNull();
+    expect(ui.source.endsWith("\n```")).toBe(true);
+    expect(ui.error).toBe("unclosed");
   });
 
   it("ignores blocks nested inside another fence", () => {

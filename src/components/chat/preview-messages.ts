@@ -566,7 +566,7 @@ flowchart LR
     attachments: [],
     createdAt: at,
   },
-  // 流式中途：结束围栏还没到，显示骨架
+  // 围栏没写完、回复已经结束：按无法渲染降级，不再停在骨架上
   {
     id: "preview-genui-streaming",
     sessionId: "preview",

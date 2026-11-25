@@ -123,6 +123,37 @@ export function scanFences(text: string, lang: string): FenceSegment[] {
   return segments;
 }
 
+/**
+ * 给界面用的切片。回复还在输出时，没闭合的围栏显示骨架；
+ * 这轮已经结束仍没闭合，就按无法渲染降级，不再停在「正在生成界面」。
+ */
+export function renderGenUi(text: string, running: boolean): SplitGenUi {
+  const split = splitGenUi(text);
+  if (running || !split.streaming) return split;
+  return {
+    streaming: false,
+    segments: split.segments.map((segment) =>
+      segment.kind === "pending"
+        ? {
+            kind: "ui" as const,
+            index: segment.index,
+            raw: segment.source,
+            source: closeFence(segment.source),
+            specs: null,
+            error: "unclosed",
+          }
+        : segment,
+    ),
+  };
+}
+
+/** 补上与开头同长的结束围栏，降级后的原文才能被当成代码块画出来 */
+function closeFence(source: string): string {
+  const fence = openFence(source.split("\n", 1)[0] ?? "");
+  const close = fence ? fence.char.repeat(fence.length) : "```";
+  return `${source.replace(/\s+$/, "")}\n${close}`;
+}
+
 /** 正文按 ```multara-ui 切成 Markdown 段和界面块段 */
 export function splitGenUi(text: string): SplitGenUi {
   const source = text ?? "";
