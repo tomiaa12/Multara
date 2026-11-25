@@ -23,6 +23,7 @@ import {
   mergePlanBadge,
   mergeQueueSummary,
   mergeResultLines,
+  mergeRunBadge,
   mergeRunOrder,
   rememberMergeTargets,
 } from "./merge-targets";
@@ -108,12 +109,34 @@ const checkoutNotes = computed(() => picked.value.flatMap((item) => {
   return [t("scm.merge.checkoutNote", { branch: item.preview?.branch || item.name, path })];
 }));
 const conflictOutcome = computed(() => outcomes.value.find((item) => item.status === "conflict" && item.result?.mergeSession) ?? null);
+const reporting = computed(() => outcomes.value.length > 0);
+const settled = computed(() => reporting.value && !running.value);
 const finishedCount = computed(() => outcomes.value.filter((item) => item.status === "merged" || item.status === "up_to_date").length);
+const queueRows = computed(() => picked.value.map((item) => ({
+  item,
+  outcome: outcomes.value.find((row) => row.name === item.name) ?? null,
+})));
 const resultTitle = computed(() => {
   const conflicts = outcomes.value.filter((item) => item.status === "conflict").length;
   if (conflicts) return t("scm.merge.doneConflicts", { count: conflicts });
   if (outcomes.value.some((item) => item.status === "error")) return t("scm.merge.incomplete");
   return t("scm.merge.done");
+});
+const queueTitle = computed(() => {
+  if (!reporting.value) {
+    return picked.value.length
+      ? t("scm.merge.pickCount", { count: picked.value.length })
+      : t("scm.merge.pickPrompt");
+  }
+  if (running.value) {
+    return t("scm.merge.progressSummary", {
+      source: sourceLabel.value,
+      count: outcomes.value.length,
+      finished: finishedCount.value,
+      total: outcomes.value.length,
+    });
+  }
+  return resultTitle.value;
 });
 const blocked = computed(() => running.value || Boolean(conflictOutcome.value));
 
@@ -165,6 +188,7 @@ async function loadOne(name: string) {
 }
 
 function toggle(name: string, on: boolean) {
+  if (reporting.value) return;
   if (!on) {
     picked.value = picked.value.filter((item) => item.name !== name);
     return;
@@ -181,6 +205,7 @@ function onDragStart(event: DragEvent, index: number) {
 }
 
 function onDrop(index: number) {
+  if (reporting.value) return;
   const from = dragIndex.value;
   dragIndex.value = -1;
   if (from < 0 || from === index) return;
@@ -201,6 +226,15 @@ function saveRecent() {
   }
 }
 
+function patchOutcome(name: string, patch: Partial<MergeOutcome>) {
+  outcomes.value = outcomes.value.map((item) => (item.name === name ? { ...item, ...patch } : item));
+}
+
+function rowClass(row: { item: PickedTarget; outcome: MergeOutcome | null }) {
+  const status = row.outcome?.status || row.item.preview?.plan;
+  return [status ? `is-${status}` : "", row.outcome ? "is-reporting" : ""];
+}
+
 async function start() {
   if (!canStart.value) return;
   running.value = true;
@@ -212,42 +246,56 @@ async function start() {
     if (!canMergePlan(plan) && plan !== MERGE_PLAN_UP_TO_DATE) return [];
     return [{ ...item, plan }];
   }));
-  const done: MergeOutcome[] = [];
-  let hitConflict = false;
-  for (const item of queue) {
-    if (hitConflict) {
-      done.push({ name: item.name, status: "pending", result: null, error: "", pushRequested });
-      continue;
-    }
+  const runnable = new Set(queue.map((item) => item.name));
+  const ordered = queue.flatMap((item) => {
+    const pickedItem = picked.value.find((row) => row.name === item.name);
+    return pickedItem ? [pickedItem] : [];
+  });
+  picked.value = [...ordered, ...picked.value.filter((item) => !runnable.has(item.name))];
+  outcomes.value = queue.map((item) => ({
+    name: item.name,
+    status: "queued",
+    result: null,
+    error: "",
+    pushRequested,
+  }));
+  let mergedAny = false;
+  for (const [index, item] of queue.entries()) {
+    patchOutcome(item.name, { status: "running" });
     try {
       const outcome = await store.mergeIntoBranch(props.workspace.id, item.name, pushRequested && Boolean(item.preview?.remote));
       const status = outcome.status === "conflict" ? "conflict" : outcome.status;
-      done.push({ name: item.name, status, result: outcome, error: "", pushRequested });
+      patchOutcome(item.name, { status, result: outcome, error: "" });
+      if (status === "merged" || status === "up_to_date") mergedAny = true;
       if (outcome.status === "conflict" && outcome.mergeSession) {
-        hitConflict = true;
-        const pending = queue.slice(queue.indexOf(item) + 1).map((row) => row.name);
-        emit("defer", { workspaceId: props.workspace.id, pending, push: pushRequested });
+        for (const row of queue.slice(index + 1)) patchOutcome(row.name, { status: "pending" });
+        running.value = false;
+        if (mergedAny) emit("merged");
+        emit("defer", {
+          workspaceId: props.workspace.id,
+          pending: queue.slice(index + 1).map((row) => row.name),
+          push: pushRequested,
+        });
         emit("mergeFocus", {
           inboxItemId: store.inboxItemIdForSession(outcome.mergeSession.sessionId),
           workspaceId: outcome.mergeSession.workspaceId,
           sessionId: outcome.mergeSession.sessionId,
         });
         emit("close");
+        return;
       }
     } catch (cause) {
-      done.push({
-        name: item.name,
+      patchOutcome(item.name, {
         status: "error",
         result: null,
         error: cause instanceof Error ? cause.message : String(cause),
-        pushRequested,
       });
+      for (const row of queue.slice(index + 1)) patchOutcome(row.name, { status: "stopped" });
       break;
     }
   }
-  outcomes.value = done;
   running.value = false;
-  if (done.some((item) => item.status === "merged" || item.status === "up_to_date")) emit("merged");
+  if (mergedAny) emit("merged");
 }
 
 const mergeId = computed(() => conflictOutcome.value?.result?.mergeSession?.id ?? "");
@@ -327,7 +375,7 @@ onMounted(() => {
   <UiModal class="merge-backdrop" @click.self="!blocked && emit('close')">
     <section class="modal merge-dialog" role="dialog" :aria-label="t('scm.merge.title')">
         <div class="modal-heading">
-          <h2>{{ outcomes.length ? resultTitle : t('scm.merge.title') }}</h2>
+          <h2>{{ t('scm.merge.title') }}</h2>
           <UiButton
             v-if="!conflictOutcome"
             class="icon-button"
@@ -340,7 +388,6 @@ onMounted(() => {
           </UiButton>
         </div>
 
-        <template v-if="!outcomes.length">
           <div class="merge-source">
             <div class="merge-source-main">
               <span class="merge-chip">{{ t('scm.merge.current') }}</span>
@@ -356,7 +403,7 @@ onMounted(() => {
             <div class="merge-picker">
               <div class="merge-search">
                 <UiInput v-model="query" type="search" spellcheck="false" :placeholder="t('workspace.searchBranch')" :aria-label="t('workspace.searchBranch')" />
-                <UiButton size="small" :disabled="refreshing || running" @click="refreshBranches">
+                <UiButton size="small" :disabled="refreshing || running || reporting" @click="refreshBranches">
                   {{ refreshing ? t("scm.merge.refreshing") : t("scm.merge.refresh") }}
                 </UiButton>
               </div>
@@ -368,6 +415,7 @@ onMounted(() => {
                   <label v-for="row in group.rows" :key="row.name" class="check-row merge-branch">
                     <UiInput
                       type="checkbox"
+                      :disabled="reporting"
                       :model-value="isPicked(row.name)"
                       @update:model-value="toggle(row.name, Boolean($event))"
                     />
@@ -381,34 +429,60 @@ onMounted(() => {
 
             <div class="merge-queue">
               <div class="merge-queue-head">
-                <strong>{{ picked.length ? t('scm.merge.pickCount', { count: picked.length }) : t('scm.merge.pickPrompt') }}</strong>
-                <span v-if="picked.length > 1">{{ t('scm.merge.dragOrder') }}</span>
+                <strong>{{ queueTitle }}</strong>
+                <span v-if="picked.length > 1 && !reporting">{{ t('scm.merge.dragOrder') }}</span>
               </div>
               <p v-if="!picked.length" class="merge-empty">{{ t('scm.merge.pickHint') }}</p>
-              <ol v-else>
+              <ol v-else class="vs-scroll">
                 <li
-                  v-for="(item, index) in picked"
-                  :key="item.name"
-                  :class="item.preview?.plan ? `is-${item.preview.plan}` : ''"
-                  draggable="true"
+                  v-for="(row, index) in queueRows"
+                  :key="row.item.name"
+                  :class="rowClass(row)"
+                  :draggable="!reporting"
                   @dragstart="onDragStart($event, index)"
                   @dragend="dragIndex = -1"
                   @dragover.prevent
                   @drop="onDrop(index)"
                 >
-                  <span class="merge-order">{{ index + 1 }}</span>
-                  <div class="merge-queue-copy">
-                    <b>{{ item.preview?.display || item.name }}</b>
-                    <small>{{ mergeQueueSummary(item.preview, item.loading, item.error) }}</small>
+                  <div class="merge-queue-row">
+                    <span class="merge-order">
+                      <Codicon v-if="row.outcome?.status === 'running'" name="loading" spin :size="14" />
+                      <Codicon v-else-if="row.outcome && (row.outcome.status === 'merged' || row.outcome.status === 'up_to_date')" name="check" :size="14" />
+                      <Codicon v-else-if="row.outcome && (row.outcome.status === 'conflict' || row.outcome.status === 'error')" name="warning" :size="14" />
+                      <Codicon v-else-if="row.outcome" name="clock" :size="14" />
+                      <template v-else>{{ index + 1 }}</template>
+                    </span>
+                    <div class="merge-queue-copy">
+                      <b>{{ row.outcome?.result?.targetDisplay || row.item.preview?.display || row.item.name }}</b>
+                      <template v-if="row.outcome">
+                        <small
+                          v-for="(line, lineIndex) in outcomeLines(row.outcome)"
+                          :key="`${row.item.name}-${lineIndex}`"
+                          :class="{ 'is-warn': line.warn }"
+                        >{{ line.text }}</small>
+                      </template>
+                      <small v-else>{{ mergeQueueSummary(row.item.preview, row.item.loading, row.item.error) }}</small>
+                    </div>
+                    <em v-if="row.outcome">{{ mergeRunBadge(row.outcome.status) }}</em>
+                    <em v-else-if="row.item.preview">{{ mergePlanBadge(row.item.preview.plan) }}</em>
+                    <UiTooltip v-if="!row.outcome" :content="t('scm.merge.dragOrder')">
+                      <Codicon name="gripper" :size="14" />
+                    </UiTooltip>
                   </div>
-                  <em v-if="item.preview">{{ mergePlanBadge(item.preview.plan) }}</em>
-                  <UiTooltip :content="t('scm.merge.dragOrder')">
-                    <Codicon name="gripper" :size="14" />
-                  </UiTooltip>
+                  <ul v-if="row.outcome?.result?.conflicts.length" class="merge-conflicts">
+                    <li v-for="file in row.outcome?.result?.conflicts || []" :key="file">
+                      <UiTooltip :content="file">
+                        <span>{{ file }}</span>
+                      </UiTooltip>
+                    </li>
+                  </ul>
                 </li>
               </ol>
-              <p v-if="picked.length" class="merge-note">
+              <p v-if="picked.length && !reporting" class="merge-note">
                 {{ t('scm.merge.queueNote') }}
+              </p>
+              <p v-if="conflictOutcome" class="merge-note">
+                {{ t('scm.merge.conflictTodo', { pushSuffix: conflictOutcome.result?.mergeSession?.push ? t('scm.merge.conflictPushSuffix') : '' }) }}
               </p>
               <div v-if="dirty || checkoutNotes.length" class="merge-warn-box">
                 <p v-if="dirty">{{ t('scm.merge.dirtyWarning') }}</p>
@@ -420,68 +494,23 @@ onMounted(() => {
           <p v-if="previewError" class="merge-note is-error">{{ previewError }}</p>
           <p v-if="error" class="merge-note is-error">{{ error }}</p>
           <div class="merge-foot">
-            <label class="check-row merge-push" :class="{ 'is-disabled': !canPush }">
-              <UiInput v-model="push" type="checkbox" :disabled="!canPush" />
+            <label class="check-row merge-push" :class="{ 'is-disabled': !canPush || reporting }">
+              <UiInput v-model="push" type="checkbox" :disabled="!canPush || reporting" />
               {{ pushLabel }}
             </label>
-            <div class="modal-actions">
-              <UiButton :disabled="running" @click="emit('close')">{{ t('common.cancel') }}</UiButton>
-              <UiButton variant="primary" :disabled="!canStart" @click="start">{{ startLabel }}</UiButton>
+            <div class="modal-actions" :class="{ 'merge-conflict-actions': conflictOutcome && settled }">
+              <template v-if="conflictOutcome && settled">
+                <UiButton variant="danger" :disabled="running" @click="abort">{{ t('scm.merge.abortConflict') }}</UiButton>
+                <UiButton :disabled="running" @click="resolveManually">{{ t('scm.merge.resolveManual') }}</UiButton>
+                <UiButton variant="primary" :disabled="running" @click="resolveWithAi">{{ t('scm.aiResolve') }}</UiButton>
+              </template>
+              <UiButton v-else-if="settled" variant="primary" @click="emit('close')">{{ t('common.ok') }}</UiButton>
+              <template v-else>
+                <UiButton :disabled="running" @click="emit('close')">{{ t('common.cancel') }}</UiButton>
+                <UiButton variant="primary" :disabled="!canStart" @click="start">{{ startLabel }}</UiButton>
+              </template>
             </div>
           </div>
-        </template>
-
-        <template v-else>
-          <p class="merge-note">
-            {{ t('scm.merge.progressSummary', { source: sourceLabel, count: outcomes.length, finished: finishedCount, total: outcomes.length }) }}
-          </p>
-          <div class="merge-results">
-            <article
-              v-for="item in outcomes"
-              :key="item.name"
-              class="merge-result"
-              :class="`is-${item.status}`"
-            >
-              <header>
-                <span class="merge-result-mark" aria-hidden="true">
-                  <Codicon v-if="item.status === 'conflict' || item.status === 'error'" name="warning" :size="14" />
-                  <Codicon v-else-if="item.status === 'pending'" name="clock" :size="14" />
-                  <Codicon v-else name="check" :size="14" />
-                </span>
-                <b>{{ item.result?.targetDisplay || item.name }}</b>
-                <span v-if="item.status === 'conflict'">{{ t('scm.merge.fileConflicts', { count: item.result?.conflicts.length || 0 }) }}</span>
-              </header>
-              <ul v-if="item.status === 'conflict'" class="merge-conflicts">
-                <li v-for="file in item.result?.conflicts || []" :key="file">
-                  <UiTooltip :content="file">
-                    <span>{{ file }}</span>
-                  </UiTooltip>
-                </li>
-              </ul>
-              <p
-                v-for="(line, index) in outcomeLines(item)"
-                :key="`${item.name}-${index}`"
-                class="merge-note"
-                :class="{ 'is-warn': line.warn }"
-              >
-                {{ line.text }}
-              </p>
-              <p v-if="item.status === 'conflict'" class="merge-note">{{ t('scm.merge.conflictStarted') }}</p>
-            </article>
-          </div>
-          <p v-if="conflictOutcome" class="merge-note">
-            {{ t('scm.merge.conflictTodo', { pushSuffix: conflictOutcome.result?.mergeSession?.push ? t('scm.merge.conflictPushSuffix') : '' }) }}
-          </p>
-          <p v-if="error" class="merge-note is-error">{{ error }}</p>
-          <div class="modal-actions" :class="{ 'merge-conflict-actions': conflictOutcome }">
-            <template v-if="conflictOutcome">
-              <UiButton variant="danger" :disabled="running" @click="abort">{{ t('scm.merge.abortConflict') }}</UiButton>
-              <UiButton :disabled="running" @click="resolveManually">{{ t('scm.merge.resolveManual') }}</UiButton>
-              <UiButton variant="primary" :disabled="running" @click="resolveWithAi">{{ t('scm.aiResolve') }}</UiButton>
-            </template>
-            <UiButton v-else variant="primary" @click="emit('close')">{{ t('common.ok') }}</UiButton>
-          </div>
-        </template>
     </section>
   </UiModal>
 </template>

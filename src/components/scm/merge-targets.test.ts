@@ -12,6 +12,7 @@ import {
   mergePlanBadge,
   mergeQueueSummary,
   mergeResultLines,
+  mergeRunBadge,
   mergeRunOrder,
   rememberMergeTargets,
 } from "./merge-targets";
@@ -106,6 +107,8 @@ describe("merge targets", () => {
     expect(rememberMergeTargets(["main", "old"], ["develop", "main"])).toEqual(["develop", "main", "old"]);
     expect(canMergePlan(MERGE_PLAN_MERGE)).toBe(true);
     expect(mergePlanBadge(MERGE_PLAN_CONFLICT)).toBe("预计冲突");
+    expect(mergeRunBadge("running")).toBe("合并中");
+    expect(mergeRunBadge("stopped")).toBe("未继续");
   });
 
   test("queue and result copy follows the plan", () => {
@@ -135,5 +138,22 @@ describe("merge targets", () => {
         conflicts: [],
       },
     })[0]?.text).toBe("已快进到 a3f9c21 · 已更新本地分支 · 已推送到 origin/main");
+    expect(mergeResultLines({ status: "queued", pushRequested: false })[0]?.text).toBe("等待合并");
+    expect(mergeResultLines({ status: "running", pushRequested: false })[0]?.text).toBe("正在合并…");
+    expect(mergeResultLines({ status: "stopped", pushRequested: false })[0]?.text).toBe("未继续，前面的分支没有合并成功");
+    expect(mergeResultLines({
+      status: "conflict",
+      pushRequested: false,
+      result: {
+        status: "conflict",
+        sourceLabel: "feature/login",
+        targetDisplay: "main",
+        fastForward: false,
+        pushed: false,
+        localUpdated: false,
+        notes: [],
+        conflicts: ["src/auth.ts"],
+      },
+    })[0]?.text).toBe("已在临时工作区开始合并，当前工作区没有变化");
   });
 });

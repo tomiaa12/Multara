@@ -5407,13 +5407,16 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 .merge-queue ol {
   display: grid;
   gap: var(--spacing-2);
+  max-height: 360px;
   margin: 0;
   padding: 0;
+  overflow: auto;
   list-style: none;
 }
 .merge-queue li {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--spacing-2);
   min-width: 0;
   padding: var(--spacing-2) var(--spacing-3);
@@ -5421,6 +5424,12 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   border-radius: var(--radius-md);
   background: var(--color-surface);
   cursor: grab;
+}
+.merge-queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
 }
 .merge-queue li.is-conflict {
   border-color: var(--color-warning);
@@ -5451,6 +5460,41 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
+.merge-queue li.is-reporting {
+  cursor: default;
+}
+.merge-queue li.is-reporting .merge-queue-copy small {
+  white-space: normal;
+}
+.merge-queue-copy small.is-warn {
+  color: var(--color-warning);
+}
+.merge-queue li.is-reporting.is-running {
+  border-color: var(--color-info);
+}
+.merge-queue li.is-reporting.is-merged,
+.merge-queue li.is-reporting.is-up_to_date {
+  border-color: var(--color-success);
+}
+.merge-queue li.is-reporting.is-error,
+.merge-queue li.is-reporting.is-conflict {
+  border-color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+.merge-queue li.is-reporting.is-running .merge-order,
+.merge-queue li.is-reporting.is-queued .merge-order {
+  color: var(--color-info);
+}
+.merge-queue li.is-reporting.is-merged .merge-order,
+.merge-queue li.is-reporting.is-up_to_date .merge-order {
+  color: var(--color-success);
+}
+.merge-queue li.is-reporting.is-error .merge-order,
+.merge-queue li.is-reporting.is-conflict .merge-order,
+.merge-queue li.is-reporting.is-pending .merge-order,
+.merge-queue li.is-reporting.is-stopped .merge-order {
+  color: var(--color-warning);
+}
 .merge-queue li em {
   flex: 0 0 auto;
   padding: 1px var(--spacing-2);
@@ -5468,9 +5512,19 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
   background: var(--color-info-subtle);
   color: var(--color-info);
 }
-.merge-queue li.is-conflict em {
+.merge-queue li.is-conflict em,
+.merge-queue li.is-reporting.is-error em {
   background: var(--color-warning-subtle);
   color: var(--color-warning);
+}
+.merge-queue li.is-reporting.is-running em {
+  background: var(--color-info-subtle);
+  color: var(--color-info);
+}
+.merge-queue li.is-reporting.is-merged em,
+.merge-queue li.is-reporting.is-up_to_date em {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
 }
 .merge-warn-box {
   display: grid;
@@ -5493,52 +5547,6 @@ body.is-resizing-panes[data-pane-cursor="row-resize"] * {
 }
 .merge-foot .modal-actions {
   padding-top: 0;
-}
-.merge-results {
-  display: grid;
-  gap: var(--spacing-2);
-}
-.merge-result {
-  display: grid;
-  gap: var(--spacing-1);
-  padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-.merge-result.is-conflict,
-.merge-result.is-error {
-  border-color: var(--color-warning);
-  background: var(--color-warning-subtle);
-}
-.merge-result header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  min-width: 0;
-}
-.merge-result header b {
-  color: var(--color-text-strong);
-}
-.merge-result header span:last-child {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-}
-.merge-result-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-success-subtle);
-  color: var(--color-success);
-}
-.merge-result.is-conflict .merge-result-mark,
-.merge-result.is-error .merge-result-mark,
-.merge-result.is-pending .merge-result-mark {
-  background: transparent;
-  color: var(--color-warning);
 }
 @media (max-width: 760px) {
   .merge-body {

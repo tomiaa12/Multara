@@ -38,6 +38,19 @@ export function mergePlanBadge(plan: string) {
   return "";
 }
 
+/** 右侧队列在合并过程中的状态标签。 */
+export function mergeRunBadge(status: string) {
+  if (status === "queued") return t("scm.merge.status.waiting");
+  if (status === "running") return t("scm.merge.status.running");
+  if (status === "merged") return t("scm.merge.status.done");
+  if (status === "up_to_date") return t("scm.merge.plan.upToDate");
+  if (status === "conflict") return t("scm.merge.status.conflict");
+  if (status === "error") return t("scm.merge.status.failed");
+  if (status === "pending") return t("scm.merge.status.pending");
+  if (status === "stopped") return t("scm.merge.status.stopped");
+  return "";
+}
+
 export function mergeQueueSummary(preview: TargetPreview | null, loading: boolean, error: string) {
   if (error) return error;
   if (loading || !preview) return t("scm.merge.queue.loading");
@@ -178,6 +191,14 @@ export function mergeResultLines(input: {
 }): MergeResultLine[] {
   if (input.status === "error") return [{ text: input.error || t("scm.merge.result.failed"), warn: true }];
   if (input.status === "pending") return [{ text: t("scm.merge.result.pending"), warn: false }];
+  if (input.status === "queued") return [{ text: t("scm.merge.queue.waiting"), warn: false }];
+  if (input.status === "running") return [{ text: t("scm.merge.running"), warn: false }];
+  if (input.status === "stopped") return [{ text: t("scm.merge.result.stopped"), warn: false }];
+  if (input.status === "conflict") {
+    const lines: MergeResultLine[] = [{ text: t("scm.merge.conflictStarted"), warn: false }];
+    for (const note of input.result?.notes ?? []) lines.push({ text: note, warn: true });
+    return lines;
+  }
   const result = input.result;
   if (!result || result.status === "up_to_date") {
     return [{ text: t("scm.merge.result.upToDate"), warn: false }];
