@@ -2406,6 +2406,33 @@ export async function setChannelEnabled(id: string, enabled: boolean): Promise<v
   await invoke("set_channel_enabled", { id, enabled });
 }
 
+export interface WeixinLoginView {
+  sessionId: string;
+  status: "wait" | "scanned" | "need_verifycode" | "expired" | "confirmed" | "error" | string;
+  imageUrl: string;
+  installationId?: string | null;
+}
+
+export async function beginWeixinLogin(input: {
+  name: string;
+  projectId?: string | null;
+}): Promise<WeixinLoginView> {
+  if (!hasBackend()) {
+    return { sessionId: "preview", status: "wait", imageUrl: "", installationId: null };
+  }
+  return invoke<WeixinLoginView>("begin_weixin_login", { input });
+}
+
+export async function pollWeixinLogin(sessionId: string): Promise<WeixinLoginView> {
+  if (!hasBackend()) return { sessionId, status: "expired", imageUrl: "" };
+  return invoke<WeixinLoginView>("poll_weixin_login", { sessionId });
+}
+
+export async function submitWeixinVerifyCode(sessionId: string, code: string): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("submit_weixin_verify_code", { sessionId, code });
+}
+
 export async function testChannelInstallation(
   id: string,
 ): Promise<Record<string, string>> {

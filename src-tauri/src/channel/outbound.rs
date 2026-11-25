@@ -342,6 +342,94 @@ fn join_reply_parts(parts: &[(String, String)]) -> Option<String> {
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
+fn send_plain(
+    app: &AppHandle,
+    delivery: &store::Delivery,
+    content: Option<&str>,
+) -> Result<(), String> {
+    let installation = {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        store::get_installation(&db, &delivery.installation_id)?
+            .ok_or_else(|| tr!("渠道连接不存在"))?
+    };
+    let Some(content) = content.filter(|value| !value.trim().is_empty()) else {
+        return Err(tr!("运行没有产生可回发的文本"));
+    };
+    let (body, questions) = split_questions(content);
+    let body = expand_genui(&body);
+    let text = body.trim();
+    if text.is_empty() && questions.is_empty() {
+        return Err(tr!("运行没有产生可回发的文本"));
+    }
+    if !text.is_empty() {
+        let sent = super::link::send_delivery(app, &installation, delivery, text)?;
+        record_reply(app, &installation.id, &sent, &delivery.run_id, "reply");
+    }
+    if !questions.is_empty() {
+        let sent = super::link::send_delivery(app, &installation, delivery, &questions_as_text(&questions))?;
+        record_reply(app, &installation.id, &sent, &delivery.run_id, "question");
+    }
+    if let Some(plan) = plan_text(app, &delivery.run_id) {
+        let sent = super::link::send_delivery(app, &installation, delivery, &plan)?;
+        record_reply(app, &installation.id, &sent, &delivery.run_id, "plan");
+    }
+    Ok(())
+}
+
+fn record_reply(app: &AppHandle, installation_id: &str, message_id: &str, run_id: &str, kind: &str) {
+    let state = app.state::<AppState>();
+    if let Ok(db) = state.lock_db() {
+        store::record_outbound(&db, installation_id, message_id, Some(run_id), kind);
+    };
+}
+
+fn questions_as_text(questions: &[serde_json::Value]) -> String {
+    let mut lines = vec![tr!("请直接回复下面的问题：")];
+    for (index, question) in questions.iter().enumerate() {
+        let prompt = question
+            .get("question")
+            .or_else(|| question.get("prompt"))
+            .or_else(|| question.get("header"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if !prompt.is_empty() {
+            lines.push(format!("{}. {prompt}", index + 1));
+        }
+        if let Some(options) = question.get("options").and_then(serde_json::Value::as_array) {
+            for option in options {
+                let label = option
+                    .as_str()
+                    .or_else(|| option.get("label").and_then(serde_json::Value::as_str))
+                    .or_else(|| option.get("name").and_then(serde_json::Value::as_str))
+                    .unwrap_or("");
+                if !label.is_empty() {
+                    lines.push(format!("- {label}"));
+                }
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+fn plan_text(app: &AppHandle, run_id: &str) -> Option<String> {
+    let state = app.state::<AppState>();
+    let plan = state.lock_db().ok().and_then(|db| {
+        db.query_row(
+            "SELECT input_json FROM run_events
+             WHERE run_id=?1 AND event_type='plan' ORDER BY seq DESC LIMIT 1",
+            [run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+    })?;
+    let title = plan.get("title").and_then(serde_json::Value::as_str).unwrap_or("");
+    let summary = plan.get("summary").and_then(serde_json::Value::as_str).unwrap_or("");
+    let text = format!("{title}\n{summary}").trim().to_string();
+    (!text.is_empty()).then_some(tr!("计划：{text}", text = text))
+}
+
 fn clear_typing(app: &AppHandle, delivery: &store::Delivery) {
     let Some(reaction) = delivery.typing_reaction_id.as_deref() else {
         return;
@@ -360,6 +448,16 @@ fn send_one(
     delivery: &store::Delivery,
     content: Option<&str>,
 ) -> Result<(), String> {
+    let channel_type = {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        store::get_installation(&db, &delivery.installation_id)?
+            .map(|item| item.channel_type)
+            .ok_or_else(|| tr!("渠道连接不存在"))?
+    };
+    if !super::is_feishu(&channel_type) {
+        return send_plain(app, delivery, content);
+    }
     let (installation, api) = api_for(app, &delivery.installation_id)?;
     // typing 表情在 deliver_pending 分组时已清过；这里再清一次无伤
     if let Some(reaction) = delivery.typing_reaction_id.as_deref() {
@@ -1058,7 +1156,24 @@ pub fn on_permission_request(
     let run_id = run_id.to_string();
     thread::spawn(move || {
         for delivery in deliveries {
-            let Ok((installation, api)) = api_for(&app, &delivery.installation_id) else {
+            let installation = {
+                let state = app.state::<AppState>();
+                let Ok(db) = state.lock_db() else {
+                    continue;
+                };
+                match store::get_installation(&db, &delivery.installation_id) {
+                    Ok(Some(installation)) => installation,
+                    _ => continue,
+                }
+            };
+            if !super::is_feishu(&installation.channel_type) {
+                let notice = tr!("需要在 Multara 里确认：{tool}", tool = tool.clone());
+                if let Ok(sent) = super::link::send_delivery(&app, &installation, &delivery, &notice) {
+                    record_reply(&app, &installation.id, &sent, &run_id, "permission");
+                }
+                continue;
+            }
+            let Ok((_, api)) = api_for(&app, &installation.id) else {
                 continue;
             };
             let payload = card.to_string();

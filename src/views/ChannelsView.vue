@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AlertTriangle, Check, Copy, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/vue";
-import type { ChannelInstallation, ChannelInstallationInput, ChannelUser } from "../domain/types";
+import type { ChannelInstallation, ChannelInstallationInput, ChannelType, ChannelUser } from "../domain/types";
+import { channelSourceLabel } from "../components/chat/message-speaker";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
@@ -14,12 +15,14 @@ import UiSelect from "../components/ui/UiSelect.vue";
 import UiRelativeTime from "../components/ui/UiRelativeTime.vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import ChatTargetSelect from "../components/ChatTargetSelect.vue";
+import ChannelMark from "../components/channels/ChannelMark.vue";
 
 const store = useAppStore();
 const installations = ref<ChannelInstallation[]>([]);
 const users = reactive<Record<string, ChannelUser[]>>({});
 const usersTarget = ref<ChannelInstallation | null>(null);
 const showForm = ref(false);
+const step = ref<"pick" | "form">("pick");
 const busy = ref(false);
 const error = ref("");
 const notice = ref("");
@@ -27,13 +30,21 @@ const notice = ref("");
 const form = reactive({
   id: undefined as string | undefined,
   name: "",
-  channelType: "feishu" as "feishu" | "lark",
+  channelType: "feishu" as ChannelType,
   projectId: "",
   appId: "",
   appSecret: "",
+  appToken: "",
   groupEnabled: false,
   enabled: true,
 });
+const weixin = reactive({
+  sessionId: "",
+  imageUrl: "",
+  status: "",
+  code: "",
+});
+let weixinPoll = 0;
 
 function userTargetValue(user: ChannelUser) {
   return user.targetType && user.targetId ? `${user.targetType}:${user.targetId}` : "";
@@ -87,6 +98,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   unmounted = true;
+  weixinPoll += 1;
   unlistenPaired?.();
   unlistenPaired = null;
 });
@@ -105,11 +117,39 @@ function edit(item?: ChannelInstallation) {
   form.name = item?.name ?? "";
   form.channelType = item?.channelType ?? "feishu";
   form.projectId = item?.projectId ?? "";
-  form.appId = item?.appId ?? "";
+  form.appId = item && (item.channelType === "slack" || item.channelType === "telegram" || item.channelType === "weixin")
+    ? ""
+    : item?.appId ?? "";
   form.appSecret = "";
+  form.appToken = "";
   form.groupEnabled = item?.groupEnabled ?? false;
+  weixin.sessionId = "";
+  weixin.imageUrl = "";
+  weixin.status = "";
+  weixin.code = "";
+  weixinPoll += 1;
   form.enabled = item?.enabled ?? true;
+  step.value = item ? "form" : "pick";
   showForm.value = true;
+}
+
+function choosePlatform(type: ChannelType) {
+  if (form.channelType !== type) {
+    form.appId = "";
+    form.appSecret = "";
+    form.appToken = "";
+    form.name = channelSourceLabel(type);
+    weixin.sessionId = "";
+    weixin.imageUrl = "";
+    weixin.status = "";
+    weixin.code = "";
+    weixinPoll += 1;
+  } else if (!form.name.trim()) {
+    form.name = channelSourceLabel(type);
+  }
+  form.channelType = type;
+  error.value = "";
+  step.value = "form";
 }
 
 async function save() {
@@ -121,9 +161,10 @@ async function save() {
       name: form.name.trim(),
       channelType: form.channelType,
       projectId: form.projectId || null,
-      appId: form.appId.trim(),
-      appSecret: form.appSecret.trim() || undefined,
-      region: form.channelType,
+      appId: form.channelType === "slack" || form.channelType === "telegram" || form.channelType === "weixin" ? "" : form.appId.trim(),
+      appSecret: form.channelType === "slack" ? form.appId.trim() || undefined : form.appSecret.trim() || undefined,
+      appToken: form.channelType === "slack" ? form.appSecret.trim() || undefined : undefined,
+      region: form.channelType === "lark" ? "lark" : "feishu",
       groupEnabled: form.groupEnabled,
       enabled: form.enabled,
     };
@@ -268,6 +309,140 @@ async function copyCode(item: ChannelInstallation) {
   }
 }
 
+const weixinImage = computed(() => {
+  const value = weixin.imageUrl.trim();
+  if (!value || value.startsWith("http") || value.startsWith("data:")) return value;
+  return `data:image/png;base64,${value}`;
+});
+
+const pickerPlatforms: ChannelType[] = ["feishu", "slack", "dingtalk", "wecom", "telegram", "weixin"];
+
+const credential = computed(() => {
+  switch (form.channelType) {
+    case "slack":
+      return {
+        showId: true,
+        showSecret: true,
+        idLabel: t("channels.botToken"),
+        secretLabel: t("channels.appToken"),
+        idPlaceholder: "xoxb-",
+        secretPlaceholder: "xapp-",
+        secret: true,
+        hint: t("channels.setupHintSlack"),
+      };
+    case "telegram":
+      return {
+        showId: false,
+        showSecret: true,
+        idLabel: "",
+        secretLabel: t("channels.botToken"),
+        idPlaceholder: "",
+        secretPlaceholder: "123456:ABC...",
+        secret: true,
+        hint: t("channels.setupHintTelegram"),
+      };
+    case "dingtalk":
+      return {
+        showId: true,
+        showSecret: true,
+        idLabel: "AppKey",
+        secretLabel: "AppSecret",
+        idPlaceholder: "",
+        secretPlaceholder: "",
+        secret: true,
+        hint: t("channels.setupHintDingtalk"),
+      };
+    case "wecom":
+      return {
+        showId: true,
+        showSecret: true,
+        idLabel: "Bot ID",
+        secretLabel: "Secret",
+        idPlaceholder: "",
+        secretPlaceholder: "",
+        secret: true,
+        hint: t("channels.setupHintWecom"),
+      };
+    case "weixin":
+      return {
+        showId: false,
+        showSecret: false,
+        idLabel: "",
+        secretLabel: "",
+        idPlaceholder: "",
+        secretPlaceholder: "",
+        secret: true,
+        hint: t("channels.setupHintWeixin"),
+      };
+    default:
+      return {
+        showId: true,
+        showSecret: true,
+        idLabel: t("channels.appId"),
+        secretLabel: t("channels.appSecret"),
+        idPlaceholder: "cli_xxxxxxxx",
+        secretPlaceholder: "",
+        secret: true,
+        hint: t("channels.setupHint"),
+      };
+  }
+});
+
+async function startWeixin() {
+  error.value = "";
+  const token = ++weixinPoll;
+  try {
+    const started = await backend.beginWeixinLogin({
+      name: form.name.trim(),
+      projectId: form.projectId || null,
+    });
+    if (token !== weixinPoll) return;
+    weixin.sessionId = started.sessionId;
+    weixin.imageUrl = started.imageUrl;
+    weixin.status = started.status;
+    while (token === weixinPoll && showForm.value && weixin.status !== "confirmed" && weixin.status !== "expired") {
+      if (weixin.status === "need_verifycode" && !weixin.code.trim()) break;
+      const next = await backend.pollWeixinLogin(weixin.sessionId);
+      if (token !== weixinPoll) return;
+      weixin.status = next.status;
+      if (next.imageUrl) weixin.imageUrl = next.imageUrl;
+      if (next.status === "confirmed") {
+        showForm.value = false;
+        await refresh();
+        return;
+      }
+    }
+  } catch (cause) {
+    if (token === weixinPoll) error.value = String(cause).replace(/^Error:\s*/, "");
+  }
+}
+
+async function sendWeixinCode() {
+  if (!weixin.sessionId || !weixin.code.trim()) return;
+  try {
+    await backend.submitWeixinVerifyCode(weixin.sessionId, weixin.code.trim());
+    weixin.status = "scanned";
+    void startWeixinPollOnly();
+  } catch (cause) {
+    error.value = String(cause).replace(/^Error:\s*/, "");
+  }
+}
+
+async function startWeixinPollOnly() {
+  const token = weixinPoll;
+  const sessionId = weixin.sessionId;
+  while (token === weixinPoll && showForm.value && weixin.status !== "confirmed" && weixin.status !== "expired" && weixin.status !== "need_verifycode") {
+    const next = await backend.pollWeixinLogin(sessionId);
+    if (token !== weixinPoll) return;
+    weixin.status = next.status;
+    if (next.status === "confirmed") {
+      showForm.value = false;
+      await refresh();
+      return;
+    }
+  }
+}
+
 function projectName(item: ChannelInstallation) {
   if (!item.projectId) return t("channels.noProject");
   return store.data?.projects.find((project) => project.id === item.projectId)?.name ?? item.projectId;
@@ -301,7 +476,7 @@ function projectName(item: ChannelInstallation) {
           <div class="grow">
             <strong>{{ item.name }}</strong>
             <small>
-              {{ item.channelType === "lark" ? "Lark" : t("channels.feishu") }} ·
+              {{ channelSourceLabel(item.channelType) }} ·
               {{ projectName(item) }}
             </small>
             <p class="channel-meta">
@@ -329,7 +504,7 @@ function projectName(item: ChannelInstallation) {
             <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
           </div>
           <div class="channel-switches">
-            <UiTooltip :content="t('channels.allowGroup')">
+            <UiTooltip v-if="item.channelType !== 'weixin'" :content="t('channels.allowGroup')">
               <label class="channel-switch">
                 <span>{{ t("channels.groupChat") }}</span>
                 <UiSwitch
@@ -422,13 +597,41 @@ function projectName(item: ChannelInstallation) {
     <UiModal v-if="showForm" @click.self="showForm = false">
       <form class="modal channel-dialog" @submit.prevent="save">
         <header class="channel-dialog-head">
-          <h2>{{ form.id ? t("channels.edit") : t("channels.add") }}</h2>
+          <h2 class="channel-dialog-title">
+            <UiButton
+              v-if="step === 'form' && !form.id"
+              type="button"
+              variant="ghost"
+              size="small"
+              @click="step = 'pick'"
+            >{{ t("common.back") }}</UiButton>
+            <ChannelMark v-else-if="step === 'form'" :type="form.channelType" />
+            {{ step === "pick" ? t("channels.add") : form.id ? t("channels.edit") : channelSourceLabel(form.channelType) }}
+          </h2>
           <UiButton variant="ghost" size="icon" :tip="t('common.close')" @click="showForm = false"><X :size="16" /></UiButton>
         </header>
-        <div class="channel-dialog-body">
+        <div v-if="step === 'pick'" class="channel-picker" role="listbox" :aria-label="t('channels.platform')">
+          <button
+            v-for="type in pickerPlatforms"
+            :key="type"
+            type="button"
+            class="channel-picker-row"
+            @click="choosePlatform(type)"
+          >
+            <span class="channel-picker-icon"><ChannelMark :type="type" /></span>
+            <span class="channel-picker-copy">
+              <span class="channel-picker-title">
+                {{ channelSourceLabel(type) }}
+                <span>{{ t("channels.disconnected") }}</span>
+              </span>
+              <span class="channel-picker-desc">{{ t(`channels.desc.${type}`) }}</span>
+            </span>
+          </button>
+        </div>
+        <div v-else class="channel-dialog-body">
           <label>{{ t("channels.name") }}<UiInput v-model="form.name" required :placeholder="t('channels.namePlaceholder')" /></label>
-          <label>
-            {{ t("channels.platform") }}
+          <label v-if="form.channelType === 'feishu' || form.channelType === 'lark'">
+            {{ t("channels.region") }}
             <UiSelect v-model="form.channelType" :options="[{ value: 'feishu', label: t('channels.feishu') }, { value: 'lark', label: 'Lark' }]" />
           </label>
           <label>
@@ -439,16 +642,30 @@ function projectName(item: ChannelInstallation) {
             />
           </label>
           <p class="channel-hint">{{ t("channels.userTargetHint") }}</p>
-          <label>{{ t("channels.appId") }}<UiInput v-model="form.appId" required placeholder="cli_xxxxxxxx" /></label>
-          <label>
-            {{ t("channels.appSecret") }}
-            <UiInput v-model="form.appSecret" type="password" :placeholder="form.id && !form.appSecret ? t('channels.secretUnchanged') : ''" />
+          <label v-if="credential.showId">
+            {{ credential.idLabel }}
+            <UiInput v-model="form.appId" :type="form.channelType === 'slack' ? 'password' : 'text'" :required="!form.id" :placeholder="credential.idPlaceholder" />
           </label>
-          <p class="channel-hint">{{ t("channels.setupHint") }}</p>
+          <label v-if="credential.showSecret">
+            {{ credential.secretLabel }}
+            <UiInput v-model="form.appSecret" type="password" :placeholder="form.id && !form.appSecret ? t('channels.secretUnchanged') : credential.secretPlaceholder" />
+          </label>
+          <p class="channel-hint">{{ credential.hint }}</p>
+          <div v-if="form.channelType === 'weixin'" class="weixin-login">
+            <UiButton type="button" :disabled="busy || !form.name.trim()" @click="startWeixin">{{ t("channels.weixinScan") }}</UiButton>
+            <img v-if="weixinImage" class="weixin-qr" :src="weixinImage" alt="" />
+            <p v-if="weixin.status === 'scanned'">{{ t("channels.weixinScanned") }}</p>
+            <p v-if="weixin.status === 'expired'">{{ t("channels.weixinExpired") }}</p>
+            <label v-if="weixin.status === 'need_verifycode'">
+              {{ t("channels.verifyCode") }}
+              <UiInput v-model="weixin.code" @keydown.enter.prevent="sendWeixinCode" />
+            </label>
+            <UiButton v-if="weixin.status === 'need_verifycode'" type="button" @click="sendWeixinCode">{{ t("common.confirm") }}</UiButton>
+          </div>
         </div>
-        <footer class="channel-dialog-foot">
+        <footer v-if="step === 'form'" class="channel-dialog-foot">
           <UiButton type="button" @click="showForm = false">{{ t("common.cancel") }}</UiButton>
-          <UiButton type="submit" variant="primary" :disabled="busy">{{ t("common.save") }}</UiButton>
+          <UiButton v-if="form.channelType !== 'weixin' || form.id" type="submit" variant="primary" :disabled="busy">{{ t("common.save") }}</UiButton>
         </footer>
       </form>
     </UiModal>
@@ -468,6 +685,8 @@ function projectName(item: ChannelInstallation) {
 .channel-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); margin: 6px 0; }
 .channel-code { display: flex; gap: 6px; align-items: center; color: var(--text-muted); }
 .channel-code code { font-size: 14px; letter-spacing: 2px; color: var(--text-primary); }
+.weixin-login { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.weixin-qr { width: 180px; height: 180px; object-fit: contain; background: white; border-radius: 8px; }
 .channel-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; align-self: center; justify-content: flex-end; }
 .channel-users-dialog { width: min(920px, 94vw); }
 .channel-user-time { white-space: nowrap; color: var(--color-text-secondary); }
@@ -479,6 +698,15 @@ function projectName(item: ChannelInstallation) {
 .channel-user-actions { width: 1%; text-align: right; white-space: nowrap; }
 .channel-dialog { width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
 .channel-dialog-head, .channel-dialog-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.channel-dialog-title { display: inline-flex; align-items: center; gap: 8px; }
+.channel-picker { border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08)); border-radius: 12px; overflow: hidden; margin: 8px 0 4px; }
+.channel-picker-row { display: flex; align-items: flex-start; justify-content: flex-start; gap: 12px; width: 100%; padding: 14px 16px; text-align: start; background: transparent; border: 0; border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08)); cursor: pointer; color: inherit; }
+.channel-picker-row:last-child { border-bottom: 0; }
+.channel-picker-row:hover { background: var(--color-fill-secondary, rgba(0, 0, 0, 0.03)); }
+.channel-picker-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--color-fill-secondary, rgba(0, 0, 0, 0.05)); color: var(--color-text-secondary, #444); }
+.channel-picker-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.channel-picker-title { font-weight: 600; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
+.channel-picker-title span, .channel-picker-desc { color: var(--text-muted, #888); font-weight: 400; font-size: 13px; line-height: 1.5; }
 .channel-dialog-foot { justify-content: flex-end; }
 .channel-dialog-body { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .channel-dialog-body label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }

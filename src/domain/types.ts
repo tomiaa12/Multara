@@ -883,7 +883,14 @@ export interface MergeFinishResult {
   notes: string[];
 }
 
-export type ChannelType = "feishu" | "lark";
+export type ChannelType =
+  | "feishu"
+  | "lark"
+  | "slack"
+  | "dingtalk"
+  | "wecom"
+  | "telegram"
+  | "weixin";
 export type ChannelStatus = "connected" | "connecting" | "disconnected" | "error";
 
 export interface ChannelInstallation {
@@ -915,6 +922,8 @@ export interface ChannelInstallationInput {
   projectId?: string | null;
   appId: string;
   appSecret?: string;
+  /** Slack App-level Token（xapp-） */
+  appToken?: string;
   region?: "feishu" | "lark";
   groupEnabled: boolean;
   enabled: boolean;

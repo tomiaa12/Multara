@@ -64,8 +64,10 @@ const sourceFilter = ref<InboxSource>("all");
  * 通知来源：工作流总览 → 工作流；挂了任务 → 任务；只挂需求 → 需求工作台里的对话；
  * 两者都没有 → 右下角浮动聊天发起的对话。
  */
+const CHANNEL_SOURCES = new Set(["feishu", "lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]);
+
 function isChannel(item: InboxItem) {
-  return item.channelType === "feishu" || item.channelType === "lark";
+  return CHANNEL_SOURCES.has(item.channelType ?? "");
 }
 
 function sourceOf(item: InboxItem): "project" | "task" | "workflow" | "chat" | "channel" {

@@ -91,6 +91,10 @@ impl WsConn {
         self.write_frame(0x2, payload)
     }
 
+    pub fn send_text(&mut self, payload: &str) -> Result<(), String> {
+        self.write_frame(0x1, payload.as_bytes())
+    }
+
     pub fn send_pong(&mut self, payload: &[u8]) -> Result<(), String> {
         self.write_frame(0xA, payload)
     }

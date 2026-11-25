@@ -10,8 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::database::AppState;
 
@@ -48,14 +47,7 @@ pub fn emit_status(
     status: &str,
     error: Option<&str>,
 ) {
-    let _ = app.emit(
-        "channel-status",
-        json!({
-            "installationId": installation.id,
-            "status": status,
-            "lastError": error,
-        }),
-    );
+    super::emit_status(app, installation, status, error);
 }
 
 /// 返回这一轮是否连上过，供守护线程在成功连接后重置退避。

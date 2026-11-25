@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::database::AppState;
 
-use super::{feishu, store, Installation};
+use super::{link, store, Installation};
 
 type Registry = HashMap<String, (String, Arc<AtomicBool>)>;
 
@@ -32,7 +32,7 @@ pub fn start(app: AppHandle) {
 /// 配对码不算：路由每次现读数据库，配对成功自动换码时不能把正在用的连接重启掉。
 fn fingerprint(installation: &Installation) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}",
         installation.channel_type,
         installation.config.app_id,
         installation.config.region(),
@@ -40,7 +40,8 @@ fn fingerprint(installation: &Installation) -> String {
         installation.target_id,
         installation.project_id.clone().unwrap_or_default(),
         installation.enabled as u8,
-        installation.config.group_enabled as u8
+        installation.config.group_enabled as u8,
+        installation.config.credential_rev
     )
 }
 
@@ -98,17 +99,31 @@ pub fn reload(app: &AppHandle) {
     sync(app);
 }
 
+fn still_enabled(app: &AppHandle, installation_id: &str) -> bool {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return true;
+    };
+    store::get_installation(&db, installation_id)
+        .ok()
+        .flatten()
+        .is_none_or(|item| item.enabled)
+}
+
 fn run_loop(app: AppHandle, installation: Installation, stop: Arc<AtomicBool>) {
     let mut backoff = 1u64;
     while !stop.load(Ordering::SeqCst) {
+        if !still_enabled(&app, &installation.id) {
+            break;
+        }
         // panic 不能杀掉这个线程：注册表项还在，指纹不变就永远不会重启
         let connected = panic::catch_unwind(AssertUnwindSafe(|| {
-            feishu::run(&app, &installation.id, &stop)
+            link::run(&app, &installation, &stop)
         }))
         .unwrap_or_else(|_| {
             crate::diag::write(&format!(
-                "CHANNEL feishu {} 接收线程 panic，稍后重连",
-                installation.id
+                "CHANNEL {} {} 接收线程 panic，稍后重连",
+                installation.channel_type, installation.id
             ));
             false
         });
@@ -132,5 +147,5 @@ fn run_loop(app: AppHandle, installation: Installation, stop: Arc<AtomicBool>) {
             let _ = store::set_status(&db, &installation.id, "disconnected", None);
         };
     }
-    feishu::emit_status(&app, &installation, "disconnected", None);
+    super::emit_status(&app, &installation, "disconnected", None);
 }

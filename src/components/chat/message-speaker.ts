@@ -261,7 +261,30 @@ export function sentTargetForMessage(
   };
 }
 
-/** 已经从飞书 / Lark 发进来的用户消息，收件箱里不再当输入框改。 */
+const CHANNEL_SOURCES = new Set(["feishu", "lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]);
+
+export function channelSourceLabel(type: string) {
+  switch (type) {
+    case "lark":
+      return "Lark";
+    case "feishu":
+      return t("channels.feishu");
+    case "slack":
+      return "Slack";
+    case "dingtalk":
+      return t("channels.dingtalk");
+    case "wecom":
+      return t("channels.wecom");
+    case "telegram":
+      return "Telegram";
+    case "weixin":
+      return t("channels.weixin");
+    default:
+      return type;
+  }
+}
+
+/** 已经从聊天渠道发进来的用户消息，收件箱里不再当输入框改。 */
 export function sentFromChannel(message: ChatMessage) {
-  return message.role === "user" && (message.sourceType === "feishu" || message.sourceType === "lark");
+  return message.role === "user" && CHANNEL_SOURCES.has(message.sourceType ?? "");
 }

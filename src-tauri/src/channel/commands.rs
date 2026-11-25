@@ -59,6 +59,8 @@ pub struct ChannelInstallationInput {
     pub project_id: Option<String>,
     pub app_id: String,
     pub app_secret: Option<String>,
+    /// Slack 的 App-level Token（xapp-）。其他渠道不用。
+    pub app_token: Option<String>,
     pub region: Option<String>,
     #[serde(default)]
     pub group_enabled: bool,
@@ -125,24 +127,113 @@ pub async fn save_channel_installation(
     .await
 }
 
+fn apply_credentials(
+    channel_type: &str,
+    app_id: &mut String,
+    config: &mut super::ChannelConfig,
+    fresh_secret: Option<String>,
+    fresh_token: Option<String>,
+    existing_secret: Option<String>,
+) -> Result<Option<String>, String> {
+    if channel_type == super::TYPE_WEIXIN {
+        if app_id.is_empty() {
+            *app_id = config.app_id.clone();
+        }
+        config.app_id = app_id.clone();
+        return Ok(None);
+    }
+    if channel_type == super::TYPE_SLACK {
+        let encoded = match (fresh_secret, fresh_token) {
+            (Some(bot), Some(app_token)) => {
+                if !bot.starts_with("xoxb-") || !app_token.starts_with("xapp-") {
+                    return Err(tr!("Bot Token 以 xoxb- 开头，App Token 以 xapp- 开头"));
+                }
+                Some(super::slack::encode_secret(&bot, &app_token))
+            }
+            (None, None) => None,
+            _ => return Err(tr!("请同时填写 Bot Token 和 App Token")),
+        };
+        if let Some(secret) = encoded {
+            let (id, name) = super::slack::probe(&secret)?;
+            *app_id = id;
+            config.app_id = app_id.clone();
+            config.bot_open_id = Some(app_id.clone());
+            config.bot_name = Some(name.clone());
+            config.bot_username = name;
+            config.credential_rev = config.credential_rev.saturating_add(1);
+            return Ok(Some(secret));
+        }
+        if existing_secret.is_none() {
+            return Err(tr!("请填写 Bot Token 和 App Token"));
+        }
+        if app_id.is_empty() {
+            *app_id = config.app_id.clone();
+        }
+        config.app_id = app_id.clone();
+        return Ok(None);
+    }
+    if channel_type == super::TYPE_TELEGRAM {
+        let Some(token) = fresh_secret else {
+            if existing_secret.is_none() {
+                return Err(tr!("请填写 Bot Token"));
+            }
+            if app_id.is_empty() {
+                *app_id = config.app_id.clone();
+            }
+            config.app_id = app_id.clone();
+            return Ok(None);
+        };
+        let (id, name) = super::telegram::probe(&token)?;
+        *app_id = id.clone();
+        config.app_id = id.clone();
+        config.bot_open_id = Some(id);
+        config.bot_name = Some(name);
+        config.credential_rev = config.credential_rev.saturating_add(1);
+        return Ok(Some(token));
+    }
+    if app_id.is_empty() {
+        return Err(match channel_type {
+            super::TYPE_DINGTALK => tr!("请填写 AppKey"),
+            super::TYPE_WECOM => tr!("请填写 Bot ID"),
+            _ => tr!("请填写 App ID"),
+        });
+    }
+    if config.app_id != *app_id {
+        config.bot_open_id = None;
+        config.bot_name = None;
+        config.bot_avatar = None;
+    }
+    config.app_id = app_id.clone();
+    let Some(secret) = fresh_secret else {
+        if existing_secret.is_none() {
+            return Err(tr!("请填写密钥"));
+        }
+        return Ok(None);
+    };
+    if channel_type == super::TYPE_DINGTALK {
+        super::dingtalk::probe(app_id, &secret)?;
+    } else if channel_type == super::TYPE_WECOM {
+        super::wecom::probe(app_id, &secret)?;
+    }
+    config.credential_rev = config.credential_rev.saturating_add(1);
+    Ok(Some(secret))
+}
+
 fn save_installation_blocking(
     input: ChannelInstallationInput,
     app: &AppHandle,
     state: &AppState,
 ) -> Result<ChannelInstallationView, String> {
     let name = input.name.trim();
-    let app_id = input.app_id.trim();
+    let mut app_id = input.app_id.trim().to_string();
     if name.is_empty() {
         return Err(tr!("请填写名称"));
     }
-    if app_id.is_empty() {
-        return Err(tr!("请填写 App ID"));
-    }
-    if !matches!(
-        input.channel_type.as_str(),
-        super::TYPE_FEISHU | super::TYPE_LARK
-    ) {
+    if !super::is_known(&input.channel_type) {
         return Err(tr!("暂不支持这个渠道类型"));
+    }
+    if input.channel_type == super::TYPE_WEIXIN && input.id.is_none() {
+        return Err(tr!("微信请用扫码连接"));
     }
     let db = state.lock_db()?;
     if let Some(project_id) = input
@@ -176,23 +267,48 @@ fn save_installation_blocking(
         .as_ref()
         .map(|item| item.config.clone())
         .unwrap_or_default();
-    let app_changed = config.app_id != app_id;
-    config.app_id = app_id.to_string();
-    if let Some(region) = input.region.as_deref().filter(|value| !value.is_empty()) {
-        config.region = if region == super::TYPE_LARK {
-            super::TYPE_LARK.to_string()
-        } else {
-            super::TYPE_FEISHU.to_string()
-        };
+    if super::is_feishu(&input.channel_type) {
+        if let Some(region) = input.region.as_deref().filter(|value| !value.is_empty()) {
+            config.region = if region == super::TYPE_LARK {
+                super::TYPE_LARK.to_string()
+            } else {
+                super::TYPE_FEISHU.to_string()
+            };
+        }
     }
-    config.group_enabled = input.group_enabled;
+    config.group_enabled = input.group_enabled && super::supports_group(&input.channel_type);
     if config.pairing_code.is_empty() {
         config.pairing_code = generate_pairing_code();
     }
-    if app_changed {
-        config.bot_open_id = None;
-        config.bot_name = None;
-        config.bot_avatar = None;
+    drop(db);
+    let fresh_secret = input
+        .app_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let fresh_token = input
+        .app_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let stored_secret = apply_credentials(
+        &input.channel_type,
+        &mut app_id,
+        &mut config,
+        fresh_secret,
+        fresh_token,
+        secret::load(app, &id),
+    )?;
+    if let Some(secret) = stored_secret {
+        secret::store(app, &id, &secret)?;
+    }
+    if secret::load(app, &id).is_none() {
+        return Err(tr!("请填写凭据"));
+    }
+    if app_id.is_empty() {
+        return Err(tr!("请填写应用标识"));
     }
     // 安装级目标不再使用；新建留空，编辑保留旧值以免误清已回填到用户上的历史数据。
     let target_type = existing
@@ -204,16 +320,6 @@ fn save_installation_blocking(
         .as_ref()
         .map(|item| item.target_id.clone())
         .unwrap_or_default();
-    drop(db);
-
-    if let Some(app_secret) = input.app_secret.as_deref().map(str::trim) {
-        if !app_secret.is_empty() {
-            secret::store(app, &id, app_secret)?;
-        }
-    }
-    if secret::load(app, &id).is_none() {
-        return Err(tr!("请填写 App Secret"));
-    }
 
     let installation = Installation {
         id: id.clone(),
@@ -279,13 +385,23 @@ pub async fn test_channel_installation(
     app: AppHandle,
 ) -> Result<HashMap<String, String>, String> {
     crate::commands::off_main(app.clone(), move |state| {
-        let (installation, api) = super::feishu::api_for(&app, &id)?;
-        let bot = api.bot_info()?;
-        let (open_id, name) = (bot.open_id, bot.name);
+        let channel_type = store::get_installation(&*state.lock_db()?, &id)?
+            .ok_or_else(|| tr!("渠道连接不存在"))?
+            .channel_type;
+        let (installation, open_id, name, avatar) = if super::is_feishu(&channel_type) {
+            let (installation, api) = super::feishu::api_for(&app, &id)?;
+            let bot = api.bot_info()?;
+            (installation, bot.open_id, bot.name, bot.avatar_url)
+        } else {
+            let (open_id, name) = super::link::probe(&app, &id)?;
+            let installation = store::get_installation(&*state.lock_db()?, &id)?
+                .ok_or_else(|| tr!("渠道连接不存在"))?;
+            (installation, open_id, name, String::new())
+        };
         let mut config: ChannelConfig = installation.config.clone();
         config.bot_open_id = (!open_id.is_empty()).then(|| open_id.clone());
         config.bot_name = (!name.is_empty()).then(|| name.clone());
-        config.bot_avatar = (!bot.avatar_url.is_empty()).then_some(bot.avatar_url);
+        config.bot_avatar = (!avatar.is_empty()).then_some(avatar);
         store::set_config(&*state.lock_db()?, &id, &config)?;
         let mut result = HashMap::new();
         result.insert("openId".to_string(), open_id);
@@ -330,6 +446,14 @@ fn fill_missing_names(
     let mut errors = HashMap::new();
     let missing = users.iter().any(|user| saved_name(user).is_none());
     if !missing {
+        return errors;
+    }
+    let feishu = state
+        .lock_db()
+        .ok()
+        .and_then(|db| store::get_installation(&db, installation_id).ok().flatten())
+        .is_some_and(|item| super::is_feishu(&item.channel_type));
+    if !feishu {
         return errors;
     }
     let api = match super::feishu::api_for(app, installation_id) {
@@ -400,6 +524,9 @@ pub fn set_channel_group_enabled(
         let db = state.lock_db()?;
         let installation =
             store::get_installation(&db, &id)?.ok_or_else(|| tr!("渠道连接不存在"))?;
+        if enabled && !super::supports_group(&installation.channel_type) {
+            return Err(tr!("微信只接收扫码账号的私聊"));
+        }
         let mut config = installation.config.clone();
         config.group_enabled = enabled;
         store::set_config(&db, &id, &config)?;
@@ -484,4 +611,38 @@ pub fn rotate_channel_pairing_code(
     drop(db);
     supervisor::reload(&app);
     Ok(config.pairing_code)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeixinLoginInput {
+    pub name: String,
+    pub project_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn begin_weixin_login(
+    input: WeixinLoginInput,
+    app: AppHandle,
+) -> Result<super::weixin::LoginView, String> {
+    crate::commands::off_main(app, move |_state| {
+        super::weixin::begin(&input.name, input.project_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn poll_weixin_login(
+    session_id: String,
+    app: AppHandle,
+) -> Result<super::weixin::LoginView, String> {
+    crate::commands::off_main(app.clone(), move |_state| {
+        super::weixin::poll(&app, &session_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn submit_weixin_verify_code(session_id: String, code: String) -> Result<(), String> {
+    super::weixin::submit_code(&session_id, &code)
 }

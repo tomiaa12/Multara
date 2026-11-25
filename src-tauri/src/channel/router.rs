@@ -750,11 +750,13 @@ fn flush(app: &AppHandle, key: &str) {
         "senderId": batch.message.sender_id,
         "senderName": batch.message.sender_name,
     });
-    let (_, api) = match api_for(app, &batch.installation.id) {
-        Ok(value) => value,
-        Err(_) => return,
+    let typing = if super::is_feishu(&batch.installation.channel_type) {
+        api_for(app, &batch.installation.id)
+            .ok()
+            .and_then(|(_, api)| api.add_typing(&batch.message.message_id).ok().flatten())
+    } else {
+        None
     };
-    let typing = api.add_typing(&batch.message.message_id).ok().flatten();
     let result = crate::commands::send_channel_message(
         app,
         &batch.binding.session_id,
@@ -800,7 +802,9 @@ fn flush(app: &AppHandle, key: &str) {
                         .unwrap_or(0);
                     if attached == 0 {
                         if let Some(reaction) = typing.as_deref() {
-                            api.remove_typing(&batch.message.message_id, reaction);
+                            if let Ok((_, api)) = api_for(app, &batch.installation.id) {
+                                api.remove_typing(&batch.message.message_id, reaction);
+                            }
                         }
                     }
                 };
@@ -809,7 +813,9 @@ fn flush(app: &AppHandle, key: &str) {
         }
         Err(error) => {
             if let Some(reaction) = typing.as_deref() {
-                api.remove_typing(&batch.message.message_id, reaction);
+                if let Ok((_, api)) = api_for(app, &batch.installation.id) {
+                    api.remove_typing(&batch.message.message_id, reaction);
+                }
             }
             send_notice(
                 app,
@@ -822,6 +828,27 @@ fn flush(app: &AppHandle, key: &str) {
 }
 
 fn send_notice(app: &AppHandle, installation: &Installation, message: &InboundMessage, text: &str) {
+    if !super::is_feishu(&installation.channel_type) {
+        let sent = super::link::send_text(
+            app,
+            installation,
+            super::link::TextTarget {
+                chat_id: &message.chat_id,
+                chat_type: message.chat_type,
+                thread_id: message.thread_id.as_deref(),
+                reply_to: Some(message.message_id.as_str()),
+                sender_id: Some(message.sender_id.as_str()),
+                text,
+            },
+        );
+        if let Ok(sent) = sent {
+            let state = app.state::<AppState>();
+            if let Ok(db) = state.lock_db() {
+                store::record_outbound(&db, &installation.id, &sent, None, "notice");
+            };
+        }
+        return;
+    }
     let Ok((_, api)) = api_for(app, &installation.id) else {
         return;
     };

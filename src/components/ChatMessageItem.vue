@@ -3,6 +3,7 @@ import { computed } from "vue";
 import type { ChatMessage, MessageAttachmentInput } from "../domain/types";
 import AssistantMessage from "./chat/AssistantMessage.vue";
 import {
+  channelSourceLabel,
   sentTargetForMessage,
   speakerForMessage,
   type AssignmentSubtaskRef,
@@ -94,11 +95,7 @@ const channelSource = computed(() => {
   if (!props.message.sourceType) return "";
   if (props.message.sourceType === "genui") return t("genui.fromUi");
   const meta = (props.message.sourceMeta ?? {}) as Record<string, unknown>;
-  const channel = props.message.sourceType === "lark"
-    ? "Lark"
-    : props.message.sourceType === "feishu"
-      ? t("channels.feishu")
-      : props.message.sourceType;
+  const channel = channelSourceLabel(props.message.sourceType);
   const sender = String(meta.senderName ?? meta.senderId ?? "").trim();
   return sender ? t("chat.fromChannel", { channel, sender }) : channel;
 });

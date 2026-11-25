@@ -1,22 +1,68 @@
-//! IM 渠道接入（飞书 / Lark 优先）。
+//! IM 渠道接入。
 //!
 //! 渠道只做两件事：把平台消息变成一次普通的会话输入，以及把运行结果发回平台。
 //! 执行路径与本地聊天完全一致，因此 Multara 界面里看到的始终是同一份数据。
+//! 飞书 / Lark 走卡片；Slack、钉钉、企业微信、Telegram、微信走文字。
 
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 
 pub mod commands;
+pub mod dingtalk;
 pub mod feishu;
 pub mod feishu_send;
+pub mod link;
 pub mod outbound;
 mod pairing;
 pub mod router;
 pub mod secret;
+pub mod slack;
 pub mod store;
 pub mod supervisor;
+pub mod telegram;
+pub mod wecom;
+pub mod weixin;
 
 pub const TYPE_FEISHU: &str = "feishu";
 pub const TYPE_LARK: &str = "lark";
+pub const TYPE_SLACK: &str = "slack";
+pub const TYPE_DINGTALK: &str = "dingtalk";
+pub const TYPE_WECOM: &str = "wecom";
+pub const TYPE_TELEGRAM: &str = "telegram";
+pub const TYPE_WEIXIN: &str = "weixin";
+
+pub fn is_feishu(channel_type: &str) -> bool {
+    channel_type == TYPE_FEISHU || channel_type == TYPE_LARK
+}
+
+pub fn is_known(channel_type: &str) -> bool {
+    matches!(
+        channel_type,
+        TYPE_FEISHU
+            | TYPE_LARK
+            | TYPE_SLACK
+            | TYPE_DINGTALK
+            | TYPE_WECOM
+            | TYPE_TELEGRAM
+            | TYPE_WEIXIN
+    )
+}
+
+/// 微信只收扫码账号的私聊，没有群。
+pub fn supports_group(channel_type: &str) -> bool {
+    channel_type != TYPE_WEIXIN
+}
+
+pub fn emit_status(app: &AppHandle, installation: &Installation, status: &str, error: Option<&str>) {
+    let _ = app.emit(
+        "channel-status",
+        serde_json::json!({
+            "installationId": installation.id,
+            "status": status,
+            "lastError": error,
+        }),
+    );
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatType {
@@ -56,6 +102,14 @@ pub struct ChannelConfig {
     pub pairing_code: String,
     /// 覆盖 API 域名，仅用于代理 / 测试部署。
     pub api_base: Option<String>,
+    /// 凭据变更后加一，连接线程据此重启。配对码和游标不算。
+    pub credential_rev: u64,
+    /// Telegram 的 update offset、微信的 get_updates_buf。
+    pub update_cursor: String,
+    /// 微信回复必须带上的当前会话上下文。
+    pub context_token: String,
+    /// 机器人用户名（Slack / Telegram），用来判断群里有没有 @ 到自己。
+    pub bot_username: String,
 }
 
 impl ChannelConfig {
