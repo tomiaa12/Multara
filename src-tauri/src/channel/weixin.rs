@@ -428,15 +428,42 @@ fn qr_code(base: &str, tokens: &[String]) -> Result<Qr, String> {
     )?;
     check_result(&value)?;
     let code = value.get("qrcode").and_then(Value::as_str).unwrap_or("").to_string();
-    let image = value
+    let content = value
         .get("qrcode_img_content")
         .and_then(Value::as_str)
         .unwrap_or("")
+        .trim()
         .to_string();
-    if code.is_empty() || image.is_empty() {
+    if code.is_empty() || content.is_empty() {
         return Err(tr!("微信没有返回二维码"));
     }
+    // 这是扫码内容，不是图片。直接放进 img 会显示成问号。
+    let image = qr_image_data_url(&content)?;
     Ok(Qr { code, image })
+}
+
+fn qr_image_data_url(content: &str) -> Result<String, String> {
+    if content.starts_with("data:image/") {
+        return Ok(content.to_string());
+    }
+    let code = qrcode::QrCode::new(content.as_bytes()).map_err(|_| tr!("微信没有返回二维码"))?;
+    let svg = code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(180, 180)
+        .quiet_zone(true)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build();
+    let mut url = String::from("data:image/svg+xml;charset=utf-8,");
+    for byte in svg.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                url.push(byte as char);
+            }
+            _ => url.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    Ok(url)
 }
 
 struct QrStatus {
@@ -599,7 +626,14 @@ fn value_id(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_message;
+    use super::{decode_message, qr_image_data_url};
+
+    #[test]
+    fn login_content_becomes_an_svg_qr() {
+        let url = qr_image_data_url("https://weixin.qq.com/bot/login?ticket=abc").unwrap();
+        assert!(url.starts_with("data:image/svg+xml"));
+        assert!(url.contains("svg"));
+    }
 
     #[test]
     fn private_text() {

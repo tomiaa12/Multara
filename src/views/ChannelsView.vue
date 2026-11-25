@@ -309,11 +309,7 @@ async function copyCode(item: ChannelInstallation) {
   }
 }
 
-const weixinImage = computed(() => {
-  const value = weixin.imageUrl.trim();
-  if (!value || value.startsWith("http") || value.startsWith("data:")) return value;
-  return `data:image/png;base64,${value}`;
-});
+const weixinImage = computed(() => weixin.imageUrl.trim());
 
 const pickerPlatforms: ChannelType[] = ["feishu", "slack", "dingtalk", "wecom", "telegram", "weixin"];
 
@@ -620,10 +616,7 @@ function projectName(item: ChannelInstallation) {
           >
             <span class="channel-picker-icon"><ChannelMark :type="type" /></span>
             <span class="channel-picker-copy">
-              <span class="channel-picker-title">
-                {{ channelSourceLabel(type) }}
-                <span>{{ t("channels.disconnected") }}</span>
-              </span>
+              <span class="channel-picker-title">{{ channelSourceLabel(type) }}</span>
               <span class="channel-picker-desc">{{ t(`channels.desc.${type}`) }}</span>
             </span>
           </button>
@@ -705,8 +698,8 @@ function projectName(item: ChannelInstallation) {
 .channel-picker-row:hover { background: var(--color-fill-secondary, rgba(0, 0, 0, 0.03)); }
 .channel-picker-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--color-fill-secondary, rgba(0, 0, 0, 0.05)); color: var(--color-text-secondary, #444); }
 .channel-picker-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.channel-picker-title { font-weight: 600; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
-.channel-picker-title span, .channel-picker-desc { color: var(--text-muted, #888); font-weight: 400; font-size: 13px; line-height: 1.5; }
+.channel-picker-title { font-weight: 600; font-size: 14px; }
+.channel-picker-desc { color: var(--text-muted, #888); font-weight: 400; font-size: 13px; line-height: 1.5; }
 .channel-dialog-foot { justify-content: flex-end; }
 .channel-dialog-body { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .channel-dialog-body label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
