@@ -919,7 +919,7 @@ const catalog: MessageCatalog = {
   "agent.field.description": "설명",
   "agent.descPlaceholder": "이 에이전트가 담당하는 일",
   "agent.execConfig": "실행 설정",
-  "agent.execConfigHint": "로컬 런타임, 모델, 동시 작업 수를 선택합니다.",
+  "agent.execConfigHint": "로컬 런타임과 모델을 고릅니다. 동시에 몇 개까지 돌릴지는 런타임에서 설정합니다.",
   "agent.maxConcurrent": "최대 동시 작업",
   "agent.pickRuntime": "런타임 선택",
   "agent.run.running": "실행 중",

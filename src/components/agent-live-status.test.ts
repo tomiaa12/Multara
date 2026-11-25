@@ -53,7 +53,7 @@ describe("resolveSessionLiveWorkStatus", () => {
     })).toBe("sending");
   });
 
-  it("shows queued when the same agent is already running in another session", () => {
+  it("does not queue on the agent itself while the bound runtime still has a slot", () => {
     const states = {
       a: run("a", "other", "ag1", "running"),
       b: run("b", "s1", "ag1", "queued"),
@@ -62,7 +62,7 @@ describe("resolveSessionLiveWorkStatus", () => {
       runStates: states,
       sessionId: "s1",
       capacity: cursorCapacity,
-    })).toBe("queued");
+    })).toBe("sending");
   });
 
   it("shows queued when the bound runtime is globally full, even for another agent", () => {

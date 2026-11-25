@@ -919,7 +919,7 @@ const catalog: MessageCatalog = {
   "agent.field.description": "説明",
   "agent.descPlaceholder": "このエージェントの担当範囲",
   "agent.execConfig": "実行設定",
-  "agent.execConfigHint": "ローカルランタイム、モデル、同時タスク数を選びます。",
+  "agent.execConfigHint": "ローカルランタイムとモデルを選びます。同時実行数はランタイム側で設定します。",
   "agent.maxConcurrent": "最大同時タスク数",
   "agent.pickRuntime": "ランタイムを選択",
   "agent.run.running": "実行中",

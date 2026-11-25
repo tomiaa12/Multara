@@ -919,7 +919,7 @@ const catalog: MessageCatalog = {
   "agent.field.description": "Description",
   "agent.descPlaceholder": "What this agent is responsible for",
   "agent.execConfig": "Execution config",
-  "agent.execConfigHint": "Choose local runtime, model, and concurrent task limit.",
+  "agent.execConfigHint": "Choose the local runtime and model. How many can run at once is set on the runtime.",
   "agent.maxConcurrent": "Max concurrent tasks",
   "agent.pickRuntime": "Choose runtime",
   "agent.run.running": "Running",

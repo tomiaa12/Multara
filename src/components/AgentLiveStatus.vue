@@ -50,7 +50,7 @@ const liveLabel = computed(() => {
   const run = runs[0];
   if (!run) return "";
   const timeline = liveRunMessage(store.messages, run)?.timeline ?? [];
-  // 与对话内工作行共用：运行时或智能体全局名额满了才是排队中
+  // 与对话内工作行共用：绑定运行时的名额满了才是排队中
   const status = resolveRunLiveWorkStatus(run, store.runStates, liveCapacity(store.data));
   return liveWorkParts(timeline, 0, { language: store.data?.settings.language, status })[0]?.label ?? "";
 });

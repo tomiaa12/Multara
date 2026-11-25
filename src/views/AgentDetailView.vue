@@ -384,7 +384,6 @@ function openRun(run: AgentActivityRecord) {
               </dd>
             </div>
             <div><dt>{{ t("agent.field.model") }}</dt><dd>{{ agent.model || "auto" }}</dd></div>
-            <div><dt>{{ t("agent.field.concurrency") }}</dt><dd>{{ agent.maxConcurrentTasks }}</dd></div>
             <div><dt>{{ t("agent.field.tasks") }}</dt><dd>{{ tasks.length }}</dd></div>
           </dl>
           <section>
@@ -610,9 +609,6 @@ function openRun(run: AgentActivityRecord) {
                   />
                 </label>
                 <label>{{ t("agent.field.model") }}<RuntimeModelSelect v-model="draft.model" :runtime-id="draft.runtimeId" /></label>
-                <label>{{ t("agent.maxConcurrent") }}
-                  <UiSelect v-model="draft.maxConcurrentTasks" :options="Array.from({ length: 6 }, (_, index) => ({ value: index + 1, label: String(index + 1) }))" />
-                </label>
               </div>
             </div>
           </section>

@@ -919,7 +919,7 @@ const catalog: MessageCatalog = {
   "agent.field.description": "描述",
   "agent.descPlaceholder": "这个智能体负责什么",
   "agent.execConfig": "执行配置",
-  "agent.execConfigHint": "选择本机运行时、模型和同时进行的任务数。",
+  "agent.execConfigHint": "选择本机运行时和模型。同时能跑几个，在运行时里设置。",
   "agent.maxConcurrent": "最大并发任务",
   "agent.pickRuntime": "选择运行时",
   "agent.run.running": "运行中",

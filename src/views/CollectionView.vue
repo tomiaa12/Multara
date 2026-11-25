@@ -654,9 +654,6 @@ function runtimeSubtitle(runtime: Runtime) {
               />
             </label>
             <label>{{ t("collection.field.model") }}<RuntimeModelSelect v-model="agentForm.model" :runtime-id="agentForm.runtimeId" /></label>
-            <label>{{ t("collection.field.concurrency") }}
-              <UiSelect v-model="agentForm.maxConcurrentTasks" :options="Array.from({ length: 6 }, (_, index) => ({ value: index + 1, label: String(index + 1) }))" />
-            </label>
           </div>
           <span class="ds-overline">{{ t("collection.permissions") }}</span>
           <fieldset>

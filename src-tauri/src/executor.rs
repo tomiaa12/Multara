@@ -42,7 +42,6 @@ struct QueuedRun {
     assignment: String,
     instructions: String,
     model: String,
-    agent_limit: u8,
     user_message_id: Option<String>,
     agent_name: String,
     system_key: Option<String>,
@@ -428,7 +427,7 @@ fn generate_text(
         let db = state.lock_db()?;
         let mut statement = db
             .prepare(
-                "SELECT id, runtime_id, instructions, model, max_concurrent_tasks, name, system_key
+                "SELECT id, runtime_id, instructions, model, name, system_key
                  FROM agents ORDER BY id",
             )
             .map_err(|error| error.to_string())?;
@@ -443,10 +442,9 @@ fn generate_text(
                     assignment: String::new(),
                     instructions: row.get(2)?,
                     model: row.get(3)?,
-                    agent_limit: row.get(4)?,
                     user_message_id: None,
-                    agent_name: row.get(5)?,
-                    system_key: row.get(6)?,
+                    agent_name: row.get(4)?,
+                    system_key: row.get(5)?,
                     mode: RunMode::Auto,
                 })
             })
@@ -817,7 +815,7 @@ fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String
     let db = state.lock_db()?;
     db.query_row(
         "SELECT r.status, r.id, r.session_id, r.turn_id, r.agent_id, r.runtime_id, r.assignment,
-                a.instructions, a.model, a.max_concurrent_tasks, a.name, a.system_key,
+                a.instructions, a.model, a.name, a.system_key,
                 COALESCE(r.mode, 'auto')
          FROM agent_runs r
          JOIN agents a ON a.id = r.agent_id
@@ -835,11 +833,10 @@ fn load_run(app: &AppHandle, run_id: &str) -> Result<(String, QueuedRun), String
                     assignment: row.get(6)?,
                     instructions: row.get(7)?,
                     model: row.get(8)?,
-                    agent_limit: row.get::<_, u8>(9)?.min(6),
                     user_message_id: None,
-                    agent_name: row.get(10)?,
-                    system_key: row.get(11)?,
-                    mode: row.get::<_, String>(12)?.parse().unwrap_or(RunMode::Auto),
+                    agent_name: row.get(9)?,
+                    system_key: row.get(10)?,
+                    mode: row.get::<_, String>(11)?.parse().unwrap_or(RunMode::Auto),
                 },
             ))
         },
@@ -1077,7 +1074,7 @@ fn dispatch_pending(app: AppHandle) {
             };
             let mut statement = match db.prepare(
                 "SELECT r.id, r.session_id, r.turn_id, r.agent_id, r.runtime_id, r.assignment,
-                        a.instructions, a.model, a.max_concurrent_tasks, a.name, a.system_key,
+                        a.instructions, a.model, a.name, a.system_key,
                         COALESCE(r.mode, 'auto')
                  FROM agent_runs r
                  JOIN agents a ON a.id = r.agent_id
@@ -1089,9 +1086,6 @@ fn dispatch_pending(app: AppHandle) {
                           WHERE settings.runtime_id = r.runtime_id),
                          1
                        )
-                   AND (SELECT COUNT(*) FROM agent_runs running
-                        WHERE running.agent_id = r.agent_id AND running.status = 'running')
-                       < a.max_concurrent_tasks
                  ORDER BY r.created_at, r.id
                  LIMIT 1",
             ) {
@@ -1109,11 +1103,10 @@ fn dispatch_pending(app: AppHandle) {
                         assignment: row.get(5)?,
                         instructions: row.get(6)?,
                         model: row.get(7)?,
-                        agent_limit: row.get::<_, u8>(8)?.min(6),
                         user_message_id: None,
-                        agent_name: row.get(9)?,
-                        system_key: row.get(10)?,
-                        mode: row.get::<_, String>(11)?.parse().unwrap_or(RunMode::Auto),
+                        agent_name: row.get(8)?,
+                        system_key: row.get(9)?,
+                        mode: row.get::<_, String>(10)?.parse().unwrap_or(RunMode::Auto),
                     })
                 })
                 .ok()
@@ -1157,14 +1150,7 @@ fn reserve_slot(app: &AppHandle, run: &QueuedRun, runtime_limit: u8) -> bool {
             |row| row.get(0),
         )
         .unwrap_or(0);
-    let agent_running: u8 = db
-        .query_row(
-            "SELECT COUNT(*) FROM agent_runs WHERE agent_id = ?1 AND status = 'running'",
-            [&run.agent_id],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-    if runtime_running >= configured_limit || agent_running >= run.agent_limit {
+    if runtime_running >= configured_limit {
         return false;
     }
     db.execute(

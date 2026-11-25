@@ -7,7 +7,7 @@ export interface LiveRun {
   status: "queued" | "running";
 }
 
-/** 排队名额：智能体绑定的运行时，加上这个智能体自己的并发。都按全局 running 计。 */
+/** 排队名额：只看智能体绑定的运行时，按该运行时上全局正在跑的数量计。 */
 export interface LiveCapacity {
   agents: Array<Pick<Agent, "id" | "runtimeId" | "maxConcurrentTasks">>;
   runtimes: Array<Pick<Runtime, "id" | "maxConcurrent">>;
@@ -40,8 +40,8 @@ function slotLimit(value: number | undefined): number {
 }
 
 /**
- * 这条还在 queued，是因为名额满了，而不是 CLI 还没拉起。
- * 名额看两处，都跨会话：它绑定的运行时已达到最大并发，或它自己已达到最大并发任务。
+ * 这条还在 queued，是因为绑定的运行时名额满了，而不是 CLI 还没拉起。
+ * 名额只看运行时，跨会话、跨智能体一起数。
  */
 export function isQueuedForCapacity(
   run: Pick<RunEvent, "status" | "agentId" | "runId">,
@@ -51,27 +51,22 @@ export function isQueuedForCapacity(
   if (run.status !== "queued" || run.runId.startsWith("pending:")) return false;
   const agent = capacity.agents.find((item) => item.id === run.agentId);
   const runtimeId = agent?.runtimeId ?? "";
+  if (!runtimeId) return false;
   const runtimeLimit = slotLimit(
     capacity.runtimes.find((item) => item.id === runtimeId)?.maxConcurrent,
   );
-  const agentLimit = slotLimit(agent?.maxConcurrentTasks);
   let runtimeRunning = 0;
-  let agentRunning = 0;
   for (const event of Object.values(runStates)) {
-    if (event.status !== "running" || event.runId.startsWith("pending:")) continue;
-    if (run.agentId && event.agentId === run.agentId) agentRunning += 1;
-    if (!runtimeId || !event.agentId) continue;
+    if (event.status !== "running" || event.runId.startsWith("pending:") || !event.agentId) continue;
     const eventRuntime = capacity.agents.find((item) => item.id === event.agentId)?.runtimeId;
     if (eventRuntime === runtimeId) runtimeRunning += 1;
   }
-  const runtimeFull = Boolean(runtimeId) && runtimeRunning >= runtimeLimit;
-  const agentFull = Boolean(run.agentId) && agentRunning >= agentLimit;
-  return runtimeFull || agentFull;
+  return runtimeRunning >= runtimeLimit;
 }
 
 /**
  * 会话级展示态（对话内工作行）。
- * 本会话已有 running 时跟那条走。只剩 queued 时：绑定运行时或智能体自己的全局名额满了才是「排队中」，
+ * 本会话已有 running 时跟那条走。只剩 queued 时：绑定运行时的全局名额满了才是「排队中」，
  * 名额还在则是「启动中」。
  */
 export function resolveSessionLiveWorkStatus(options: {
@@ -98,7 +93,7 @@ export function resolveSessionLiveWorkStatus(options: {
 
 /**
  * 单条 run 在需求列表等处的展示态。
- * queued 且运行时 / 智能体全局名额已满 → 排队中；否则是启动占位。
+ * queued 且绑定运行时的全局名额已满 → 排队中；否则是启动占位。
  */
 export function resolveRunLiveWorkStatus(
   run: Pick<LiveRun, "status" | "runId" | "agentId">,
