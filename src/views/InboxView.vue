@@ -3,13 +3,14 @@ import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Archive, ArrowRight, FolderKanban, GitBranch, Inbox as InboxIcon, ListTodo, MailOpen, MessageSquare, MessagesSquare, Trash2 } from "@lucide/vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import ChannelMark from "../components/channels/ChannelMark.vue";
 import ChatPanel from "../components/ChatPanel.vue";
 import WorkflowRunView from "./workflows/WorkflowRunView.vue";
 import { isWorkflowNodeSession, isWorkflowRunSession, workflowRunIdFromSession } from "../domain/workflow";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import { firstUnreadMessageId, plainInboxLine, unreadBadgeLabel, unreadTotal } from "../domain/inbox";
 import UiCountBadge from "../components/ui/UiCountBadge.vue";
-import type { FeishuContact, InboxItem } from "../domain/types";
+import type { ChannelType, FeishuContact, InboxItem } from "../domain/types";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
@@ -68,6 +69,11 @@ const CHANNEL_SOURCES = new Set(["feishu", "lark", "slack", "dingtalk", "wecom",
 
 function isChannel(item: InboxItem) {
   return CHANNEL_SOURCES.has(item.channelType ?? "");
+}
+
+function channelMarkType(item: InboxItem): ChannelType | null {
+  const type = item.channelType ?? "";
+  return CHANNEL_SOURCES.has(type) ? type as ChannelType : null;
 }
 
 function sourceOf(item: InboxItem): "project" | "task" | "workflow" | "chat" | "channel" {
@@ -459,6 +465,9 @@ onUnmounted(() => {
                   <MessageSquare v-else :size="12" />
                   {{ sourceLabel(item) }}
                 </span>
+                <span v-if="channelMarkType(item)" class="inbox-channel-mark">
+                  <ChannelMark :type="channelMarkType(item)!" />
+                </span>
                 <span class="inbox-item-title">{{ listTitle(item) }}</span>
               </strong>
               <small>{{ plainInboxLine(item.preview) }}</small>
@@ -530,6 +539,7 @@ onUnmounted(() => {
         :session-id="selected.sessionId"
         :agent-id="selectedTask?.agentId ?? ''"
         :unread-message-id="dividerMessageId"
+        :hide-composer="sourceOf(selected) === 'channel'"
       />
       <ChatPanel
         v-else
@@ -538,6 +548,7 @@ onUnmounted(() => {
         class="inbox-thread"
         embedded
         :history-view-only="composerHistoryOnly(selected)"
+        :hide-composer="sourceOf(selected) === 'channel'"
         :session-id="selected.sessionId"
         :project-id="selected.projectId"
         :unread-message-id="dividerMessageId"

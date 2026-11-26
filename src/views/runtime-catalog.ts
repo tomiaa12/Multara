@@ -190,7 +190,7 @@ export function gatewayDraftFor(provider: RuntimeFamilyId, previous?: Partial<Ga
     reasoningEffort: "auto",
     promptCache: true,
     envText: "",
-    maxConcurrent: previous?.maxConcurrent ?? 2,
+    maxConcurrent: previous?.maxConcurrent ?? 6,
   };
 }
 

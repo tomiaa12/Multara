@@ -133,9 +133,9 @@ const previewData: BootstrapData = {
     { id: "ws-git", projectId: "req-git", name: "multara", kind: "folder", sourcePath: "~/work/multara", workPath: "~/work/multara", branch: null, isolationMode: "copy", createdAt: now },
   ],
   runtimes: [
-    { id: "cursor", name: "Cursor", provider: "cursor", command: "cursor-agent", args: [], path: "/usr/local/bin/cursor-agent", version: "latest", status: "online", maxConcurrent: 3 },
-    { id: "claude", name: "Claude Code", provider: "claude", command: "claude", args: [], path: null, version: null, status: "not_found", maxConcurrent: 2 },
-    { id: "codex", name: "Codex", provider: "codex", command: "codex", args: [], path: null, version: null, status: "not_found", maxConcurrent: 2 },
+    { id: "cursor", name: "Cursor", provider: "cursor", command: "cursor-agent", args: [], path: "/usr/local/bin/cursor-agent", version: "latest", status: "online", maxConcurrent: 6 },
+    { id: "claude", name: "Claude Code", provider: "claude", command: "claude", args: [], path: null, version: null, status: "not_found", maxConcurrent: 6 },
+    { id: "codex", name: "Codex", provider: "codex", command: "codex", args: [], path: null, version: null, status: "not_found", maxConcurrent: 6 },
   ],
   agents: [
     {
@@ -285,7 +285,7 @@ export async function getCustomRuntime(runtimeId: string): Promise<CustomRuntime
       name: "Custom",
       command: "claude",
       args: [],
-      maxConcurrent: 2,
+      maxConcurrent: 6,
       provider: "claude",
       protocol: "anthropic",
       apiUrl: "",

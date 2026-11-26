@@ -1089,7 +1089,7 @@ fn dispatch_pending(app: AppHandle) {
                        < COALESCE(
                          (SELECT max_concurrent FROM runtime_settings settings
                           WHERE settings.runtime_id = r.runtime_id),
-                         1
+                         6
                        )
                  ORDER BY r.created_at, r.id
                  LIMIT 1",
@@ -3633,7 +3633,6 @@ fn resource_context(
 ) -> Result<(String, Option<tempfile::NamedTempFile>), String> {
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
-    crate::ops::agent::grant_miku_defaults(&db)?;
     let mut statement = db
         .prepare(
             "SELECT resource_id, kind FROM agent_resources WHERE agent_id = ?1 ORDER BY resource_id",
@@ -3912,7 +3911,7 @@ fn custom_runtime_launch(app: &AppHandle, runtime_id: &str) -> Result<CustomLaun
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
     db.query_row(
-        "SELECT c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 1),
+        "SELECT c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 6),
                 c.provider, c.protocol, c.api_url, c.api_key, c.models_json, c.env_json,
                 COALESCE(c.kind, 'profile'), COALESCE(c.wire_api, 'responses'),
                 COALESCE(c.api_format, ''), COALESCE(c.key_style, 'bearer'),

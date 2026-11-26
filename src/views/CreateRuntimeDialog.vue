@@ -37,7 +37,7 @@ const profile = ref({
   name: "",
   commandLine: "claude",
   description: "",
-  maxConcurrent: 2,
+  maxConcurrent: 6,
 });
 const gateway = ref(gatewayDraftFor("claude"));
 const gatewayOptions = computed(() => ({
@@ -140,7 +140,7 @@ function pickProfile(id: string) {
     name: t(`runtime.family.${id}`),
     commandLine: spec.command,
     description: "",
-    maxConcurrent: 2,
+    maxConcurrent: 6,
   };
   locked.value = false;
   legacy.value = false;

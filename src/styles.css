@@ -11255,6 +11255,11 @@ body.is-resizing-panels .inbox-files-resize::after {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.inbox-channel-mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-text-secondary);
+}
 .inbox-list strong,
 .inbox-list small {
   overflow: hidden;
@@ -11386,10 +11391,17 @@ body.is-dragging-inbox-float * {
 /* 消息列表左右内边距是 clamp(16px, 5vw, 72px)，输入框在列表外面，用同样的左边距对齐 */
 .inbox-detail .chat-surface > .chat-editing-dock,
 .inbox-detail .task-activity.is-thread > .task-activity-dock > .chat-composer,
+.inbox-detail .task-activity.is-thread > .task-activity-dock > .chat-question-card,
+.inbox-detail .task-activity.is-thread > .task-activity-dock > .chat-queue,
 .inbox-detail .task-activity.is-thread > .task-activity-dock > .task-create-error {
   width: min(720px, calc(100% - 2 * clamp(16px, 5vw, 72px)));
   max-width: none;
   margin: 0 auto 14px clamp(16px, 5vw, 72px);
+}
+.inbox-detail .chat-editing-dock > .chat-question-card {
+  box-sizing: border-box;
+  width: 100%;
+  align-self: stretch;
 }
 .inbox-detail > .shared-chat-panel {
   grid-template-rows: minmax(0, 1fr);
@@ -11457,7 +11469,8 @@ body.is-dragging-inbox-float * {
 }
 .task-activity.is-docked > .task-activity-dock > .chat-composer,
 .task-activity.is-docked > .task-activity-dock > .task-create-error,
-.task-activity.is-docked > .task-activity-dock > .chat-question-carousel {
+.task-activity.is-docked > .task-activity-dock > .chat-question-card,
+.task-activity.is-docked > .task-activity-dock > .chat-queue {
   width: 100%;
   margin: 0 0 14px;
 }

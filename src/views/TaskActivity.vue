@@ -2,7 +2,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, provide, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { chatMessagesKey } from "../components/chat/context-usage";
-import { ArrowUp, LoaderCircle, Plus, X } from "@lucide/vue";
+import { ArrowUp, ChevronDown, LoaderCircle, Pencil, Plus, Trash2, X } from "@lucide/vue";
 import type { ChatMessage, EditorSelectionContext, MessageAttachmentInput } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AssistantMessage from "../components/chat/AssistantMessage.vue";
@@ -16,7 +16,7 @@ import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import { extractQuestions } from "../components/chat/question-block";
 import { resolveQuestionStates } from "../components/chat/question-state";
 import { isGenUiEnabled } from "../components/chat/genui/block";
-import { feishuRecipients, formatAgentPrompt, type ComposerNode } from "../components/chat/composer-content";
+import { feishuRecipients, formatAgentPrompt, parseUserPromptNodes, visiblePromptText, type ComposerNode } from "../components/chat/composer-content";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
 import {
   listIsAtBottom,
@@ -63,11 +63,13 @@ const props = withDefaults(defineProps<{
   /** 任务详情：自管消息滚动，输入框固定在底部（对齐收件箱 thread）。 */
   docked?: boolean;
   historyViewOnly?: boolean;
+  hideComposer?: boolean;
   unreadMessageId?: string | null;
 }>(), {
   thread: false,
   docked: false,
   historyViewOnly: false,
+  hideComposer: false,
   unreadMessageId: null,
 });
 
@@ -165,6 +167,34 @@ const sessionRunning = computed(() =>
   ),
 );
 const sessionProcessing = computed(() => store.sessionProcessing(props.sessionId));
+const sessionQueue = computed(() =>
+  store.queuedMessages
+    .map((item, index) => ({ ...item, index }))
+    .filter((item) => item.sessionId === props.sessionId),
+);
+const queueCollapsed = ref(false);
+const queueHeld = computed(() => !sessionProcessing.value && store.awaitingAnswer(props.sessionId));
+
+function queuePreview(content: string, names: string[]) {
+  return [visiblePromptText(content), names.join("、")].filter(Boolean).join(" · ");
+}
+
+function queuePreviewShort(content: string, names: string[]) {
+  const full = queuePreview(content, names);
+  return full.length > 180 ? `${full.slice(0, 180)}…` : full;
+}
+
+function editQueued(index: number) {
+  if (!draftEmpty.value || pastes.value.length) {
+    pasteError.value = t("chat.composerBlockedEdit");
+    return;
+  }
+  const item = store.takeQueuedMessage(index);
+  if (!item) return;
+  const nodes = parseUserPromptNodes(item.content);
+  composer.value?.restore(nodes.length ? nodes : [{ type: "text", value: item.content }]);
+  draftEmpty.value = false;
+}
 const lastUserMessageId = computed(() => {
   for (let index = messages.value.length - 1; index >= 0; index -= 1) {
     if (messages.value[index]?.role === "user") return messages.value[index]!.id;
@@ -867,7 +897,42 @@ watch(
       @submit="answerQuestion"
       @skip="skipQuestion"
     />
+    <section
+      v-if="!hideComposer && sessionQueue.length"
+      class="chat-queue"
+      :class="{ collapsed: queueCollapsed, 'is-held': queueHeld, 'under-question': !!pendingQuestion }"
+    >
+      <button type="button" class="chat-queue-heading" :aria-expanded="!queueCollapsed" @click="queueCollapsed = !queueCollapsed">
+        <ChevronDown class="chat-queue-chevron" :size="13" />
+        <span>{{ t("chat.queueCount", { n: sessionQueue.length }) }}</span>
+        <small v-if="queueHeld">{{ t("chat.queueHeldHint") }}</small>
+        <small v-else-if="sessionProcessing">{{ t("chat.queueAfterTurnHint") }}</small>
+      </button>
+      <ol v-show="!queueCollapsed" class="chat-queue-list vs-scroll">
+        <li v-for="queued in sessionQueue" :key="queued.index" class="chat-queue-item">
+          <span class="chat-queue-dot" aria-hidden="true" />
+          <UiTooltip :content="queuePreview(queued.content, queued.attachments.map((item) => item.name))">
+            <span class="chat-queue-text">{{ queuePreviewShort(queued.content, queued.attachments.map((item) => item.name)) }}</span>
+          </UiTooltip>
+          <span class="chat-queue-actions">
+            <UiButton
+              variant="ghost"
+              size="small"
+              :tip="queueHeld ? t('chat.queueSkipQuestion') : t('chat.queueSendImmediate')"
+              @click="store.promoteQueuedMessage(queued.index)"
+            >{{ t("chat.queueSendNow") }}</UiButton>
+            <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.queueEdit')" @click="editQueued(queued.index)">
+              <Pencil :size="12" />
+            </UiButton>
+            <UiButton class="icon-button" variant="ghost" size="icon" :tip="t('chat.queueRemove')" @click="store.removeQueuedMessage(queued.index)">
+              <Trash2 :size="12" />
+            </UiButton>
+          </span>
+        </li>
+      </ol>
+    </section>
     <ChatComposer
+      v-if="!hideComposer"
       ref="composer"
       dictation
       allow-file-picker

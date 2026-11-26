@@ -1959,7 +1959,7 @@ pub fn get_custom_runtime(
     }
     let db = state.lock_db()?;
     db.query_row(
-        "SELECT c.id, c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 1),
+        "SELECT c.id, c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 6),
                 c.provider, c.protocol, c.api_url, c.models_json, c.env_json,
                 COALESCE(c.kind, 'profile'), COALESCE(c.description, ''),
                 COALESCE(c.wire_api, 'responses'), COALESCE(c.api_format, ''),
@@ -8285,7 +8285,7 @@ fn runtime_configuration(
     }
     let mut custom_statement = db
         .prepare(
-            "SELECT c.id, c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 1),
+            "SELECT c.id, c.name, c.command, c.args_json, COALESCE(s.max_concurrent, 6),
                     c.provider, c.protocol, c.api_url, c.models_json,
                     COALESCE(c.kind, 'profile'), COALESCE(c.description, '')
              FROM custom_runtimes c

@@ -36,7 +36,7 @@ fn runtime_specs() -> &'static [RuntimeSpec] {
                         name: entry.label.clone(),
                         provider: entry.id.clone(),
                         commands: detect_commands(id, primary),
-                        default_concurrency: if id == "cursor" { 3 } else { 2 },
+                        default_concurrency: 6,
                     }
                 })
                 .collect()

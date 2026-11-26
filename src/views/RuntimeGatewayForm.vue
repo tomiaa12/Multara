@@ -235,7 +235,7 @@ function submit() {
       promptCache: draft.value.promptCache,
     },
     env: parseEnvText(draft.value.envText),
-    maxConcurrent: Number(draft.value.maxConcurrent) || 2,
+    maxConcurrent: Number(draft.value.maxConcurrent) || 6,
   });
 }
 </script>

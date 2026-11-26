@@ -31,7 +31,7 @@ const provider = ref(props.provider);
 const name = ref(props.name);
 const commandLine = ref(props.commandLine || familyOf(props.provider).command);
 const description = ref(props.description);
-const maxConcurrent = ref(props.maxConcurrent || 2);
+const maxConcurrent = ref(props.maxConcurrent || 6);
 const advanced = ref(false);
 const missing = ref("");
 let probeTimer = 0;
@@ -75,7 +75,7 @@ function submit() {
     command: parsed.value.commandName,
     args: parsed.value.fixedArgs,
     description: description.value.trim(),
-    maxConcurrent: Number(maxConcurrent.value) || 2,
+    maxConcurrent: Number(maxConcurrent.value) || 6,
   });
 }
 </script>

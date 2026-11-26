@@ -10,7 +10,6 @@ use crate::{
 };
 
 pub fn list(db: &Connection) -> Result<Vec<Agent>, String> {
-    grant_miku_defaults(db)?;
     let locale = crate::app_locale::from_db(db);
     let mut statement = db
         .prepare(
@@ -89,7 +88,7 @@ pub fn get(db: &Connection, agent_id: &str) -> Result<Agent, String> {
         .ok_or_else(|| tr!("智能体不存在"))
 }
 
-/// 把扫描到、且用户没有关掉的 Skill / MCP 补到 Miku 上。其他智能体不补。
+/// 手动把一批 Skill / MCP 补到 Miku。列表和运行不再自动调用，Miku 与其他智能体一样要用户勾选。
 pub fn grant_miku_defaults(db: &Connection) -> Result<(), String> {
     let resources: Vec<(String, String)> = resources::scan()
         .into_iter()
