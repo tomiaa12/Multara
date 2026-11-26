@@ -78,13 +78,17 @@ export const useAppStore = defineStore("app", () => {
   const taskCreateStatus = ref<TaskStatus>("todo");
   /** 从待规划 / 待办列的加号打开时，状态已由那一列决定，弹窗不再提供选择。 */
   const taskCreateLockStatus = ref(false);
-  function openTaskCreate(status: TaskStatus = "todo", options?: { lockStatus?: boolean }) {
+  /** 待规划卡片点开时，接着编辑这一条，而不是新建。 */
+  const taskCreateTaskId = ref("");
+  function openTaskCreate(status: TaskStatus = "todo", options?: { lockStatus?: boolean; taskId?: string }) {
     taskCreateStatus.value = status;
     taskCreateLockStatus.value = options?.lockStatus === true;
+    taskCreateTaskId.value = options?.taskId ?? "";
     taskCreateOpen.value = true;
   }
   function closeTaskCreate() {
     taskCreateOpen.value = false;
+    taskCreateTaskId.value = "";
   }
   const activeSessionId = ref("welcome");
   /** 收件箱详情里当前打开的会话；该会话结束时只刷新条目、不增加未读。 */
@@ -2219,6 +2223,7 @@ export const useAppStore = defineStore("app", () => {
     taskCreateOpen,
     taskCreateStatus,
     taskCreateLockStatus,
+    taskCreateTaskId,
     openTaskCreate,
     closeTaskCreate,
     activeSessionId,

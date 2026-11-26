@@ -221,6 +221,10 @@ function openCreate(status: TaskStatus = "todo", lockStatus = false) {
 
 function openTask(task: Task) {
   if (skipClick) return;
+  if (task.status === "backlog") {
+    store.openTaskCreate("backlog", { lockStatus: true, taskId: task.id });
+    return;
+  }
   void router.push(`/tasks/${task.id}`);
 }
 
@@ -342,7 +346,7 @@ async function onCardMenu(id: string) {
   cardMenu.value = null;
   if (!task) return;
   if (id === "open") {
-    void router.push(`/tasks/${task.id}`);
+    openTask(task);
     return;
   }
   if (id === "copy") {

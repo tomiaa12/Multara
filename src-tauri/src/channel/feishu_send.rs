@@ -1169,6 +1169,7 @@ mod tests {
             source_meta: None,
             requested_mode: None,
             run_mode: None,
+            usage: None,
             feishu_sends: Vec::new(),
         }];
         fill_outbound_speakers(&db, &mut messages).unwrap();

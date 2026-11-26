@@ -11,6 +11,7 @@ import ComposerPasteImages from "../components/chat/ComposerPasteImages.vue";
 import { buildChatTargetOptions } from "../components/chat/chat-target-options";
 import {
   formatAgentPrompt,
+  parseUserPromptNodes,
   type ComposerNode,
 } from "../components/chat/composer-content";
 import {
@@ -32,7 +33,7 @@ import {
   type RequirementCategoryState,
 } from "./dashboard/requirement-categories";
 import { TASK_COLUMNS } from "./task-board";
-import { writeTaskMeta } from "./task-meta";
+import { readTaskMeta, writeTaskMeta } from "./task-meta";
 import { requirementIds, syncRequirementChips } from "./task-project-links";
 import { escapeClosesDialog } from "./dialog-escape";
 import { confirmDialog } from "../components/ui/confirm-dialog";
@@ -96,6 +97,28 @@ const assigneeId = computed(() => {
   }
   return form.agentId.replace(/^agent:/, "");
 });
+const editingTask = store.data?.tasks.find((item) => item.id === store.taskCreateTaskId) ?? null;
+const editingId = editingTask?.id ?? "";
+if (editingTask) {
+  form.status = editingTask.status;
+  const session = store.data?.sessions.find((item) => item.id === editingTask.sessionId);
+  form.projectIds = session?.projectIds?.length
+    ? [...session.projectIds]
+    : session?.projectId
+      ? [session.projectId]
+      : [];
+  form.labels = [...(editingTask.labels?.length ? editingTask.labels : readTaskMeta(editingTask.id).labels)];
+  form.agentId = session?.targetType === "squad"
+    ? `squad:${session.targetId}`
+    : `agent:${editingTask.agentId}`;
+}
+const draftNodes = editingTask ? parseUserPromptNodes(editingTask.description) : [];
+const initialNodes: ComposerNode[] = draftNodes.length ? draftNodes : [];
+if (editingTask) {
+  composerEmpty.value = !draftNodes.some((node) =>
+    node.type === "chip" || (node.type === "text" && node.value.replace(/\u00a0/g, " ").trim()),
+  );
+}
 const targetOptions = computed(() =>
   buildChatTargetOptions(
     agents.value,
@@ -316,6 +339,18 @@ async function create() {
     const attachments = pastes.value.map(({ name, path, mimeType, size }) => ({ name, path, mimeType, size }));
     const titleSeed = description || attachments[0]?.name || "";
     const title = backend.titleFromPrompt(titleSeed);
+    if (editingId) {
+      await store.updateTask({
+        taskId: editingId,
+        description,
+        status: form.status,
+        agentId: assigneeId.value,
+      });
+      writeTaskMeta(editingId, { labels: [...form.labels] });
+      await store.updateTaskMeta({ taskId: editingId, labels: [...form.labels] });
+      emit("close");
+      return;
+    }
     // 有粘贴附件时先建为 backlog，再 send 带附件开跑，避免 todo 创建时无附件先排队。
     const createStatus = attachments.length && form.status === "todo" ? "backlog" : form.status;
     const task = await store.createTask({
@@ -333,7 +368,7 @@ async function create() {
       if (attachments.length) {
         store.send(description || title, task.sessionId, attachments, { mode: "auto" });
       }
-      if (titleSeed) void store.nameTaskFromFirstPrompt(task.id, titleSeed, title);
+      if (titleSeed && form.status !== "backlog") void store.nameTaskFromFirstPrompt(task.id, titleSeed, title);
     }
     form.labels = [];
     form.projectIds = [];
@@ -373,7 +408,7 @@ async function create() {
         recent-place="task"
         :project-id="form.projectIds[0] ?? null"
         :placeholder="t('tasks.addDescription')"
-        :initial-nodes="[]"
+        :initial-nodes="initialNodes"
         :contexts="contexts"
         :target-options="targetOptions"
         :target-value="form.agentId"
@@ -430,11 +465,11 @@ async function create() {
           >
             <Plus :size="16" />
           </UiButton>
-          <label class="task-create-keep">
+          <label v-if="!editingId" class="task-create-keep">
             <input v-model="keepOpen" class="ui-checkbox" type="checkbox" />
             {{ t('tasks.keepOpen') }}
           </label>
-          <UiButton variant="primary" type="submit" :disabled="!canCreate">{{ t('tasks.createSubmit') }}</UiButton>
+          <UiButton variant="primary" type="submit" :disabled="!canCreate">{{ editingId ? t('common.save') : t('tasks.createSubmit') }}</UiButton>
         </template>
       </ChatComposer>
       <p v-if="error" class="task-create-error">{{ error }}</p>

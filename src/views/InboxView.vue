@@ -37,6 +37,13 @@ const reviewWidth = ref(REVIEW_DEFAULT_WIDTH);
 const railWidth = ref(readRailWidth());
 const reviewPane = ref<{ layout: () => void } | null>(null);
 const toolRail = ref<{ closeAll: () => void } | null>(null);
+const listScrolled = ref(false);
+
+function onListScroll(event: Event) {
+  const el = event.currentTarget;
+  if (!(el instanceof HTMLElement)) return;
+  listScrolled.value = el.scrollTop > 0;
+}
 const stageContent = ref(false);
 const stagePanelWidth = ref(0);
 const stageTerminal = ref(false);
@@ -435,18 +442,16 @@ onUnmounted(() => {
     }"
   >
     <aside class="inbox-rail">
-      <header>
-        <div class="inbox-rail-title">
-          <h1>{{ t("inbox.title") }}</h1>
-          <span v-if="unreadCount" class="ds-badge" data-tone="primary">{{ unreadBadgeLabel(unreadCount) }}</span>
-          <UiButton v-if="unreadCount" variant="ghost" size="small" @click="store.markInboxAllRead()">{{ t("common.markRead") }}</UiButton>
+      <header :class="{ 'is-scrolled': listScrolled }">
+        <div v-if="unreadCount" class="inbox-rail-title">
+          <span class="ds-badge" data-tone="primary">{{ unreadBadgeLabel(unreadCount) }}</span>
+          <UiButton variant="ghost" size="small" @click="store.markInboxAllRead()">{{ t("common.markRead") }}</UiButton>
         </div>
-        <p>{{ t("inbox.subtitle") }}</p>
         <div v-if="items.length" class="inbox-filters">
           <SegmentedTabs v-model="sourceFilter" :label="t('inbox.filterBySource')" :items="sourceTabs" />
         </div>
       </header>
-      <ul v-if="visibleItems.length" class="inbox-list vs-scroll">
+      <ul v-if="visibleItems.length" class="inbox-list vs-scroll" @scroll="onListScroll">
         <li v-for="item in visibleItems" :key="item.id">
           <button
             type="button"

@@ -11251,11 +11251,16 @@ body.is-resizing-panels .inbox-files-resize::after {
   z-index: 6;
 }
 .inbox-rail header {
+  position: relative;
+  z-index: 2;
   display: grid;
   gap: var(--spacing-1);
   min-width: 0;
-  padding: var(--spacing-5) var(--spacing-4) var(--spacing-3);
-  border-bottom: 1px solid var(--color-border-light);
+  padding: var(--spacing-3) var(--spacing-3) 0;
+  background: var(--color-bg-secondary);
+}
+.inbox-rail header.is-scrolled {
+  box-shadow: 0 8px 12px -8px rgb(0 0 0 / 40%);
 }
 .inbox-rail-title {
   display: flex;
@@ -11280,7 +11285,6 @@ body.is-resizing-panels .inbox-files-resize::after {
   display: flex;
   min-width: 0;
   max-width: 100%;
-  margin-top: var(--spacing-2);
 }
 /* 多筛选标签在窄栏内换行，避免横向撑破左侧 inbox 栏 */
 .inbox-filters .ds-segmented {
@@ -11370,6 +11374,8 @@ body.is-resizing-panels .inbox-files-resize::after {
 }
 .inbox-list strong > .ds-badge {
   flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  border-color: transparent;
 }
 .inbox-item-title {
   min-width: 0;
@@ -14249,8 +14255,14 @@ label.settings-row:hover {
 .req-empty-action .ui-button {
   min-width: 132px;
 }
-.req-search {
+.page-toolbar > .req-search {
+  flex: 0 0 auto;
   width: min(280px, 100%);
+  margin-left: auto;
+}
+.page-toolbar > .req-search > .ui-input {
+  width: 100%;
+  max-width: none;
 }
 .req-filters {
   display: grid;
@@ -14261,6 +14273,9 @@ label.settings-row:hover {
   align-items: center;
   gap: var(--spacing-2);
   min-width: 0;
+}
+.req-mode-row > .req-mode-create {
+  margin-left: auto;
 }
 .req-mode-label {
   flex: 0 0 auto;

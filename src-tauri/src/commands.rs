@@ -21,7 +21,7 @@ use crate::{
         CustomRuntimeInput, DashboardStats, FileContent, FileEntry, GitCommitFile, GitCommitInput,
         GitCompareRefs, GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus,
         GlobalResource, InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
-        MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunMode,
+        MessageAttachmentInput, MessageUsage, Project, PromptFile, QuickAction, ResourceSource, RunMode,
         RunStatistics, Runtime, Squad, SquadInput, StatisticGroup, Task,
         TaskInput, TimelineItem, UsageDay, WebhookDelivery, WebhookInput, Workspace,
         WorkspaceCandidate,
@@ -4180,6 +4180,26 @@ pub async fn list_chat_messages(
     .map_err(|error| error.to_string())?
 }
 
+fn message_usage(
+    input: Option<i64>,
+    output: Option<i64>,
+    cache_read: Option<i64>,
+    cache_write: Option<i64>,
+) -> Option<MessageUsage> {
+    let usage = MessageUsage {
+        input_tokens: input.unwrap_or(0),
+        output_tokens: output.unwrap_or(0),
+        cache_read_tokens: cache_read.unwrap_or(0),
+        cache_write_tokens: cache_write.unwrap_or(0),
+    };
+    if usage.input_tokens + usage.output_tokens + usage.cache_read_tokens + usage.cache_write_tokens
+        <= 0
+    {
+        return None;
+    }
+    Some(usage)
+}
+
 pub(crate) fn list_chat_messages_blocking(
     state: &AppState,
     session_id: String,
@@ -4206,7 +4226,11 @@ pub(crate) fn list_chat_messages_blocking(
                     ),
                     m.target_type, m.target_id, m.feedback,
                     m.source_type, m.source_meta_json, m.requested_mode,
-                    (SELECT mode FROM agent_runs WHERE id=m.run_id)
+                    (SELECT mode FROM agent_runs WHERE id=m.run_id),
+                    (SELECT input_tokens FROM agent_runs WHERE id=m.run_id),
+                    (SELECT output_tokens FROM agent_runs WHERE id=m.run_id),
+                    (SELECT cache_read_tokens FROM agent_runs WHERE id=m.run_id),
+                    (SELECT cache_write_tokens FROM agent_runs WHERE id=m.run_id)
              FROM messages m
              WHERE m.session_id=?1
              ORDER BY m.created_at, m.rowid",
@@ -4269,6 +4293,12 @@ pub(crate) fn list_chat_messages_blocking(
                 run_mode: row
                     .get::<_, Option<String>>(20)?
                     .and_then(|value| value.parse().ok()),
+                usage: message_usage(
+                    row.get(21)?,
+                    row.get(22)?,
+                    row.get(23)?,
+                    row.get(24)?,
+                ),
                 feishu_sends: Vec::new(),
             })
         })
@@ -4392,6 +4422,7 @@ fn orphan_run_messages(
             source_meta: None,
             requested_mode: None,
             run_mode: mode.parse().ok(),
+            usage: None,
             feishu_sends: Vec::new(),
         });
     }
@@ -5087,6 +5118,7 @@ fn send_message_inner_ext(
         source_meta: source.as_ref().map(|value| value.meta.clone()),
         requested_mode: Some(requested_mode),
         run_mode: None,
+        usage: None,
         feishu_sends: Vec::new(),
     };
     if let Some(turn_id) = &turn_id {

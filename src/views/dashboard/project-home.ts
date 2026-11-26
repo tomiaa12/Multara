@@ -317,13 +317,7 @@ export function buildHomeProject(
   const folderCount = workspaces.length - gitCount;
   // 有进行中 / 排队则只展示这些人；否则展示在该需求上工作过的智能体
   const workers = working.length || queued.length ? [...working, ...queued] : history;
-  const searchText = [
-    project.name,
-    project.note,
-    ...workspaces.map((item) => `${item.name} ${item.workPath} ${item.branch ?? ""}`),
-    ...history.map((item) => item.name),
-    ...workers.map((item) => item.name),
-  ].join(" ").toLowerCase();
+  const searchText = [project.name, project.note].join(" ").toLowerCase();
 
   return {
     id: project.id,

@@ -532,6 +532,15 @@ pub struct FeishuSendView {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MessageUsage {
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: String,
     pub session_id: String,
@@ -564,6 +573,9 @@ pub struct ChatMessage {
     pub requested_mode: Option<RunMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_mode: Option<RunMode>,
+    /// 这次运行回传的 token。没有计数时不带，界面按正文估算对话。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<MessageUsage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feishu_sends: Vec<FeishuSendView>,
 }

@@ -121,6 +121,7 @@ function tagsFor(projectId: string): RequirementCategory[] {
     .filter((item): item is RequirementCategory => Boolean(item));
 }
 const hasProjects = computed(() => Boolean(store.data?.projects.length));
+const compactHome = computed(() => rows.value.length > 5);
 const activeRows = computed(() => rows.value.filter((row) => !row.archived));
 const archivedCount = computed(() => rows.value.length - activeRows.value.length);
 const runningCount = computed(() => activeRows.value.filter((row) => row.filters.includes("running")).length);
@@ -415,7 +416,7 @@ const runShellStyle = computed(() => {
     </template>
 
     <template v-else>
-      <header class="page-header">
+      <header v-if="!compactHome" class="page-header">
         <div>
           <h1>{{ t("dashboard.title") }}</h1>
           <p>{{ t("dashboard.subtitle") }}</p>
@@ -439,9 +440,15 @@ const runShellStyle = computed(() => {
               :items="homeModeTabs"
               @update:model-value="onHomeMode"
             />
+            <UiButton v-if="compactHome" class="req-mode-create" variant="primary" @click="openCreate">
+              <Plus :size="15" /> {{ t("dashboard.create") }}
+            </UiButton>
           </div>
           <div class="page-toolbar">
-            <SegmentedTabs v-model="filter" :label="t('dashboard.filterLabel')" :items="homeTabs" />
+            <div class="page-toolbar-group">
+              <span class="req-mode-label">{{ t("dashboard.statusLabel") }}</span>
+              <SegmentedTabs v-model="filter" :label="t('dashboard.filterLabel')" :items="homeTabs" />
+            </div>
             <label class="ds-search req-search">
               <Search :size="14" />
               <UiInput v-model="query" type="search" :placeholder="t('dashboard.search')" />
