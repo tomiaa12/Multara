@@ -15,6 +15,7 @@ import {
 import { useRouter } from "vue-router";
 import { t } from "../i18n";
 import AddWorkspaceModal from "../components/dashboard/AddWorkspaceModal.vue";
+import FolderCleanupDialog from "../components/dashboard/FolderCleanupDialog.vue";
 import DeleteProjectDialog, {
   type DeleteWorkspaceChoice,
 } from "../components/dashboard/DeleteProjectDialog.vue";
@@ -78,6 +79,7 @@ const busy = ref(false);
 const error = ref("");
 const workspaceProjectId = ref("");
 const showWorkspacePicker = ref(false);
+const showCleanup = ref(false);
 const filter = ref<HomeFilter>("all");
 const query = ref("");
 const categories = sharedRequirementCategories();
@@ -422,6 +424,9 @@ const runShellStyle = computed(() => {
           <p>{{ t("dashboard.subtitle") }}</p>
         </div>
         <div class="header-actions">
+          <UiButton class="req-cleanup" variant="ghost" @click="showCleanup = true">
+            {{ t("dashboard.cleanup") }}
+          </UiButton>
           <UiButton variant="primary" @click="openCreate">
             <Plus :size="15" /> {{ t("dashboard.create") }}
           </UiButton>
@@ -440,9 +445,14 @@ const runShellStyle = computed(() => {
               :items="homeModeTabs"
               @update:model-value="onHomeMode"
             />
-            <UiButton v-if="compactHome" class="req-mode-create" variant="primary" @click="openCreate">
-              <Plus :size="15" /> {{ t("dashboard.create") }}
-            </UiButton>
+            <div v-if="compactHome" class="req-mode-actions">
+              <UiButton class="req-cleanup" variant="ghost" size="small" @click="showCleanup = true">
+                {{ t("dashboard.cleanup") }}
+              </UiButton>
+              <UiButton class="req-mode-create" variant="primary" @click="openCreate">
+                <Plus :size="15" /> {{ t("dashboard.create") }}
+              </UiButton>
+            </div>
           </div>
           <div class="page-toolbar">
             <div class="page-toolbar-group">
@@ -721,6 +731,8 @@ const runShellStyle = computed(() => {
         draftTags = draftTags.filter((item) => item !== id);
       }"
     />
+
+    <FolderCleanupDialog v-if="showCleanup" @close="showCleanup = false" />
 
     <AddWorkspaceModal
       v-if="showWorkspacePicker"

@@ -8,6 +8,7 @@ use std::{
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -714,6 +715,151 @@ pub async fn list_project_git_status(
                 )
             })
             .collect()
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDirSize {
+    pub id: String,
+    pub bytes: u64,
+    pub missing: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutGap {
+    pub workspace_id: String,
+    pub source_path: String,
+    pub branch: Option<String>,
+    pub kind: String,
+}
+
+/// 只统计这个目录里的真实文件。符号链接不跟随，也不计入。
+fn directory_bytes(path: &Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else {
+                total = total.saturating_add(meta.len());
+            }
+        }
+    }
+    total
+}
+
+fn local_branch_missing(git_command: &str, source: &str, branch: &str) -> bool {
+    let Ok(output) = std::process::Command::new(git_command)
+        .args([
+            "-C",
+            source,
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ])
+        .output()
+    else {
+        return false;
+    };
+    !output.status.success()
+}
+
+#[tauri::command]
+pub async fn workspace_directory_sizes(
+    workspace_ids: Vec<String>,
+    app: AppHandle,
+) -> Result<Vec<WorkspaceDirSize>, String> {
+    let _span = crate::diag::span("workspace_directory_sizes");
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let db = state.lock_db()?;
+        let mut sizes = Vec::new();
+        for id in workspace_ids {
+            let Ok(workspace) = get_workspace(&db, &id) else {
+                continue;
+            };
+            let path = Path::new(&workspace.work_path);
+            let Ok(meta) = std::fs::symlink_metadata(path) else {
+                sizes.push(WorkspaceDirSize {
+                    id,
+                    bytes: 0,
+                    missing: true,
+                });
+                continue;
+            };
+            // 工作目录本身若是软链接，不跟随到别的目录去统计。
+            if meta.file_type().is_symlink() {
+                sizes.push(WorkspaceDirSize {
+                    id,
+                    bytes: 0,
+                    missing: false,
+                });
+                continue;
+            }
+            let bytes = if meta.is_dir() {
+                directory_bytes(path)
+            } else {
+                meta.len()
+            };
+            sizes.push(WorkspaceDirSize {
+                id,
+                bytes,
+                missing: false,
+            });
+        }
+        Ok(sizes)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// 检出目录已经不在，或 worktree 对应的本地分支已经不在。
+#[tauri::command]
+pub async fn checkout_gaps(project_id: String, app: AppHandle) -> Result<Vec<CheckoutGap>, String> {
+    let _span = crate::diag::span("checkout_gaps");
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (git_command, workspaces) = {
+            let db = state.lock_db()?;
+            (
+                setting_value(&db, "gitExecutable", "git"),
+                list_project_workspaces(&db, &project_id)?,
+            )
+        };
+        let mut gaps = Vec::new();
+        for workspace in workspaces {
+            let missing_dir = !Path::new(&workspace.work_path).exists();
+            let missing_branch = workspace.isolation_mode == "worktree"
+                && workspace.branch.as_deref().is_some_and(|branch| {
+                    !branch.is_empty()
+                        && local_branch_missing(&git_command, &workspace.source_path, branch)
+                });
+            if !missing_dir && !missing_branch {
+                continue;
+            }
+            gaps.push(CheckoutGap {
+                workspace_id: workspace.id,
+                source_path: workspace.source_path,
+                branch: workspace.branch,
+                kind: workspace.kind.to_string(),
+            });
+        }
+        Ok(gaps)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -7647,6 +7793,23 @@ pub(crate) fn setting_value(db: &Connection, key: &str, default: &str) -> String
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn directory_bytes_counts_only_real_files() {
+        let parent = tempfile::tempdir().unwrap();
+        let folder = parent.path().join("work");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("real.txt"), "abcd").unwrap();
+        let outside = parent.path().join("big.txt");
+        std::fs::write(&outside, "0123456789").unwrap();
+        std::os::unix::fs::symlink(&outside, folder.join("link.txt")).unwrap();
+        let other = parent.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(other.join("nested.txt"), "xxxxxxxx").unwrap();
+        std::os::unix::fs::symlink(&other, folder.join("linkdir")).unwrap();
+        assert_eq!(super::directory_bytes(&folder), 4);
+    }
+
     #[test]
     fn collects_referenced_requirement_ids_in_order_without_duplicates() {
         let content = "改一下\n[实体引用] requirement p1 %E9%9C%80%E6%B1%82\n[实体引用] agent a1 x\n[实体引用] requirement p2 y\n[实体引用] requirement p1 z";

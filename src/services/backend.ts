@@ -1936,6 +1936,25 @@ export async function listProjectGitStatus(projectId: string): Promise<GitReposi
   return invoke<GitRepositoryStatus[]>("list_project_git_status", { projectId });
 }
 
+export async function workspaceDirectorySizes(
+  workspaceIds: string[],
+): Promise<{ id: string; bytes: number; missing: boolean }[]> {
+  if (!hasBackend() || !workspaceIds.length) return [];
+  return invoke("workspace_directory_sizes", { workspaceIds });
+}
+
+export type CheckoutGap = {
+  workspaceId: string;
+  sourcePath: string;
+  branch: string | null;
+  kind: string;
+};
+
+export async function checkoutGaps(projectId: string): Promise<CheckoutGap[]> {
+  if (!hasBackend()) return [];
+  return invoke<CheckoutGap[]>("checkout_gaps", { projectId });
+}
+
 export async function gitIndexFile(workspaceId: string, path: string): Promise<GitIndexFile> {
   if (!hasBackend()) return { inRepo: false, tracked: false, binary: false, content: "" };
   return invoke<GitIndexFile>("git_index_file", { workspaceId, path });

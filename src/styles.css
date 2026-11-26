@@ -14277,6 +14277,96 @@ label.settings-row:hover {
 .req-mode-row > .req-mode-create {
   margin-left: auto;
 }
+.req-mode-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.req-cleanup {
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+.cleanup-modal {
+  width: min(760px, calc(100vw - 48px));
+}
+.modal.cleanup-modal > .cleanup-body {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-3);
+  max-height: min(60vh, 560px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.cleanup-empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+.cleanup-group,
+.cleanup-group ul,
+.cleanup-group li {
+  min-width: 0;
+  max-width: 100%;
+}
+.cleanup-group ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0 0 0 28px;
+  display: grid;
+  gap: 6px;
+}
+.cleanup-project,
+.cleanup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cleanup-name {
+  flex: 0 1 auto;
+  max-width: 34%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cleanup-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.cleanup-path .ds-path-text {
+  color: inherit;
+  font-size: inherit;
+}
+.cleanup-flag {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.cleanup-size {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.cleanup-mark {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  font-size: var(--font-size-sm);
+}
+.cleanup-mark[data-kind="worktree"] {
+  color: var(--color-text-primary);
+}
 .req-mode-label {
   flex: 0 0 auto;
   color: var(--color-text-secondary);

@@ -9,9 +9,11 @@ import {
   branchNameFromRequirement,
   defaultNewBranchName,
 } from "../workbench/workspace-mode";
+import { matchPreferredBranch } from "../../views/dashboard/folder-cleanup";
 import {
   createPickerItem,
   isAlreadyBoundPath,
+  normalizeBindPath,
   type BoundWorkspace,
   type GitMode,
   type PickerItem,
@@ -26,6 +28,8 @@ const props = withDefaults(
     branchPrefix?: string;
     allowBranchSettings?: boolean;
     initialPaths?: string[];
+    /** 路径 → 之前的上游或分支。对得上才预选，对不上保持新建分支。 */
+    preferredBranches?: Record<string, string>;
   }>(),
   {
     requirementName: "",
@@ -34,6 +38,7 @@ const props = withDefaults(
     branchPrefix: "feat",
     allowBranchSettings: false,
     initialPaths: () => [],
+    preferredBranches: () => ({}),
   },
 );
 
@@ -63,6 +68,14 @@ function isAlreadyBound(path: string) {
   return isAlreadyBoundPath(path, props.bound);
 }
 
+function preferredBranchFor(path: string) {
+  const key = normalizeBindPath(path);
+  for (const [candidate, branch] of Object.entries(props.preferredBranches)) {
+    if (normalizeBindPath(candidate) === key) return branch;
+  }
+  return "";
+}
+
 async function addPaths(sourcePaths: string[]) {
   if (!sourcePaths.length) return;
   error.value = "";
@@ -74,13 +87,18 @@ async function addPaths(sourcePaths: string[]) {
   for (const candidate of scanned) {
     if (existing.has(candidate.path)) continue;
     existing.add(candidate.path);
+    const created = createPickerItem(
+      candidate,
+      props.requirementName,
+      props.knownBranches,
+      props.branchPrefix,
+    );
+    const preferred = preferredBranchFor(candidate.path);
+    const branch = matchPreferredBranch(candidate.branches, preferred);
     next.push(
-      createPickerItem(
-        candidate,
-        props.requirementName,
-        props.knownBranches,
-        props.branchPrefix,
-      ),
+      branch && candidate.kind === "git"
+        ? { ...created, gitMode: "worktree-existing", checkoutName: branch, baseRef: branch }
+        : created,
     );
   }
   items.value = next;

@@ -18,8 +18,10 @@ const props = withDefaults(
     projectId: string;
     /** 打开时预扫并填入的绝对路径 */
     initialPaths?: string[];
+    /** 路径 → 之前的上游或分支 */
+    preferredBranches?: Record<string, string>;
   }>(),
-  { initialPaths: () => [] },
+  { initialPaths: () => [], preferredBranches: () => ({}) },
 );
 
 const emit = defineEmits<{
@@ -94,6 +96,7 @@ function submit() {
           :known-branches="knownBranches"
           :branch-prefix="branchPrefix"
           :initial-paths="initialPaths"
+          :preferred-branches="preferredBranches"
           allow-branch-settings
           @settings="openBranchSettings"
         />
