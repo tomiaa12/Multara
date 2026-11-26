@@ -3,14 +3,57 @@
 use serde_json::{json, Value};
 
 pub fn markdown_card(text: &str) -> Value {
+    elements_card(vec![json!({ "tag": "markdown", "content": text })])
+}
+
+pub fn elements_card(elements: Vec<Value>) -> Value {
     json!({
         "schema": "2.0",
         "config": { "update_multi": true },
-        "body": {
-            "elements": [
-                { "tag": "markdown", "content": text }
-            ]
-        }
+        "body": { "elements": elements }
+    })
+}
+
+/// 飞书 Markdown 不会把竖线行画成表格，要单独的 table 组件。
+pub fn table_element(headers: &[String], rows: &[Vec<String>]) -> Value {
+    let columns: Vec<Value> = headers
+        .iter()
+        .enumerate()
+        .map(|(index, label)| {
+            json!({
+                "name": format!("c{index}"),
+                "display_name": label,
+                "data_type": "text",
+                "width": "auto",
+                "horizontal_align": "left"
+            })
+        })
+        .collect();
+    let records: Vec<Value> = rows
+        .iter()
+        .map(|row| {
+            let mut record = serde_json::Map::new();
+            for index in 0..headers.len() {
+                let cell = row.get(index).map(String::as_str).unwrap_or("");
+                record.insert(format!("c{index}"), Value::String(cell.to_string()));
+            }
+            Value::Object(record)
+        })
+        .collect();
+    let page_size = rows.len().clamp(1, 10);
+    json!({
+        "tag": "table",
+        "page_size": page_size,
+        "row_height": "low",
+        "header_style": {
+            "text_align": "left",
+            "text_size": "normal",
+            "background_style": "grey",
+            "bold": true,
+            "lines": 1
+        },
+        "columns": columns,
+        "rows": records
     })
 }
 

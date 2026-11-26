@@ -485,17 +485,24 @@ fn send_one(
     // IM 渲不了 GenUI：把界面块转成可读文字（与前端 to-text 同思路），截图回传另做。
     let body = expand_genui(&body);
     let text = format_outbound(&installation, delivery, &body);
-    let chunks = split_message(&text, OUTBOUND_CHUNK_CHARS);
+    let table_card = feishu_table_card(&text);
+    let payloads: Vec<(&str, String)> = if let Some(payload) = table_card {
+        vec![("interactive", payload)]
+    } else {
+        split_message(&text, OUTBOUND_CHUNK_CHARS)
+            .into_iter()
+            .filter(|chunk| !chunk.trim().is_empty())
+            .map(|chunk| {
+                if super::router::looks_like_markdown(&chunk) {
+                    ("interactive", card::markdown_card(&chunk).to_string())
+                } else {
+                    ("text", json!({ "text": chunk }).to_string())
+                }
+            })
+            .collect()
+    };
     let mut first = true;
-    for chunk in chunks {
-        if chunk.trim().is_empty() {
-            continue;
-        }
-        let (msg_type, payload) = if super::router::looks_like_markdown(&chunk) {
-            ("interactive", card::markdown_card(&chunk).to_string())
-        } else {
-            ("text", json!({ "text": chunk }).to_string())
-        };
+    for (msg_type, payload) in payloads {
         let sent = match send_target(&api, delivery, msg_type, &payload, first) {
             Ok(sent) => sent,
             Err(first_error) => api
@@ -1056,6 +1063,131 @@ pub fn format_outbound(
     text
 }
 
+/// 连续的竖线行收成飞书 table；标题和表后的说明仍是 markdown。装不下就退回原来的文本卡片。
+fn feishu_table_card(text: &str) -> Option<String> {
+    let elements = feishu_elements(text);
+    if !elements
+        .iter()
+        .any(|element| element.get("tag").and_then(serde_json::Value::as_str) == Some("table"))
+    {
+        return None;
+    }
+    let payload = card::elements_card(elements).to_string();
+    (payload.chars().count() <= OUTBOUND_CHUNK_CHARS).then_some(payload)
+}
+
+fn feishu_elements(text: &str) -> Vec<serde_json::Value> {
+    let mut elements = Vec::new();
+    let mut prose = String::new();
+    let mut pending: Vec<Vec<String>> = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    let flush_prose = |prose: &mut String, elements: &mut Vec<serde_json::Value>| {
+        let content = prose.trim();
+        if !content.is_empty() {
+            elements.push(json!({ "tag": "markdown", "content": content }));
+        }
+        prose.clear();
+    };
+    let flush_pending = |pending: &mut Vec<Vec<String>>,
+                         prose: &mut String,
+                         elements: &mut Vec<serde_json::Value>| {
+        if pending.len() >= 2 && pending[0].len() >= 2 {
+            flush_prose(prose, elements);
+            let headers = pending[0].clone();
+            let rows = pending[1..].to_vec();
+            elements.push(card::table_element(&headers, &rows));
+        } else {
+            for row in pending.iter() {
+                prose.push_str(&row.join(" | "));
+                prose.push('\n');
+            }
+        }
+        pending.clear();
+    };
+    for line in text.split('\n') {
+        if let Some((mark, len)) = fence {
+            prose.push_str(line);
+            prose.push('\n');
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            let closes = trimmed.starts_with(mark)
+                && trimmed.chars().take_while(|ch| *ch == mark).count() >= len
+                && trimmed
+                    .trim_start_matches(mark)
+                    .trim()
+                    .is_empty();
+            if closes {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some((mark, len)) = opening_fence(line) {
+            flush_pending(&mut pending, &mut prose, &mut elements);
+            fence = Some((mark, len));
+            prose.push_str(line);
+            prose.push('\n');
+            continue;
+        }
+        match pipe_row(line) {
+            PipeRow::Cells(cells)
+                if pending.is_empty() || cells.len() == pending[0].len() =>
+            {
+                pending.push(cells);
+            }
+            PipeRow::Cells(cells) => {
+                flush_pending(&mut pending, &mut prose, &mut elements);
+                pending.push(cells);
+            }
+            PipeRow::Separator if !pending.is_empty() => {}
+            PipeRow::Separator | PipeRow::Other => {
+                flush_pending(&mut pending, &mut prose, &mut elements);
+                prose.push_str(line);
+                prose.push('\n');
+            }
+        }
+    }
+    flush_pending(&mut pending, &mut prose, &mut elements);
+    flush_prose(&mut prose, &mut elements);
+    elements
+}
+
+fn opening_fence(line: &str) -> Option<(char, usize)> {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let mark = trimmed.chars().next().filter(|ch| *ch == '`' || *ch == '~')?;
+    let len = trimmed.chars().take_while(|ch| *ch == mark).count();
+    (len >= 3).then_some((mark, len))
+}
+
+enum PipeRow {
+    Cells(Vec<String>),
+    Separator,
+    Other,
+}
+
+fn pipe_row(line: &str) -> PipeRow {
+    let trimmed = line.trim();
+    if !trimmed.contains('|') {
+        return PipeRow::Other;
+    }
+    let mut cells: Vec<&str> = trimmed.split('|').collect();
+    if trimmed.starts_with('|') && cells.first().is_some_and(|cell| cell.trim().is_empty()) {
+        cells.remove(0);
+    }
+    if trimmed.ends_with('|') && cells.last().is_some_and(|cell| cell.trim().is_empty()) {
+        cells.pop();
+    }
+    if cells.len() < 2 {
+        return PipeRow::Other;
+    }
+    let cells: Vec<String> = cells.into_iter().map(|cell| cell.trim().to_string()).collect();
+    if cells.iter().all(|cell| {
+        let cell = cell.as_str();
+        !cell.is_empty() && cell.chars().all(|ch| ch == '-' || ch == ':')
+    }) {
+        return PipeRow::Separator;
+    }
+    PipeRow::Cells(cells)
+}
+
 /// 按行拆分，单行超过上限时再按字符硬切；长度累计计数，整体 O(n)。
 /// 单条飞书消息的分段长度。主动发送超过这段就拒绝，不拆成多条。
 pub(crate) const OUTBOUND_CHUNK_CHARS: usize = 18_000;
@@ -1232,7 +1364,7 @@ pub fn recover_pending(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_genui, join_reply_parts, split_message, split_questions};
+    use super::{expand_genui, feishu_elements, feishu_table_card, join_reply_parts, split_message, split_questions};
 
     #[test]
     fn joins_multi_agent_replies_with_names() {
@@ -1251,6 +1383,38 @@ mod tests {
     fn joins_single_agent_without_name_prefix() {
         let parts = vec![("Miku".to_string(), "只有一句。".to_string())];
         assert_eq!(join_reply_parts(&parts).as_deref(), Some("只有一句。"));
+    }
+
+    #[test]
+    fn turns_pipe_rows_into_a_feishu_table() {
+        let text = "**税务信息缺失（按开户来源）**\n来源 | 客户数 | 缺税务国\n自研APP | 266277 | 1\n合计 | 359644 | 3\n\n统计口径";
+        let payload = feishu_table_card(text).expect("table card");
+        let card: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let elements = card["body"]["elements"].as_array().unwrap();
+        assert_eq!(elements[0]["tag"], "markdown");
+        assert!(elements[0]["content"].as_str().unwrap().contains("税务信息缺失"));
+        assert_eq!(elements[1]["tag"], "table");
+        assert_eq!(elements[1]["columns"][0]["display_name"], "来源");
+        assert_eq!(elements[1]["columns"][1]["display_name"], "客户数");
+        assert_eq!(elements[1]["rows"][0]["c0"], "自研APP");
+        assert_eq!(elements[1]["rows"][0]["c1"], "266277");
+        assert_eq!(elements[1]["rows"][1]["c0"], "合计");
+        assert_eq!(elements[2]["content"], "统计口径");
+    }
+
+    #[test]
+    fn markdown_table_separator_is_not_a_data_row() {
+        let text = "| 来源 | 客户数 |\n| --- | --- |\n| 自研APP | 266277 |";
+        let elements = feishu_elements(text);
+        assert_eq!(elements.len(), 1);
+        assert_eq!(elements[0]["tag"], "table");
+        assert_eq!(elements[0]["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(elements[0]["rows"][0]["c0"], "自研APP");
+    }
+
+    #[test]
+    fn a_single_pipe_line_stays_text() {
+        assert!(feishu_table_card("只要一行 a | b").is_none());
     }
 
     #[test]
