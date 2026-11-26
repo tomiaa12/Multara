@@ -42,6 +42,19 @@ export function scmBusyTitle(busy: string, own: string | string[], title: string
   return title;
 }
 
+/** 每个工作区只看自己的进行中操作，别的仓库正在发布不会把这一条清掉。 */
+export function workspaceBusyKey(keys: readonly string[], workspaceId: string): string {
+  return keys.find((key) => key.endsWith(`:${workspaceId}`)) ?? "";
+}
+
+export function retainBusyKey(keys: readonly string[], key: string): string[] {
+  return keys.includes(key) ? [...keys] : [...keys, key];
+}
+
+export function releaseBusyKey(keys: readonly string[], key: string): string[] {
+  return keys.filter((item) => item !== key);
+}
+
 const commitMessageHistory = new Map<string, string[]>();
 const commitMessageCursor = new Map<string, number>();
 

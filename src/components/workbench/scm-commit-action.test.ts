@@ -8,7 +8,10 @@ import {
   publishSkipsStagedChanges,
   publishWithoutCommitConfirm,
   scmPrimaryAction,
+  releaseBusyKey,
+  retainBusyKey,
   stepCommitMessage,
+  workspaceBusyKey,
   applyPreparedCommitMessage,
   rememberCommitMessage,
   resetCommitMessageCursor,
@@ -20,6 +23,16 @@ beforeEach(() => {
 
 const published = { hasRemote: true, upstream: "origin/main", merging: false };
 const unpublished = { hasRemote: true, upstream: null, merging: false };
+
+describe("workspaceBusyKey", () => {
+  test("publishing one repository does not clear the other", () => {
+    const first = retainBusyKey([], "push:repo-a");
+    const both = retainBusyKey(first, "push:repo-b");
+    expect(workspaceBusyKey(both, "repo-a")).toBe("push:repo-a");
+    expect(workspaceBusyKey(releaseBusyKey(both, "push:repo-b"), "repo-a")).toBe("push:repo-a");
+    expect(workspaceBusyKey(releaseBusyKey(both, "push:repo-a"), "repo-a")).toBe("");
+  });
+});
 
 describe("scmPrimaryAction", () => {
   test("unpublished branch with a remote uses 发布分支", () => {

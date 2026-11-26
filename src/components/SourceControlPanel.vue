@@ -31,7 +31,10 @@ import {
   publishSkipsStagedChanges,
   publishWithoutCommitConfirm,
   publishStagedLeftNotice,
+  releaseBusyKey,
   rememberCommitMessage,
+  retainBusyKey,
+  workspaceBusyKey,
 } from "./workbench/scm-commit-action";
 import { gitStatusForWorkspaces } from "./workbench/git-status-scope";
 import { renameBranchNotice } from "./workbench/scm-branch";
@@ -87,7 +90,25 @@ const mergeDialogItem = computed(() =>
   items.value.find((item) => item.workspace.id === mergeDialogWorkspaceId.value && item.repository) ?? null,
 );
 const loading = ref(false);
-const busy = ref("");
+const busyKeys = ref<string[]>([]);
+const busyCounts = new Map<string, number>();
+
+function occupy(key: string) {
+  busyCounts.set(key, (busyCounts.get(key) ?? 0) + 1);
+  busyKeys.value = retainBusyKey(busyKeys.value, key);
+}
+
+function release(key: string) {
+  const left = (busyCounts.get(key) ?? 1) - 1;
+  if (left > 0) {
+    busyCounts.set(key, left);
+    return;
+  }
+  busyCounts.delete(key);
+  busyKeys.value = releaseBusyKey(busyKeys.value, key);
+}
+
+const anyBusy = computed(() => busyKeys.value.length > 0);
 const error = ref("");
 const notice = ref("");
 const hookFailure = ref<GitHookFailure | null>(null);
@@ -276,7 +297,7 @@ async function run(
   plan?: { workspaceId: string; kind: HookPlanKind },
   refreshOptions?: SourceControlRefreshOptions,
 ) {
-  busy.value = key;
+  occupy(key);
   error.value = "";
   notice.value = "";
   hookFailure.value = null;
@@ -294,7 +315,7 @@ async function run(
       error.value = cause instanceof Error ? cause.message : String(cause);
     }
   } finally {
-    busy.value = "";
+    release(key);
   }
 }
 
@@ -328,14 +349,15 @@ function openGitSettings(section: string) {
 }
 
 async function generateMessage(workspaceId: string) {
-  busy.value = `ai:${workspaceId}`;
+  const key = `ai:${workspaceId}`;
+  occupy(key);
   error.value = "";
   try {
     messages[workspaceId] = await backend.generateGitCommitMessage(workspaceId);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   } finally {
-    busy.value = "";
+    release(key);
   }
 }
 
@@ -621,7 +643,7 @@ defineExpose({ refresh, revealCommit });
           <Codicon v-if="viewMode === 'list'" name="list-tree" />
           <Codicon v-else name="list-flat" />
         </UiButton>
-        <UiButton variant="ghost" size="icon" :tip="t('scm.refresh')" :disabled="Boolean(busy)" @click="refresh({ history: true })">
+        <UiButton variant="ghost" size="icon" :tip="t('scm.refresh')" :disabled="anyBusy" @click="refresh({ history: true })">
           <Codicon name="refresh" />
         </UiButton>
       </template>
@@ -631,8 +653,8 @@ defineExpose({ refresh, revealCommit });
         <p v-for="(line, index) in hookDetails" :key="index" class="scm-hook-line">{{ line }}</p>
       </div>
       <div class="scm-hook-options">
-        <UiButton v-if="hookFailure.repairable" size="small" variant="primary" type="button" :disabled="Boolean(busy)" @click="repairHookRuntime">{{ t("scm.repairRuntime") }}</UiButton>
-        <UiButton v-if="hookFailure.skippable" size="small" type="button" :disabled="Boolean(busy)" @click="skipHooksOnce">{{ t("scm.skipHooks") }}</UiButton>
+        <UiButton v-if="hookFailure.repairable" size="small" variant="primary" type="button" :disabled="anyBusy" @click="repairHookRuntime">{{ t("scm.repairRuntime") }}</UiButton>
+        <UiButton v-if="hookFailure.skippable" size="small" type="button" :disabled="anyBusy" @click="skipHooksOnce">{{ t("scm.skipHooks") }}</UiButton>
       </div>
     </div>
     <UiNotice v-else-if="error" class="scm-error" tone="error" sticky :message="error" @close="error = ''" />
@@ -647,7 +669,7 @@ defineExpose({ refresh, revealCommit });
       :expanded="!collapsedRepos.has(item.workspace.id)"
       :workspace="item.workspace"
       :repository="item.repository"
-      :busy="busy"
+      :busy="workspaceBusyKey(busyKeys, item.workspace.id)"
       :loading="loading"
       :view-mode="viewMode"
       :compact="items.length === 1"
