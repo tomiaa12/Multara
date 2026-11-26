@@ -265,14 +265,6 @@ export type TaskStatus =
   | "blocked"
   | "cancelled";
 
-export type TaskPriority = "none" | "urgent" | "high" | "medium" | "low";
-
-export interface TaskChecklistItem {
-  id: string;
-  text: string;
-  done: boolean;
-}
-
 export interface Task {
   id: string;
   sessionId: string;
@@ -283,9 +275,7 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   parentTaskId?: string | null;
-  priority?: TaskPriority;
   labels?: string[];
-  checklist?: TaskChecklistItem[];
   defaultMode?: RunMode;
 }
 

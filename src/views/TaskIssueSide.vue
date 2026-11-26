@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { ScrollText, User } from "@lucide/vue";
 import type { TaskRunRecord, TaskStatus } from "../domain/types";
 import {
@@ -25,29 +24,18 @@ import {
   sharedRequirementCategories,
   type RequirementCategoryState,
 } from "./dashboard/requirement-categories";
-import { PRIORITY_OPTIONS, readTaskMeta, writeTaskMeta, type TaskPriority } from "./task-meta";
+import { readTaskMeta, writeTaskMeta } from "./task-meta";
 import { t } from "../i18n";
-
-const PRIORITY_KEYS: Record<TaskPriority, string> = {
-  none: "tasks.priority.none",
-  urgent: "tasks.priority.urgent",
-  high: "tasks.priority.high",
-  medium: "tasks.priority.medium",
-  low: "tasks.priority.low",
-};
 
 const props = defineProps<{
   taskId: string;
 }>();
 
 const store = useAppStore();
-const router = useRouter();
 const showTagManage = ref(false);
 const categories = sharedRequirementCategories();
 const runs = ref<Awaited<ReturnType<typeof backend.listTaskRuns>>>([]);
 const metaTick = ref(0);
-const checklistDraft = ref("");
-const childDraft = ref("");
 
 const task = computed(() => store.data?.tasks.find((item) => item.id === props.taskId));
 const session = computed(() => store.data?.sessions.find((item) => item.id === task.value?.sessionId));
@@ -64,7 +52,7 @@ const projects = computed(() =>
 );
 const meta = computed(() => {
   void metaTick.value;
-  return task.value ? readTaskMeta(task.value.id) : { priority: "none" as TaskPriority, labels: [] as string[] };
+  return task.value ? readTaskMeta(task.value.id) : { labels: [] as string[] };
 });
 const taskLabelIds = computed(() => {
   const known = new Map(categories.value.categories.map((item) => [item.id, item.id]));
@@ -77,10 +65,6 @@ const taskLabelIds = computed(() => {
   }
   return ids;
 });
-const childTasks = computed(() =>
-  (store.data?.tasks ?? []).filter((item) => item.parentTaskId === task.value?.id),
-);
-
 watch(
   () => task.value?.id,
   (id) => {
@@ -97,14 +81,6 @@ watch(
   { immediate: true },
 );
 
-watch(
-  () => childTasks.value.map((item) => item.id).join(","),
-  async (current, previous) => {
-    if (!task.value || current === previous) return;
-    await store.loadMessages(task.value.sessionId);
-  },
-);
-
 function formatDate(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -114,18 +90,6 @@ function formatDate(iso: string) {
 async function changeStatus(status: TaskStatus) {
   if (!task.value || task.value.status === status) return;
   await store.updateTaskStatus(task.value.id, status);
-}
-
-async function changeAgent(agentId: string) {
-  if (!task.value || !agentId || task.value.agentId === agentId) return;
-  await store.updateTask({ taskId: task.value.id, agentId });
-}
-
-async function changePriority(priority: TaskPriority) {
-  if (!task.value) return;
-  writeTaskMeta(task.value.id, { priority });
-  metaTick.value += 1;
-  await store.updateTaskMeta({ taskId: task.value.id, priority });
 }
 
 function persistCategories(next: RequirementCategoryState) {
@@ -152,39 +116,6 @@ async function onTagCreate(name: string) {
   const id = createCategory(name);
   if (!id) return;
   await setTaskLabels([...taskLabelIds.value, id]);
-}
-
-async function addChecklist() {
-  if (!task.value) return;
-  const text = checklistDraft.value.trim();
-  if (!text) return;
-  const checklist = [...(task.value.checklist ?? []), { id: crypto.randomUUID(), text, done: false }];
-  checklistDraft.value = "";
-  await store.updateTaskMeta({ taskId: task.value.id, checklist });
-}
-
-async function toggleChecklist(id: string) {
-  if (!task.value) return;
-  const checklist = (task.value.checklist ?? []).map((item) =>
-    item.id === id ? { ...item, done: !item.done } : item,
-  );
-  await store.updateTaskMeta({ taskId: task.value.id, checklist });
-}
-
-async function createChild() {
-  if (!task.value) return;
-  const title = childDraft.value.trim();
-  if (!title) return;
-  childDraft.value = "";
-  const created = await store.createTask({
-    title,
-    description: "",
-    agentId: task.value.agentId,
-    projectId: session.value?.projectId ?? null,
-    projectIds: [...projectIds.value],
-    parentTaskId: task.value.id,
-  });
-  if (created) await router.push(`/tasks/${created.id}`);
 }
 
 async function ensureSessionMessages() {
@@ -238,35 +169,8 @@ function openLatestRunLog() {
         </span>
       </div>
       <div class="task-prop-row">
-        <span>{{ t('tasks.assignee') }}</span>
-        <span class="task-prop-person">
-          <UiSelect
-            class="task-prop-select"
-            variant="ghost"
-            size="sm"
-            :aria-label="t('tasks.assignee')"
-            :placeholder="t('common.unassigned')"
-            :model-value="task.agentId"
-            :options="(store.data?.agents ?? []).map((item) => ({ value: item.id, label: item.name, avatar: item.avatar }))"
-            @change="changeAgent(String($event))"
-          />
-        </span>
-      </div>
-      <div class="task-prop-row">
         <span>{{ t('tasks.project') }}</span>
         <span>{{ projects.length ? projects.map((item) => item.name).join('、') : t('tasks.noProject') }}</span>
-      </div>
-      <div class="task-prop-row">
-        <span>{{ t('tasks.priority') }}</span>
-        <UiSelect
-          class="task-prop-select"
-          variant="ghost"
-          size="sm"
-          :aria-label="t('tasks.priority')"
-          :model-value="meta.priority"
-          :options="PRIORITY_OPTIONS.map((option) => ({ value: option.id, label: t(PRIORITY_KEYS[option.id]) }))"
-          @change="changePriority($event as TaskPriority)"
-        />
       </div>
       <div class="task-prop-row">
         <span>{{ t('tasks.tags') }}</span>
@@ -280,31 +184,6 @@ function openLatestRunLog() {
           @manage="showTagManage = true"
         />
       </div>
-    </section>
-    <section>
-      <h2>{{ t('tasks.checklist') }}</h2>
-      <ul v-if="task.checklist?.length" class="task-checklist">
-        <li v-for="item in task.checklist" :key="item.id">
-          <label>
-            <input type="checkbox" :checked="item.done" @change="toggleChecklist(item.id)" />
-            {{ item.text }}
-          </label>
-        </li>
-      </ul>
-      <input v-model="checklistDraft" class="task-prop-input" :placeholder="t('tasks.addChecklist')" @keydown.enter.prevent="addChecklist" />
-    </section>
-    <section>
-      <h2>{{ t('tasks.subtasks') }}</h2>
-      <ul v-if="childTasks.length" class="task-runs">
-        <li v-for="child in childTasks" :key="child.id">
-          <button type="button" class="task-run-row" @click="router.push(`/tasks/${child.id}`)">
-            <span>{{ child.title }}</span>
-            <span>{{ taskStatusLabel(child.status) }}</span>
-          </button>
-        </li>
-      </ul>
-      <p v-else>{{ t('tasks.noSubtasks') }}</p>
-      <input v-model="childDraft" class="task-prop-input" :placeholder="t('tasks.newSubtask')" @keydown.enter.prevent="createChild" />
     </section>
     <section>
       <div class="task-side-heading">

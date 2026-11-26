@@ -22,7 +22,7 @@ use crate::{
         GitCompareRefs, GitHistoryPage, GitIndexFile, GitLineBlame, GitRepositoryStatus,
         GlobalResource, InboxInput, InboxItem, McpForm, McpInput, McpInputs, MessageAttachment,
         MessageAttachmentInput, Project, PromptFile, QuickAction, ResourceSource, RunMode,
-        RunStatistics, Runtime, Squad, SquadInput, StatisticGroup, Task, TaskChecklistItem,
+        RunStatistics, Runtime, Squad, SquadInput, StatisticGroup, Task,
         TaskInput, TimelineItem, UsageDay, WebhookDelivery, WebhookInput, Workspace,
         WorkspaceCandidate,
     },
@@ -6463,9 +6463,7 @@ pub fn resolve_permission(
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskMetaInput {
-    pub priority: Option<String>,
     pub labels: Option<Vec<String>>,
-    pub checklist: Option<Vec<TaskChecklistItem>>,
     pub parent_task_id: Option<Option<String>>,
 }
 
@@ -6479,9 +6477,7 @@ pub fn update_task_meta(
     ops::task::update_meta(
         &db,
         &task_id,
-        input.priority.as_deref(),
         input.labels.as_deref(),
-        input.checklist.as_deref(),
         input.parent_task_id.as_ref().map(|value| value.as_deref()),
     )?;
     ops::task::get(&db, &task_id)

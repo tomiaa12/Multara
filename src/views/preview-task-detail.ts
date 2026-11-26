@@ -1,24 +1,12 @@
-import type { Agent, ChatMessage, Task, TaskRunRecord, TaskStatus } from "../domain/types";
+import type { Agent, ChatMessage, Task, TaskRunRecord } from "../domain/types";
 import type { AssignmentSubtaskRef } from "../components/chat/message-speaker";
 
 const at = "2026-11-04T06:01:14.248Z";
 const later = "2026-11-04T06:02:19.356Z";
 
-export type TaskDetailPreviewChild = {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  agentId: string;
-  reply?: string;
-  pending?: boolean;
-};
-
 export type TaskDetailPreviewSide = {
   projectName: string;
-  priority: "none" | "urgent" | "high" | "medium" | "low";
   labels: string[];
-  checklist: Array<{ id: string; text: string; done: boolean }>;
-  children: TaskDetailPreviewChild[];
   runs: TaskRunRecord[];
 };
 
@@ -53,9 +41,7 @@ function task(partial: Partial<Task> & Pick<Task, "id" | "title" | "status" | "a
     description: "",
     createdAt: at,
     updatedAt: later,
-    priority: "none",
     labels: [],
-    checklist: [],
     ...partial,
   };
 }
@@ -87,10 +73,7 @@ const agents: Agent[] = [
 
 const emptySide = (): TaskDetailPreviewSide => ({
   projectName: "开户审核",
-  priority: "none",
   labels: [],
-  checklist: [],
-  children: [],
   runs: [],
 });
 
@@ -134,7 +117,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
       description: "入金驳回后认证审应回到开户审核态。",
       status: "in_progress",
       agentId: "miku",
-      priority: "high",
     }),
     agents,
     messages: [
@@ -180,7 +162,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     ],
     side: {
       ...emptySide(),
-      priority: "high",
       labels: ["回归", "开户"],
       runs: [
         {
@@ -204,7 +185,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
       title: "补交收审驳回单测",
       status: "todo",
       agentId: "miku",
-      priority: "medium",
     }),
     agents,
     messages: [
@@ -230,7 +210,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     ],
     side: {
       ...emptySide(),
-      priority: "medium",
       runs: [
         {
           id: "preview-task-run-fail",
@@ -254,13 +233,7 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
       description: "交收审驳回后，认证审对所有入金方式自动驳回。",
       status: "in_review",
       agentId: "miku",
-      priority: "urgent",
       labels: ["需求", "后端"],
-      checklist: [
-        { id: "c1", text: "还原原仓库改动", done: true },
-        { id: "c2", text: "在需求任务里实现", done: true },
-        { id: "c3", text: "回归验证", done: false },
-      ],
     }),
     agents,
     messages: [
@@ -318,22 +291,7 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     ],
     side: {
       projectName: "开户审核",
-      priority: "urgent",
       labels: ["需求", "后端"],
-      checklist: [
-        { id: "c1", text: "还原原仓库改动", done: true },
-        { id: "c2", text: "在需求任务里实现", done: true },
-        { id: "c3", text: "回归验证", done: false },
-      ],
-      children: [
-        {
-          id: CHILD_ID,
-          title: CHILD_TITLE,
-          status: "in_review",
-          agentId: "coder",
-          reply: "补丁已应用到工作区，构建和指定测试都通过了。",
-        },
-      ],
       runs: [
         {
           id: "preview-task-run-a1",
@@ -389,15 +347,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     ],
     side: {
       ...emptySide(),
-      children: [
-        {
-          id: CHILD_ID,
-          title: CHILD_TITLE,
-          status: "in_progress",
-          agentId: "coder",
-          pending: true,
-        },
-      ],
       runs: [
         {
           id: "preview-task-run-pend",
@@ -420,7 +369,7 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
   {
     id: "rich-side",
     label: "侧栏满数据",
-    detail: "标签、清单、子任务、PR、多次 run 都填满。",
+    detail: "标签和多次 run 都填满。",
     task: task({
       id: "preview-task-rich",
       sessionId: "preview-task-session-rich",
@@ -428,13 +377,7 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
       description: "核对发布范围与回归用例。",
       status: "blocked",
       agentId: "miku",
-      priority: "high",
       labels: ["发布", "SIT"],
-      checklist: [
-        { id: "r1", text: "服务范围确认", done: true },
-        { id: "r2", text: "数据脚本准备", done: false },
-        { id: "r3", text: "回滚方案", done: false },
-      ],
     }),
     agents,
     messages: [
@@ -450,27 +393,7 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     ],
     side: {
       projectName: "开户审核 · 发布",
-      priority: "high",
       labels: ["发布", "SIT"],
-      checklist: [
-        { id: "r1", text: "服务范围确认", done: true },
-        { id: "r2", text: "数据脚本准备", done: false },
-        { id: "r3", text: "回滚方案", done: false },
-      ],
-      children: [
-        {
-          id: "preview-child-docs",
-          title: "补发布说明",
-          status: "todo",
-          agentId: "coder",
-        },
-        {
-          id: "preview-child-data",
-          title: "准备驳回样例数据",
-          status: "in_progress",
-          agentId: "miku",
-        },
-      ],
       runs: [
         {
           id: "preview-task-run-rich-1",
@@ -501,7 +424,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
       title: "交收审自动驳回已上线",
       status: "done",
       agentId: "miku",
-      priority: "low",
     }),
     agents,
     messages: [
@@ -517,7 +439,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     ],
     side: {
       ...emptySide(),
-      priority: "low",
       runs: [
         {
           id: "preview-task-run-done",

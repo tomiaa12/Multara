@@ -679,17 +679,13 @@ export async function createTask(input: TaskInput): Promise<Task> {
 
 export async function updateTaskMeta(input: {
   taskId: string;
-  priority?: Task["priority"];
   labels?: string[];
-  checklist?: Task["checklist"];
   parentTaskId?: string | null;
 }): Promise<Task> {
   if (!hasBackend()) {
     const task = previewData.tasks.find((item) => item.id === input.taskId);
     if (!task) throw new Error("任务不存在");
-    if (input.priority) task.priority = input.priority;
     if (input.labels) task.labels = input.labels;
-    if (input.checklist) task.checklist = input.checklist;
     if (input.parentTaskId !== undefined) task.parentTaskId = input.parentTaskId;
     task.updatedAt = new Date().toISOString();
     return structuredClone(task);
@@ -697,9 +693,7 @@ export async function updateTaskMeta(input: {
   return invoke<Task>("update_task_meta", {
     taskId: input.taskId,
     input: {
-      priority: input.priority,
       labels: input.labels,
-      checklist: input.checklist,
       parentTaskId: input.parentTaskId === undefined ? undefined : input.parentTaskId,
     },
   });

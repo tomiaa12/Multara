@@ -1,33 +1,13 @@
-import { t } from "../i18n";
 import { readStorage, writeStorage } from "../utils/safe-storage";
 
-export type TaskPriority = "none" | "urgent" | "high" | "medium" | "low";
-
 export interface TaskMeta {
-  priority: TaskPriority;
   labels: string[];
 }
-
-const PRIORITY_KEYS: Record<TaskPriority, string> = {
-  none: "tasks.priority.none",
-  urgent: "tasks.priority.urgent",
-  high: "tasks.priority.high",
-  medium: "tasks.priority.medium",
-  low: "tasks.priority.low",
-};
-
-export const PRIORITY_OPTIONS: Array<{ id: TaskPriority }> = [
-  { id: "none" },
-  { id: "urgent" },
-  { id: "high" },
-  { id: "medium" },
-  { id: "low" },
-];
 
 const KEY = "multara.task-meta";
 
 function emptyMeta(): TaskMeta {
-  return { priority: "none", labels: [] };
+  return { labels: [] };
 }
 
 let cache: Record<string, TaskMeta> | null = null;
@@ -52,7 +32,6 @@ function parseAll(raw: string | null): Record<string, TaskMeta> {
       Object.entries(parsed).map(([id, item]) => [
         id,
         {
-          priority: PRIORITY_OPTIONS.some((option) => option.id === item?.priority) ? item.priority! : "none",
           labels: Array.isArray(item?.labels) ? item.labels.filter((label) => typeof label === "string") : [],
         },
       ]),
@@ -71,8 +50,4 @@ export function writeTaskMeta(taskId: string, patch: Partial<TaskMeta>) {
   all[taskId] = { ...(all[taskId] ?? emptyMeta()), ...patch };
   cache = all;
   writeStorage(KEY, JSON.stringify(all));
-}
-
-export function priorityLabel(priority: TaskPriority) {
-  return t(PRIORITY_KEYS[priority] ?? PRIORITY_KEYS.none);
 }

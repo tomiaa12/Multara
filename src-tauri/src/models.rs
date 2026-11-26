@@ -387,14 +387,6 @@ pub struct ChatSession {
     pub last_run_at: Option<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskChecklistItem {
-    pub id: String,
-    pub text: String,
-    pub done: bool,
-}
-
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
@@ -409,11 +401,7 @@ pub struct Task {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_task_id: Option<String>,
     #[serde(default)]
-    pub priority: String,
-    #[serde(default)]
     pub labels: Vec<String>,
-    #[serde(default)]
-    pub checklist: Vec<TaskChecklistItem>,
     pub default_mode: RunMode,
 }
 

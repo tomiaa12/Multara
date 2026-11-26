@@ -763,19 +763,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     ensure_column(
         &columns,
         "tasks",
-        "priority",
-        "TEXT NOT NULL DEFAULT 'none'",
-    )?;
-    ensure_column(
-        &columns,
-        "tasks",
         "labels_json",
-        "TEXT NOT NULL DEFAULT '[]'",
-    )?;
-    ensure_column(
-        &columns,
-        "tasks",
-        "checklist_json",
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
     ensure_column(

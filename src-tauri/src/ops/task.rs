@@ -2,7 +2,7 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::models::{RunMode, Task, TaskChecklistItem};
+use crate::models::{RunMode, Task};
 
 use super::{parse_task_status, require_agent, require_project};
 
@@ -19,8 +19,7 @@ pub struct CreateTaskInput<'a> {
 }
 
 const TASK_COLUMNS: &str = "t.id, t.session_id, t.title, t.description, t.agent_id, t.status,
-                    t.created_at, t.updated_at, t.parent_task_id, t.priority,
-                    t.labels_json, t.checklist_json, t.default_mode";
+                    t.created_at, t.updated_at, t.parent_task_id, t.labels_json, t.default_mode";
 
 fn parse_labels(raw: String) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&raw)
@@ -28,17 +27,6 @@ fn parse_labels(raw: String) -> Vec<String> {
         .into_iter()
         .filter(|item| !item.trim().is_empty())
         .collect()
-}
-
-fn parse_checklist(raw: String) -> Vec<TaskChecklistItem> {
-    serde_json::from_str(&raw).unwrap_or_default()
-}
-
-fn parse_priority(raw: &str) -> String {
-    match raw {
-        "urgent" | "high" | "medium" | "low" => raw.to_string(),
-        _ => "none".to_string(),
-    }
 }
 
 fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -53,11 +41,9 @@ fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
         parent_task_id: row.get(8)?,
-        priority: parse_priority(&row.get::<_, String>(9).unwrap_or_else(|_| "none".into())),
-        labels: parse_labels(row.get::<_, String>(10).unwrap_or_else(|_| "[]".into())),
-        checklist: parse_checklist(row.get::<_, String>(11).unwrap_or_else(|_| "[]".into())),
+        labels: parse_labels(row.get::<_, String>(9).unwrap_or_else(|_| "[]".into())),
         default_mode: row
-            .get::<_, String>(12)
+            .get::<_, String>(10)
             .unwrap_or_else(|_| "auto".into())
             .parse()
             .unwrap_or(RunMode::Auto),
@@ -203,9 +189,7 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             created_at: now.clone(),
             updated_at: now,
             parent_task_id: input.parent_task_id.map(str::to_string),
-            priority: "none".to_string(),
             labels: Vec::new(),
-            checklist: Vec::new(),
             default_mode: input.requested_mode,
         },
         queued,
@@ -909,32 +893,15 @@ pub fn runs(db: &Connection, task_id: &str) -> Result<serde_json::Value, String>
 pub fn update_meta(
     db: &Connection,
     task_id: &str,
-    priority: Option<&str>,
     labels: Option<&[String]>,
-    checklist: Option<&[TaskChecklistItem]>,
     parent_task_id: Option<Option<&str>>,
 ) -> Result<(), String> {
     get(db, task_id)?;
     let now = Utc::now().to_rfc3339();
-    if let Some(priority) = priority {
-        db.execute(
-            "UPDATE tasks SET priority=?1, updated_at=?2 WHERE id=?3",
-            params![parse_priority(priority), now, task_id],
-        )
-        .map_err(|error| error.to_string())?;
-    }
     if let Some(labels) = labels {
         let json = serde_json::to_string(labels).unwrap_or_else(|_| "[]".into());
         db.execute(
             "UPDATE tasks SET labels_json=?1, updated_at=?2 WHERE id=?3",
-            params![json, now, task_id],
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    if let Some(checklist) = checklist {
-        let json = serde_json::to_string(checklist).unwrap_or_else(|_| "[]".into());
-        db.execute(
-            "UPDATE tasks SET checklist_json=?1, updated_at=?2 WHERE id=?3",
             params![json, now, task_id],
         )
         .map_err(|error| error.to_string())?;
@@ -1178,8 +1145,8 @@ mod tests {
         };
         let a = create(&mut db, input("A")).unwrap().task;
         let b = create(&mut db, input("B")).unwrap().task;
-        super::update_meta(&db, &b.id, None, None, None, Some(Some(&a.id))).unwrap();
-        let cycle = super::update_meta(&db, &a.id, None, None, None, Some(Some(&b.id)));
+        super::update_meta(&db, &b.id, None, Some(Some(&a.id))).unwrap();
+        let cycle = super::update_meta(&db, &a.id, None, Some(Some(&b.id)));
         assert!(cycle.is_err());
         assert_eq!(
             super::get(&db, &b.id).unwrap().parent_task_id.as_deref(),

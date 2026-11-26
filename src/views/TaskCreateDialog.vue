@@ -296,7 +296,7 @@ async function create() {
       requestedMode: "auto",
     });
     if (task) {
-      writeTaskMeta(task.id, { priority: "none", labels: [...form.labels] });
+      writeTaskMeta(task.id, { labels: [...form.labels] });
       await store.updateTaskMeta({ taskId: task.id, labels: [...form.labels] });
       if (attachments.length) {
         store.send(description || title, task.sessionId, attachments, { mode: "auto" });

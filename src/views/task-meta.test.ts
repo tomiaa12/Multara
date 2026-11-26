@@ -12,27 +12,26 @@ describe("task meta cache", () => {
   });
 
   it("parses storage once and serves later reads from the cache", () => {
-    localStorage.setItem(KEY, JSON.stringify({ a: { priority: "high", labels: ["x"] } }));
+    localStorage.setItem(KEY, JSON.stringify({ a: { labels: ["x"] } }));
     const parse = vi.spyOn(JSON, "parse");
-    expect(readTaskMeta("a")).toEqual({ priority: "high", labels: ["x"] });
-    expect(readTaskMeta("b")).toEqual({ priority: "none", labels: [] });
-    expect(readTaskMeta("a").priority).toBe("high");
+    expect(readTaskMeta("a")).toEqual({ labels: ["x"] });
+    expect(readTaskMeta("b")).toEqual({ labels: [] });
+    expect(readTaskMeta("a").labels).toEqual(["x"]);
     expect(parse).toHaveBeenCalledTimes(1);
   });
 
   it("updates the cache and storage on write", () => {
-    writeTaskMeta("a", { priority: "urgent" });
     writeTaskMeta("a", { labels: ["tag"] });
-    expect(readTaskMeta("a")).toEqual({ priority: "urgent", labels: ["tag"] });
+    expect(readTaskMeta("a")).toEqual({ labels: ["tag"] });
     resetTaskMetaCache();
-    expect(readTaskMeta("a")).toEqual({ priority: "urgent", labels: ["tag"] });
+    expect(readTaskMeta("a")).toEqual({ labels: ["tag"] });
   });
 
   it("keeps the in-memory value when storage rejects the write", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
     });
-    expect(() => writeTaskMeta("a", { priority: "low" })).not.toThrow();
-    expect(readTaskMeta("a").priority).toBe("low");
+    expect(() => writeTaskMeta("a", { labels: ["kept"] })).not.toThrow();
+    expect(readTaskMeta("a").labels).toEqual(["kept"]);
   });
 });

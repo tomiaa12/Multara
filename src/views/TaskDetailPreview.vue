@@ -21,17 +21,8 @@ import {
 } from "../components/run-log";
 import type { ChatMessage, EditorSelectionContext } from "../domain/types";
 import { t } from "../i18n";
-import { PRIORITY_OPTIONS, type TaskPriority } from "./task-meta";
 import { relativeTime, TASK_COLUMNS, taskStatusLabel } from "./task-board";
 import type { TaskDetailPreviewScenario } from "./preview-task-detail";
-
-const PRIORITY_KEYS: Record<TaskPriority, string> = {
-  none: "tasks.priority.none",
-  urgent: "tasks.priority.urgent",
-  high: "tasks.priority.high",
-  medium: "tasks.priority.medium",
-  low: "tasks.priority.low",
-};
 
 const props = defineProps<{
   scenario: TaskDetailPreviewScenario;
@@ -206,64 +197,13 @@ function formatDate(iso: string) {
             </span>
           </div>
           <div class="task-prop-row">
-            <span>{{ t("tasks.assignee") }}</span>
-            <span class="task-prop-person">
-              <UiSelect
-                class="task-prop-select"
-                variant="ghost"
-                size="sm"
-                disabled
-                :aria-label="t('tasks.assignee')"
-                :placeholder="t('common.unassigned')"
-                :model-value="task.agentId"
-                :options="agents.map((item) => ({ value: item.id, label: item.name, avatar: item.avatar }))"
-              />
-            </span>
-          </div>
-          <div class="task-prop-row">
             <span>{{ t("tasks.project") }}</span>
             <span>{{ side.projectName || t("tasks.noProject") }}</span>
-          </div>
-          <div class="task-prop-row">
-            <span>{{ t("tasks.priority") }}</span>
-            <UiSelect
-              class="task-prop-select"
-              variant="ghost"
-              size="sm"
-              disabled
-              :aria-label="t('tasks.priority')"
-              :model-value="side.priority"
-              :options="PRIORITY_OPTIONS.map((option) => ({ value: option.id, label: t(PRIORITY_KEYS[option.id]) }))"
-            />
           </div>
           <div class="task-prop-row">
             <span>{{ t("tasks.tags") }}</span>
             <span>{{ side.labels.length ? side.labels.join("、") : t("tasks.addTags") }}</span>
           </div>
-        </section>
-        <section>
-          <h2>{{ t("tasks.checklist") }}</h2>
-          <ul v-if="side.checklist.length" class="task-checklist">
-            <li v-for="item in side.checklist" :key="item.id">
-              <label>
-                <input type="checkbox" :checked="item.done" disabled />
-                {{ item.text }}
-              </label>
-            </li>
-          </ul>
-          <p v-else>{{ t("tasks.addChecklist") }}</p>
-        </section>
-        <section>
-          <h2>{{ t("tasks.subtasks") }}</h2>
-          <ul v-if="side.children.length" class="task-runs">
-            <li v-for="child in side.children" :key="child.id">
-              <button type="button" class="task-run-row" disabled>
-                <span>{{ child.title }}</span>
-                <span>{{ taskStatusLabel(child.status) }}</span>
-              </button>
-            </li>
-          </ul>
-          <p v-else>{{ t("tasks.noSubtasks") }}</p>
         </section>
         <section>
           <div class="task-side-heading">
