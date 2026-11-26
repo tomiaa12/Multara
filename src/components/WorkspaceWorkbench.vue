@@ -2552,7 +2552,7 @@ const activeMedia = computed(() => {
   return "";
 });
 
-const htmlActive = computed(() => {
+const htmlActive = computed(() =>
   Boolean(activeFile.value && !activeGitDiff.value && isHtmlFile(activeFile.value)),
 );
 

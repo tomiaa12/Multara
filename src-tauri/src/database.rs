@@ -479,6 +479,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         .contains("target_id");
     ensure_column(&columns, "channel_allowed_users", "target_type", "TEXT")?;
     ensure_column(&columns, "channel_allowed_users", "target_id", "TEXT")?;
+    ensure_column(&columns, "channel_allowed_users", "permissions_json", "TEXT")?;
     if !users_had_target {
         db.execute_batch(
             "UPDATE channel_allowed_users

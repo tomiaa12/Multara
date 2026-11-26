@@ -16,6 +16,8 @@ pub struct AllowedUser {
     /// 该用户绑定的智能体或小队；空表示还未在 Multara 里配置。
     pub target_type: Option<String>,
     pub target_id: Option<String>,
+    /// 空表示沿用安装上的默认权限。
+    pub permissions_json: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -170,6 +172,7 @@ fn row_to_allowed_user(row: &rusqlite::Row) -> rusqlite::Result<AllowedUser> {
         note: row.get(5)?,
         target_type: row.get(6)?,
         target_id: row.get(7)?,
+        permissions_json: row.get(8)?,
     })
 }
 
@@ -180,7 +183,7 @@ pub fn list_allowed_users(
     let mut statement = db
         .prepare(
             "SELECT installation_id, channel_user_id, display_name, role, created_at, note,
-                    target_type, target_id
+                    target_type, target_id, permissions_json
              FROM channel_allowed_users WHERE installation_id=?1 ORDER BY created_at",
         )
         .map_err(|error| error.to_string())?;
@@ -195,7 +198,7 @@ pub fn list_allowed_users(
 pub fn allowed_user(db: &Connection, installation_id: &str, user_id: &str) -> Option<AllowedUser> {
     db.query_row(
         "SELECT installation_id, channel_user_id, display_name, role, created_at, note,
-                target_type, target_id
+                target_type, target_id, permissions_json
          FROM channel_allowed_users WHERE installation_id=?1 AND channel_user_id=?2",
         params![installation_id, user_id],
         row_to_allowed_user,
@@ -279,6 +282,63 @@ pub fn set_allowed_user_target(
     Ok(())
 }
 
+/// 新配对的人复制安装上的默认智能体和默认权限。已有目标或权限则不覆盖。
+pub fn apply_pair_defaults(
+    db: &Connection,
+    installation_id: &str,
+    user_id: &str,
+    config: &super::ChannelConfig,
+) -> Result<(), String> {
+    let grant = serde_json::to_string(&config.default_grant).unwrap_or_else(|_| "{}".to_string());
+    let (target_type, target_id) = default_target(config);
+    db.execute(
+        "UPDATE channel_allowed_users
+         SET permissions_json = COALESCE(permissions_json, ?1),
+             target_type = CASE WHEN IFNULL(target_id, '') = '' THEN ?2 ELSE target_type END,
+             target_id = CASE WHEN IFNULL(target_id, '') = '' THEN ?3 ELSE target_id END
+         WHERE installation_id=?4 AND channel_user_id=?5",
+        params![grant, target_type, target_id, installation_id, user_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn default_target(config: &super::ChannelConfig) -> (Option<String>, Option<String>) {
+    let kind = config.default_target_type.trim();
+    let id = config.default_target_id.trim();
+    if (kind == "agent" || kind == "squad") && !id.is_empty() {
+        (Some(kind.to_string()), Some(id.to_string()))
+    } else {
+        (None, None)
+    }
+}
+
+pub fn set_allowed_user_grant(
+    db: &Connection,
+    installation_id: &str,
+    user_id: &str,
+    grant_json: &str,
+) -> Result<(), String> {
+    let updated = db
+        .execute(
+            "UPDATE channel_allowed_users SET permissions_json=?1
+             WHERE installation_id=?2 AND channel_user_id=?3",
+            params![grant_json, installation_id, user_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 0 {
+        return Err(tr!("授权用户不存在"));
+    }
+    Ok(())
+}
+
+pub fn user_grant(user: &AllowedUser) -> super::grant::ChannelGrant {
+    user.permissions_json
+        .as_deref()
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or_default()
+}
+
 /// 配对码一次性：校验当前码（从库里现读，不用连接线程启动时的副本），
 /// 对上就在同一事务里加用户并换新码，返回新码。码不对返回 None。
 pub fn consume_pairing_code(
@@ -304,6 +364,7 @@ pub fn consume_pairing_code(
         display_name,
         "owner",
     )?;
+    apply_pair_defaults(&transaction, installation_id, user_id, &installation.config)?;
     let mut config = installation.config.clone();
     config.pairing_code = next_code.to_string();
     set_config(&transaction, installation_id, &config)?;

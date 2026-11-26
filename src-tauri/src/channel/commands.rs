@@ -24,6 +24,10 @@ pub struct ChannelInstallationView {
     bot_avatar: Option<String>,
     group_enabled: bool,
     pairing_code: String,
+    pairing_required: bool,
+    default_target_type: String,
+    default_target_id: String,
+    default_grant: super::grant::ChannelGrant,
     enabled: bool,
     status: String,
     last_error: Option<String>,
@@ -43,6 +47,7 @@ pub struct ChannelUserView {
     note: Option<String>,
     target_type: Option<String>,
     target_id: Option<String>,
+    permissions: super::grant::ChannelGrant,
 }
 
 #[derive(Deserialize)]
@@ -87,6 +92,10 @@ fn view(app: &AppHandle, installation: &Installation) -> ChannelInstallationView
         bot_avatar: installation.config.bot_avatar.clone(),
         group_enabled: installation.config.group_enabled,
         pairing_code: installation.config.pairing_code.clone(),
+        pairing_required: installation.config.pairing_required,
+        default_target_type: installation.config.default_target_type.clone(),
+        default_target_id: installation.config.default_target_id.clone(),
+        default_grant: installation.config.default_grant.clone(),
         enabled: installation.enabled,
         status: installation.status.clone(),
         last_error: installation.last_error.clone(),
@@ -275,7 +284,11 @@ fn save_installation_blocking(
     let mut config = existing
         .as_ref()
         .map(|item| item.config.clone())
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            let mut created = ChannelConfig::default();
+            created.pairing_required = true;
+            created
+        });
     if super::is_feishu(&input.channel_type) {
         if let Some(region) = input.region.as_deref().filter(|value| !value.is_empty()) {
             config.region = if region == super::TYPE_LARK {
@@ -454,7 +467,9 @@ pub fn list_channel_allowed_users(
     let name_errors = fill_missing_names(&app, &state, &id, &mut users);
     Ok(users
         .into_iter()
-        .map(|user| ChannelUserView {
+        .map(|user| {
+            let permissions = store::user_grant(&user);
+            ChannelUserView {
             name_error: name_errors.get(&user.channel_user_id).cloned(),
             channel_user_id: user.channel_user_id,
             display_name: user.display_name,
@@ -463,6 +478,8 @@ pub fn list_channel_allowed_users(
             note: user.note,
             target_type: user.target_type,
             target_id: user.target_id,
+            permissions,
+            }
         })
         .collect())
 }
@@ -641,6 +658,61 @@ pub fn rotate_channel_pairing_code(
     drop(db);
     supervisor::reload(&app);
     Ok(config.pairing_code)
+}
+
+#[tauri::command]
+pub fn set_channel_pairing_required(
+    id: String,
+    required: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.lock_db()?;
+    let Some(installation) = store::get_installation(&db, &id)? else {
+        return Err(tr!("集成不存在"));
+    };
+    let mut config = installation.config;
+    config.pairing_required = required;
+    store::set_config(&db, &id, &config)
+}
+
+#[tauri::command]
+pub fn set_channel_defaults(
+    id: String,
+    target_type: Option<String>,
+    target_id: Option<String>,
+    grant: super::grant::ChannelGrant,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.lock_db()?;
+    let Some(installation) = store::get_installation(&db, &id)? else {
+        return Err(tr!("集成不存在"));
+    };
+    let mut config = installation.config;
+    let target = target_id.unwrap_or_default();
+    if target.trim().is_empty() {
+        config.default_target_type.clear();
+        config.default_target_id.clear();
+    } else {
+        config.default_target_type = if target_type.as_deref() == Some("squad") {
+            "squad".into()
+        } else {
+            "agent".into()
+        };
+        config.default_target_id = target;
+    }
+    config.default_grant = grant;
+    store::set_config(&db, &id, &config)
+}
+
+#[tauri::command]
+pub fn set_channel_user_grant(
+    id: String,
+    user_id: String,
+    grant: super::grant::ChannelGrant,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let json = serde_json::to_string(&grant).map_err(|error| error.to_string())?;
+    store::set_allowed_user_grant(&*state.lock_db()?, &id, &user_id, &json)
 }
 
 #[derive(serde::Deserialize)]

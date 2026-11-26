@@ -11,6 +11,7 @@ pub mod commands;
 pub mod dingtalk;
 pub mod feishu;
 pub mod feishu_send;
+pub mod grant;
 pub mod link;
 pub mod outbound;
 pub mod qq;
@@ -119,6 +120,17 @@ pub struct ChannelConfig {
     pub group_enabled: bool,
     /// 新用户私聊机器人时发送这串数字完成绑定。
     pub pairing_code: String,
+    /// 关闭后，发消息的人自动成为授权用户，不再核对配对码。
+    #[serde(default = "crate::channel::grant::default_on_flag")]
+    pub pairing_required: bool,
+    /// 新用户配对后默认挂载的智能体或小队。
+    #[serde(default)]
+    pub default_target_type: String,
+    #[serde(default)]
+    pub default_target_id: String,
+    /// 新用户配对后复制的权限。缺省为全部允许。
+    #[serde(default)]
+    pub default_grant: crate::channel::grant::ChannelGrant,
     /// 覆盖 API 域名，仅用于代理 / 测试部署。
     pub api_base: Option<String>,
     /// 凭据变更后加一，连接线程据此重启。配对码和游标不算。

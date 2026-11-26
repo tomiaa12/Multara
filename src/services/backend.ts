@@ -2453,12 +2453,31 @@ export async function setChannelUserTarget(
   targetId: string | null,
 ): Promise<void> {
   if (!hasBackend()) return;
-  await invoke("set_channel_user_target", {
-    id,
-    userId,
-    targetType,
-    targetId,
-  });
+  await invoke("set_channel_user_target", { id, userId, targetType, targetId });
+}
+
+export async function setChannelPairingRequired(id: string, required: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_pairing_required", { id, required });
+}
+
+export async function setChannelDefaults(
+  id: string,
+  targetType: "agent" | "squad" | null,
+  targetId: string | null,
+  grant: import("../domain/channel-grant").ChannelGrant,
+): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_defaults", { id, targetType, targetId, grant });
+}
+
+export async function setChannelUserGrant(
+  id: string,
+  userId: string,
+  grant: import("../domain/channel-grant").ChannelGrant,
+): Promise<void> {
+  if (!hasBackend()) return;
+  await invoke("set_channel_user_grant", { id, userId, grant });
 }
 
 export async function rotateChannelPairingCode(id: string): Promise<string> {

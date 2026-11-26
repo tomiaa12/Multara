@@ -14,10 +14,12 @@ import {
   type ComposerNode,
 } from "../components/chat/composer-content";
 import {
+  classifyClipboardEntry,
   type OsDroppedEntry,
   type WorkspaceFileDragPayload,
 } from "../components/chat/workspace-file-drag";
 import { externalPathChip, workspacePathChip } from "../components/chat/composer-path-chips";
+import * as explorerBackend from "../services/explorer-backend";
 import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import {
@@ -248,6 +250,36 @@ async function onDropWorkspace(file: WorkspaceFileDragPayload) {
   await addWorkspaceChip(file);
 }
 
+async function pasteOsFiles(entries: OsDroppedEntry[]) {
+  error.value = "";
+  let list = entries;
+  if (!list.length) {
+    const copied = await explorerBackend.readClipboardFiles().catch(() => []);
+    list = copied.map((file) => ({
+      path: file.path,
+      name: file.name || file.path.split(/[\\/]/).pop() || file.path,
+      isDirectory: file.isDirectory,
+    }));
+  }
+  if (!list.length) return;
+  for (const entry of list) {
+    const action = classifyClipboardEntry(entry, workspaces.value);
+    if (!action) {
+      if (!entry.path && !entry.file) error.value = t("chat.noRefFiles");
+      continue;
+    }
+    if (action.kind === "image") {
+      await pasteImages([action.file]);
+      continue;
+    }
+    if (action.kind === "chip") {
+      rememberChip(await workspacePathChip(action));
+      continue;
+    }
+    await addExternalChip({ path: action.path, name: action.name, isDirectory: action.kind === "folder" });
+  }
+}
+
 async function onDropOs(entries: OsDroppedEntry[]) {
   error.value = "";
   if (!entries.length) {
@@ -355,6 +387,7 @@ async function create() {
         @drop-workspace-file="onDropWorkspace"
         @drop-os-files="onDropOs"
         @paste-image="pasteImages"
+        @paste-os-files="pasteOsFiles"
         @pick-files-or-folders="pickFilesOrFolders"
         @attach-file-context="attachFileFromSuggest"
       >

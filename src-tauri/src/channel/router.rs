@@ -72,18 +72,27 @@ fn handle_message(app: &AppHandle, installation: &Installation, mut message: Inb
             Err(_) => None,
         }
     };
+    let allowed = match allowed {
+        Some(user) => Some(user),
+        None => {
+            if let Some(user) = auto_authorize(app, installation, &message) {
+                Some(user)
+            } else if try_pair(app, installation, &message) {
+                return;
+            } else {
+                if pairing::allow_notice(&installation.id, &message.sender_id) {
+                    send_notice(
+                        app,
+                        installation,
+                        &message,
+                        &tr!("你还没有绑定到 Multara。请在 Multara 的「集成」里查看配对码，然后直接发送这串数字。"),
+                    );
+                }
+                return;
+            }
+        }
+    };
     let Some(allowed) = allowed else {
-        if try_pair(app, installation, &message) {
-            return;
-        }
-        if pairing::allow_notice(&installation.id, &message.sender_id) {
-            send_notice(
-                app,
-                installation,
-                &message,
-                &tr!("你还没有绑定到 Multara。请在 Multara 的「集成」里查看配对码，然后直接发送这串数字。"),
-            );
-        }
         return;
     };
     if message.sender_name.is_none() {
@@ -196,6 +205,43 @@ fn is_reply_to_bot(app: &AppHandle, installation: &Installation, message: &Inbou
 }
 
 /// 配对码会在每次配对成功后轮换，连接线程里的配置副本可能已经过期，统一现读数据库。
+fn auto_authorize(
+    app: &AppHandle,
+    installation: &Installation,
+    message: &InboundMessage,
+) -> Option<store::AllowedUser> {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return None;
+    };
+    let config = store::get_installation(&db, &installation.id)
+        .ok()
+        .flatten()
+        .map(|item| item.config)
+        .unwrap_or_else(|| installation.config.clone());
+    if config.pairing_required {
+        return None;
+    }
+    drop(db);
+    let name = lookup_sender_name(app, installation, &message.sender_id);
+    let Ok(db) = state.lock_db() else {
+        return None;
+    };
+    if store::add_allowed_user(
+        &db,
+        &installation.id,
+        &message.sender_id,
+        name.as_deref(),
+        "owner",
+    )
+    .is_err()
+    {
+        return None;
+    }
+    let _ = store::apply_pair_defaults(&db, &installation.id, &message.sender_id, &config);
+    store::allowed_user(&db, &installation.id, &message.sender_id)
+}
+
 fn current_pairing_code(app: &AppHandle, installation: &Installation) -> String {
     let state = app.state::<AppState>();
     let Ok(db) = state.lock_db() else {
@@ -785,6 +831,13 @@ fn enqueue(
     }
 }
 
+fn sender_permission_note(app: &AppHandle, installation: &Installation, sender_id: &str) -> Option<String> {
+    let state = app.state::<AppState>();
+    let db = state.lock_db().ok()?;
+    let user = store::allowed_user(&db, &installation.id, sender_id)?;
+    Some(super::grant::runtime_note(&store::user_grant(&user)))
+}
+
 fn flush(app: &AppHandle, key: &str) {
     let batch = pending().lock().ok().and_then(|mut map| map.remove(key));
     let Some(mut batch) = batch else {
@@ -814,7 +867,11 @@ fn flush(app: &AppHandle, key: &str) {
         return;
     }
     let raw_content = batch.texts.join("\n\n");
-    let (content, requested_mode) = parse_mode_command(&raw_content);
+    let (parsed, requested_mode) = parse_mode_command(&raw_content);
+    let content = match sender_permission_note(app, &batch.installation, &batch.message.sender_id) {
+        Some(note) if !note.is_empty() => format!("{parsed}\n\n{note}"),
+        _ => parsed.to_string(),
+    };
     let meta = json!({
         "installationId": batch.installation.id,
         "chatId": batch.message.chat_id,
@@ -832,7 +889,7 @@ fn flush(app: &AppHandle, key: &str) {
     let result = crate::commands::send_channel_message(
         app,
         &batch.binding.session_id,
-        content,
+        &content,
         std::mem::take(&mut batch.attachments),
         &batch.installation.channel_type,
         meta,

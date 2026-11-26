@@ -899,6 +899,10 @@ export interface ChannelInstallation {
   botOpenId?: string | null;
   groupEnabled: boolean;
   pairingCode: string;
+  pairingRequired?: boolean;
+  defaultTargetType?: string | null;
+  defaultTargetId?: string | null;
+  defaultGrant?: import("./channel-grant").ChannelGrant;
   enabled: boolean;
   status: ChannelStatus;
   lastError?: string | null;
@@ -931,4 +935,5 @@ export interface ChannelUser {
   /** 该用户绑定的智能体或小队；未设置为空 */
   targetType?: "agent" | "squad" | null;
   targetId?: string | null;
+  permissions?: import("./channel-grant").ChannelGrant;
 }

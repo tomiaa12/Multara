@@ -766,5 +766,11 @@
     "zh-TW": "請填寫 AppID",
     "ja": "AppID を入力してください",
     "ko": "AppID를 입력하세요"
+  },
+  "这个集成用户不允许使用：{list}。不要调用这些能力。": {
+    "en": "This integration user is not allowed to use: {list}. Do not use those capabilities.",
+    "zh-TW": "這個整合使用者不允許使用：{list}。不要呼叫這些能力。",
+    "ja": "この連携ユーザーは次を使えません：{list}。これらの機能は使わないでください。",
+    "ko": "이 통합 사용자는 다음을 사용할 수 없습니다: {list}. 이 기능은 사용하지 마세요."
   }
 }
