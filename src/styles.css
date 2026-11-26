@@ -8444,6 +8444,7 @@ body.is-dragging-workspace-file * {
 }
 .workspace-drop {
   display: grid;
+  justify-content: center;
   justify-items: center;
   gap: 6px;
   min-height: 168px;
