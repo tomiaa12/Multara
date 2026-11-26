@@ -39,6 +39,8 @@ import { t } from "../i18n";
 
 const props = defineProps<{
   initialStatus: TaskStatus;
+  /** 从待规划 / 待办列打开时，状态已确定，不再展示选择。 */
+  lockStatus?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -363,7 +365,7 @@ async function create() {
         />
         <template #tools>
           <div class="task-create-tools">
-            <UiSelect v-model="form.status" size="sm" :aria-label="t('tasks.field.status')" :options="statusOptions" />
+            <UiSelect v-if="!lockStatus" v-model="form.status" size="sm" :aria-label="t('tasks.field.status')" :options="statusOptions" />
             <TagPicker
               v-model="form.labels"
               :tags="categories.categories"

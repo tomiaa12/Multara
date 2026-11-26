@@ -2298,6 +2298,7 @@ const catalog: MessageCatalog = {
   "scm.merge.conflictTodo": "冲突分支会保留为待办：解决后在源码管理点「完成合并」，会提交合并{pushSuffix}，再自动删除临时工作区。",
   "scm.merge.conflictPushSuffix": "并推送",
   "scm.merge.abortConflict": "放弃冲突分支",
+  "scm.merge.alreadyMerging": "这个工作区已有进行中的合并，请先完成或放弃",
   "scm.merge.resolveManual": "手动解决",
   "search.cancel": "取消搜索",
   "search.refresh": "刷新",

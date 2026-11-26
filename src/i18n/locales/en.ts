@@ -2298,6 +2298,7 @@ Who is this for? Any constraints?
   "scm.merge.conflictTodo": "Conflict branches stay on your todo list: after resolving, click Finish Merge in Source Control to commit the merge{pushSuffix}, then the temporary workspace is removed automatically.",
   "scm.merge.conflictPushSuffix": " and push",
   "scm.merge.abortConflict": "Drop conflict branches",
+  "scm.merge.alreadyMerging": "This workspace already has a merge in progress. Finish or abort it first",
   "scm.merge.resolveManual": "Resolve manually",
   "search.cancel": "Cancel search",
   "search.refresh": "Refresh",

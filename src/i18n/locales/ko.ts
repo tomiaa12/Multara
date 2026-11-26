@@ -2299,6 +2299,7 @@ const catalog: MessageCatalog = {
   "scm.merge.conflictTodo": "Conflict branches stay on your todo list: after resolving, click Finish Merge in Source Control to commit the merge{pushSuffix}, then the temporary workspace is removed automatically.",
   "scm.merge.conflictPushSuffix": " and push",
   "scm.merge.abortConflict": "Drop conflict branches",
+  "scm.merge.alreadyMerging": "이 작업 공간에 진행 중인 병합이 있습니다. 먼저 완료하거나 중단하세요",
   "scm.merge.resolveManual": "Resolve manually",
   "search.cancel": "Cancel search",
   "search.refresh": "Refresh",

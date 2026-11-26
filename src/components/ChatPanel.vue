@@ -36,6 +36,7 @@ import { exportChatDiagnostics } from "./chat/export-session-diagnostics";
 import { liveCapacity, resolveSessionLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
+import { activeMergeForProject } from "./scm/merge-targets";
 import { useAppStore } from "../stores/app";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { registerCloseSurface } from "./close-surface";
@@ -565,6 +566,15 @@ async function ensureSession() {
   if (props.preview) return;
   // 钉住某一条会话时自己显示，不要改全局当前会话。否则运行视图里节点抽屉和总览会互相把对方清空。
   if (props.sessionId && (isWorkflowNodeSession(props.sessionId) || isWorkflowRunSession(props.sessionId))) return;
+  // 进入需求时若还有未完成的合并，停在合并会话上，而不是上次的普通对话。
+  // 标签被关光时也要打开它，不能停在空白欢迎态。
+  if (!props.sessionId) {
+    const merge = activeMergeForProject(store.data?.mergeSessions, props.projectId ?? "");
+    if (merge) {
+      await store.openMergeSession(merge.id);
+      return;
+    }
+  }
   const visible = displaySessions.value;
   if (!visible.length) return;
   // 有打开的 tab 才选中；全部关掉时保持空欢迎态，等发出第一条再建会话

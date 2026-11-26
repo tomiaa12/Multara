@@ -7,6 +7,7 @@ import {
   MERGE_PLAN_CONFLICT,
   MERGE_PLAN_FAST_FORWARD,
   MERGE_PLAN_MERGE,
+  activeMergeForProject,
   canMergePlan,
   mergeBranchGroups,
   mergePlanBadge,
@@ -15,6 +16,7 @@ import {
   mergeRunBadge,
   mergeRunOrder,
   rememberMergeTargets,
+  sourceHasActiveMerge,
 } from "./merge-targets";
 
 beforeEach(() => {
@@ -96,6 +98,22 @@ describe("merge targets", () => {
     });
     expect(recent[0]?.rows.map((row) => row.name)).toEqual(["origin/main"]);
     expect(recent[0]?.rows[0]?.localCopy).toBe(true);
+  });
+
+  test("opening a project prefers its newest in-progress merge", () => {
+    const older = { projectId: "req", createdAt: "2026-11-25T09:14:00.000Z" };
+    const newer = { projectId: "req", createdAt: "2026-11-25T09:14:15.000Z" };
+    const other = { projectId: "other", createdAt: "2026-11-25T10:00:00.000Z" };
+    expect(activeMergeForProject([older, other, newer], "req")).toBe(newer);
+    expect(activeMergeForProject([other], "req")).toBeNull();
+    expect(activeMergeForProject(undefined, "req")).toBeNull();
+  });
+
+  test("an open conflict merge blocks another merge from the same workspace", () => {
+    const sessions = [{ sourceWorkspaceId: "client" }];
+    expect(sourceHasActiveMerge(sessions, "client")).toBe(true);
+    expect(sourceHasActiveMerge(sessions, "web")).toBe(false);
+    expect(sourceHasActiveMerge(undefined, "client")).toBe(false);
   });
 
   test("conflicts run after clean targets, and recent picks stay in front", () => {

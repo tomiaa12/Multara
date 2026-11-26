@@ -732,6 +732,7 @@ onBeforeUnmount(() => {
     <TaskCreateDialog
       v-if="store.taskCreateOpen"
       :initial-status="store.taskCreateStatus"
+      :lock-status="store.taskCreateLockStatus"
       @close="store.closeTaskCreate()"
     />
     <footer class="statusbar">

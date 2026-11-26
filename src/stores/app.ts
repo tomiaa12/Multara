@@ -19,6 +19,7 @@ import { clearLastProjectsPath } from "../views/dashboard/last-projects-path";
 import { boardStatusFromRun } from "../views/task-board";
 import { setFileIconTheme } from "../file-icons";
 import { useDiffStore } from "./diff";
+import { sourceHasActiveMerge } from "../components/scm/merge-targets";
 import { mergeById } from "./merge-by-id";
 import { executeReask } from "./reask";
 import { applyAssistantChunk } from "../domain/assistant-text";
@@ -74,8 +75,11 @@ export const useAppStore = defineStore("app", () => {
   /** 全局「新建任务」弹窗（侧栏按钮 / Alt+C / 任务页共用） */
   const taskCreateOpen = ref(false);
   const taskCreateStatus = ref<TaskStatus>("todo");
-  function openTaskCreate(status: TaskStatus = "todo") {
+  /** 从待规划 / 待办列的加号打开时，状态已由那一列决定，弹窗不再提供选择。 */
+  const taskCreateLockStatus = ref(false);
+  function openTaskCreate(status: TaskStatus = "todo", options?: { lockStatus?: boolean }) {
     taskCreateStatus.value = status;
+    taskCreateLockStatus.value = options?.lockStatus === true;
     taskCreateOpen.value = true;
   }
   function closeTaskCreate() {
@@ -1682,27 +1686,37 @@ export const useAppStore = defineStore("app", () => {
     return data.value?.inbox.find((item) => item.sessionId === sessionId)?.id ?? null;
   }
 
+  const mergeStarts = new Set<string>();
+
   async function mergeIntoBranch(workspaceId: string, target: string, push: boolean) {
     if (!data.value) throw new Error(t("app.dataNotLoaded"));
+    if (mergeStarts.has(workspaceId) || sourceHasActiveMerge(data.value.mergeSessions, workspaceId)) {
+      throw new Error(t("scm.merge.alreadyMerging"));
+    }
     const workspace = data.value.workspaces.find((item) => item.id === workspaceId);
     if (!workspace) throw new Error(t("app.workspaceMissing"));
     const chat = mergeChatTarget(workspace.projectId);
-    const result = await backend.gitMergeIntoBranch({
-      workspaceId,
-      target,
-      push,
-      chatTargetType: chat.type,
-      chatTargetId: chat.id,
-    });
-    if (result.status === "conflict" && result.session && result.workspace && result.mergeSession) {
-      data.value.sessions.unshift(result.session);
-      data.value.workspaces.push(result.workspace);
-      data.value.mergeSessions = [...(data.value.mergeSessions ?? []), result.mergeSession];
-      messages.value[result.session.id] = [];
-      addOpenSessionTab(result.session.projectId, result.session.id);
-      await ensureMergeInboxItem(result.mergeSession, result.session.title);
+    mergeStarts.add(workspaceId);
+    try {
+      const result = await backend.gitMergeIntoBranch({
+        workspaceId,
+        target,
+        push,
+        chatTargetType: chat.type,
+        chatTargetId: chat.id,
+      });
+      if (result.status === "conflict" && result.session && result.workspace && result.mergeSession) {
+        data.value.sessions.unshift(result.session);
+        data.value.workspaces.push(result.workspace);
+        data.value.mergeSessions = [...(data.value.mergeSessions ?? []), result.mergeSession];
+        messages.value[result.session.id] = [];
+        addOpenSessionTab(result.session.projectId, result.session.id);
+        await ensureMergeInboxItem(result.mergeSession, result.session.title);
+      }
+      return result;
+    } finally {
+      mergeStarts.delete(workspaceId);
     }
-    return result;
   }
 
   async function openMergeSession(mergeId: string) {
@@ -2182,6 +2196,7 @@ export const useAppStore = defineStore("app", () => {
     chatOpen,
     taskCreateOpen,
     taskCreateStatus,
+    taskCreateLockStatus,
     openTaskCreate,
     closeTaskCreate,
     activeSessionId,

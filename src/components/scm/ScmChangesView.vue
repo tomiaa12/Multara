@@ -47,6 +47,8 @@ const props = defineProps<{
   readonly?: boolean;
   /** 这个工作区是解决冲突用的临时合并 Worktree 时传入 */
   mergeSession?: MergeSession | null;
+  /** 来源工作区已有未结束的冲突合并，不能再开一次 */
+  sourceMergeActive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -188,7 +190,7 @@ const moreMenuItems = computed<ContextMenuItem[]>(() => {
       id: "merge-into",
       label: t("scm.mergeInto"),
       icon: "git-merge",
-      disabled: !repository || repository.merging || Boolean(props.busy) || Boolean(props.workspace.sessionId),
+      disabled: !repository || repository.merging || Boolean(props.busy) || Boolean(props.workspace.sessionId) || Boolean(props.sourceMergeActive),
     },
     { type: "sep" },
     { id: "git-settings", label: t("scm.gitSettings"), icon: "gear" },

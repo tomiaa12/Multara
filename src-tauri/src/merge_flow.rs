@@ -259,6 +259,15 @@ pub fn delete_origin(db: &Connection, workspace_id: &str) {
     );
 }
 
+fn source_merge_in_progress(db: &Connection, source_workspace_id: &str) -> Result<bool, String> {
+    db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM merge_sessions WHERE source_workspace_id=?1 AND status='resolving')",
+        [source_workspace_id],
+        |row| row.get(0),
+    )
+    .map_err(|error| error.to_string())
+}
+
 fn ensure_session_idle(db: &Connection, session_id: &str) -> Result<(), String> {
     let active: u32 = db
         .query_row(
@@ -395,6 +404,9 @@ pub async fn git_merge_into_branch(
             let workspace = get_git_workspace(&db, &input.workspace_id)?;
             if workspace.session_id.is_some() {
                 return Err(tr!("这是合并用的临时工作区，请在原来的工作区里发起合并"));
+            }
+            if source_merge_in_progress(&db, &workspace.id)? {
+                return Err(tr!("这个工作区已有进行中的合并，请先完成或放弃"));
             }
             let git = setting_value(&db, "gitExecutable", "git");
             let isolation_base = expand_user_path(&setting_value(&db, "isolationRoot", ""));
@@ -597,7 +609,12 @@ fn start_conflict_session(
         if !exists {
             return Err(tr!("选择的智能体或小队不存在"));
         }
-        let transaction = db.transaction().map_err(|error| error.to_string())?;
+        let transaction = db
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        if source_merge_in_progress(&transaction, &workspace.id)? {
+            return Err(tr!("这个工作区已有进行中的合并，请先完成或放弃"));
+        }
         transaction
             .execute(
                 "INSERT INTO chat_sessions
@@ -812,4 +829,37 @@ fn close_merge(
         )
         .map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::source_merge_in_progress;
+
+    fn open() -> rusqlite::Connection {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        super::migrate(&db).unwrap();
+        db
+    }
+
+    fn insert(db: &rusqlite::Connection, id: &str, source: &str, status: &str) {
+        db.execute(
+            "INSERT INTO merge_sessions
+             (id, project_id, session_id, workspace_id, source_workspace_id, source_label,
+              source_commit, target_branch, target_remote, push, conflicts, status, created_at)
+             VALUES (?1, 'p', 's', 'w', ?2, 'feature', 'abc', 'sit', NULL, 1, '[]', ?3, 't')",
+            rusqlite::params![id, source, status],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn only_a_resolving_merge_blocks_the_same_source() {
+        let db = open();
+        assert!(!source_merge_in_progress(&db, "client").unwrap());
+        insert(&db, "open", "client", "resolving");
+        insert(&db, "done", "client", "aborted");
+        insert(&db, "other", "web", "resolving");
+        assert!(source_merge_in_progress(&db, "client").unwrap());
+        assert!(!source_merge_in_progress(&db, "missing").unwrap());
+    }
 }

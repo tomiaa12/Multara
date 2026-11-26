@@ -257,6 +257,12 @@
     "ja": "エージェントがまだこのマージを処理しています。完了を待つか、実行を停止してください",
     "ko": "에이전트가 아직 이 병합을 처리하고 있습니다. 완료될 때까지 기다리거나 실행을 중지하세요"
   },
+  "这个工作区已有进行中的合并，请先完成或放弃": {
+    "en": "This workspace already has a merge in progress. Finish or abort it first",
+    "zh-TW": "這個工作區已有進行中的合併，請先完成或放棄",
+    "ja": "このワークスペースには進行中のマージがあります。先に完了するか中止してください",
+    "ko": "이 작업 공간에 진행 중인 병합이 있습니다. 먼저 완료하거나 중단하세요"
+  },
   "这是合并用的临时工作区，请在原来的工作区里发起合并": {
     "en": "This is a temporary merge workspace. Start the merge from the original workspace",
     "zh-TW": "這是合併用的暫時工作區，請在原本的工作區中發起合併",

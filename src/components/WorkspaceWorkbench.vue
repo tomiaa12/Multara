@@ -87,6 +87,8 @@ import {
   recordFromFetchedKeys,
 } from "./workbench/async-record";
 import GitStatusBadge from "./workbench/GitStatusBadge.vue";
+import { activeMergeForProject } from "./scm/merge-targets";
+import { gitStatusForWorkspaces } from "./workbench/git-status-scope";
 import { gitStatusClass, gitStatusTitle } from "./workbench/tree-git-status";
 import { buildTreeGitIndex } from "./workbench/tree-git-index";
 import {
@@ -323,6 +325,8 @@ const diskChangeNotes = new Map<string, string>();
 const LEFT_TABS = ["files", "git", "search"] as const;
 type LeftTab = (typeof LEFT_TABS)[number];
 const leftTab = ref<LeftTab>("files");
+/** 这次进入还没对过进行中的合并；数据晚到时再查一次，查完就不再把用户拽回去。 */
+let mergeEntryChecked = "";
 const searchView = ref<{
   findIn: (workspaceId: string, include: string) => void;
   focusSearch: () => void;
@@ -1798,7 +1802,10 @@ async function refreshGitStatuses() {
   try {
     const next = await backend.listProjectGitStatus(projectId.value);
     if (ticket !== gitStatusTicket) return;
-    gitRepositories.value = next;
+    gitRepositories.value = gitStatusForWorkspaces(
+      next,
+      workspaces.value.map((item) => item.id),
+    );
   } catch {
     if (ticket !== gitStatusTicket) return;
     gitRepositories.value = [];
@@ -5923,8 +5930,8 @@ watch(leftTab, async (next, previous) => {
     }
   }
   await persistDirtyEditors();
-  await refreshGitStatuses();
-  await sourceControlPanel.value?.refresh();
+  if (sourceControlPanel.value) await sourceControlPanel.value.refresh();
+  else await refreshGitStatuses();
 });
 
 watch(dirty, (isDirty) => {
@@ -5936,22 +5943,52 @@ watch(dirty, (isDirty) => {
   if (tab) tab.pinned = true;
 });
 
+function showMerge(sessionId: string) {
+  const merge = store.data?.mergeSessions?.find((item) => item.sessionId === sessionId);
+  if (merge) void store.openMergeSession(merge.id);
+  else void store.selectSession(sessionId);
+  leftTab.value = "git";
+}
+
+function revealActiveMerge(id: string) {
+  if (props.preview || !id || !store.data) return false;
+  mergeEntryChecked = id;
+  const merge = activeMergeForProject(store.data.mergeSessions, id);
+  if (!merge) return true;
+  showMerge(merge.sessionId);
+  return true;
+}
+
 watch(projectId, async (id, previous) => {
-  if (!previous || previous === id) return;
-  // 路由 beforeEach 已拦过未保存离开；这里只清本实例残留（共用 keep-alive 槽时会原地换需求）。
-  if (dirtyEditorTabs().length && !(await confirmDirtyEditorTabs())) return;
-  clearEditorTabs();
-  externalChangePending.value = false;
-  workspaceRoots.value = {};
-  directoryChildren.value = {};
-  expandedDirectories.value = new Set();
-  loadingDirectories.value = new Set();
-  detachedWorkspaceIds.value = new Set();
-  leftTab.value = "files";
-  if (!props.preview) {
-    terminalOpen.value = readProjectTerminalOpen("workbench", id);
+  mergeEntryChecked = "";
+  if (previous && previous !== id) {
+    // 路由 beforeEach 已拦过未保存离开；这里只清本实例残留（共用 keep-alive 槽时会原地换需求）。
+    if (dirtyEditorTabs().length && !(await confirmDirtyEditorTabs())) {
+      revealActiveMerge(id);
+      return;
+    }
+    clearEditorTabs();
+    externalChangePending.value = false;
+    workspaceRoots.value = {};
+    directoryChildren.value = {};
+    expandedDirectories.value = new Set();
+    loadingDirectories.value = new Set();
+    detachedWorkspaceIds.value = new Set();
+    leftTab.value = "files";
+    if (!props.preview) {
+      terminalOpen.value = readProjectTerminalOpen("workbench", id);
+    }
   }
-});
+  revealActiveMerge(id);
+}, { immediate: true });
+
+watch(
+  () => store.data?.mergeSessions,
+  () => {
+    if (!projectId.value || mergeEntryChecked === projectId.value) return;
+    revealActiveMerge(projectId.value);
+  },
+);
 
 watch(
   () => workspaces.value.map((workspace) => workspace.id).join("\0"),
@@ -6167,6 +6204,7 @@ defineExpose({
         :active-path="activeFile?.path ?? ''"
         :active-line="editorStatus.line"
         :active-workspace-id="activeFile?.workspaceId ?? ''"
+        @merge-focus="showMerge($event.sessionId)"
         @open-change="openSourceControlChange"
         @open-changes="openSourceControlChanges"
         @open-file="(target) => openEditorFile(target.workspaceId, target.path, { pin: true })"

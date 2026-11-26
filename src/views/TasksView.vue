@@ -209,9 +209,9 @@ function agentFor(agentId: string) {
   return agentsById.value.get(agentId);
 }
 
-function openCreate(status: TaskStatus = "todo") {
+function openCreate(status: TaskStatus = "todo", lockStatus = false) {
   columnMenu.value = null;
-  store.openTaskCreate(status);
+  store.openTaskCreate(status, { lockStatus });
 }
 
 function openTask(task: Task) {
@@ -323,7 +323,7 @@ async function onCardMenu(id: string) {
 function onColumnMenu(id: string) {
   const status = columnMenu.value?.status ?? "todo";
   columnMenu.value = null;
-  if (id === "add") openCreate(status);
+  if (id === "add") openCreate(status, true);
 }
 </script>
 
@@ -434,7 +434,7 @@ function onColumnMenu(id: string) {
               size="icon"
               class="task-column-action"
               :tip="t('tasks.addTask')"
-              @click="openCreate(column.id)"
+              @click="openCreate(column.id, true)"
             >
               <Plus :size="15" />
             </UiButton>

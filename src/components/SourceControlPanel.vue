@@ -33,7 +33,9 @@ import {
   publishStagedLeftNotice,
   rememberCommitMessage,
 } from "./workbench/scm-commit-action";
+import { gitStatusForWorkspaces } from "./workbench/git-status-scope";
 import { renameBranchNotice } from "./workbench/scm-branch";
+import { sourceHasActiveMerge } from "./scm/merge-targets";
 import type { ScmGroupId, ScmOpenChangesPayload, ScmOpenTarget } from "./workbench/scm-groups";
 
 const props = withDefaults(defineProps<{
@@ -217,10 +219,10 @@ async function performRefresh() {
     }
     const repositoriesForProject = await backend.listProjectGitStatus(props.projectId);
     if (ticket !== refreshTicket) return;
-    const workspaceIds = new Set(props.workspaces.map((item) => item.id));
-    repositories.value = workspaceIds.size
-      ? repositoriesForProject.filter((repository) => workspaceIds.has(repository.workspaceId))
-      : repositoriesForProject;
+    repositories.value = gitStatusForWorkspaces(
+      repositoriesForProject,
+      props.workspaces.map((item) => item.id),
+    );
     syncPreparedCommitMessages(repositories.value);
     emit("updated", repositories.value);
     // 工作区文件变动只刷新更改列表；提交历史相关面板很重（每提交一次 git_commit_files），
@@ -421,6 +423,10 @@ async function switchBranch(
     await backend.gitSwitchWorkspaceBranch(workspace.id, branch, create, from || null, detach);
     emit("worktreeChanged", workspace.id, []);
   });
+}
+
+function sourceMergeActive(workspaceId: string) {
+  return sourceHasActiveMerge(store.data?.mergeSessions, workspaceId);
 }
 
 function onMerged() {
@@ -648,6 +654,7 @@ defineExpose({ refresh, revealCommit });
       :readonly="readonly"
       :selected="item.workspace.id === selectedWorkspaceId"
       :merge-session="store.mergeSessionFor(item.workspace.id)"
+      :source-merge-active="sourceMergeActive(item.workspace.id)"
       @select="selectedWorkspaceId = item.workspace.id"
       @merge-into="mergeDialogWorkspaceId = item.workspace.id"
       @finish-merge="finishMerge(item.workspace)"

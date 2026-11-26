@@ -38,6 +38,28 @@ export function mergePlanBadge(plan: string) {
   return "";
 }
 
+/** 这个需求上还没结束的冲突合并；同时有多条时用最新的一条。 */
+export function activeMergeForProject<T extends { projectId: string; createdAt: string }>(
+  sessions: readonly T[] | null | undefined,
+  projectId: string,
+): T | null {
+  if (!projectId || !sessions?.length) return null;
+  let found: T | null = null;
+  for (const item of sessions) {
+    if (item.projectId !== projectId) continue;
+    if (!found || item.createdAt > found.createdAt) found = item;
+  }
+  return found;
+}
+
+/** 来源工作区已经有未结束的冲突合并时，不能再开一次。 */
+export function sourceHasActiveMerge(
+  sessions: ReadonlyArray<{ sourceWorkspaceId: string }> | null | undefined,
+  workspaceId: string,
+): boolean {
+  return sessions?.some((item) => item.sourceWorkspaceId === workspaceId) ?? false;
+}
+
 /** 右侧队列在合并过程中的状态标签。 */
 export function mergeRunBadge(status: string) {
   if (status === "queued") return t("scm.merge.status.waiting");
