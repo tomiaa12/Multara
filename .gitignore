@@ -1,5 +1,8 @@
 node_modules/
 .pnpm-store/
+design-system/
+docs/
+prototype/
 dist/
 .DS_Store
 
