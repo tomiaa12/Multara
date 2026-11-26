@@ -778,7 +778,6 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "checklist_json",
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
-    ensure_column(&columns, "tasks", "pr_url", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(
         &columns,
         "tasks",

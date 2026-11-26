@@ -19,7 +19,6 @@ export type TaskDetailPreviewSide = {
   labels: string[];
   checklist: Array<{ id: string; text: string; done: boolean }>;
   children: TaskDetailPreviewChild[];
-  prUrl: string;
   runs: TaskRunRecord[];
 };
 
@@ -92,7 +91,6 @@ const emptySide = (): TaskDetailPreviewSide => ({
   labels: [],
   checklist: [],
   children: [],
-  prUrl: "",
   runs: [],
 });
 
@@ -263,7 +261,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
         { id: "c2", text: "在需求任务里实现", done: true },
         { id: "c3", text: "回归验证", done: false },
       ],
-      prUrl: "https://github.com/example/uc/pull/128",
     }),
     agents,
     messages: [
@@ -337,7 +334,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
           reply: "补丁已应用到工作区，构建和指定测试都通过了。",
         },
       ],
-      prUrl: "https://github.com/example/uc/pull/128",
       runs: [
         {
           id: "preview-task-run-a1",
@@ -439,7 +435,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
         { id: "r2", text: "数据脚本准备", done: false },
         { id: "r3", text: "回滚方案", done: false },
       ],
-      prUrl: "https://github.com/example/uc/pull/130",
     }),
     agents,
     messages: [
@@ -476,7 +471,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
           agentId: "miku",
         },
       ],
-      prUrl: "https://github.com/example/uc/pull/130",
       runs: [
         {
           id: "preview-task-run-rich-1",
@@ -508,7 +502,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
       status: "done",
       agentId: "miku",
       priority: "low",
-      prUrl: "https://github.com/example/uc/pull/128",
     }),
     agents,
     messages: [
@@ -525,7 +518,6 @@ export const taskDetailPreviewScenarios: TaskDetailPreviewScenario[] = [
     side: {
       ...emptySide(),
       priority: "low",
-      prUrl: "https://github.com/example/uc/pull/128",
       runs: [
         {
           id: "preview-task-run-done",

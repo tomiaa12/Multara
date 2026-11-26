@@ -414,8 +414,6 @@ pub struct Task {
     pub labels: Vec<String>,
     #[serde(default)]
     pub checklist: Vec<TaskChecklistItem>,
-    #[serde(default)]
-    pub pr_url: String,
     pub default_mode: RunMode,
 }
 

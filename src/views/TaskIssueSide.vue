@@ -48,7 +48,6 @@ const runs = ref<Awaited<ReturnType<typeof backend.listTaskRuns>>>([]);
 const metaTick = ref(0);
 const checklistDraft = ref("");
 const childDraft = ref("");
-const prDraft = ref("");
 
 const task = computed(() => store.data?.tasks.find((item) => item.id === props.taskId));
 const session = computed(() => store.data?.sessions.find((item) => item.id === task.value?.sessionId));
@@ -89,7 +88,6 @@ watch(
       runs.value = [];
       return;
     }
-    prDraft.value = task.value.prUrl ?? "";
     void backend.listTaskRuns(id).then((items) => {
       runs.value = items;
     }).catch(() => {
@@ -171,11 +169,6 @@ async function toggleChecklist(id: string) {
     item.id === id ? { ...item, done: !item.done } : item,
   );
   await store.updateTaskMeta({ taskId: task.value.id, checklist });
-}
-
-async function savePr() {
-  if (!task.value) return;
-  await store.updateTaskMeta({ taskId: task.value.id, prUrl: prDraft.value.trim() });
 }
 
 async function createChild() {
@@ -312,10 +305,6 @@ function openLatestRunLog() {
       </ul>
       <p v-else>{{ t('tasks.noSubtasks') }}</p>
       <input v-model="childDraft" class="task-prop-input" :placeholder="t('tasks.newSubtask')" @keydown.enter.prevent="createChild" />
-    </section>
-    <section>
-      <h2>Pull Request</h2>
-      <input v-model="prDraft" class="task-prop-input" placeholder="https://…" @change="savePr" />
     </section>
     <section>
       <div class="task-side-heading">

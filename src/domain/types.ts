@@ -286,7 +286,6 @@ export interface Task {
   priority?: TaskPriority;
   labels?: string[];
   checklist?: TaskChecklistItem[];
-  prUrl?: string;
   defaultMode?: RunMode;
 }
 

@@ -20,7 +20,7 @@ pub struct CreateTaskInput<'a> {
 
 const TASK_COLUMNS: &str = "t.id, t.session_id, t.title, t.description, t.agent_id, t.status,
                     t.created_at, t.updated_at, t.parent_task_id, t.priority,
-                    t.labels_json, t.checklist_json, t.pr_url, t.default_mode";
+                    t.labels_json, t.checklist_json, t.default_mode";
 
 fn parse_labels(raw: String) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&raw)
@@ -56,9 +56,8 @@ fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         priority: parse_priority(&row.get::<_, String>(9).unwrap_or_else(|_| "none".into())),
         labels: parse_labels(row.get::<_, String>(10).unwrap_or_else(|_| "[]".into())),
         checklist: parse_checklist(row.get::<_, String>(11).unwrap_or_else(|_| "[]".into())),
-        pr_url: row.get::<_, String>(12).unwrap_or_default(),
         default_mode: row
-            .get::<_, String>(13)
+            .get::<_, String>(12)
             .unwrap_or_else(|_| "auto".into())
             .parse()
             .unwrap_or(RunMode::Auto),
@@ -207,7 +206,6 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             priority: "none".to_string(),
             labels: Vec::new(),
             checklist: Vec::new(),
-            pr_url: String::new(),
             default_mode: input.requested_mode,
         },
         queued,
@@ -914,7 +912,6 @@ pub fn update_meta(
     priority: Option<&str>,
     labels: Option<&[String]>,
     checklist: Option<&[TaskChecklistItem]>,
-    pr_url: Option<&str>,
     parent_task_id: Option<Option<&str>>,
 ) -> Result<(), String> {
     get(db, task_id)?;
@@ -939,13 +936,6 @@ pub fn update_meta(
         db.execute(
             "UPDATE tasks SET checklist_json=?1, updated_at=?2 WHERE id=?3",
             params![json, now, task_id],
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    if let Some(pr_url) = pr_url {
-        db.execute(
-            "UPDATE tasks SET pr_url=?1, updated_at=?2 WHERE id=?3",
-            params![pr_url.trim(), now, task_id],
         )
         .map_err(|error| error.to_string())?;
     }
@@ -1188,8 +1178,8 @@ mod tests {
         };
         let a = create(&mut db, input("A")).unwrap().task;
         let b = create(&mut db, input("B")).unwrap().task;
-        super::update_meta(&db, &b.id, None, None, None, None, Some(Some(&a.id))).unwrap();
-        let cycle = super::update_meta(&db, &a.id, None, None, None, None, Some(Some(&b.id)));
+        super::update_meta(&db, &b.id, None, None, None, Some(Some(&a.id))).unwrap();
+        let cycle = super::update_meta(&db, &a.id, None, None, None, Some(Some(&b.id)));
         assert!(cycle.is_err());
         assert_eq!(
             super::get(&db, &b.id).unwrap().parent_task_id.as_deref(),

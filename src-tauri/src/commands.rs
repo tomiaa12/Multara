@@ -6466,7 +6466,6 @@ pub struct TaskMetaInput {
     pub priority: Option<String>,
     pub labels: Option<Vec<String>>,
     pub checklist: Option<Vec<TaskChecklistItem>>,
-    pub pr_url: Option<String>,
     pub parent_task_id: Option<Option<String>>,
 }
 
@@ -6483,7 +6482,6 @@ pub fn update_task_meta(
         input.priority.as_deref(),
         input.labels.as_deref(),
         input.checklist.as_deref(),
-        input.pr_url.as_deref(),
         input.parent_task_id.as_ref().map(|value| value.as_deref()),
     )?;
     ops::task::get(&db, &task_id)

@@ -266,10 +266,6 @@ function formatDate(iso: string) {
           <p v-else>{{ t("tasks.noSubtasks") }}</p>
         </section>
         <section>
-          <h2>Pull Request</h2>
-          <input class="task-prop-input" readonly :value="side.prUrl" placeholder="https://…" />
-        </section>
-        <section>
           <div class="task-side-heading">
             <h2>{{ t("tasks.runLog") }}</h2>
             <UiButton
