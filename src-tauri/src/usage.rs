@@ -32,6 +32,8 @@ enum UsageKind {
 pub struct UsageAccumulator {
     configured_model: String,
     runtime_id: String,
+    /// 流里出现过的真实模型名。`auto` 只是选择项，不能用来估价。
+    resolved_model: String,
     result: Option<TokenUsage>,
     steps: TokenUsage,
     step_message_ids: HashSet<String>,
@@ -42,6 +44,7 @@ impl UsageAccumulator {
         Self {
             configured_model: configured_model.into(),
             runtime_id: runtime_id.into(),
+            resolved_model: String::new(),
             result: None,
             steps: TokenUsage::default(),
             step_message_ids: HashSet::new(),
@@ -54,8 +57,37 @@ impl UsageAccumulator {
             && serde_json::from_str::<Value>(line).is_ok_and(|value| self.ingest_value(&value))
     }
 
+    /// 任何一行都可能带上真正用到的模型（例如 Cursor 的 system init），不要求这条有 token。
+    pub fn note_model(&mut self, value: &Value) {
+        if let Some(models) = value.get("modelUsage").and_then(Value::as_object) {
+            for model in models.keys() {
+                if is_real_model(model) {
+                    self.resolved_model = model.clone();
+                    break;
+                }
+            }
+        }
+        let model = first_text(
+            value,
+            &[
+                "/model",
+                "/message/model",
+                "/params/turn/model",
+                "/payload/info/model",
+                "/modelName",
+                "/model_name",
+                "/modelId",
+                "/model_id",
+            ],
+        );
+        if is_real_model(&model) {
+            self.resolved_model = model;
+        }
+    }
+
     /// 调用方已经解析好的行。先用 [`mentions_usage`] 过滤，避免每行都走一遍字段查找。
     pub fn ingest_value(&mut self, value: &Value) -> bool {
+        self.note_model(value);
         let Some(parsed) = parse_value(value) else {
             return false;
         };
@@ -97,14 +129,51 @@ impl UsageAccumulator {
             .clone()
             .filter(|item| !item.is_empty())
             .unwrap_or_else(|| self.steps.clone());
-        if usage.model.is_empty() {
-            usage.model = self.configured_model.clone();
+        if !is_real_model(&usage.model) {
+            if is_real_model(&self.resolved_model) {
+                usage.model = self.resolved_model.clone();
+            } else if is_real_model(&self.configured_model) {
+                usage.model = self.configured_model.clone();
+            }
         }
         if !usage.has_authoritative_cost {
-            usage.cost_usd = estimate_cost(&usage, &self.runtime_id);
+            usage.cost_usd = estimate_recorded_cost(&usage, &self.runtime_id);
         }
         usage
     }
+}
+
+/// 已落库、当时没估出费用的运行。模型仍是 `auto` 时按该运行时的默认定价补一笔。
+pub fn estimate_recorded_cost(usage: &TokenUsage, runtime_id: &str) -> f64 {
+    if is_real_model(&usage.model) {
+        return estimate_cost(usage, runtime_id);
+    }
+    let Some(model) = fallback_model(runtime_id) else {
+        return 0.0;
+    };
+    let mut priced = usage.clone();
+    priced.model = model;
+    estimate_cost(&priced, runtime_id)
+}
+
+fn is_real_model(model: &str) -> bool {
+    let key = normalize_model(model);
+    !key.is_empty()
+        && !matches!(
+            key.as_str(),
+            "auto" | "default" | "default-model" | "unknown"
+        )
+}
+
+fn fallback_model(runtime_id: &str) -> Option<String> {
+    Some(
+        match runtime_id {
+            "cursor" | "claude" | "codebuddy" => "claude-sonnet-5",
+            "codex" => "gpt-5.4",
+            _ => return None,
+        }
+        .to_string(),
+    )
 }
 
 struct ParsedUsage {
@@ -269,7 +338,7 @@ fn add_usage(mut left: TokenUsage, right: TokenUsage) -> TokenUsage {
     } else if !left.has_authoritative_cost {
         left.cost_usd += right.cost_usd;
     }
-    if left.model.is_empty() {
+    if !is_real_model(&left.model) && is_real_model(&right.model) {
         left.model = right.model;
     }
     left
@@ -477,6 +546,29 @@ mod tests {
         assert!(mentions_usage(r#"{"inputTokens":1}"#));
         let mut acc = UsageAccumulator::new("gpt-5", "codex");
         assert!(!acc.ingest(r#"{"type":"text","text":"no numbers here"}"#));
+    }
+
+    #[test]
+    fn prices_cursor_auto_from_the_model_named_in_the_stream() {
+        let mut acc = UsageAccumulator::new("auto", "cursor");
+        acc.note_model(
+            &serde_json::json!({"type":"system","subtype":"init","model":"claude-4.5-sonnet"}),
+        );
+        acc.ingest(
+            r#"{"type":"result","usage":{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":100}}"#,
+        );
+        let usage = acc.finalize();
+        assert_eq!(usage.model, "claude-4.5-sonnet");
+        assert!(usage.cost_usd > 0.0);
+    }
+
+    #[test]
+    fn prices_cursor_auto_when_the_stream_never_names_a_model() {
+        let mut acc = UsageAccumulator::new("auto", "cursor");
+        acc.ingest(
+            r#"{"type":"result","usage":{"inputTokens":1000,"outputTokens":200}}"#,
+        );
+        assert!(acc.finalize().cost_usd > 0.0);
     }
 
     #[test]

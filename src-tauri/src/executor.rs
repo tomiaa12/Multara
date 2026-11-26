@@ -2006,8 +2006,9 @@ fn read_stream<R: Read + Send + 'static>(
                     conversation::persist_id(&app, &session_id, &agent_id, &runtime_id, &id);
                     last_conversation_id = Some(id);
                 }
-                if crate::usage::mentions_usage(&line) {
-                    if let Ok(mut acc) = usage.lock() {
+                if let Ok(mut acc) = usage.lock() {
+                    acc.note_model(value);
+                    if crate::usage::mentions_usage(&line) {
                         usage_dirty |= acc.ingest_value(value);
                         if usage_dirty && last_usage_persist.elapsed() >= USAGE_PERSIST_INTERVAL {
                             persist_run_usage(&app, &run_id, &acc.finalize());

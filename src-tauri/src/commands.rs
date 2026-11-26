@@ -7143,6 +7143,7 @@ fn run_statistics(
     project_id: Option<&str>,
     agent_id: Option<&str>,
 ) -> Result<RunStatistics, String> {
+    backfill_unpriced_runs(db)?;
     let filter = usage_where(project_id, agent_id);
     let params = usage_params(days, project_id, agent_id);
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
@@ -7241,6 +7242,56 @@ fn run_statistics(
             &params,
         )?,
     })
+}
+
+fn backfill_unpriced_runs(db: &Connection) -> Result<(), String> {
+    let mut statement = db
+        .prepare(
+            "SELECT id, runtime_id, COALESCE(usage_model, ''),
+                    COALESCE(input_tokens, 0), COALESCE(output_tokens, 0),
+                    COALESCE(cache_read_tokens, 0), COALESCE(cache_write_tokens, 0)
+             FROM agent_runs
+             WHERE COALESCE(cost_usd, 0) = 0
+               AND COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                 + COALESCE(cache_read_tokens, 0) + COALESCE(cache_write_tokens, 0) > 0",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    for (id, runtime_id, model, input, output, cache_read, cache_write) in rows {
+        let usage = crate::usage::TokenUsage {
+            input_tokens: input,
+            output_tokens: output,
+            cache_read_tokens: cache_read,
+            cache_write_tokens: cache_write,
+            model,
+            ..crate::usage::TokenUsage::default()
+        };
+        let cost = crate::usage::estimate_recorded_cost(&usage, &runtime_id);
+        if cost <= 0.0 {
+            continue;
+        }
+        db.execute(
+            "UPDATE agent_runs SET cost_usd = ?1 WHERE id = ?2 AND COALESCE(cost_usd, 0) = 0",
+            params![cost, id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn usage_days(db: &Connection, filter: &str, params: &[String]) -> Result<Vec<UsageDay>, String> {
