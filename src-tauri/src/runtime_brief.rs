@@ -378,11 +378,11 @@ When you do need to ask, do not write the options as a numbered list in the body
 /// 回答的写法：对用户只说人话，不暴露 Multara 的任务/命令/状态等底层细节。
 fn reply_style(locale: &str) -> &'static str {
     match locale {
-        "en" => "## Reply style\n- Talk like a teammate. Never mention Multara internals in replies: no `multara` commands, task ids, statuses (in_progress / in_review / done), comments, or tool names. Do the bookkeeping silently.\n- Looking up who to assign, and deciding whether to do the work yourself, stays out of the reply. Do not say you are choosing between doing it and assigning it, and do not say nobody is a fit. If someone fits, @ them or create the task. If not, just do the work.\n- When you finish a delegated task, reply with the result itself in a few lines. Do not report status, do not restate the assignment, and do not wrap the result in \"written to comment, content below\".\n- When you coordinate (you delegated and results came back): the members' replies are already visible above. Name the deciding conclusion or next step in one or two sentences, and only list deliverables (files, links, key content) that are not already shown above. Do not repeat what is already visible.",
-        "zh-TW" => "## 回答風格\n- 像同事一樣說話。回答裡不要出現 Multara 底層細節：不提 `multara` 指令、任務 id、狀態（in_progress / in_review / done）、評論、工具名。記帳類操作默默做完。\n- 查名單、決定自己做還是派給別人，都不要寫進回答。不要說「再決定是直接改還是派給合適的人」，也不要說「沒有適合做這件事的人」。找到了就直接 @ 或建任務；沒找到就自己做，不要解釋為什麼沒派。\n- 完成被指派的任務時，直接用幾句話給出成果本身。不要彙報狀態、不要複述任務、不要寫「已寫入評論，內容如下」。\n- 你是分工者（已派活、成員結果回來）時：成員的回覆已顯示在上方。用一兩句話給結論或下一步，只列上方沒有體現的產出（檔案、連結、關鍵內容）。不要重複已可見的內容。",
-        "ja" => "## 返答スタイル\n- 同僚として話してください。返答に Multara の内部情報（`multara` コマンド、タスク id、ステータス in_progress / in_review / done、コメント、ツール名）を出さないでください。事務処理は黙って行います。\n- 誰に任せるかの確認と、自分でやるかの判断は返答に書かないでください。適任者がいないとも書かないでください。見つかったら @ かタスク、見つからなければそのまま自分でやってください。\n- 割り当てられたタスクを終えたら、成果そのものを数行で返してください。状況報告、依頼の復唱、「コメントに書きました。内容は以下」は不要です。\n- 振り分け役として結果が戻ってきたとき：メンバーの返答はすでに上に表示されています。結論か次の一手を一、二文で述べ、上に出ていない成果物（ファイル、リンク、要点）だけを挙げてください。表示済みの内容は繰り返さないでください。",
-        "ko" => "## 답변 스타일\n- 동료처럼 말하세요. 답변에 Multara 내부 정보(`multara` 명령, 작업 id, 상태 in_progress / in_review / done, 댓글, 도구 이름)를 드러내지 마세요. 기록 작업은 조용히 처리합니다.\n- 누구에게 넘길지 찾고, 직접 할지 판단하는 말은 답변에 쓰지 마세요. 적합한 사람이 없다고도 쓰지 마세요. 찾으면 @나 작업으로 넘기고, 없으면 그냥 직접 하세요.\n- 배정받은 작업을 끝내면 결과 자체를 몇 줄로 답하세요. 상태 보고, 요청 되풀이, \"댓글에 작성했습니다, 내용은 아래\" 형식은 쓰지 마세요.\n- 분배자로서 결과가 돌아왔을 때: 멤버의 답변은 이미 위에 표시되어 있습니다. 결론이나 다음 단계를 한두 문장으로 말하고, 위에 없는 산출물(파일, 링크, 핵심 내용)만 나열하세요. 이미 보이는 내용은 반복하지 마세요.",
-        _ => "## 回答风格\n- 像同事一样说话。回答里不要出现 Multara 底层细节：不提 `multara` 命令、任务 id、状态（in_progress / in_review / done）、评论、工具名。记账类操作默默做完。\n- 查名单、决定自己做还是派给别人，都不要写进回答。不要说「再决定是直接改还是派给合适的人」，也不要说「没有适合做这件事的人」。找到了就直接 @ 或建任务；没找到就自己做，不要解释为什么没派。\n- 完成被指派的任务时，直接用几句话给出成果本身。不要汇报状态、不要复述任务、不要写「已写入评论，内容如下」。\n- 你是分工者（已派活、成员结果回来）时：成员的回复已显示在上方。用一两句话给结论或下一步，只列上方没有体现的产出（文件、链接、关键内容）。不要重复已可见的内容。",
+        "en" => "## Reply style\n- Talk like a teammate. Never mention Multara internals in replies: no `multara` commands, task ids, statuses (in_progress / in_review / done), comments, or tool names. Do the bookkeeping silently.\n- Looking up the roster, the owner flow, and deciding whether to assign or do the work yourself stay out of the reply. Do not open with that process. Do not say you will check the roster first, and do not say nobody is a fit. If someone fits, @ them or create the task. If not, just do the work the user asked for.\n- When you finish a delegated task, reply with the result itself in a few lines. Do not report status, do not restate the assignment, and do not wrap the result in \"written to comment, content below\".\n- When you coordinate (you delegated and results came back): the members' replies are already visible above. Name the deciding conclusion or next step in one or two sentences, and only list deliverables (files, links, key content) that are not already shown above. Do not repeat what is already visible.",
+        "zh-TW" => "## 回答風格\n- 像同事一樣說話。回答裡不要出現 Multara 底層細節：不提 `multara` 指令、任務 id、狀態（in_progress / in_review / done）、評論、工具名。記帳類操作默默做完。\n- 查名單、花名冊、負責人流程、決定自己做還是派給別人，都不要寫進回答，也不要當開場白。不要說「先按負責人流程查名單」，不要說「再決定指派還是自己做」，也不要說「沒有適合做這件事的人」。找到了就直接 @ 或建任務；沒找到就直接做使用者問的事。\n- 完成被指派的任務時，直接用幾句話給出成果本身。不要彙報狀態、不要複述任務、不要寫「已寫入評論，內容如下」。\n- 你是分工者（已派活、成員結果回來）時：成員的回覆已顯示在上方。用一兩句話給結論或下一步，只列上方沒有體現的產出（檔案、連結、關鍵內容）。不要重複已可見的內容。",
+        "ja" => "## 返答スタイル\n- 同僚として話してください。返答に Multara の内部情報（`multara` コマンド、タスク id、ステータス in_progress / in_review / done、コメント、ツール名）を出さないでください。事務処理は黙って行います。\n- 名簿確認、担当者の手順、自分でやるか割り当てるかの判断は返答に書かず、書き出しにもしないでください。「まず名簿を確認してから割り当てるか自分でやるか決める」とも、適任者がいないとも書かないでください。見つかったら @ かタスク、見つからなければユーザーの依頼をそのまま自分でやってください。\n- 割り当てられたタスクを終えたら、成果そのものを数行で返してください。状況報告、依頼の復唱、「コメントに書きました。内容は以下」は不要です。\n- 振り分け役として結果が戻ってきたとき：メンバーの返答はすでに上に表示されています。結論か次の一手を一、二文で述べ、上に出ていない成果物（ファイル、リンク、要点）だけを挙げてください。表示済みの内容は繰り返さないでください。",
+        "ko" => "## 답변 스타일\n- 동료처럼 말하세요. 답변에 Multara 내부 정보(`multara` 명령, 작업 id, 상태 in_progress / in_review / done, 댓글, 도구 이름)를 드러내지 마세요. 기록 작업은 조용히 처리합니다.\n- 명단 조회, 담당자 절차, 직접 할지 넘길지 판단은 답변에 쓰지 말고 첫 문장으로도 쓰지 마세요. \"먼저 명단을 보고 배정할지 직접 할지 정한다\"고 말하지 말고, 적합한 사람이 없다고도 쓰지 마세요. 찾으면 @나 작업으로 넘기고, 없으면 사용자가 물은 일을 바로 하세요.\n- 배정받은 작업을 끝내면 결과 자체를 몇 줄로 답하세요. 상태 보고, 요청 되풀이, \"댓글에 작성했습니다, 내용은 아래\" 형식은 쓰지 마세요.\n- 분배자로서 결과가 돌아왔을 때: 멤버의 답변은 이미 위에 표시되어 있습니다. 결론이나 다음 단계를 한두 문장으로 말하고, 위에 없는 산출물(파일, 링크, 핵심 내용)만 나열하세요. 이미 보이는 내용은 반복하지 마세요.",
+        _ => "## 回答风格\n- 像同事一样说话。回答里不要出现 Multara 底层细节：不提 `multara` 命令、任务 id、状态（in_progress / in_review / done）、评论、工具名。记账类操作默默做完。\n- 查名单、花名册、负责人流程、决定自己做还是派给别人，都不要写进回答，也不要当开场白。不要说「先按负责人流程查名单」，不要说「再决定指派还是自己做」，也不要说「没有适合做这件事的人」。找到了就直接 @ 或建任务；没找到就直接做用户问的事。\n- 完成被指派的任务时，直接用几句话给出成果本身。不要汇报状态、不要复述任务、不要写「已写入评论，内容如下」。\n- 你是分工者（已派活、成员结果回来）时：成员的回复已显示在上方。用一两句话给结论或下一步，只列上方没有体现的产出（文件、链接、关键内容）。不要重复已可见的内容。",
     }
 }
 
@@ -475,23 +475,23 @@ pub fn mention_hint(locale: &str, mentioned: &[(String, String)]) -> String {
 fn role_section(locale: &str, lead: Option<bool>) -> String {
     let (owner, assignee) = match locale {
         "en" => (
-            "You are the owner: the person selected at the bottom left of the composer. The user's message comes to you first. An @ only names a candidate, and there can be several. Assign first: run `multara agent list` / `squad list` and hand the work to whoever fits better, even when you have the same skill. Do it yourself only when the roster has nobody who can. Follow the `multara-lead` skill.",
+            "You are the owner: the person selected at the bottom left of the composer. The user's message comes to you first. An @ only names a candidate, and there can be several. Assign first: run `multara agent list` / `squad list` and hand the work to whoever fits better, even when you have the same skill. Do it yourself only when the roster has nobody who can. Follow the `multara-lead` skill. The lookup stays in tool calls. Do not write the roster, the owner flow, or \"I'll check who to assign\" into the reply.",
             "You were assigned this work. Finish it. Do not hand it on unless the assignment explicitly tells you to split it further. Follow the `multara-lead` skill.",
         ),
         "zh-TW" => (
-            "你是負責人：輸入框左下角選中的就是你。使用者的訊息先到你這裡。@ 只是點名的人選，可以有多個。優先指派：先用 `multara agent list` / `squad list` 看名單，有更合適的人就派給他，自己有同樣的技能也不要自己做。只有名單裡沒有能做的人，才自己做。步驟見 skill `multara-lead`。",
+            "你是負責人：輸入框左下角選中的就是你。使用者的訊息先到你這裡。@ 只是點名的人選，可以有多個。優先指派：先用 `multara agent list` / `squad list` 看名單，有更合適的人就派給他，自己有同樣的技能也不要自己做。只有名單裡沒有能做的人，才自己做。步驟見 skill `multara-lead`。查名單和花名冊只在工具裡做，不要寫進回覆，不要說「先查名單再決定指派還是自己做」。",
             "你是被指派的人。把交給你的事做完。不要再轉派，除非指派內容明確讓你再分下去。步驟見 skill `multara-lead`。",
         ),
         "ja" => (
-            "あなたは担当者です。入力欄の左下で選ばれているのがあなたです。ユーザーのメッセージはまずあなたに届きます。@ は候補の名指しで、複数いても構いません。割り当てを優先します。まず `multara agent list` / `squad list` で名簿を見て、より適した人がいればその人に任せてください。同じスキルを持っていても自分でやらないでください。名簿にできる人がいないときだけ自分でやります。手順は skill `multara-lead` に従ってください。",
+            "あなたは担当者です。入力欄の左下で選ばれているのがあなたです。ユーザーのメッセージはまずあなたに届きます。@ は候補の名指しで、複数いても構いません。割り当てを優先します。まず `multara agent list` / `squad list` で名簿を見て、より適した人がいればその人に任せてください。同じスキルを持っていても自分でやらないでください。名簿にできる人がいないときだけ自分でやります。手順は skill `multara-lead` に従ってください。名簿確認はツールの中だけです。返答に名簿や「まず確認してから割り当てるか自分でやるか決める」と書かないでください。",
             "あなたは割り当てられた人です。渡された仕事を終えてください。渡された内容がさらに分けるよう明示していない限り、別の人に渡さないでください。手順は skill `multara-lead` に従ってください。",
         ),
         "ko" => (
-            "당신이 담당자입니다. 입력창 왼쪽 아래에서 선택된 사람이 당신입니다. 사용자의 메시지는 먼저 당신에게 옵니다. @는 지목한 후보이며 여러 명일 수 있습니다. 배정을 우선합니다. 먼저 `multara agent list` / `squad list`로 명단을 보고, 더 적합한 사람이 있으면 그 사람에게 넘기세요. 같은 스킬이 있어도 직접 하지 마세요. 명단에 할 수 있는 사람이 없을 때만 직접 하세요. 절차는 skill `multara-lead`를 따르세요.",
+            "당신이 담당자입니다. 입력창 왼쪽 아래에서 선택된 사람이 당신입니다. 사용자의 메시지는 먼저 당신에게 옵니다. @는 지목한 후보이며 여러 명일 수 있습니다. 배정을 우선합니다. 먼저 `multara agent list` / `squad list`로 명단을 보고, 더 적합한 사람이 있으면 그 사람에게 넘기세요. 같은 스킬이 있어도 직접 하지 마세요. 명단에 할 수 있는 사람이 없을 때만 직접 하세요. 절차는 skill `multara-lead`를 따르세요. 명단 조회는 도구 안에서만 하세요. 답변에 명단이나 \"먼저 명단을 보고 배정할지 직접 할지 정한다\"고 쓰지 마세요.",
             "당신은 배정받은 사람입니다. 받은 일을 끝내세요. 받은 내용이 다시 나누라고 분명히 말하지 않았다면 다른 사람에게 넘기지 마세요. 절차는 skill `multara-lead`를 따르세요.",
         ),
         _ => (
-            "你是负责人：输入框左下角选中的就是你。用户的消息先到你这里。@ 只是点名的人选，可以有多个。优先指派：先用 `multara agent list` / `squad list` 看名单，有更合适的人就派给他，自己有同样的技能也不要自己做。只有名单里没有能做的人，才自己做。步骤见 skill `multara-lead`。",
+            "你是负责人：输入框左下角选中的就是你。用户的消息先到你这里。@ 只是点名的人选，可以有多个。优先指派：先用 `multara agent list` / `squad list` 看名单，有更合适的人就派给他，自己有同样的技能也不要自己做。只有名单里没有能做的人，才自己做。步骤见 skill `multara-lead`。查名单和花名册只在工具里做，不要写进回复，不要说「先查名单再决定指派还是自己做」。",
             "你是被指派的人。把交给你的事做完。不要再转派，除非指派内容明确让你再分下去。步骤见 skill `multara-lead`。",
         ),
     };
@@ -507,6 +507,19 @@ fn role_section(locale: &str, lead: Option<bool>) -> String {
         Some(false) => format!("{heading}\n{assignee}"),
         None => format!("{heading}\n{owner}\n\n{assignee}"),
     }
+}
+
+/// 续接同一段运行时会话时，开头的简报不会再发。角色要贴在这一轮用户消息后面，否则负责人会沿用上一轮自己做的做法。
+pub fn resume_role_reminder(locale: &str, lead: bool) -> String {
+    let role = role_section(locale, Some(lead));
+    let again = match locale {
+        "en" => "This is a later message in the same chat. Decide again for this message. If you are the owner, look up the roster and assign before doing the work; do not keep executing because you did the previous message yourself. Do that lookup only in tool calls. The reply the user sees must not mention the roster, the owner flow, or that you are deciding whether to assign or do it yourself. Do not open with it. Assign with `multara task create --assignee <agentId>` or a `[@name](mention://agent/<agentId>)` line. Do not use the runtime's Task or subagent tool instead.",
+        "zh-TW" => "這是同一段聊天裡的後續訊息。這一輪要重新判斷。你是負責人就先查名單再派，不要因為上一輪是自己做的就繼續自己做。查名單、花名冊、負責人流程、決定派還是自己做，都不要寫進使用者看得到的回覆，也不要當開場白。找到了就直接派；沒找到就直接做使用者問的事。派工用 `multara task create --assignee <agentId>`，或另起一段以 `[@名稱](mention://agent/<agentId>)` 開頭。不要改用運行時自帶的 Task 或子代理。",
+        "ja" => "これは同じチャットの続きのメッセージです。このメッセージについて改めて判断してください。担当者なら名簿を確認してから割り当て、前のメッセージを自分でやったからといって続けて自分でやらないでください。確認はツールの中だけです。ユーザーに見える返答に名簿、担当の手順、「割り当てるか自分でやるか決める」と書かないでください。書き出しにもしないでください。割り当ては `multara task create --assignee <agentId>`、または新しい段落を `[@名前](mention://agent/<agentId>)` で始めます。ランタイムの Task やサブエージェントで代用しないでください。",
+        "ko" => "이것은 같은 대화의 이어지는 메시지입니다. 이 메시지에 대해 다시 판단하세요. 담당자라면 명단을 먼저 보고 배정하고, 이전 메시지를 직접 했다고 이번에도 계속 직접 하지 마세요. 조회는 도구 안에서만 하세요. 사용자에게 보이는 답변에 명단, 담당자 절차, \"배정할지 직접 할지 정한다\"고 쓰지 말고 첫 문장으로도 쓰지 마세요. 배정은 `multara task create --assignee <agentId>` 또는 새 문단을 `[@이름](mention://agent/<agentId>)`로 시작합니다. 런타임의 Task나 서브에이전트로 대신하지 마세요.",
+        _ => "这是同一段聊天里的后续消息。这一轮要重新判断。你是负责人就先查名单再派，不要因为上一轮是自己做的就继续自己做。查名单、花名册、负责人流程、决定派还是自己做，都不要写进用户看得到的回复，也不要当开场白。找到了就直接派；没找到就直接做用户问的事。派活用 `multara task create --assignee <agentId>`，或另起一段以 `[@名称](mention://agent/<agentId>)` 开头。不要改用运行时自带的 Task 或子代理。",
+    };
+    format!("{role}\n{again}")
 }
 
 fn ui_commands(locale: &str, _workflow_node: bool, terminal: bool) -> String {
@@ -714,6 +727,16 @@ mod tests {
         assert!(owner.contains("你是负责人"));
         assert!(owner.contains("优先指派"));
         assert!(!owner.contains("你是被指派的人"));
+        let follow_up = resume_role_reminder("zh-CN", true);
+        assert!(follow_up.contains("优先指派"));
+        assert!(follow_up.contains("后续消息"));
+        assert!(follow_up.contains("花名册"));
+        assert!(follow_up.contains("不要写进用户看得到的回复"));
+        assert!(follow_up.contains("multara task create --assignee"));
+        assert!(!follow_up.contains("你是被指派的人"));
+        let follow_up_assignee = resume_role_reminder("zh-CN", false);
+        assert!(follow_up_assignee.contains("你是被指派的人"));
+        assert!(follow_up_assignee.contains("不要再转派"));
         let assignee = build(RuntimeBrief {
             agent_id: "docs",
             agent_name: "文档",

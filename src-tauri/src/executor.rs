@@ -1244,6 +1244,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 .ok()
                 .is_some_and(|db| crate::commands::genui_enabled(&db));
             let skill_names = builtin_skills::names(genui_enabled);
+            let lead = session_lead(&app, &run);
             let roster = app
                 .state::<AppState>()
                 .lock_db()
@@ -1296,7 +1297,7 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 terminal_enabled: workspace_context.2,
                 workflow_node: run.session_id.starts_with(crate::workflow::WF_NODE_PREFIX),
                 locale,
-                lead: Some(session_lead(&app, &run)),
+                lead: Some(lead),
             });
             let assignment = {
                 let extra = app
@@ -1317,6 +1318,15 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
                 resume_id.as_deref(),
                 &launch_provider,
             );
+            // 续接时简报被丢掉，负责人角色要跟这一轮走，否则会沿用上一轮自己执行。
+            let prompt = if resume_id.is_some() && conversation::resumes_via_cli(&launch_provider) {
+                format!(
+                    "{prompt}\n\n{}",
+                    runtime_brief::resume_role_reminder(locale, lead)
+                )
+            } else {
+                prompt
+            };
             let scanned = if prompt.contains("[实体引用] skill")
                 || prompt.contains("[实体引用] mcp")
             {

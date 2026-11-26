@@ -239,6 +239,7 @@ onDeactivated(() => {
   pageActive.value = false;
 });
 onBeforeUnmount(() => {
+  detachDetailScroll?.();
   unregisterFiller?.();
   window.removeEventListener(BROWSER_ATTACH_IMAGE, onBrowserAttachImage);
   window.clearInterval(liveTimer);
@@ -502,32 +503,55 @@ function stop() {
   void store.stopSessionRuns(props.sessionId);
 }
 
+function scrollParentOf(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.documentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/** 收件箱 thread 滚自己的列表；任务详情滚整栏（标题、说明、动态在同一个滚动容器里）。 */
+function scroller(): HTMLElement | null {
+  if (props.thread) return logEl.value;
+  if (!props.docked) return null;
+  const from = logEl.value ?? activityEl.value;
+  if (!from) return null;
+  return scrollParentOf(from);
+}
+
 function syncUserTurnPush(root: HTMLElement | null = logEl.value) {
   if (!root) return;
-  syncStickyUserTurnPush(root, true);
+  syncStickyUserTurnPush(root, props.thread);
 }
 
 function onDockedScroll() {
   if (!selfScroll.value) return;
-  const list = logEl.value;
+  const list = scroller();
   if (!list) return;
   if (!suppressScrollFollow) followBottom.value = listIsAtBottom(list);
-  syncUserTurnPush(list);
+  syncUserTurnPush(logEl.value ?? list);
 }
 
-/** 自管滚动：末轮撑满一屏后贴底，提问 sticky 停在视口顶（对齐 ChatPanel）。 */
+/** 收件箱：末轮撑满一屏后贴底。任务详情只把整栏滚到底，不把末轮撑成一屏。 */
 function pinDockedLastExchange(force = false) {
-  const list = logEl.value;
+  const list = scroller();
   if (!list || !selfScroll.value) return;
   if (!force && !followBottom.value) return;
   suppressScrollFollow = true;
-  const last = syncStickyExchangeMinHeight(list, true);
-  if (!last) {
-    list.scrollTop = list.scrollHeight;
+  if (props.thread) {
+    const last = syncStickyExchangeMinHeight(list, true);
+    if (!last) {
+      list.scrollTop = list.scrollHeight;
+    } else {
+      pinLastExchangeToTop(list, last);
+    }
   } else {
-    pinLastExchangeToTop(list, last);
+    list.scrollTop = list.scrollHeight;
   }
-  syncUserTurnPush(list);
+  syncUserTurnPush(logEl.value ?? list);
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       suppressScrollFollow = false;
@@ -541,7 +565,7 @@ function revealDockedScroll(options: {
   /** 仅初次展开历史时滚到未读分割线；后续消息增长不得再拽回前面。 */
   preferUnread?: boolean;
 } = {}) {
-  const list = logEl.value;
+  const list = scroller();
   if (!list || !selfScroll.value) return;
   // 用户刚发送：必须贴最新一轮，不能被未读分割线拽到前几个回答。
   if (options.fromUserSend) {
@@ -559,14 +583,14 @@ function revealDockedScroll(options: {
     && scrollListToMessage(list, props.unreadMessageId)
   ) {
     followBottom.value = false;
-    syncUserTurnPush(list);
+    syncUserTurnPush(logEl.value ?? list);
     return;
   }
   if (options.force) followBottom.value = true;
   if (!followBottom.value) {
     // 仍刷新末轮 min-height，但不改 scrollTop，避免上滚阅读时被拽走
-    syncStickyExchangeMinHeight(list, true);
-    syncUserTurnPush(list);
+    if (props.thread) syncStickyExchangeMinHeight(list, true);
+    syncUserTurnPush(logEl.value ?? list);
     return;
   }
   pinDockedLastExchange(true);
@@ -584,9 +608,22 @@ function onBrowserAttachImage(event: Event) {
   void pasteImages([browserImageFile(detail)]).then(() => composer.value?.focus());
 }
 
+let detachDetailScroll: (() => void) | null = null;
+
+function bindDetailScroll() {
+  detachDetailScroll?.();
+  detachDetailScroll = null;
+  if (!props.docked) return;
+  const el = scroller();
+  if (!el) return;
+  el.addEventListener("scroll", onDockedScroll, { passive: true });
+  detachDetailScroll = () => el.removeEventListener("scroll", onDockedScroll);
+}
+
 onMounted(() => {
   void store.loadMessages(props.sessionId);
   window.addEventListener(BROWSER_ATTACH_IMAGE, onBrowserAttachImage);
+  bindDetailScroll();
 });
 
 watch(() => props.sessionId, (sessionId) => {
@@ -664,13 +701,13 @@ watch(
 
 <template>
   <div ref="activityEl" class="task-activity" :class="{ 'is-thread': thread, 'is-docked': docked }">
-    <!-- thread / docked 自管滚动；否则由任务详情外层滚动（旧布局兜底） -->
+    <!-- thread 自管滚动；任务详情由外层 .task-issue-main 整栏滚动 -->
     <div
       v-if="messages.length"
       ref="logEl"
       class="task-activity-log"
-      :class="{ 'vs-scroll': selfScroll }"
-      @scroll.passive="onDockedScroll"
+      :class="{ 'vs-scroll': thread }"
+      @scroll.passive="thread ? onDockedScroll : undefined"
     >
       <section
         v-for="group in messageGroups"
@@ -756,6 +793,7 @@ watch(
       </span>
     </p>
     <p v-else class="task-activity-empty">{{ t('tasks.activityEmpty') }}</p>
+    <div class="task-activity-dock">
     <p v-if="pasteError" class="task-create-error">{{ pasteError }}</p>
     <ChatQuestionCarousel
       v-if="pendingQuestion"
@@ -825,6 +863,7 @@ watch(
         </UiButton>
       </template>
     </ChatComposer>
+    </div>
     <ReshuffleModal
       v-if="reshuffleOpen"
       :after-count="reaskAfterCount"

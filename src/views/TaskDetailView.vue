@@ -118,7 +118,7 @@ async function removeTask() {
       </UiButton>
     </header>
     <div class="task-issue-body" :class="{ 'side-closed': !sideOpen }">
-      <main class="task-issue-main">
+      <main class="task-issue-main vs-scroll">
         <div class="task-issue-hero">
           <div class="task-issue-content">
             <WorkflowRunBar v-if="isWorkflowRunSession(task.sessionId)" :session-id="task.sessionId" />

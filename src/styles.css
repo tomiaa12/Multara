@@ -10126,6 +10126,10 @@ body.is-dragging-task * {
   min-height: 0;
   min-width: 0;
 }
+.task-issue:not(.task-detail-preview) > .task-issue-body > .task-issue-main {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 .task-issue-hero {
   flex: 0 0 auto;
   min-width: 0;
@@ -10324,9 +10328,8 @@ body.is-dragging-task * {
 }
 .task-feed-fill {
   display: flex;
-  flex: 1 1 0;
+  flex: 1 0 auto;
   flex-direction: column;
-  min-height: 0;
   min-width: 0;
   margin-top: 12px;
   padding: 0 clamp(var(--spacing-4), 4vw, var(--spacing-10)) 0;
@@ -10350,8 +10353,7 @@ body.is-dragging-task * {
   max-width: 100%;
 }
 .task-feed-fill > .task-activity {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 1 0 auto;
   width: min(720px, 100%);
   margin: 0 auto;
 }
@@ -10433,6 +10435,7 @@ body.is-dragging-task * {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto;
   }
+  .task-issue:not(.task-detail-preview) > .task-issue-body > .task-issue-main,
   .task-issue-scroll {
     overflow: visible;
   }
@@ -11328,8 +11331,8 @@ body.is-dragging-inbox-float * {
 }
 /* 消息列表左右内边距是 clamp(16px, 5vw, 72px)，输入框在列表外面，用同样的左边距对齐 */
 .inbox-detail .chat-surface > .chat-editing-dock,
-.inbox-detail .task-activity.is-thread > .chat-composer,
-.inbox-detail .task-activity.is-thread > .task-create-error {
+.inbox-detail .task-activity.is-thread > .task-activity-dock > .chat-composer,
+.inbox-detail .task-activity.is-thread > .task-activity-dock > .task-create-error {
   width: min(720px, calc(100% - 2 * clamp(16px, 5vw, 72px)));
   max-width: none;
   margin: 0 auto 14px clamp(16px, 5vw, 72px);
@@ -11345,48 +11348,62 @@ body.is-dragging-inbox-float * {
 .task-activity.is-docked {
   display: flex;
   flex-direction: column;
+  gap: 0;
+}
+.task-activity.is-thread {
   min-height: 0;
   height: 100%;
-  gap: 0;
   overflow: hidden;
+}
+.task-activity.is-docked {
+  height: auto;
+  overflow: visible;
+}
+.task-activity.is-docked .user-turn {
+  position: static;
 }
 .task-activity.is-thread .task-activity-log,
 .task-activity.is-docked .task-activity-log {
-  flex: 1;
-  min-height: 0;
   min-width: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 .task-activity.is-thread .task-activity-log {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 16px clamp(16px, 5vw, 72px);
 }
 .task-activity.is-docked .task-activity-log {
+  flex: 1 0 auto;
+  overflow: visible;
   padding: 0 0 16px;
 }
-/* 收件箱 thread / 任务详情 docked：末轮撑满列表内容区，发送后贴底时提问 sticky 停在视口顶 */
-.task-activity.is-thread .message-exchange:last-child,
-.task-activity.is-docked .message-exchange:last-child {
+/* 收件箱 thread：末轮撑满列表内容区，发送后贴底时提问 sticky 停在视口顶。
+   任务详情整栏滚动，不再把末轮撑成一屏。 */
+.task-activity.is-thread .message-exchange:last-child {
   box-sizing: border-box;
   min-height: 100%;
 }
-.task-activity.is-thread > .chat-composer,
-.task-activity.is-thread > .task-create-error,
-.task-activity.is-docked > .chat-composer,
-.task-activity.is-docked > .task-create-error,
-.task-activity.is-docked > .chat-question-carousel {
+.task-activity.is-thread > .task-activity-dock,
+.task-activity.is-docked > .task-activity-dock {
   position: relative;
   z-index: 3;
   flex: 0 0 auto;
 }
-.task-activity.is-thread > .chat-composer,
-.task-activity.is-thread > .task-create-error {
+.task-activity.is-docked > .task-activity-dock {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  background: var(--color-bg);
+}
+.task-activity.is-thread > .task-activity-dock > .chat-composer,
+.task-activity.is-thread > .task-activity-dock > .task-create-error {
   width: min(720px, calc(100% - 32px));
   margin: 0 auto 14px;
 }
-.task-activity.is-docked > .chat-composer,
-.task-activity.is-docked > .task-create-error,
-.task-activity.is-docked > .chat-question-carousel {
+.task-activity.is-docked > .task-activity-dock > .chat-composer,
+.task-activity.is-docked > .task-activity-dock > .task-create-error,
+.task-activity.is-docked > .task-activity-dock > .chat-question-carousel {
   width: 100%;
   margin: 0 0 14px;
 }
@@ -11395,8 +11412,8 @@ body.is-dragging-inbox-float * {
 .task-activity.is-docked > .task-activity-empty {
   flex: 1 1 auto;
 }
-.task-activity.is-thread > .chat-composer .composer-field,
-.task-activity.is-docked > .chat-composer .composer-field {
+.task-activity.is-thread > .task-activity-dock > .chat-composer .composer-field,
+.task-activity.is-docked > .task-activity-dock > .chat-composer .composer-field {
   -webkit-user-select: text;
   user-select: text;
 }
