@@ -18,7 +18,8 @@ SELECT i.id, i.session_id, i.project_id, i.task_id, i.title, i.preview, i.status
          SELECT inst.channel_type
          FROM channel_session_bindings b
          JOIN channel_installations inst ON inst.id = b.installation_id
-         WHERE b.session_id = i.session_id AND b.retired_at IS NULL
+         WHERE b.session_id = i.session_id
+         ORDER BY b.created_at DESC
          LIMIT 1
        )
 FROM inbox_items i
@@ -156,6 +157,58 @@ pub fn upsert(db: &Connection, input: InboxInput) -> Result<InboxItem, String> {
     .map_err(|error| error.to_string())?;
     db.query_row(&format!("{SELECT_ITEM} WHERE i.id=?1"), [&id], map_item)
         .map_err(|error| error.to_string())
+}
+
+/// 渠道消息刚落库时就把收件箱行亮出来。已读游标停在这条用户消息上，未读仍等回答结束后的原逻辑。
+pub fn show_sent(
+    db: &Connection,
+    session_id: &str,
+    project_id: Option<&str>,
+    title: &str,
+    preview: &str,
+    user_message_id: Option<&str>,
+) -> Result<(), String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(tr!("收件箱标题不能为空"));
+    }
+    let preview = shorten_preview(preview);
+    let now = Utc::now().to_rfc3339();
+    let project_id = project_id.map(str::trim).filter(|value| !value.is_empty());
+    let existing: Option<String> = db
+        .query_row(
+            "SELECT id FROM inbox_items WHERE session_id=?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(id) = existing {
+        db.execute(
+            "UPDATE inbox_items
+             SET preview=?1, created_at=?2, archived_at=NULL
+             WHERE id=?3",
+            params![preview, now, id],
+        )
+        .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    db.execute(
+        "INSERT INTO inbox_items
+         (id, session_id, project_id, task_id, title, preview, status, read, read_message_id, created_at)
+         VALUES (?1, ?2, ?3, NULL, ?4, ?5, 'completed', 1, ?6, ?7)",
+        params![
+            Uuid::new_v4().to_string(),
+            session_id,
+            project_id,
+            title,
+            preview,
+            user_message_id.map(str::trim).filter(|value| !value.is_empty()),
+            now
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 pub fn shorten_preview(source: &str) -> String {

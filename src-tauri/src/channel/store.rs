@@ -367,6 +367,20 @@ pub fn prune_inbound_dedup(db: &Connection) {
     );
 }
 
+/// 同一条渠道对话静默这么久后，下一条消息另开收件箱，旧记录不再交给模型。
+pub const CHANNEL_SESSION_IDLE: chrono::Duration = chrono::Duration::hours(2);
+
+/// 上一条消息距今已超过静默时间。没有消息时不算过期，避免刚建好的空会话被拆掉。
+pub fn channel_session_expired(last_message_at: Option<&str>, now: chrono::DateTime<Utc>) -> bool {
+    let Some(raw) = last_message_at.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let Ok(at) = chrono::DateTime::parse_from_rfc3339(raw) else {
+        return false;
+    };
+    now.signed_duration_since(at.with_timezone(&Utc)) >= CHANNEL_SESSION_IDLE
+}
+
 pub fn active_binding(
     db: &Connection,
     installation_id: &str,
@@ -656,6 +670,16 @@ mod tests {
         assert!(!user_has_target(
             &allowed_user(&db, "inst", "ou_a").unwrap()
         ));
+    }
+
+    #[test]
+    fn a_quiet_channel_session_expires_after_the_idle_gap() {
+        let now = Utc::now();
+        let recent = (now - chrono::Duration::minutes(30)).to_rfc3339();
+        let stale = (now - CHANNEL_SESSION_IDLE - chrono::Duration::minutes(1)).to_rfc3339();
+        assert!(!channel_session_expired(None, now));
+        assert!(!channel_session_expired(Some(&recent), now));
+        assert!(channel_session_expired(Some(&stale), now));
     }
 
     #[test]

@@ -514,6 +514,62 @@ fn stop_session_runs(
     send_notice(app, installation, message, &tr!("已请求停止当前运行。"));
 }
 
+fn show_sent_in_inbox(
+    app: &AppHandle,
+    installation: &Installation,
+    session_id: &str,
+    preview: &str,
+) {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return;
+    };
+    let Ok((title, project_id)) = db.query_row(
+        "SELECT title, project_id FROM chat_sessions WHERE id=?1",
+        [session_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+    ) else {
+        return;
+    };
+    let user_message_id: Option<String> = db
+        .query_row(
+            "SELECT id FROM messages
+             WHERE session_id=?1 AND role='user'
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT 1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .ok();
+    if crate::ops::inbox::show_sent(
+        &db,
+        session_id,
+        project_id.as_deref().or(installation.project_id.as_deref()),
+        &title,
+        preview,
+        user_message_id.as_deref(),
+    )
+    .is_err()
+    {
+        return;
+    }
+    drop(db);
+    let _ = app.emit("inbox-changed", ());
+    let _ = app.emit("session-messages-changed", session_id.to_string());
+}
+
+fn binding_expired(db: &rusqlite::Connection, session_id: &str) -> bool {
+    let last: Option<String> = db
+        .query_row(
+            "SELECT MAX(created_at) FROM messages WHERE session_id=?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    store::channel_session_expired(last.as_deref(), Utc::now())
+}
+
 fn route_key(message: &InboundMessage) -> String {
     match message
         .thread_id
@@ -535,7 +591,20 @@ fn ensure_binding(
     let state = app.state::<AppState>();
     let db = state.lock_db()?;
     if let Some(binding) = store::active_binding(&db, &installation.id, &key)? {
-        return Ok(binding);
+        let busy = db
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM agent_runs
+                     WHERE session_id=?1 AND status IN ('queued', 'running')
+                 )",
+                [&binding.session_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .unwrap_or(false);
+        if busy || !binding_expired(&db, &binding.session_id) {
+            return Ok(binding);
+        }
+        store::retire_binding(&db, &binding.id)?;
     }
     let target_type = user
         .target_type
@@ -771,6 +840,7 @@ fn flush(app: &AppHandle, key: &str) {
     );
     match result {
         Ok(outcome) => {
+            show_sent_in_inbox(app, &batch.installation, &batch.binding.session_id, &content);
             let state = app.state::<AppState>();
             if let Ok(db) = state.lock_db() {
                 for run_id in &outcome.run_ids {
