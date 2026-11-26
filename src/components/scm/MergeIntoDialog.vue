@@ -50,7 +50,7 @@ interface PickedTarget {
 
 interface MergeOutcome {
   name: string;
-  status: "merged" | "up_to_date" | "conflict" | "error" | "pending";
+  status: "queued" | "running" | "stopped" | "merged" | "up_to_date" | "conflict" | "error" | "pending";
   result: MergeIntoResult | null;
   error: string;
   pushRequested: boolean;
