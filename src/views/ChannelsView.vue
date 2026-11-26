@@ -778,7 +778,7 @@ function projectOptions() {
 
 <style scoped>
 .channels-page { display: flex; flex-direction: column; gap: 16px; }
-.channel-card { align-items: flex-start; }
+.channel-card { align-items: flex-start; gap: 2px; }
 .grow { flex: 1; min-width: 0; }
 .channel-state, .channel-bot { display: inline-flex; align-items: center; gap: 6px; }
 .channel-status { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted, #888); }
@@ -786,12 +786,12 @@ function projectOptions() {
 .channel-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: var(--font-size-sm); white-space: nowrap; cursor: pointer; }
 .channel-status.connected { background: var(--success, #3fb950); }
 .channel-status.error { background: var(--danger, #f85149); }
-.channel-status-row { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0; color: var(--text-muted); }
+.channel-status-row { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0; color: var(--text-muted); }
 .channel-hint, .channel-card > .form-error { flex: 1 1 100%; }
 .channel-code { display: inline-flex; flex: 0 1 auto; gap: 6px; align-items: center; flex-wrap: nowrap; }
 .channel-hint { margin: 0 0 6px; color: var(--text-muted); font-size: var(--font-size-sm); }
 .channel-card { flex-wrap: wrap; align-items: stretch; }
-.channel-card-main { display: flex; flex: 1 1 100%; align-items: flex-start; gap: var(--spacing-3); min-width: 0; }
+.channel-card-main { display: flex; flex: 1 1 100%; align-items: center; gap: var(--spacing-3); min-width: 0; }
 .channel-card-logo { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--color-fill-secondary, rgba(0, 0, 0, 0.05)); color: var(--color-text-secondary); }
 .channel-users-toggle { display: flex; align-items: center; gap: 6px; width: 100%; margin: 0; padding: 8px 0 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
 .channel-users-chevron { transition: transform 0.15s ease; }
