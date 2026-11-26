@@ -849,12 +849,14 @@
   border-radius: var(--radius-md);
   padding: 8px 12px;
 }
-.assignment-turn + .assistant-turn.internal:not(.assignment-turn) {
+/* 队员还在跑时消息还没有 internal，也先接进同一张卡片 */
+.assignment-turn + .assistant-turn:not(.assignment-turn) {
+  border: 1px solid var(--color-border);
   border-top: 0;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding: 8px 12px;
 }
-.assignment-turn:has(+ .assistant-turn.internal:not(.assignment-turn)) {
+.assignment-turn:has(+ .assistant-turn:not(.assignment-turn)) {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
@@ -879,6 +881,52 @@
 .assistant-turn.internal + .assistant-turn.internal.assignment-turn {
   margin-top: 6px;
 }
+.assignment-stack {
+  width: min(720px, 100%);
+  margin: 8px auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.assignment-stack > .chat-turn,
+.assignment-stack > .assistant-turn {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.assignment-stack > .assistant-turn + .assistant-turn,
+.assignment-stack > .assignment-card-working {
+  border-top: 1px solid var(--color-border);
+}
+.assignment-stack > .assignment-turn + .assistant-turn:not(.assignment-turn) {
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  padding: 8px 12px;
+}
+.task-activity .assignment-stack,
+.task-activity-log .assignment-stack {
+  width: 100%;
+}
+.assignment-card-working {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--color-text-secondary);
+}
+.assignment-card-working-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.assignment-card-working .assistant-working-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .mention-line {
   display: block;
   min-width: 0;
@@ -901,8 +949,12 @@
   margin-right: 4px;
   color: var(--color-info);
 }
-.task-activity-log .assignment-turn + .assistant-turn.internal:not(.assignment-turn) {
+.task-activity-log .assignment-turn + .assistant-turn:not(.assignment-turn) {
   margin-top: -16px;
+}
+.task-activity-log .assignment-stack > .assignment-turn + .assistant-turn:not(.assignment-turn),
+.assignment-stack > .assignment-turn + .assistant-turn:not(.assignment-turn) {
+  margin-top: 0;
 }
 .assignment-instruction {
   display: inline;
@@ -2957,7 +3009,8 @@ textarea:not(.inputarea):not(.ui-textarea):not(.ds-input) {
   left: -14px;
   right: -14px;
 }
-.shared-chat-panel.compact .chat-turn {
+.shared-chat-panel.compact .chat-turn,
+.shared-chat-panel.compact .assignment-stack {
   width: 100%;
   margin: 0;
   /* 只压上下间距，别盖掉 .internal 卡片的左右 padding */
@@ -11323,7 +11376,8 @@ body.is-dragging-inbox-float * {
 }
 .inbox-detail .chat-turn,
 .inbox-detail .assistant-working,
-.inbox-detail .chat-new-divider {
+.inbox-detail .chat-new-divider,
+.inbox-detail .assignment-stack {
   width: min(720px, 100%);
   max-width: 720px;
   margin-left: 0;

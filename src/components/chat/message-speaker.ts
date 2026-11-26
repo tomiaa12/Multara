@@ -97,6 +97,76 @@ export function resolveTurnTarget(
   return null;
 }
 
+/**
+ * 派活之后、队员还在跑时，直播气泡还没写入 audience。
+ * 用同一轮里点名这个队员的派活消息，先把它当成回给负责人，边框才能马上包住。
+ */
+export function liveAssignmentAudience(
+  messages: ChatMessage[],
+  agentId: string | null | undefined,
+): string | null {
+  if (!agentId) return null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+    if (message.role === "user") break;
+    if (
+      message.messageKind === "assignment"
+      && message.audienceType === "agent"
+      && message.audienceId === agentId
+      && message.agentId
+    ) {
+      return message.agentId;
+    }
+  }
+  return null;
+}
+
+/** 每张派活卡片收回自己队员的回复，避免接到后一张卡片下面。 */
+export function assignmentReplies(messages: ChatMessage[]): Map<string, ChatMessage[]> {
+  const byAssignment = new Map<string, ChatMessage[]>();
+  const taken = new Set<string>();
+  messages.forEach((message, index) => {
+    if (!isLeaderAssignment(message) || !message.audienceId) return;
+    const replies: ChatMessage[] = [];
+    for (let cursor = index + 1; cursor < messages.length; cursor += 1) {
+      const item = messages[cursor];
+      if (!item || item.role === "user") break;
+      if (item.messageKind === "assignment" || taken.has(item.id)) continue;
+      if (item.role === "assistant" && item.agentId === message.audienceId) {
+        replies.push(item);
+        taken.add(item.id);
+      }
+    }
+    byAssignment.set(message.id, replies);
+  });
+  return byAssignment;
+}
+
+export function foldedAssignmentReplyIds(messages: ChatMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const replies of assignmentReplies(messages).values()) {
+    for (const reply of replies) ids.add(reply.id);
+  }
+  return ids;
+}
+
+/** 这一轮已经派出去的队员。他们的进行中状态画在各自卡片里，不再堆到列表最下面。 */
+export function openAssignmentAssigneeIds(messages: ChatMessage[]): Set<string> {
+  let start = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      start = index + 1;
+      break;
+    }
+  }
+  const ids = new Set<string>();
+  for (const message of messages.slice(start)) {
+    if (isLeaderAssignment(message) && message.audienceId) ids.add(message.audienceId);
+  }
+  return ids;
+}
+
 export function isLeaderAssignment(message: ChatMessage): boolean {
   return message.role === "assistant"
     && message.messageKind === "assignment"

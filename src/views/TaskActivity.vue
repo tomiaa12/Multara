@@ -26,10 +26,15 @@ import {
 } from "../components/chat/chat-scroll";
 import { scrollListToMessage } from "../components/chat/scroll-to-message";
 import {
+  assignmentReplies,
+  foldedAssignmentReplyIds,
+  isLeaderAssignment,
+  openAssignmentAssigneeIds,
   shouldHideAssistantSpeaker,
   speakerForMessage,
   subtaskEmbedForMessage,
 } from "../components/chat/message-speaker";
+import AssignmentStack from "../components/chat/AssignmentStack.vue";
 import { liveCapacity, resolveSessionLiveWorkStatus } from "../components/agent-live-status";
 import { liveWorkParts } from "../components/chat/timeline-display";
 import {
@@ -212,7 +217,43 @@ const liveAnchor = computed(() => {
   if (Number.isFinite(created) && created > 0 && created <= liveClock.value + 1000) return created;
   return liveAnchorFallback.value ?? liveClock.value;
 });
-const showWorking = computed(() => !props.historyViewOnly && sessionProcessing.value);
+const assignmentReplyMap = computed(() => assignmentReplies(messages.value));
+const foldedReplyIds = computed(() => foldedAssignmentReplyIds(messages.value));
+const cardAssigneeIds = computed(() => openAssignmentAssigneeIds(messages.value));
+const footerWorkingAgents = computed(() =>
+  workingAgents.value.filter((item) => !cardAssigneeIds.value.has(item.id)),
+);
+const showWorking = computed(() =>
+  !props.historyViewOnly && sessionProcessing.value && footerWorkingAgents.value.length > 0,
+);
+
+function repliesOf(message: ChatMessage) {
+  return assignmentReplyMap.value.get(message.id) ?? [];
+}
+
+function cardWorking(message: ChatMessage) {
+  const assigneeId = message.audienceId;
+  if (!assigneeId || repliesOf(message).length) return null;
+  const running = Object.values(store.runStates).find((event) =>
+    event.sessionId === props.sessionId
+    && event.agentId === assigneeId
+    && (event.status === "queued" || event.status === "running"),
+  );
+  if (!running) return null;
+  const found = store.data?.agents.find((item) => item.id === assigneeId);
+  const elapsed = Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000));
+  const line = liveWorkParts([], elapsed, {
+    language: store.data?.settings.language,
+    status: running.status === "queued" ? "queued" : "running",
+  })[0];
+  if (!line) return null;
+  return {
+    name: found?.name ?? t("inbox.agentFallback"),
+    avatar: found?.avatar ?? "M",
+    label: line.label,
+    elapsed: line.elapsed,
+  };
+}
 const workingLines = computed(() => liveWorkParts(
   currentTurnAssistant.value?.timeline ?? [],
   Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000)),
@@ -739,8 +780,31 @@ watch(
             @start-reask="startReask"
             @stop="stop"
           />
+          <AssignmentStack v-else-if="isLeaderAssignment(message)" :working="cardWorking(message)">
+            <AssistantMessage
+              :data-message-id="message.id"
+              :message="message"
+              :speaker="speaker(message)"
+              :running="messageRunning(message)"
+              :allow-continue="false"
+              :default-collapse-subagents="thread || historyViewOnly"
+              :hide-speaker="hideSpeaker(message)"
+              :embed-subtask="subtaskEmbed(message)"
+            />
+            <AssistantMessage
+              v-for="reply in repliesOf(message)"
+              :key="reply.id"
+              :data-message-id="reply.id"
+              :message="reply"
+              :speaker="speaker(reply)"
+              :running="messageRunning(reply)"
+              :allow-continue="false"
+              :default-collapse-subagents="thread || historyViewOnly"
+              :hide-speaker="false"
+            />
+          </AssignmentStack>
           <AssistantMessage
-            v-else
+            v-else-if="!foldedReplyIds.has(message.id)"
             :data-message-id="message.id"
             :message="message"
             :speaker="speaker(message)"
@@ -759,7 +823,7 @@ watch(
         >
           <LoaderCircle :size="12" />
           <AgentAvatar
-            v-for="item in workingAgents"
+            v-for="item in footerWorkingAgents"
             :key="item.id"
             :value="item.avatar"
             :name="item.name"

@@ -29,6 +29,13 @@ import {
   listDirtyEditorPaths,
 } from "./workbench/unsaved-editor";
 import ChatMessageItem from "./ChatMessageItem.vue";
+import AssignmentStack from "./chat/AssignmentStack.vue";
+import {
+  assignmentReplies,
+  foldedAssignmentReplyIds,
+  isLeaderAssignment,
+  openAssignmentAssigneeIds,
+} from "./chat/message-speaker";
 import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue";
 import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
 import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
@@ -468,7 +475,41 @@ const liveAnchor = computed(() => {
   if (Number.isFinite(created) && created > 0 && created <= liveClock.value + 1000) return created;
   return liveAnchorFallback.value ?? liveClock.value;
 });
-const showWorking = computed(() => sessionProcessing.value);
+const assignmentReplyMap = computed(() => assignmentReplies(displayMessages.value));
+const foldedReplyIds = computed(() => foldedAssignmentReplyIds(displayMessages.value));
+const cardAssigneeIds = computed(() => openAssignmentAssigneeIds(displayMessages.value));
+const footerWorkingAgents = computed(() =>
+  workingAgents.value.filter((item) => !cardAssigneeIds.value.has(item.id)),
+);
+const showWorking = computed(() => sessionProcessing.value && footerWorkingAgents.value.length > 0);
+
+function repliesOf(message: ChatMessage) {
+  return assignmentReplyMap.value.get(message.id) ?? [];
+}
+
+function cardWorking(message: ChatMessage) {
+  const assigneeId = message.audienceId;
+  if (!assigneeId || repliesOf(message).length) return null;
+  const running = Object.values(store.runStates).find((event) =>
+    event.sessionId === message.sessionId
+    && event.agentId === assigneeId
+    && (event.status === "queued" || event.status === "running"),
+  );
+  if (!running) return null;
+  const found = store.data?.agents.find((item) => item.id === assigneeId);
+  const elapsed = Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000));
+  const line = liveWorkParts([], elapsed, {
+    language: store.data?.settings.language,
+    status: running.status === "queued" ? "queued" : "running",
+  })[0];
+  if (!line) return null;
+  return {
+    name: found?.name ?? t("inbox.agentFallback"),
+    avatar: found?.avatar ?? "M",
+    label: line.label,
+    elapsed: line.elapsed,
+  };
+}
 const workingLines = computed(() => liveWorkParts(
   currentTurnAssistant.value?.timeline ?? [],
   Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000)),
@@ -2104,7 +2145,66 @@ defineExpose({
             >
               <span>{{ t("chat.newMessagesDivider") }}</span>
             </div>
+            <AssignmentStack v-if="isLeaderAssignment(message)" :working="cardWorking(message)">
+              <ChatMessageItem
+                :data-message-id="message.id"
+                :message="message"
+                :duplicate-count="duplicateCounts.get(message.id) ?? 1"
+                :running="messageRunning(message)"
+                :target-label="targetLabel"
+                :target-avatar="targetAvatar"
+                :target-value="targetValue"
+                :target-options="targetOptions"
+                :allow-target-change="allowTargetChange"
+                :enable-replay="!preview && !lockSentPrompts"
+                :view-only="lockSentPrompts"
+                :ui-interactive="!preview && !historyViewOnly"
+                :default-collapse-subagents="embedded || historyViewOnly"
+                :compact="compact"
+                :hide-speaker="shouldHideAssistantSpeaker(group.messages[messageIndex - 1], message)"
+                :embed-subtask="subtaskEmbedForIndex(message)"
+                :allow-continue="!historyViewOnly && !lockSentPrompts && allowContinueFor(message)"
+                :allow-fork="sessionCommands && !preview"
+                :restore-nonce="restoreNonce"
+                :restore-message-id="restoreMessageId"
+                :turn-running="userTurnRunning(message)"
+                :question-state="questionStates.get(message.id) ?? null"
+                @start-reask="startReaskFromMessage"
+                @stop="stopAgent"
+                @target-change="updateTarget"
+                @pick-action="sendStarter"
+              />
+              <ChatMessageItem
+                v-for="reply in repliesOf(message)"
+                :key="reply.id"
+                :data-message-id="reply.id"
+                :message="reply"
+                :duplicate-count="duplicateCounts.get(reply.id) ?? 1"
+                :running="messageRunning(reply)"
+                :target-label="targetLabel"
+                :target-avatar="targetAvatar"
+                :target-value="targetValue"
+                :target-options="targetOptions"
+                :allow-target-change="allowTargetChange"
+                :enable-replay="!preview && !lockSentPrompts"
+                :view-only="lockSentPrompts"
+                :ui-interactive="!preview && !historyViewOnly"
+                :default-collapse-subagents="embedded || historyViewOnly"
+                :compact="compact"
+                :hide-speaker="false"
+                :allow-continue="!historyViewOnly && !lockSentPrompts && allowContinueFor(reply)"
+                :allow-fork="sessionCommands && !preview"
+                :restore-nonce="restoreNonce"
+                :restore-message-id="restoreMessageId"
+                :question-state="questionStates.get(reply.id) ?? null"
+                @start-reask="startReaskFromMessage"
+                @stop="stopAgent"
+                @target-change="updateTarget"
+                @pick-action="sendStarter"
+              />
+            </AssignmentStack>
             <ChatMessageItem
+              v-else-if="!foldedReplyIds.has(message.id)"
               :data-message-id="message.id"
               :message="message"
               :duplicate-count="duplicateCounts.get(message.id) ?? 1"
@@ -2140,7 +2240,7 @@ defineExpose({
           >
             <LoaderCircle :size="12" />
             <AgentAvatar
-              v-for="agent in workingAgents"
+              v-for="agent in footerWorkingAgents"
               :key="agent.id"
               :value="agent.avatar"
               :name="agent.name"

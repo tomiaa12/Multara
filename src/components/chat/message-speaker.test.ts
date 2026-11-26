@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyLanguageSetting, t } from "../../i18n";
 import type { Agent, ChatMessage, ChatSession, Squad } from "../../domain/types";
 import {
+  assignmentReplies,
+  foldedAssignmentReplyIds,
+  liveAssignmentAudience,
+  openAssignmentAssigneeIds,
   parseAssignmentSubtask,
   resolveTurnTarget,
   shouldHideAssistantSpeaker,
@@ -62,6 +66,60 @@ function message(partial: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role"
     ...partial,
   };
 }
+
+describe("assignmentReplies", () => {
+  it("两张派活卡片各自收回自己队员的回复", () => {
+    const messages = [
+      message({ id: "u1", role: "user" }),
+      message({
+        id: "a-db",
+        role: "assistant",
+        agentId: "lead",
+        messageKind: "assignment",
+        audienceType: "agent",
+        audienceId: "member",
+      }),
+      message({
+        id: "a-log",
+        role: "assistant",
+        agentId: "lead",
+        messageKind: "assignment",
+        audienceType: "agent",
+        audienceId: "log",
+      }),
+      message({
+        id: "r-log",
+        role: "assistant",
+        agentId: "log",
+        audienceType: "agent",
+        audienceId: "lead",
+      }),
+    ];
+    const grouped = assignmentReplies(messages);
+    expect(grouped.get("a-db")).toEqual([]);
+    expect(grouped.get("a-log")?.map((item) => item.id)).toEqual(["r-log"]);
+    expect(foldedAssignmentReplyIds(messages).has("r-log")).toBe(true);
+    expect([...openAssignmentAssigneeIds(messages)]).toEqual(["member", "log"]);
+  });
+});
+
+describe("liveAssignmentAudience", () => {
+  it("队员还在跑时，用同一轮的派活消息认出负责人", () => {
+    const messages = [
+      message({ id: "u1", role: "user" }),
+      message({
+        id: "assign",
+        role: "assistant",
+        agentId: "lead",
+        messageKind: "assignment",
+        audienceType: "agent",
+        audienceId: "member",
+      }),
+    ];
+    expect(liveAssignmentAudience(messages, "member")).toBe("lead");
+    expect(liveAssignmentAudience(messages, "lead")).toBeNull();
+  });
+});
 
 describe("resolveTurnTarget / speaker role", () => {
   beforeEach(() => {

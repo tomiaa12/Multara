@@ -22,6 +22,9 @@ import UiButton from "../../components/ui/UiButton.vue";
 import UiTooltip from "../../components/ui/UiTooltip.vue";
 import EditorTabButton from "../../components/workbench/EditorTabButton.vue";
 import EditorWithDiff from "../../components/workbench/EditorWithDiff.vue";
+import MarkdownPreview from "../../components/workbench/MarkdownPreview.vue";
+import MarkdownSourceSwitch from "../../components/workbench/MarkdownSourceSwitch.vue";
+import { isMarkdownFile } from "../../components/workbench/markdown-source";
 import SearchView from "../../components/workbench/SearchView.vue";
 import TerminalPanel from "../../components/workbench/TerminalPanel.vue";
 import WorkspaceFileTree from "../../components/workbench/WorkspaceFileTree.vue";
@@ -123,6 +126,7 @@ const gitPreview = ref<{
   commitId: string;
 } | null>(null);
 const filesWidth = ref(readInboxFilesWidth());
+const markdownModes = ref<Record<string, "preview" | "source">>({});
 const filePreview = ref<{
   workspaceId: string;
   path: string;
@@ -185,6 +189,36 @@ const activeTerminalId = computed(() => {
 });
 const theme = computed(() => monacoThemeName(currentDocumentTheme()));
 const indent = computed(() => detectIndent(activeEditor.value?.content || filePreview.value?.content || ""));
+
+const shownMarkdown = computed(() => {
+  const tab = activeEditor.value;
+  if (!tab) return null;
+  if (tab.emptyFiles) {
+    const preview = filePreview.value;
+    if (!preview || preview.diff || !isMarkdownFile(preview)) return null;
+    return preview;
+  }
+  if (tab.diff || tab.commitFiles?.length || !isMarkdownFile(tab)) return null;
+  return tab;
+});
+
+const markdownMode = computed(() => {
+  const file = shownMarkdown.value;
+  if (!file) return "source";
+  return markdownModes.value[`${file.workspaceId}\n${file.path}`] ?? "source";
+});
+
+function setMarkdownMode(mode: "preview" | "source") {
+  const file = shownMarkdown.value;
+  if (!file) return;
+  markdownModes.value = { ...markdownModes.value, [`${file.workspaceId}\n${file.path}`]: mode };
+}
+
+function openMarkdownLink(path: string) {
+  const file = shownMarkdown.value;
+  if (!file?.workspaceId) return;
+  void openFile(file.workspaceId, path, true);
+}
 const gitIndent = computed(() => detectIndent(gitPreview.value?.content ?? ""));
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
 const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
@@ -1551,6 +1585,11 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="activeEditor && !activeSurface" class="editor-area">
           <div v-if="activeEditor.emptyFiles && filePreview" class="editor-main">
+            <MarkdownSourceSwitch
+              v-if="shownMarkdown"
+              :model-value="markdownMode"
+              @update:model-value="setMarkdownMode"
+            />
             <GitDiffEditor
               v-if="filePreview.diff"
               :diff-id="filePreview.diff.id"
@@ -1561,7 +1600,14 @@ onBeforeUnmount(() => {
               :theme="theme"
               :binary="filePreview.diff.binary"
             />
+            <MarkdownPreview
+              v-else-if="markdownMode === 'preview' && shownMarkdown"
+              :content="filePreview.content"
+              :path="filePreview.path"
+              @open="openMarkdownLink"
+            />
             <EditorWithDiff
+              v-show="markdownMode !== 'preview' || !shownMarkdown"
               v-else
               :file-path="filePreview.path"
               :workspace-id="filePreview.workspaceId"
@@ -1580,6 +1626,11 @@ onBeforeUnmount(() => {
             <p>{{ t("inbox.tool.filesEmpty") }}</p>
           </div>
           <div v-else class="editor-main">
+            <MarkdownSourceSwitch
+              v-if="shownMarkdown"
+              :model-value="markdownMode"
+              @update:model-value="setMarkdownMode"
+            />
             <CommitMultiDiffEditor
               v-if="activeEditor.commitFiles?.length"
               :diff-id="activeEditor.commitId"
@@ -1595,6 +1646,12 @@ onBeforeUnmount(() => {
               :file-path="activeEditor.path"
               :theme="theme"
               :binary="activeEditor.diff.binary"
+            />
+            <MarkdownPreview
+              v-else-if="markdownMode === 'preview' && shownMarkdown"
+              :content="activeEditor.content"
+              :path="activeEditor.path"
+              @open="openMarkdownLink"
             />
             <EditorWithDiff
               v-else

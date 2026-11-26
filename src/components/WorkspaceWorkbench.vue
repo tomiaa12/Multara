@@ -113,6 +113,8 @@ import EditorWithDiff from "./workbench/EditorWithDiff.vue";
 import type { BlameWorkbenchAction } from "./workbench/git-blame-editor";
 import MediaPreview from "./workbench/MediaPreview.vue";
 import MarkdownPreview from "./workbench/MarkdownPreview.vue";
+import MarkdownSourceSwitch from "./workbench/MarkdownSourceSwitch.vue";
+import { isHtmlFile, isMarkdownFile } from "./workbench/markdown-source";
 import EditorBreadcrumbs from "./workbench/EditorBreadcrumbs.vue";
 import EditorOutline from "./workbench/EditorOutline.vue";
 import ExplorerTimeline from "./workbench/ExplorerTimeline.vue";
@@ -2543,10 +2545,6 @@ const activeGitDiff = computed(() => {
   return tab?.gitDiff ?? null;
 });
 
-function isMarkdownFile(file: { path: string; language: string }) {
-  return file.language === "markdown" || file.language === "mdx" || /\.(?:md|markdown|mdx)$/i.test(file.path);
-}
-
 const activeMedia = computed(() => {
   if (activeGitDiff.value) return "";
   const media = activeFile.value?.media;
@@ -2554,11 +2552,7 @@ const activeMedia = computed(() => {
   return "";
 });
 
-function isHtmlFile(file: { path: string }) {
-  return /\.html?$/i.test(file.path);
-}
-
-const htmlActive = computed(() =>
+const htmlActive = computed(() => {
   Boolean(activeFile.value && !activeGitDiff.value && isHtmlFile(activeFile.value)),
 );
 
@@ -6764,35 +6758,12 @@ defineExpose({
         @reveal="(line) => editorWithDiff?.reveal(line)"
       />
       <div v-if="activeFile && !activeCanvas && !activeBrowser" class="editor-main">
-        <div
+        <MarkdownSourceSwitch
           v-if="markdownToggleVisible"
-          class="md-editor-switch"
-          role="tablist"
-          :aria-label="t('workbench.markdownView')"
-        >
-          <UiTooltip :content="t('workbench.markdownPreviewTitle')">
-            <button
-              type="button"
-              role="tab"
-              :class="{ active: markdownMode === 'preview' }"
-              :aria-selected="markdownMode === 'preview'"
-              @click="setMarkdownMode('preview')"
-            >
-              Preview
-            </button>
-          </UiTooltip>
-          <UiTooltip :content="t('workbench.markdownSourceTitle')">
-            <button
-              type="button"
-              role="tab"
-              :class="{ active: markdownMode === 'source' }"
-              :aria-selected="markdownMode === 'source'"
-              @click="setMarkdownMode('source')"
-            >
-              {{ htmlActive ? "HTML" : "Markdown" }}
-            </button>
-          </UiTooltip>
-        </div>
+          :model-value="markdownMode"
+          :source-label="htmlActive ? 'HTML' : 'Markdown'"
+          @update:model-value="setMarkdownMode"
+        />
         <div v-motion="'dropdown'" v-if="pendingDiffFiles.length" class="chat-editor-overlay-widget">
           <UiButton
             variant="ghost"

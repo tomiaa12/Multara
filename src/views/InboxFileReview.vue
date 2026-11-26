@@ -3,6 +3,9 @@ import { computed, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { X } from "@lucide/vue";
 import EditorWithDiff from "../components/workbench/EditorWithDiff.vue";
+import MarkdownPreview from "../components/workbench/MarkdownPreview.vue";
+import MarkdownSourceSwitch from "../components/workbench/MarkdownSourceSwitch.vue";
+import { isMarkdownFile } from "../components/workbench/markdown-source";
 import FileTypeIcon from "../components/FileTypeIcon.vue";
 import { fileName } from "../components/chat/timeline-display";
 import { detectIndent } from "../editor/eol";
@@ -35,6 +38,16 @@ const indent = computed(() => detectIndent(file.value?.content ?? ""));
 const stickyScroll = computed(() => store.data?.settings.stickyScroll !== "false");
 const wordWrap = computed(() => store.data?.settings.wordWrap === "true");
 const theme = monacoThemeName(currentDocumentTheme());
+const markdownMode = ref<"preview" | "source">("source");
+
+const markdownFile = computed(() => Boolean(file.value && isMarkdownFile(file.value)));
+
+watch(
+  () => [props.workspaceId, props.filePath] as const,
+  () => {
+    markdownMode.value = "source";
+  },
+);
 
 async function load() {
   try {
@@ -104,7 +117,8 @@ defineExpose({ layout });
         </div>
       </header>
       <div class="editor-main">
-        <div v-motion="'dropdown'" v-if="pendingChunks" class="chat-editor-overlay-widget">
+        <MarkdownSourceSwitch v-if="markdownFile" v-model="markdownMode" />
+        <div v-motion="'dropdown'" v-if="pendingChunks && markdownMode !== 'preview'" class="chat-editor-overlay-widget">
           <UiButton
             class="diff-file-action diff-file-action-keep"
             size="small"
@@ -121,7 +135,13 @@ defineExpose({ layout });
             @click="undo"
           >{{ t('diff.revert') }}</UiButton>
         </div>
+        <MarkdownPreview
+          v-if="markdownFile && markdownMode === 'preview' && file"
+          :content="file.content"
+          :path="file.path"
+        />
         <EditorWithDiff
+          v-show="!markdownFile || markdownMode !== 'preview'"
           ref="editor"
           :file-path="file.path"
           :workspace-id="file.workspaceId"

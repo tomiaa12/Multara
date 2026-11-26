@@ -3,6 +3,7 @@ import { computed, getCurrentScope, ref, watch, type ComputedRef } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, RunStatus, Squad, TaskInput, TaskStatus } from "../domain/types";
 import { titleSeedText } from "../components/chat/composer-content";
+import { liveAssignmentAudience } from "../components/chat/message-speaker";
 import { derivePlanStates, latestAwaitingPlan, type PlanStates } from "../components/chat/plan-state";
 import { DEFAULT_RUN_MODE } from "../components/chat/run-mode";
 import * as backend from "../services/backend";
@@ -460,7 +461,9 @@ export const useAppStore = defineStore("app", () => {
         const squad = session?.targetType === "squad"
           ? data.value?.squads.find((item) => item.id === session.targetId)
           : undefined;
-        const internal = Boolean(squad && payload.agentId !== squad.leaderAgentId);
+        const squadInternal = Boolean(squad && payload.agentId !== squad.leaderAgentId);
+        const assignmentLeader = liveAssignmentAudience(sessionMessages, payload.agentId);
+        const internal = squadInternal || Boolean(assignmentLeader);
         existing = {
           id,
           sessionId: payload.sessionId,
@@ -469,7 +472,7 @@ export const useAppStore = defineStore("app", () => {
           runId: payload.runId,
           agentId: payload.agentId,
           audienceType: internal ? "agent" : "user",
-          audienceId: internal ? squad?.leaderAgentId ?? null : null,
+          audienceId: internal ? (squadInternal ? squad?.leaderAgentId ?? null : assignmentLeader) : null,
           targetType: null,
           targetId: null,
           failureReason: null,
@@ -481,6 +484,17 @@ export const useAppStore = defineStore("app", () => {
           createdAt: new Date().toISOString(),
         };
         sessionMessages.push(existing);
+      }
+      if (
+        existing
+        && existing.audienceType !== "agent"
+        && payload.agentId
+      ) {
+        const assignmentLeader = liveAssignmentAudience(sessionMessages, payload.agentId);
+        if (assignmentLeader) {
+          existing.audienceType = "agent";
+          existing.audienceId = assignmentLeader;
+        }
       }
       if (existing && payload.timelineItem) {
         // seq 单调递增：流式更新的几乎都是最后一项，从尾部找，避免整条时间线 O(n) 扫描和排序。
