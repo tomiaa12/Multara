@@ -398,6 +398,95 @@ pub fn load_active_snapshots(db: &Connection) -> Result<Vec<ActiveSnapshotRow>, 
         .collect()
 }
 
+/// 这一轮快照相对磁盘已经不同的文件。读不到工作区或内容相同的不计，避免把共享工作区的脏状态算到任务上。
+pub fn changed_files_for_message(
+    db: &Connection,
+    message_id: &str,
+) -> Result<Vec<(String, String)>, String> {
+    if message_id.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Ok(mut statement) = db.prepare(
+        "SELECT DISTINCT s.workspace_id, s.file_path, COALESCE(w.work_path, '')
+         FROM turn_file_snapshots s
+         LEFT JOIN workspaces w ON w.id = s.workspace_id
+         WHERE s.message_id=?1 AND s.file_path != ''
+         ORDER BY s.file_path",
+    ) else {
+        return Ok(Vec::new());
+    };
+    let rows = statement
+        .query_map([message_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let mut changed = Vec::new();
+    for (workspace_id, file_path, work_path) in rows {
+        if work_path.is_empty() {
+            continue;
+        }
+        let before = match get_snapshot_content(db, message_id, &workspace_id, &file_path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+        let path = std::path::Path::new(&work_path).join(&file_path);
+        match std::fs::read_to_string(&path) {
+            Ok(content) if content != before => changed.push((workspace_id, file_path)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                changed.push((workspace_id, file_path));
+            }
+            _ => {}
+        }
+    }
+    Ok(changed)
+}
+
+pub fn changed_files_for_run(db: &Connection, run_id: &str) -> Result<Vec<(String, String)>, String> {
+    let message_id: Option<String> = db
+        .query_row(
+            "SELECT t.user_message_id FROM agent_runs r
+             JOIN agent_turns t ON t.id = r.turn_id
+             WHERE r.id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .flatten();
+    match message_id {
+        Some(id) => changed_files_for_message(db, &id),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// 会话里最近一轮快照。迁移旧的审核中任务时用，不扫整个工作区。
+pub fn latest_changed_files_for_session(
+    db: &Connection,
+    session_id: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let message_id: Option<String> = db
+        .query_row(
+            "SELECT message_id FROM turn_file_snapshots
+             WHERE session_id=?1 AND file_path != ''
+             ORDER BY snapshot_at DESC
+             LIMIT 1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    match message_id {
+        Some(id) => changed_files_for_message(db, &id),
+        None => Ok(Vec::new()),
+    }
+}
+
 pub fn get_snapshot_content(
     db: &Connection,
     message_id: &str,

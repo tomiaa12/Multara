@@ -260,10 +260,18 @@ export type TaskStatus =
   | "backlog"
   | "todo"
   | "in_progress"
-  | "in_review"
   | "done"
   | "blocked"
   | "cancelled";
+
+export type TaskResultKind = "success" | "failed" | "stopped";
+
+export type TaskReview = "pending" | "seen";
+
+export interface TaskChangedFile {
+  workspaceId: string;
+  filePath: string;
+}
 
 export interface Task {
   id: string;
@@ -277,6 +285,12 @@ export interface Task {
   parentTaskId?: string | null;
   labels?: string[];
   defaultMode?: RunMode;
+  resultRunId?: string | null;
+  resultKind?: TaskResultKind | null;
+  resultReason?: string;
+  changedFileCount?: number;
+  changedFiles?: TaskChangedFile[];
+  review?: TaskReview | null;
 }
 
 export interface TaskInput {

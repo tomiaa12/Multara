@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -184,7 +184,7 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
           description TEXT NOT NULL,
           agent_id TEXT NOT NULL,
           status TEXT NOT NULL CHECK(status IN (
-            'backlog', 'todo', 'in_progress', 'in_review', 'done', 'blocked', 'cancelled'
+            'backlog', 'todo', 'in_progress', 'done', 'blocked', 'cancelled'
           )),
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
@@ -773,6 +773,28 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
         "default_mode",
         "TEXT NOT NULL DEFAULT 'auto'",
     )?;
+    ensure_column(&columns, "tasks", "result_run_id", "TEXT")?;
+    ensure_column(&columns, "tasks", "result_kind", "TEXT")?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "result_reason",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "changed_file_count",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &columns,
+        "tasks",
+        "changed_files_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(&columns, "tasks", "review", "TEXT")?;
+    migrate_task_work_unit(db)?;
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;
     migrate_run_event_types(db)?;
@@ -1022,6 +1044,61 @@ fn migrate_workspace_checkout_key(db: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// 审核中不再是任务状态。已有的审核中改成已完成，并先标成待检查，随后按文件快照收掉没有改动的。
+fn migrate_task_work_unit(db: &Connection) -> rusqlite::Result<()> {
+    let sql: String = db
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_default();
+    if !sql.contains("'in_review'") {
+        return Ok(());
+    }
+    rebuild_in_transaction(
+        db,
+        "ALTER TABLE tasks RENAME TO tasks_legacy;
+         CREATE TABLE tasks (
+           id TEXT PRIMARY KEY,
+           session_id TEXT NOT NULL UNIQUE,
+           title TEXT NOT NULL,
+           description TEXT NOT NULL,
+           agent_id TEXT NOT NULL,
+           status TEXT NOT NULL CHECK(status IN (
+             'backlog', 'todo', 'in_progress', 'done', 'blocked', 'cancelled'
+           )),
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           parent_task_id TEXT,
+           labels_json TEXT NOT NULL DEFAULT '[]',
+           default_mode TEXT NOT NULL DEFAULT 'auto',
+           result_run_id TEXT,
+           result_kind TEXT,
+           result_reason TEXT NOT NULL DEFAULT '',
+           changed_file_count INTEGER NOT NULL DEFAULT 0,
+           changed_files_json TEXT NOT NULL DEFAULT '[]',
+           review TEXT
+         );
+         INSERT INTO tasks
+           (id, session_id, title, description, agent_id, status, created_at, updated_at,
+            parent_task_id, labels_json, default_mode, result_run_id, result_kind, result_reason,
+            changed_file_count, changed_files_json, review)
+         SELECT id, session_id, title, description, agent_id,
+           CASE status WHEN 'in_review' THEN 'done' ELSE status END,
+           created_at, updated_at, parent_task_id,
+           COALESCE(labels_json, '[]'), COALESCE(default_mode, 'auto'),
+           result_run_id, result_kind, COALESCE(result_reason, ''),
+           COALESCE(changed_file_count, 0), COALESCE(changed_files_json, '[]'),
+           CASE WHEN status = 'in_review' THEN 'pending' ELSE review END
+         FROM tasks_legacy;
+         DROP TABLE tasks_legacy;",
+    )?;
+    crate::ops::task::refine_migrated_reviews(db)
+        .map_err(|error| rusqlite::Error::InvalidParameterName(error))?;
+    Ok(())
+}
+
 fn migrate_task_statuses(db: &Connection) -> rusqlite::Result<()> {
     let schema: Option<String> = db
         .query_row(
@@ -1047,7 +1124,7 @@ fn migrate_task_statuses(db: &Connection) -> rusqlite::Result<()> {
            description TEXT NOT NULL,
            agent_id TEXT NOT NULL,
            status TEXT NOT NULL CHECK(status IN (
-             'backlog', 'todo', 'in_progress', 'in_review', 'done', 'blocked', 'cancelled'
+             'backlog', 'todo', 'in_progress', 'done', 'blocked', 'cancelled'
            )),
            created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL
@@ -1370,6 +1447,36 @@ pub(crate) fn seed(db: &Connection) -> rusqlite::Result<()> {
 mod tests {
     use super::migrate;
     use rusqlite::Connection;
+
+    #[test]
+    fn migrates_in_review_tasks_to_done_without_inventing_a_review() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE tasks (
+               id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+               description TEXT NOT NULL, agent_id TEXT NOT NULL,
+               status TEXT NOT NULL CHECK(status IN (
+                 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'blocked', 'cancelled'
+               )),
+               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             INSERT INTO tasks VALUES
+               ('task', 'session', '任务', '', 'agent', 'in_review', 'now', 'now');",
+        )
+        .unwrap();
+
+        migrate(&db).unwrap();
+
+        let (status, review): (String, Option<String>) = db
+            .query_row(
+                "SELECT status, review FROM tasks WHERE id='task'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "done");
+        assert_eq!(review, None);
+    }
 
     #[test]
     fn migrates_legacy_task_statuses_to_seven_state_board() {

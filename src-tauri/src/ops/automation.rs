@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::models::{Automation, InboxInput, Task};
 
@@ -75,15 +75,26 @@ pub fn publish_result(db: &Connection, session_id: &str, status: &str) -> Result
     } else {
         "failed"
     };
-    let task_status = if status == "completed" {
-        "in_review"
-    } else {
-        "todo"
-    };
     let now = chrono::Utc::now().to_rfc3339();
+    // 先落成进行中，再按这次运行收成已完成或待办，结果和文件数跟普通任务同一条路径。
     let task = match existing_task(db, session_id)? {
         Some(task) => task,
-        None => attach_from_session(db, session_id, task_status, &now)?,
+        None => attach_from_session(db, session_id, "in_progress", &now)?,
+    };
+    task::settle_terminal(db, session_id, &now)?;
+    let task = existing_task(db, session_id)?.unwrap_or(task);
+    // 旧的自动化记录只有 automation_runs，没有 agent_runs，上面收不了口。
+    let task = if task.status == "in_progress" {
+        let next = if status == "completed" { "done" } else { "todo" };
+        let kind = if status == "completed" { "success" } else { "failed" };
+        db.execute(
+            "UPDATE tasks SET status=?1, updated_at=?2, result_kind=?3 WHERE id=?4 AND status='in_progress'",
+            params![next, now, kind, task.id],
+        )
+        .map_err(|error| error.to_string())?;
+        existing_task(db, session_id)?.unwrap_or(task)
+    } else {
+        task
     };
     let project_id: Option<String> = db
         .query_row(
@@ -282,7 +293,7 @@ mod tests {
         let db = setup();
         let task = publish_result(&db, "automation-run:run1", "completed").unwrap();
         assert_eq!(task.title, "查询今天长沙的天气");
-        assert_eq!(task.status, "in_review");
+        assert_eq!(task.status, "done");
         let inbox_title: String = db
             .query_row(
                 "SELECT title FROM inbox_items WHERE session_id='automation-run:run1'",

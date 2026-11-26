@@ -182,9 +182,9 @@ describe("run-event surface refresh", () => {
     await emit();
     await flush();
     expect(store.data?.tasks).toEqual([]);
-    backend.listTaskInboxSurfaces.mockResolvedValueOnce(surfaces([task("in_review")]));
+    backend.listTaskInboxSurfaces.mockResolvedValueOnce(surfaces([task("done")]));
     await emit({ status: "completed" });
-    expect(store.data?.tasks[0]?.status).toBe("in_review");
+    expect(store.data?.tasks[0]?.status).toBe("done");
     expect(backend.bootstrap).toHaveBeenCalledTimes(1);
   });
 
@@ -239,9 +239,9 @@ describe("run-event surface refresh", () => {
     first.resolve(surfaces());
     await flush();
     expect(backend.listTaskInboxSurfaces).toHaveBeenCalledTimes(2);
-    second.resolve(surfaces([task("in_review")]));
+    second.resolve(surfaces([task("done")]));
     await completion;
-    expect(store.data?.tasks[0]?.status).toBe("in_review");
+    expect(store.data?.tasks[0]?.status).toBe("done");
   });
 });
 

@@ -832,6 +832,14 @@ export const useAppStore = defineStore("app", () => {
     return task;
   }
 
+  async function acknowledgeTaskReview(taskId: string) {
+    if (!data.value) return null;
+    const task = await backend.acknowledgeTaskReview(taskId);
+    const index = data.value.tasks.findIndex((item) => item.id === task.id);
+    if (index >= 0) data.value.tasks[index] = task;
+    return task;
+  }
+
   async function updateTaskStatus(taskId: string, status: TaskStatus) {
     if (!data.value) return;
     data.value.tasks = await backend.updateTaskStatus(taskId, status);
@@ -2259,6 +2267,7 @@ export const useAppStore = defineStore("app", () => {
     updateTask,
     nameTaskFromFirstPrompt,
     updateTaskMeta,
+    acknowledgeTaskReview,
     updateTaskStatus,
     startTask,
     deleteTask,

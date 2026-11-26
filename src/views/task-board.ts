@@ -5,7 +5,6 @@ const TASK_STATUS_KEY: Record<TaskStatus, string> = {
   backlog: "tasks.status.backlog",
   todo: "tasks.status.todo",
   in_progress: "tasks.status.in_progress",
-  in_review: "tasks.status.in_review",
   done: "tasks.status.done",
   blocked: "tasks.status.blocked",
   cancelled: "tasks.status.cancelled",
@@ -15,7 +14,6 @@ const TASK_COLUMN_META: Array<{ id: TaskStatus; optional?: boolean }> = [
   { id: "backlog" },
   { id: "todo" },
   { id: "in_progress" },
-  { id: "in_review" },
   { id: "done", optional: true },
   { id: "blocked" },
   { id: "cancelled", optional: true },
@@ -72,10 +70,11 @@ export function moveTask(ids: string[], taskId: string, beforeId: string) {
 }
 
 /**
- * 系统轻量同步：
- * - 开跑：backlog/todo → in_progress
- * - 成功结束且无活跃 run：in_progress → in_review（等人审；done 仍需显式写入）
- * - 失败且无活跃 run：in_progress → todo
+ * 系统轻量同步，和后端 sync_from_run 同一套。
+ * 未收口的子任务、等计划批准这两条例外只在后端收口，刷新任务列表后对齐。
+ * - 开跑：backlog / todo / done / blocked → in_progress
+ * - 成功结束且无活跃 run：in_progress → done
+ * - 失败或中断且无活跃 run：in_progress → todo
  */
 export function boardStatusFromRun(
   runStatus: string,
@@ -84,11 +83,13 @@ export function boardStatusFromRun(
 ): TaskStatus | null {
   if (current === "cancelled") return null;
   if (runStatus === "queued" || runStatus === "running") {
-    if (current === "backlog" || current === "todo") return "in_progress";
+    if (current === "backlog" || current === "todo" || current === "done" || current === "blocked") {
+      return "in_progress";
+    }
     return null;
   }
   if (sessionStillActive) return null;
-  if (runStatus === "completed" && current === "in_progress") return "in_review";
-  if (runStatus === "failed" && current === "in_progress") return "todo";
+  if (runStatus === "completed" && current === "in_progress") return "done";
+  if ((runStatus === "failed" || runStatus === "stopped") && current === "in_progress") return "todo";
   return null;
 }

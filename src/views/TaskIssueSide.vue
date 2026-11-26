@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { ScrollText, User } from "@lucide/vue";
 import type { TaskRunRecord, TaskStatus } from "../domain/types";
 import {
@@ -32,6 +33,7 @@ const props = defineProps<{
 }>();
 
 const store = useAppStore();
+const router = useRouter();
 const showTagManage = ref(false);
 const categories = sharedRequirementCategories();
 const runs = ref<Awaited<ReturnType<typeof backend.listTaskRuns>>>([]);
@@ -143,6 +145,27 @@ function openRun(run: TaskRunRecord) {
   });
 }
 
+const resultLabel = computed(() => {
+  if (task.value?.resultKind === "success") return t("tasks.result.success");
+  if (task.value?.resultKind === "failed") return t("tasks.result.failed");
+  if (task.value?.resultKind === "stopped") return t("tasks.result.stopped");
+  return "";
+});
+
+function openChanges() {
+  if (!task.value) return;
+  void router.replace({ path: `/tasks/${task.value.id}`, query: { review: "1" } });
+}
+
+function openRequirement(projectId: string) {
+  void router.push(`/projects/${projectId}`);
+}
+
+async function markReviewed() {
+  if (!task.value) return;
+  await store.acknowledgeTaskReview(task.value.id);
+}
+
 function openLatestRunLog() {
   const latest = [...runs.value].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (latest) openRun(latest);
@@ -151,6 +174,22 @@ function openLatestRunLog() {
 
 <template>
   <aside v-if="task" class="task-issue-side vs-scroll">
+    <section v-if="resultLabel || task.changedFileCount">
+      <h2>{{ t('tasks.resultTitle') }}</h2>
+      <div v-if="resultLabel" class="task-prop-row">
+        <span>{{ t('tasks.resultTitle') }}</span>
+        <span>{{ resultLabel }}</span>
+      </div>
+      <p v-if="task.resultReason && task.resultKind !== 'success'" class="task-result-reason">{{ task.resultReason }}</p>
+      <div v-if="task.changedFileCount" class="task-prop-row">
+        <span>{{ t('tasks.changedFiles', { n: task.changedFileCount }) }}</span>
+        <span v-if="task.review">{{ task.review === 'pending' ? t('tasks.review.pending') : t('tasks.review.seen') }}</span>
+      </div>
+      <div class="task-result-actions">
+        <UiButton v-if="task.changedFileCount" size="small" variant="ghost" @click="openChanges">{{ t('tasks.viewChanges') }}</UiButton>
+        <UiButton v-if="task.review === 'pending'" size="small" variant="ghost" @click="markReviewed">{{ t('tasks.markReviewed') }}</UiButton>
+      </div>
+    </section>
     <section>
       <h2>{{ t('tasks.properties') }}</h2>
       <div class="task-prop-row">
@@ -170,7 +209,15 @@ function openLatestRunLog() {
       </div>
       <div class="task-prop-row">
         <span>{{ t('tasks.project') }}</span>
-        <span>{{ projects.length ? projects.map((item) => item.name).join('、') : t('tasks.noProject') }}</span>
+        <span v-if="projects.length" class="task-project-links">
+          <button
+            v-for="project in projects"
+            :key="project.id"
+            type="button"
+            @click="openRequirement(project.id)"
+          >{{ project.name }}</button>
+        </span>
+        <span v-else>{{ t('tasks.noProject') }}</span>
       </div>
       <div class="task-prop-row">
         <span>{{ t('tasks.tags') }}</span>

@@ -29,7 +29,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 ```
 
 - 父任务保持 `in_progress`；派活本身不算交付。
-- 子任务都收口（不再是 backlog/todo/in_progress/blocked）后，系统会再唤起父任务负责人做汇总；被唤起后看子任务结果，再决定父任务进 `in_review` / `done`。
+- 子任务都收口（不再是 backlog/todo/in_progress/blocked）后，系统会再唤起父任务负责人做汇总。汇总这一轮成功结束、且没有未收口的子任务时，系统把父任务收成 `done`。子任务还没收口时父任务保持 `in_progress`。
 - 不要对同一人既建子任务又指望同会话自动 fan-out；看板子任务与小队聊天派活是两套路径。
 
 ## 更新
@@ -40,7 +40,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 
 ## 状态 / 指派
 
-- `multara task status TASK_ID todo|backlog|in_progress|in_review|done|blocked|cancelled`
+- `multara task status TASK_ID todo|backlog|in_progress|done|blocked|cancelled`
 - `multara task assign TASK_ID --to AGENT_ID`
 - 把状态改成 `todo` 只是放回待办，不会再排队一次运行。
 
@@ -55,24 +55,23 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 
 系统只会做这些自动同步：
 
-1. 任务从 `backlog` / `todo` 真正开跑时，自动进 `in_progress`。
-2. 运行成功且该任务没有其它活跃运行时，若仍是 `in_progress`，进 `in_review`。
-3. 运行失败且该任务没有其它活跃运行时，若仍是 `in_progress`，回退到 `todo`。
+1. 任务从 `backlog` / `todo` / `done` / `blocked` 开跑时，自动进 `in_progress`。已取消不动。
+2. 运行成功，且没有其它活跃运行、没有未收口的子任务、也不在等计划批准时，若仍是 `in_progress`，自动进 `done`。这次运行改了文件时，另标「代码待检查」，不占用任务状态。
+3. 运行失败或中断，且没有其它活跃运行时，若仍是 `in_progress`，回到 `todo`，并记下失败或中断。
+4. 等计划批准时，若仍是 `in_progress`，进 `blocked`。
 
-**不会自动写成 `done`。** 目标真正完成仍要显式写入。
+跑完由系统收成 `done`。不要为了等人查看再写一个状态。卡住写 `blocked`。还有子任务没收口就留在 `in_progress`。
 
 按工作推进用 CLI 更新状态（可在回合中随时写，不要等结束）：
 
 | 情况 | 状态 |
 |------|------|
 | 开始做本任务本身的交付（实现、调研、设计、审查——只要它是任务要的） | 立刻 `in_progress` |
-| 本轮已交付任务本身的结果，等人确认 / 审核 | `in_review` |
 | 还没做完，还要继续（含子任务未齐） | 保持 `in_progress` |
 | 被外部依赖或条件卡住 | `blocked` |
-| 目标真正达成，或用户确认完成 | `done` |
 | 只是答疑、闲聊、咨询别人的工作，没有推进本任务交付 | **不要改状态** |
 
-`done` 表示目标完成，不是「这一轮 run 跑完了」。小队队长：派活给队员不算交付，父任务保持 `in_progress`，整体目标确认后再到 `in_review` / `done`。
+`done` 表示这一轮已经结束，不是代码已经合并或用户已经认可。小队队长：派活给队员不算交付，父任务保持 `in_progress`，子任务收口且汇总运行成功后系统会写成 `done`。
 
 ## 规则
 

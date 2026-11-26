@@ -19,7 +19,9 @@ pub struct CreateTaskInput<'a> {
 }
 
 const TASK_COLUMNS: &str = "t.id, t.session_id, t.title, t.description, t.agent_id, t.status,
-                    t.created_at, t.updated_at, t.parent_task_id, t.labels_json, t.default_mode";
+                    t.created_at, t.updated_at, t.parent_task_id, t.labels_json, t.default_mode,
+                    t.result_run_id, t.result_kind, t.result_reason, t.changed_file_count,
+                    t.changed_files_json, t.review";
 
 fn parse_labels(raw: String) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&raw)
@@ -27,6 +29,10 @@ fn parse_labels(raw: String) -> Vec<String> {
         .into_iter()
         .filter(|item| !item.trim().is_empty())
         .collect()
+}
+
+fn parse_changed_files(raw: String) -> Vec<crate::models::TaskChangedFile> {
+    serde_json::from_str(&raw).unwrap_or_default()
 }
 
 fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -47,6 +53,12 @@ fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
             .unwrap_or_else(|_| "auto".into())
             .parse()
             .unwrap_or(RunMode::Auto),
+        result_run_id: row.get(11)?,
+        result_kind: row.get(12)?,
+        result_reason: row.get::<_, String>(13).unwrap_or_default(),
+        changed_file_count: row.get::<_, i64>(14).unwrap_or(0),
+        changed_files: parse_changed_files(row.get::<_, String>(15).unwrap_or_else(|_| "[]".into())),
+        review: row.get(16)?,
     })
 }
 
@@ -191,6 +203,12 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             parent_task_id: input.parent_task_id.map(str::to_string),
             labels: Vec::new(),
             default_mode: input.requested_mode,
+            result_run_id: None,
+            result_kind: None,
+            result_reason: String::new(),
+            changed_file_count: 0,
+            changed_files: Vec::new(),
+            review: None,
         },
         queued,
     })
@@ -454,12 +472,11 @@ pub fn maybe_resume_parent(
     let summary = lines.join("\n");
     let assignment = tr!(
         "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n\
-         请汇总各成员结果，更新父任务「{parent_title}」进度；若可验收则 `multara task status {parent_id} in_review`。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活、还是验收）。不要用 `multara task comment` 在父任务上写进度流水。\n\n\
+         请汇总父任务「{parent_title}」的结果。还有未收口的子任务就继续留在进行中；这一轮成功结束且子任务都已收口时，系统会把父任务收成已完成。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活，还是到此为止）。不要用 `multara task comment` 在父任务上写进度流水。\n\n\
          子任务状态：\n{summary}",
         child_title = child_title,
         child_id = child_id,
         parent_title = parent_title,
-        parent_id = parent_id,
         summary = summary
     );
 
@@ -561,17 +578,6 @@ const IDLE_IN_PROGRESS: &str = "status='in_progress'
     SELECT 1 FROM agent_runs r
     WHERE r.session_id = tasks.session_id AND r.status IN ('queued', 'running')
   )";
-const WITHOUT_AWAITING_PLAN: &str = "NOT EXISTS (
-    SELECT 1 FROM run_events p
-    WHERE p.session_id=tasks.session_id AND p.event_type='plan'
-      AND NOT EXISTS (
-        SELECT 1 FROM run_events a
-        WHERE a.session_id=p.session_id AND a.event_type='plan_action'
-          AND json_extract(a.input_json, '$.planId')=json_extract(p.input_json, '$.planId')
-          AND json_extract(a.input_json, '$.revision')=json_extract(p.input_json, '$.revision')
-      )
-  )";
-
 const LAST_RUN_STATUS: &str = "(
     SELECT r.status FROM agent_runs r
     WHERE r.session_id = tasks.session_id
@@ -580,17 +586,16 @@ const LAST_RUN_STATUS: &str = "(
   )";
 
 /// 回答已经结束、没有还在排队或运行的记录，却停在进行中时收口。
-/// 最后一次成功进审核；最后一次失败回待办。用户手动停掉的不挪。
+/// 成功进已完成；失败或中断回待办。等计划批准的留到单次收口里改成已阻塞。
 /// 只在打开看板时调用，避免刚拖进进行中又被立刻弹走。
 pub(crate) fn settle_finished(db: &Connection) -> Result<(), String> {
-    // 绝大多数时候没有可收口的任务，先只读判断，免得每次打开看板都开写事务。
     let settleable: bool = db
         .query_row(
             &format!(
                 "SELECT EXISTS(
                    SELECT 1 FROM tasks
-                   WHERE {IDLE_IN_PROGRESS} AND {WITHOUT_AWAITING_PLAN}
-                     AND {LAST_RUN_STATUS} IN ('completed', 'failed')
+                   WHERE {IDLE_IN_PROGRESS}
+                     AND {LAST_RUN_STATUS} IN ('completed', 'failed', 'stopped')
                  )"
             ),
             [],
@@ -600,19 +605,27 @@ pub(crate) fn settle_finished(db: &Connection) -> Result<(), String> {
     if !settleable {
         return Ok(());
     }
+    let session_ids = idle_sessions(db)?;
     let now = Utc::now().to_rfc3339();
-    for (next, last_run) in [("in_review", "completed"), ("todo", "failed")] {
-        db.execute(
-            &format!(
-                "UPDATE tasks SET status=?1, updated_at=?2
-                 WHERE {IDLE_IN_PROGRESS} AND {WITHOUT_AWAITING_PLAN}
-                   AND {LAST_RUN_STATUS} = ?3"
-            ),
-            params![next, now, last_run],
-        )
-        .map_err(|error| error.to_string())?;
+    for session_id in session_ids {
+        settle_terminal(db, &session_id, &now)?;
     }
     Ok(())
+}
+
+fn idle_sessions(db: &Connection) -> Result<Vec<String>, String> {
+    let mut statement = db
+        .prepare(&format!(
+            "SELECT session_id FROM tasks
+             WHERE {IDLE_IN_PROGRESS}
+               AND {LAST_RUN_STATUS} IN ('completed', 'failed', 'stopped')"
+        ))
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
 
 /// `ancestor_id` 沿 `parent_task_id` 往上能不能走到 `task_id`（包括两者相同）。
@@ -674,6 +687,7 @@ pub fn list(
 }
 
 pub fn update_status(db: &Connection, task_id: &str, status: &str) -> Result<Vec<Task>, String> {
+    let legacy_review = status == "in_review";
     let status = parse_task_status(status)?;
     let now = Utc::now().to_rfc3339();
     let updated = db
@@ -685,8 +699,26 @@ pub fn update_status(db: &Connection, task_id: &str, status: &str) -> Result<Vec
     if updated == 0 {
         return Err(tr!("任务不存在"));
     }
+    if legacy_review {
+        apply_review_alias(db, task_id)?;
+    }
     // 拖到待办只改列，不重新排队。否则 enqueue 会立刻把状态同步回进行中，卡片拖不过去。
     list(db, None, None, None)
+}
+
+pub fn acknowledge_review(db: &Connection, task_id: &str) -> Result<Task, String> {
+    let now = Utc::now().to_rfc3339();
+    let updated = db
+        .execute(
+            "UPDATE tasks SET review='seen', updated_at=?1
+             WHERE id=?2 AND review='pending'",
+            params![now, task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 0 && get(db, task_id).is_err() {
+        return Err(tr!("任务不存在"));
+    }
+    get(db, task_id)
 }
 
 /// 用户在看板把任务挪进「进行中」时真正开跑：会话里没有排队/运行的 run 就按任务描述排一条。
@@ -752,10 +784,10 @@ pub fn start_if_idle(db: &Connection, task_id: &str) -> Result<bool, String> {
 }
 
 /// 轻量系统同步：
-/// - 开跑：backlog/todo → in_progress
-/// - 成功结束且无活跃 run：in_progress → in_review（等人审）
-/// - 失败且无活跃 run：in_progress → todo
-/// `done` / `blocked` 仍由智能体或用户显式写入。
+/// - 开跑：待规划 / 待办 / 已完成 / 已阻塞 → 进行中。已取消不动。
+/// - 成功结束、没有其它运行、没有未收口子任务、不在等计划：进行中 → 已完成。
+/// - 失败或中断，且没有其它运行：进行中 → 待办，并记下结果。
+/// - 等计划批准：进行中 → 已阻塞。
 pub fn sync_from_run(
     db: &Connection,
     session_id: &str,
@@ -766,46 +798,188 @@ pub fn sync_from_run(
         "queued" | "running" => {
             db.execute(
                 "UPDATE tasks SET status='in_progress', updated_at=?1
-                 WHERE session_id=?2 AND status IN ('backlog', 'todo')",
+                 WHERE session_id=?2 AND status IN ('backlog', 'todo', 'done', 'blocked')",
                 params![now, session_id],
             )
             .map_err(|error| error.to_string())?;
         }
-        "completed" | "failed" => {
-            let active: u32 = db
-                .query_row(
-                    "SELECT COUNT(*) FROM agent_runs
-                     WHERE session_id=?1 AND status IN ('queued', 'running')",
-                    [session_id],
-                    |row| row.get(0),
-                )
-                .unwrap_or(1);
-            if active == 0 {
-                if run_status == "completed"
-                    && crate::plan::latest_awaiting_plan(db, session_id)?.is_some()
-                {
-                    db.execute(
-                        "UPDATE tasks SET status='blocked', updated_at=?1
-                         WHERE session_id=?2 AND status='in_progress'",
-                        params![now, session_id],
-                    )
-                    .map_err(|error| error.to_string())?;
-                    return Ok(());
-                }
-                let next = if run_status == "completed" {
-                    "in_review"
-                } else {
-                    "todo"
-                };
-                db.execute(
-                    "UPDATE tasks SET status=?1, updated_at=?2
-                     WHERE session_id=?3 AND status='in_progress'",
-                    params![next, now, session_id],
-                )
-                .map_err(|error| error.to_string())?;
-            }
-        }
+        "completed" | "failed" | "stopped" => settle_terminal(db, session_id, now)?,
         _ => {}
+    }
+    Ok(())
+}
+
+const INTERRUPT_REASONS: &[&str] = &[
+    "Multara 退出时这次运行还没写完，已中断。",
+    "Multara quit before this run finished writing, so it was interrupted.",
+    "Multara 結束時這次執行還沒寫完，已中斷。",
+    "この実行の書き込みが終わる前に Multara が終了したため、中断されました。",
+    "이번 실행이 끝나기 전에 Multara가 종료되어 중단되었습니다.",
+];
+
+pub(crate) fn settle_terminal(db: &Connection, session_id: &str, now: &str) -> Result<(), String> {
+    let active: u32 = db
+        .query_row(
+            "SELECT COUNT(*) FROM agent_runs
+             WHERE session_id=?1 AND status IN ('queued', 'running')",
+            [session_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(1);
+    if active > 0 {
+        return Ok(());
+    }
+    let Some((task_id, status)) = db
+        .query_row(
+            "SELECT id, status FROM tasks WHERE session_id=?1",
+            [session_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(());
+    };
+    if status != "in_progress" {
+        return Ok(());
+    }
+    let Some((run_id, run_status)) = latest_settled_run(db, session_id)? else {
+        return Ok(());
+    };
+    if run_status == "completed" && crate::plan::latest_awaiting_plan(db, session_id)?.is_some() {
+        db.execute(
+            "UPDATE tasks SET status='blocked', updated_at=?1 WHERE id=?2 AND status='in_progress'",
+            params![now, task_id],
+        )
+        .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    if run_status == "completed" && open_child_count(db, &task_id)? > 0 {
+        return Ok(());
+    }
+    let next = if run_status == "completed" {
+        "done"
+    } else {
+        "todo"
+    };
+    let reason = run_failure_reason(db, &run_id);
+    let kind = if run_status == "stopped" || INTERRUPT_REASONS.contains(&reason.as_str()) {
+        "stopped"
+    } else if run_status == "completed" {
+        "success"
+    } else {
+        "failed"
+    };
+    let files = crate::snapshot_db::changed_files_for_run(db, &run_id)?;
+    let file_count = files.len() as i64;
+    let files_json = encode_changed_files(&files);
+    db.execute(
+        "UPDATE tasks SET status=?1, updated_at=?2, result_run_id=?3, result_kind=?4,
+                result_reason=?5,
+                changed_file_count=CASE WHEN ?6 > 0 THEN ?6 ELSE changed_file_count END,
+                changed_files_json=CASE WHEN ?6 > 0 THEN ?7 ELSE changed_files_json END,
+                review=CASE WHEN ?6 > 0 THEN 'pending' ELSE review END
+         WHERE id=?8 AND status='in_progress'",
+        params![next, now, run_id, kind, reason, file_count, files_json, task_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn latest_settled_run(db: &Connection, session_id: &str) -> Result<Option<(String, String)>, String> {
+    db.query_row(
+        "SELECT id, status FROM agent_runs
+         WHERE session_id=?1 AND status IN ('completed', 'failed', 'stopped')
+         ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
+         LIMIT 1",
+        [session_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
+fn run_failure_reason(db: &Connection, run_id: &str) -> String {
+    db.query_row(
+        "SELECT failure_reason FROM messages
+         WHERE run_id=?1 AND failure_reason IS NOT NULL AND trim(failure_reason) != ''
+         ORDER BY created_at DESC LIMIT 1",
+        [run_id],
+        |row| row.get(0),
+    )
+    .unwrap_or_default()
+}
+
+fn open_child_count(db: &Connection, task_id: &str) -> Result<u32, String> {
+    db.query_row(
+        "SELECT COUNT(*) FROM tasks
+         WHERE parent_task_id=?1
+           AND status IN ('backlog', 'todo', 'in_progress', 'blocked')",
+        [task_id],
+        |row| row.get(0),
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn encode_changed_files(files: &[(String, String)]) -> String {
+    let items = files
+        .iter()
+        .map(|(workspace_id, file_path)| crate::models::TaskChangedFile {
+            workspace_id: workspace_id.clone(),
+            file_path: file_path.clone(),
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&items).unwrap_or_else(|_| "[]".into())
+}
+
+fn apply_review_alias(db: &Connection, task_id: &str) -> Result<(), String> {
+    let session_id: String = db
+        .query_row(
+            "SELECT session_id FROM tasks WHERE id=?1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| tr!("任务不存在"))?;
+    let files = crate::snapshot_db::latest_changed_files_for_session(db, &session_id)?;
+    if files.is_empty() {
+        return Ok(());
+    }
+    db.execute(
+        "UPDATE tasks SET review='pending', changed_file_count=?1, changed_files_json=?2 WHERE id=?3",
+        params![files.len() as i64, encode_changed_files(&files), task_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// 迁移把审核中先标成待检查。这里按快照收掉其实没改文件的，避免猜它是不是代码任务。
+pub(crate) fn refine_migrated_reviews(db: &Connection) -> Result<(), String> {
+    let mut statement = db
+        .prepare(
+            "SELECT id, session_id FROM tasks
+             WHERE review='pending' AND result_run_id IS NULL AND changed_file_count=0",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    for (task_id, session_id) in rows {
+        let files = crate::snapshot_db::latest_changed_files_for_session(db, &session_id)?;
+        if files.is_empty() {
+            db.execute(
+                "UPDATE tasks SET review=NULL WHERE id=?1",
+                [&task_id],
+            )
+            .map_err(|error| error.to_string())?;
+        } else {
+            db.execute(
+                "UPDATE tasks SET changed_file_count=?1, changed_files_json=?2 WHERE id=?3",
+                params![files.len() as i64, encode_changed_files(&files), task_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
     }
     Ok(())
 }
@@ -1164,7 +1338,12 @@ mod tests {
         )
         .unwrap();
         super::settle_finished(&db).unwrap();
-        assert_eq!(super::get(&db, &a.id).unwrap().status, "in_review");
+        assert_eq!(super::get(&db, &a.id).unwrap().status, "in_progress");
+        db.execute("UPDATE tasks SET status='done' WHERE id=?1", [&b.id])
+            .unwrap();
+        super::settle_finished(&db).unwrap();
+        assert_eq!(super::get(&db, &a.id).unwrap().status, "done");
+        assert_eq!(super::get(&db, &a.id).unwrap().result_kind.as_deref(), Some("success"));
     }
 
     #[test]
@@ -1272,7 +1451,7 @@ mod tests {
         )
         .unwrap();
         db.execute(
-            "UPDATE tasks SET status='in_review' WHERE id=?1",
+            "UPDATE tasks SET status='done' WHERE id=?1",
             [&child.id],
         )
         .unwrap();

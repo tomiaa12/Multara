@@ -43,14 +43,14 @@ describe("task board order", () => {
   it("maps run status onto board columns lightly", () => {
     expect(boardStatusFromRun("running", "todo", false)).toBe("in_progress");
     expect(boardStatusFromRun("queued", "backlog", false)).toBe("in_progress");
-    expect(boardStatusFromRun("queued", "done", false)).toBeNull();
-    expect(boardStatusFromRun("completed", "in_progress", false)).toBe("in_review");
+    expect(boardStatusFromRun("queued", "done", false)).toBe("in_progress");
+    expect(boardStatusFromRun("queued", "blocked", false)).toBe("in_progress");
+    expect(boardStatusFromRun("completed", "in_progress", false)).toBe("done");
     expect(boardStatusFromRun("completed", "in_progress", true)).toBeNull();
     expect(boardStatusFromRun("completed", "done", false)).toBeNull();
     expect(boardStatusFromRun("failed", "in_progress", false)).toBe("todo");
     expect(boardStatusFromRun("failed", "in_progress", true)).toBeNull();
-    expect(boardStatusFromRun("failed", "in_review", false)).toBeNull();
-    expect(boardStatusFromRun("stopped", "in_progress", false)).toBeNull();
+    expect(boardStatusFromRun("stopped", "in_progress", false)).toBe("todo");
     expect(boardStatusFromRun("running", "cancelled", false)).toBeNull();
   });
 });

@@ -29,7 +29,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 ```
 
 - 父任務保持 `in_progress`；派工本身不算交付。
-- 子任務都收口（不再是 backlog/todo/in_progress/blocked）後，系統會再次喚起父任務負責人做彙整；被喚起後先看子任務結果，再決定父任務進入 `in_review` / `done`。
+- 子任務都收口（不再是 backlog/todo/in_progress/blocked）後，系統會再次喚起父任務負責人做彙整。彙整這一輪成功結束、且沒有未收口的子任務時，系統把父任務收成 `done`。子任務還沒收口時父任務保持 `in_progress`。
 - 不要對同一個人既建立子任務、又期望同一會話自動 fan-out；看板子任務與小隊聊天派工是兩套路徑。
 
 ## 更新
@@ -40,7 +40,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 
 ## 狀態 / 指派
 
-- `multara task status TASK_ID todo|backlog|in_progress|in_review|done|blocked|cancelled`
+- `multara task status TASK_ID todo|backlog|in_progress|done|blocked|cancelled`
 - `multara task assign TASK_ID --to AGENT_ID`
 - 把狀態改成 `todo` 只是放回待辦，不會再排入一次執行。
 
@@ -56,23 +56,21 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 系統只會做這些自動同步：
 
 1. 任務從 `backlog` / `todo` 真正開始執行時，自動進入 `in_progress`。
-2. 執行成功且該任務沒有其他進行中的執行時，若仍是 `in_progress`，進入 `in_review`。
-3. 執行失敗且該任務沒有其他進行中的執行時，若仍是 `in_progress`，退回 `todo`。
+2. 執行成功，且沒有其他進行中的執行、沒有未收口的子任務、也不在等計劃批准時，若仍是 `in_progress`，自動進入 `done`。這次執行改了檔案時，另外標成待檢查。
+3. 執行失敗或中斷，且沒有其他進行中的執行時，若仍是 `in_progress`，回到 `todo`，並記下失敗或中斷。
 
-**不會自動寫成 `done`。** 目標真正完成仍須明確寫入。
+跑完由系統收成 `done`。不要為了等人查看再寫一個狀態。卡住寫 `blocked`。還有子任務沒收口就留在 `in_progress`。
 
 依工作推進，用 CLI 更新狀態（可在回合中隨時寫入，不要等到結束）：
 
 | 情況 | 狀態 |
 |------|------|
 | 開始做本任務本身的交付（實作、調研、設計、審查——只要是任務要求的） | 立刻 `in_progress` |
-| 本輪已交付任務本身的結果，等人確認 / 審核 | `in_review` |
 | 還沒做完，還要繼續（含子任務未齊） | 保持 `in_progress` |
 | 被外部依賴或條件卡住 | `blocked` |
-| 目標真正達成，或使用者確認完成 | `done` |
 | 只是答疑、閒聊、諮詢別人的工作，沒有推進本任務交付 | **不要改狀態** |
 
-`done` 表示目標完成，不是「這一輪 run 跑完了」。小隊隊長：派工給隊員不算交付，父任務保持 `in_progress`，整體目標確認後再進入 `in_review` / `done`。
+`done` 表示這一輪已經結束，不是程式已經合併。小隊隊長：派工給隊員不算交付，父任務保持 `in_progress`，子任務收口且彙整執行成功後系統會寫成 `done`。
 
 ## 規則
 

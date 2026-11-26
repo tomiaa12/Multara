@@ -3592,6 +3592,13 @@ pub fn create_task(input: TaskInput, app: AppHandle) -> Result<Task, String> {
 }
 
 #[tauri::command]
+pub fn acknowledge_task_review(task_id: String, app: AppHandle) -> Result<crate::models::Task, String> {
+    let state = app.state::<AppState>();
+    let db = state.lock_db()?;
+    ops::task::acknowledge_review(&db, &task_id)
+}
+
+#[tauri::command]
 pub fn update_task_status(
     task_id: String,
     status: String,
@@ -7755,7 +7762,7 @@ mod tests {
              VALUES ('chat', 'Chat', 'agent', 'miku', 'now', 'now');
              INSERT INTO tasks
                (id, session_id, title, description, agent_id, status, created_at, updated_at)
-             VALUES ('task', 'chat', 'Task', '', 'miku', 'in_review', 'now', 'now');
+             VALUES ('task', 'chat', 'Task', '', 'miku', 'done', 'now', 'now');
              INSERT INTO inbox_items
                (id, session_id, task_id, title, preview, status, created_at)
              VALUES ('notice', 'chat', 'task', 'Task', 'Ready', 'completed', 'now');
@@ -7766,7 +7773,7 @@ mod tests {
 
         let surfaces = super::task_inbox_surfaces(&db).unwrap();
         assert_eq!(surfaces.tasks.len(), 1);
-        assert_eq!(surfaces.tasks[0].status, "in_review");
+        assert_eq!(surfaces.tasks[0].status, "done");
         assert_eq!(surfaces.sessions[0].id, "chat");
         assert_eq!(surfaces.inbox[0].id, "notice");
         assert_eq!(db.total_changes(), changes);

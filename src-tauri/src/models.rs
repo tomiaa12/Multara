@@ -387,6 +387,13 @@ pub struct ChatSession {
     pub last_run_at: Option<String>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskChangedFile {
+    pub workspace_id: String,
+    pub file_path: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
@@ -403,6 +410,24 @@ pub struct Task {
     #[serde(default)]
     pub labels: Vec<String>,
     pub default_mode: RunMode,
+    /// 最近一次已结束运行。成功是 `success`，失败是 `failed`，手动停止或退出中断是 `stopped`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub result_reason: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub changed_file_count: i64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_files: Vec<TaskChangedFile>,
+    /// `pending` 代码待检查，`seen` 已检查。没改文件时为空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review: Option<String>,
+}
+
+fn is_zero(value: &i64) -> bool {
+    *value == 0
 }
 
 #[derive(Deserialize)]

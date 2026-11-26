@@ -907,6 +907,16 @@ export async function listTaskRuns(taskId: string): Promise<TaskRunRecord[]> {
   return invoke("list_task_runs", { taskId });
 }
 
+export async function acknowledgeTaskReview(taskId: string): Promise<Task> {
+  if (!hasBackend()) {
+    const task = previewData.tasks.find((item) => item.id === taskId);
+    if (!task) throw new Error("任务不存在");
+    if (task.review === "pending") task.review = "seen";
+    return structuredClone(task);
+  }
+  return invoke<Task>("acknowledge_task_review", { taskId });
+}
+
 export async function updateTaskStatus(taskId: string, status: TaskStatus): Promise<Task[]> {
   if (!hasBackend()) {
     const task = previewData.tasks.find((item) => item.id === taskId);

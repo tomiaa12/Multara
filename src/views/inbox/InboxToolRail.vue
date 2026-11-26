@@ -159,7 +159,7 @@ const railProjectId = computed(
     ?? "",
 );
 const terminalOpen = ref(readProjectTerminalOpen("inbox", railProjectId.value));
-const surfaces = ref<InboxSurfaceTab[]>(props.kind === "workflow" ? [] : readInboxSurfaces());
+const surfaces = ref<InboxSurfaceTab[]>(props.kind === "workflow" || props.kind === "task" ? [] : readInboxSurfaces());
 const editorTabs = ref<EditorTab[]>([]);
 const activeEditorKey = ref("");
 const activeSurfaceKey = ref("");
@@ -308,8 +308,12 @@ function keepFloatInside() {
 const floatStyle = computed(() => {
   const host = floatHost();
   const min = host instanceof HTMLElement ? headerOffset(host) : 0;
-  const top = floatTop.value === null ? min : Math.max(min, floatTop.value);
-  return { top: `${top}px`, right: `${FLOAT_EDGE}px` };
+  let top = floatTop.value === null ? min : Math.max(min, floatTop.value);
+  const nav = floatEl.value;
+  if (host instanceof HTMLElement && nav) top = clampFloatTop(top, host, nav);
+  const dockedToPage = props.floatHostSelector === ".task-detail-page";
+  const right = dockedToPage && stageOpen.value ? panelWidth.value : FLOAT_EDGE;
+  return { top: `${top}px`, right: `${right}px` };
 });
 
 function floatNav(event: PointerEvent) {
@@ -409,7 +413,7 @@ const railActive = ref(true);
 function writeLayout() {
   localStorage.setItem(INBOX_PANEL_WIDTH_KEY, String(panelWidth.value));
   localStorage.setItem(INBOX_FILES_WIDTH_KEY, String(filesWidth.value));
-  if (props.kind !== "workflow") {
+  if (props.kind !== "workflow" && props.kind !== "task") {
     localStorage.setItem(INBOX_FILES_OPEN_KEY, filesWanted.value ? "1" : "0");
     localStorage.setItem(INBOX_SURFACES_KEY, JSON.stringify(surfaces.value.map((item) => item.kind)));
     localStorage.setItem("multara.inbox.activeSurface", activeSurface.value?.kind ?? "");
@@ -1175,12 +1179,17 @@ function openTerminalPath(payload: { path: string; isDirectory: boolean }) {
   void openFile(match.id, relative, true);
 }
 
-function closeAll() {
+function closeStage() {
   surfaces.value = [];
   editorTabs.value = [];
   activeEditorKey.value = "";
   activeSurfaceKey.value = "";
   filesWanted.value = false;
+  writeLayout();
+}
+
+function closeAll() {
+  closeStage();
   terminalOpen.value = false;
   writeLayout();
 }
@@ -1355,6 +1364,7 @@ onMounted(() => {
     matches: (sessionId) => railActive.value && (sessionId === props.sessionId || (props.extraSessionIds ?? []).includes(sessionId)),
     handle: handleSurfaceCtl,
   });
+  void nextTick(watchFloatHost);
   void backend.terminalProfiles().then((list) => {
     profiles.value = list ?? [];
   }).catch(() => {
@@ -1448,6 +1458,14 @@ onBeforeUnmount(() => {
         <div class="inbox-tool-add">
           <UiButton variant="ghost" size="icon" :tip="t('inbox.tool.add')" @click="openAddMenu">
             <Codicon name="add" :size="16" />
+          </UiButton>
+          <UiButton
+            variant="ghost"
+            size="icon"
+            :tip="t('inbox.tool.closeStage')"
+            @click="closeStage"
+          >
+            <Codicon name="close" :size="16" />
           </UiButton>
         </div>
         </div>
@@ -1789,7 +1807,7 @@ onBeforeUnmount(() => {
     </div>
   </section>
   <!-- keep-alive 停用时关掉 Teleport，避免残留悬浮栏抢点击、改到后台实例 -->
-  <Teleport :to="floatHostSelector || '.inbox-detail.chat-surface'" :disabled="!railActive">
+  <Teleport defer :to="floatHostSelector || '.inbox-detail.chat-surface'" :disabled="!railActive">
     <nav
       v-if="railActive"
       ref="floatEl"

@@ -51,13 +51,16 @@ pub const TASK_STATUSES: &[&str] = &[
     "backlog",
     "todo",
     "in_progress",
-    "in_review",
     "done",
     "blocked",
     "cancelled",
 ];
 
 pub fn parse_task_status(status: &str) -> Result<&'static str, String> {
+    // 旧写法保留一版：审核中写成已完成。有文件改动时由 update_status 再标待检查。
+    if status == "in_review" {
+        return Ok("done");
+    }
     TASK_STATUSES
         .iter()
         .copied()

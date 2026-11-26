@@ -29,7 +29,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 ```
 
 - 상위 작업은 `in_progress`로 유지합니다. 작업을 분배하는 것 자체는 결과물 제출이 아닙니다.
-- 하위 작업이 모두 마무리되면(더 이상 backlog/todo/in_progress/blocked가 아님) 시스템이 상위 작업의 담당자를 다시 깨워 취합하게 합니다. 깨워진 뒤에는 하위 작업의 결과를 확인하고, 상위 작업을 `in_review` / `done`으로 넘길지 판단합니다.
+- 하위 작업이 모두 마무리되면(더 이상 backlog/todo/in_progress/blocked가 아님) 시스템이 상위 작업의 담당자를 다시 깨워 취합하게 합니다. 깨워진 뒤에는 하위 작업의 결과를 확인하세요. 하위 작업이 남아 있으면 상위 작업은 `in_progress`를 유지합니다. 이 취합이 성공하고 하위 작업이 모두 닫히면 시스템이 상위 작업을 `done`으로 바꿉니다.
 - 같은 사람에게 하위 작업을 만들어 놓고 같은 대화에서 자동 fan-out이 일어나기를 기대하지 마세요. 보드의 하위 작업과 스쿼드 채팅을 통한 분배는 서로 다른 경로입니다.
 
 ## 수정
@@ -40,7 +40,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 
 ## 상태 / 배정
 
-- `multara task status TASK_ID todo|backlog|in_progress|in_review|done|blocked|cancelled`
+- `multara task status TASK_ID todo|backlog|in_progress|done|blocked|cancelled`
 - `multara task assign TASK_ID --to AGENT_ID`
 - 상태를 `todo`로 바꾸는 것은 할 일 목록으로 되돌릴 뿐이며, 실행이 다시 대기열에 오르지는 않습니다.
 
@@ -56,23 +56,22 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 시스템이 자동으로 동기화하는 것은 다음뿐입니다.
 
 1. 작업이 `backlog` / `todo`에서 실제로 실행되기 시작하면 자동으로 `in_progress`가 됩니다.
-2. 실행이 성공하고 그 작업에 다른 활성 실행이 없을 때, 여전히 `in_progress`라면 `in_review`가 됩니다.
+2. 실행이 성공하고 그 작업에 다른 활성 실행이 없을 때, 여전히 `in_progress`라면 `done`가 됩니다.
 3. 실행이 실패하고 그 작업에 다른 활성 실행이 없을 때, 여전히 `in_progress`라면 `todo`로 되돌아갑니다.
 
-**`done`은 자동으로 기록되지 않습니다.** 목표가 실제로 달성되면 직접 명시적으로 기록해야 합니다.
+실행이 성공하면 시스템이 `done`으로 바꿉니다. 사람이 보려고 상태를 따로 쓰지 마세요.
 
 작업이 진행되는 대로 CLI로 상태를 갱신하세요(턴 도중 언제든 기록할 수 있으며, 끝날 때까지 기다리지 마세요).
 
 | 상황 | 상태 |
 |------|------|
 | 이 작업 자체의 결과물 작업을 시작함(구현, 조사, 설계, 검토 등 작업이 요구하는 것이면 무엇이든) | 즉시 `in_progress` |
-| 이번 라운드에서 작업 자체의 결과를 전달했고 사람의 확인 / 검토를 기다림 | `in_review` |
 | 아직 끝나지 않았고 계속해야 함(하위 작업이 다 모이지 않은 경우 포함) | `in_progress` 유지 |
 | 외부 의존성이나 조건에 막힘 | `blocked` |
 | 목표가 실제로 달성되었거나 사용자가 완료를 확인함 | `done` |
 | 질의응답, 잡담, 다른 사람의 작업 자문일 뿐 이 작업의 결과물은 진전되지 않음 | **상태를 바꾸지 않음** |
 
-`done`은 목표가 완료되었다는 뜻이지 "이번 run이 끝났다"는 뜻이 아닙니다. 스쿼드 리더에게: 멤버에게 일을 분배하는 것은 결과물 제출이 아닙니다. 상위 작업은 `in_progress`로 유지하고, 전체 목표가 확인된 뒤에 `in_review` / `done`으로 넘기세요.
+`done`은 이번 라운드가 끝났다는 뜻이지, 코드가 병합되었다는 뜻이 아닙니다. 스쿼드 리더에게: 멤버에게 일을 분배하는 것은 결과물 제출이 아닙니다. 상위 작업은 `in_progress`로 유지하고, 하위 작업이 닫히고 취합 실행이 성공하면 시스템이 `done`으로 바꿉니다.
 
 ## 규칙
 

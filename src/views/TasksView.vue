@@ -9,13 +9,12 @@ import {
   CircleDashed,
   CircleX,
   Clock3,
-  Eye,
   MoreHorizontal,
   Plus,
   Rows3,
   Users,
 } from "@lucide/vue";
-import type { Task, TaskStatus } from "../domain/types";
+import type { Task, TaskChangedFile, TaskStatus } from "../domain/types";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import AgentLiveStatus from "../components/AgentLiveStatus.vue";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
@@ -55,7 +54,6 @@ const icons = {
   backlog: CircleDashed,
   todo: Circle,
   in_progress: Clock3,
-  in_review: Eye,
   blocked: Ban,
   done: CircleCheck,
   cancelled: CircleX,
@@ -126,9 +124,16 @@ const columns = computed(() =>
     return true;
   }),
 );
-const workingCount = computed(() => new Set(
-  tasks.value.filter((task) => task.status === "in_progress").map((task) => task.agentId),
-).size);
+const workingCount = computed(() => {
+  const activeSessions = new Set(
+    Object.values(store.runStates)
+      .filter((event) => (event.status === "queued" || event.status === "running") && !event.runId.startsWith("pending:"))
+      .map((event) => event.sessionId),
+  );
+  return new Set(
+    tasks.value.filter((task) => activeSessions.has(task.sessionId)).map((task) => task.agentId),
+  ).size;
+});
 const menuTask = computed(() => tasks.value.find((task) => task.id === cardMenu.value?.taskId));
 const cardMenuItems = computed<ContextMenuItem[]>(() => [
   { id: "open", label: t("tasks.open") },
@@ -217,6 +222,49 @@ function openCreate(status: TaskStatus = "todo", lockStatus = false) {
 function openTask(task: Task) {
   if (skipClick) return;
   void router.push(`/tasks/${task.id}`);
+}
+
+function taskProjects(task: Task) {
+  const session = sessionsById.value.get(task.sessionId);
+  let ids = session?.projectIds ?? [];
+  if (!ids.length && session?.projectId) ids = [session.projectId];
+  return ids.flatMap((id) => {
+    const project = projects.value.find((item) => item.id === id);
+    return project ? [project] : [];
+  });
+}
+
+function taskFiles(task: Task): TaskChangedFile[] {
+  return task.changedFiles ?? [];
+}
+
+function htmlFile(task: Task): TaskChangedFile | undefined {
+  return taskFiles(task).find((file) => /\.html?$/i.test(file.filePath));
+}
+
+function resultLabel(task: Task) {
+  if (task.resultKind === "success") return t("tasks.result.success");
+  if (task.resultKind === "failed") return t("tasks.result.failed");
+  if (task.resultKind === "stopped") return t("tasks.result.stopped");
+  return "";
+}
+
+function openChanges(task: Task) {
+  void router.push({
+    path: `/tasks/${task.id}`,
+    query: { review: "1", at: String(Date.now()) },
+  });
+}
+
+async function openHtml(task: Task, file: TaskChangedFile) {
+  await router.push({
+    path: `/tasks/${task.id}`,
+    query: { preview: file.filePath, workspace: file.workspaceId, at: String(Date.now()) },
+  });
+}
+
+function openRequirement(projectId: string) {
+  void router.push(`/projects/${projectId}`);
 }
 
 function clearDragState() {
@@ -457,6 +505,47 @@ function onColumnMenu(id: string) {
           >
             <span class="task-code">{{ taskCodes.get(task.id) }}</span>
             <h3>{{ task.title }}</h3>
+            <p v-if="resultLabel(task)" class="task-card-meta">
+              <span class="ds-badge" :data-tone="task.resultKind === 'failed' ? 'error' : task.resultKind === 'success' ? 'success' : undefined">{{ resultLabel(task) }}</span>
+              <span v-if="task.resultReason && task.resultKind !== 'success'">{{ task.resultReason }}</span>
+            </p>
+            <p v-if="task.changedFileCount" class="task-card-meta">
+              <span v-if="task.review" class="ds-badge" :data-tone="task.review === 'pending' ? 'warning' : undefined">
+                {{ task.review === 'pending' ? t('tasks.review.pending') : t('tasks.review.seen') }}
+              </span>
+              {{ t('tasks.changedFiles', { n: task.changedFileCount }) }}
+            </p>
+            <div
+              v-if="taskProjects(task).length"
+              class="task-card-meta task-card-projects"
+              @pointerdown.stop
+              @click.stop
+            >
+              <button
+                v-for="project in taskProjects(task)"
+                :key="project.id"
+                type="button"
+                @click="openRequirement(project.id)"
+              >{{ project.name }}</button>
+            </div>
+            <div
+              v-if="taskFiles(task).length"
+              class="task-card-actions"
+              @pointerdown.stop
+              @click.stop
+            >
+              <UiButton
+                size="small"
+                variant="ghost"
+                @click="openChanges(task)"
+              >{{ t('tasks.viewChanges') }}</UiButton>
+              <UiButton
+                v-if="htmlFile(task)"
+                size="small"
+                variant="ghost"
+                @click="openHtml(task, htmlFile(task)!)"
+              >{{ t('tasks.previewHtml') }}</UiButton>
+            </div>
             <footer>
               <AgentLiveStatus
                 :session-ids="[task.sessionId]"

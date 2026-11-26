@@ -114,7 +114,7 @@ use commands::{
     terminal_resolve_paths, terminal_services, terminal_write, test_runtime_connection,
     transfer_resource, trigger_automation_event, truncate_session_from_message,
     update_chat_session_target, update_chat_session_title, update_chunk_state, update_project,
-    update_task, update_task_meta, update_task_status, upsert_inbox_item, write_skill_file,
+    acknowledge_task_review, update_task, update_task_meta, update_task_status, upsert_inbox_item, write_skill_file,
     write_workspace_file,
 };
 use std::sync::{
@@ -551,6 +551,7 @@ pub fn run() {
             update_chat_session_target,
             update_task,
             update_task_meta,
+            acknowledge_task_review,
             update_task_status,
             list_active_runs,
             list_agent_runs,

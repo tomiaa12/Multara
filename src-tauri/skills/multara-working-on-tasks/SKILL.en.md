@@ -29,7 +29,7 @@ multara task create --title "…" --description "…" --assignee <agentId> --par
 ```
 
 - The parent task stays `in_progress`; delegating is not delivery.
-- Once all subtasks are settled (no longer backlog/todo/in_progress/blocked), the system wakes the parent task's owner again to summarize; when woken, look at the subtask results and then decide whether the parent moves to `in_review` / `done`.
+- Once all subtasks are settled (no longer backlog/todo/in_progress/blocked), the system wakes the parent task's owner again to summarize. When that summary run succeeds and no subtask is still open, the system moves the parent to `done`. Keep the parent `in_progress` while subtasks are open.
 - Don't both create a subtask for the same person and expect an automatic fan-out in the same conversation; board subtasks and squad chat delegation are two separate paths.
 
 ## Update
@@ -40,7 +40,7 @@ You can change `title`, `description`, `status`, `assignee`, and `project`. `--c
 
 ## Status / assignment
 
-- `multara task status TASK_ID todo|backlog|in_progress|in_review|done|blocked|cancelled`
+- `multara task status TASK_ID todo|backlog|in_progress|done|blocked|cancelled`
 - `multara task assign TASK_ID --to AGENT_ID`
 - Setting the status to `todo` only puts it back on the to-do list; it does not queue another run.
 
@@ -55,24 +55,23 @@ You can change `title`, `description`, `status`, `assignee`, and `project`. `--c
 
 The system performs only these automatic syncs:
 
-1. When a task actually starts running from `backlog` / `todo`, it moves to `in_progress` automatically.
-2. When a run succeeds and the task has no other active runs, if it is still `in_progress`, it moves to `in_review`.
-3. When a run fails and the task has no other active runs, if it is still `in_progress`, it falls back to `todo`.
+1. When a task starts from `backlog` / `todo` / `done` / `blocked`, it moves to `in_progress`. Cancelled stays cancelled.
+2. When a run succeeds and the task has no other active runs, no open subtasks, and is not waiting on a plan, an `in_progress` task moves to `done`. File edits are marked for review separately; that is not a status.
+3. When a run fails or is interrupted and the task has no other active runs, an `in_progress` task returns to `todo`, with the failure or interruption recorded.
+4. When a plan is waiting for approval, an `in_progress` task moves to `blocked`.
 
-**It never writes `done` automatically.** Actually completing the goal still has to be recorded explicitly.
+The system writes `done` when the run finishes. Do not write a status just so a person can look at the result. Use `blocked` when stuck. Stay `in_progress` while subtasks are still open.
 
 As work progresses, update the status through the CLI (you can write it at any point during a turn; don't wait until the end):
 
 | Situation | Status |
 |-----------|--------|
 | You start delivering the task itself (implementation, research, design, review — whatever the task asks for) | `in_progress` immediately |
-| This round has delivered the task's own result and is waiting for a person to confirm / review | `in_review` |
 | Not finished yet and work continues (including subtasks not all in) | Stay `in_progress` |
 | Blocked by an external dependency or condition | `blocked` |
-| The goal is truly achieved, or the user confirms completion | `done` |
 | Only answering questions, chatting, or consulting on someone else's work, without advancing this task's delivery | **Do not change the status** |
 
-`done` means the goal is complete, not "this run finished." Squad leads: delegating to members is not delivery; keep the parent task `in_progress`, and move it to `in_review` / `done` once the overall goal is confirmed.
+`done` means this round has finished, not that the code is merged or the user has accepted it. Squad leads: delegating is not delivery; keep the parent `in_progress`. After subtasks settle and the summary run succeeds, the system writes `done`.
 
 ## Rules
 
