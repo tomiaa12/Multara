@@ -1,3 +1,5 @@
+use rusqlite::{Connection, OptionalExtension};
+
 pub struct RuntimeBrief<'a> {
     pub agent_id: &'a str,
     pub agent_name: &'a str,
@@ -18,7 +20,7 @@ pub struct RuntimeBrief<'a> {
     /// 工作流节点会话不能操作聊天界面。
     pub workflow_node: bool,
     pub locale: &'a str,
-    /// 这次是不是输入框左下角选中的负责人。`None` 是设置页预览，两种角色都写出来。
+    /// 这次是不是输入框左下角选中的负责人。`None` 是设置页预览，不指定角色。
     pub lead: Option<bool>,
 }
 
@@ -453,7 +455,43 @@ pub fn is_lead(parent_run: bool, workflow_session: bool, task_session: bool, ses
     !parent_run && !workflow_session && !task_session && session_agent
 }
 
-pub fn mention_hint(locale: &str, mentioned: &[(String, String)]) -> String {
+pub fn session_is_lead(
+    db: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    parent_run: bool,
+) -> rusqlite::Result<bool> {
+    let workflow = session_id.starts_with(crate::workflow::WF_NODE_PREFIX)
+        || session_id.starts_with(crate::workflow::WF_RUN_PREFIX);
+    if parent_run || workflow {
+        return Ok(false);
+    }
+    let task_session = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tasks WHERE session_id=?1 AND agent_id=?2)",
+        (session_id, agent_id),
+        |row| row.get(0),
+    )?;
+    let target: Option<(String, String)> = db
+        .query_row(
+            "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let session_agent = match target.as_ref().map(|(kind, id)| (kind.as_str(), id.as_str())) {
+        Some(("agent", id)) => id == agent_id,
+        Some(("squad", id)) => db
+            .query_row("SELECT leader_agent_id FROM squads WHERE id=?1", [id], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()?
+            .is_some_and(|leader| leader == agent_id),
+        _ => false,
+    };
+    Ok(is_lead(parent_run, workflow, task_session, session_agent))
+}
+
+pub fn mention_hint(locale: &str, mentioned: &[(String, String)], lead: bool) -> String {
     if mentioned.is_empty() {
         return String::new();
     }
@@ -463,13 +501,25 @@ pub fn mention_hint(locale: &str, mentioned: &[(String, String)]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     let head = match locale {
-        "en" => "You are the owner of this chat. The people below were named with @. They are candidates, not already assigned. Assign to them when the work fits, including more than one; otherwise do it yourself. Do not claim it is assigned unless you create the task or write the @.",
-        "zh-TW" => "你是這次聊天的負責人。下面是使用者 @ 的人，只是人選，還沒有派出去。能派就派給這些人，可以多個；派不出去再自己做。不要只在正文裡聲稱已分配。",
-        "ja" => "あなたがこのチャットの担当者です。下はユーザーが @ した人で、候補であり、まだ割り当てられていません。任せられるなら任せてください。複数でも構いません。任せられないときは自分でやってください。タスクを作るか @ を書かずに、割り当てたと主張しないでください。",
-        "ko" => "당신이 이 대화의 담당자입니다. 아래는 사용자가 @한 사람이며, 후보이지 이미 배정된 것이 아닙니다. 넘길 수 있으면 넘기세요. 여러 명도 됩니다. 넘길 수 없으면 직접 하세요. 작업을 만들거나 @를 쓰지 않고서는 배정했다고 말하지 마세요.",
-        _ => "你是这次聊天的负责人。下面是用户 @ 的人，只是人选，还没有派出去。能派就派给这些人，可以多个；派不出去再自己做。不要只在正文里声称已分配。",
+        "en" => "The people below were named with @ by the user. They are candidates, not already assigned. This list does not change this run's role.",
+        "zh-TW" => "下面是使用者 @ 的候選人，尚未派發。這份名單不改變本次執行的角色。",
+        "ja" => "以下はユーザーが @ した候補で、まだ割り当てられていません。この一覧は今回の役割を変更しません。",
+        "ko" => "아래는 사용자가 @한 후보이며 아직 배정되지 않았습니다. 이 목록은 이번 실행의 역할을 바꾸지 않습니다.",
+        _ => "下面是用户 @ 的候选人，尚未派发。这份名单不改变本次运行的角色。",
     };
-    format!("{head}\n{lines}")
+    let guidance = match (locale, lead) {
+        ("en", true) => "Consider these candidates first, including several when appropriate. Assign by creating a task or writing an @ instruction; do not merely claim it is assigned.",
+        ("zh-TW", true) => "優先考慮這些人選，可以指派多個。實際建立任務或寫出 @ 指派，不要只在正文中聲稱已分配。",
+        ("ja", true) => "これらの候補を優先し、必要なら複数に任せてください。タスクを作るか @ 指示を書いて実際に割り当て、文章だけで割り当て済みとしないでください。",
+        ("ko", true) => "이 후보들을 우선 고려하고 필요하면 여러 명에게 배정하세요. 작업을 만들거나 @ 지시를 작성해 실제로 배정하고 말로만 배정했다고 하지 마세요.",
+        (_, true) => "优先考虑这些人选，可以指派多个。实际创建任务或写出 @ 指派，不要只在正文中声称已分配。",
+        ("en", false) => "Continue the assigned work. Do not hand it on unless the assignment explicitly authorizes further delegation.",
+        ("zh-TW", false) => "繼續完成已交付的工作，除非指派內容明確允許再分工，否則不要轉派。",
+        ("ja", false) => "割り当てられた仕事を続けてください。再分担が明示的に許可されていなければ、他の人に渡さないでください。",
+        ("ko", false) => "배정받은 일을 계속하세요. 추가 분담이 명시적으로 허용되지 않았다면 다른 사람에게 넘기지 마세요.",
+        (_, false) => "继续完成交给你的工作，除非指派内容明确允许再分工，否则不要转派。",
+    };
+    format!("{head}\n{guidance}\n{lines}")
 }
 
 fn role_section(locale: &str, lead: Option<bool>) -> String {
@@ -505,13 +555,32 @@ fn role_section(locale: &str, lead: Option<bool>) -> String {
     match lead {
         Some(true) => format!("{heading}\n{owner}"),
         Some(false) => format!("{heading}\n{assignee}"),
-        None => format!("{heading}\n{owner}\n\n{assignee}"),
+        None => {
+            let preview = match locale {
+                "en" => "Role is determined for each run: the selected agent or squad leader owns an ordinary chat; delegated members, task executors and workflow executors finish their assigned work. An @ only names a candidate and does not change the role. Follow the `multara-lead` skill.",
+                "zh-TW" => "角色於每次執行時判定：一般聊天由選中的智能體或小隊隊長負責；被委派的成員、任務與工作流執行者完成交付的工作。@ 只是點名候選人，不改變角色。步驟見 skill `multara-lead`。",
+                "ja" => "役割は実行ごとに判定します。通常のチャットは選択されたエージェントかチームリーダーが担当し、委任されたメンバー、タスクやワークフローの実行者は割り当てられた仕事を完了します。@ は候補の指定だけで、役割を変更しません。`multara-lead` skill に従ってください。",
+                "ko" => "역할은 실행마다 결정됩니다. 일반 채팅은 선택된 에이전트나 팀장이 담당하고, 위임받은 멤버 및 작업·워크플로 실행자는 배정된 일을 완료합니다. @는 후보만 지목하며 역할을 바꾸지 않습니다. `multara-lead` skill을 따르세요.",
+                _ => "角色在每次运行时判定：普通聊天由选中的智能体或小队队长负责；被委派的成员、任务与工作流执行者完成交付的工作。@ 只是点名候选人，不改变角色。步骤见 skill `multara-lead`。",
+            };
+            format!("{heading}\n{preview}")
+        },
     }
 }
 
 /// 续接同一段运行时会话时，开头的简报不会再发。角色要贴在这一轮用户消息后面，否则负责人会沿用上一轮自己做的做法。
 pub fn resume_role_reminder(locale: &str, lead: bool) -> String {
     let role = role_section(locale, Some(lead));
+    if !lead {
+        let again = match locale {
+            "en" => "This is a later message in the same chat. Continue the assigned work under this run's role; earlier roles and @ candidates do not grant delegation authority.",
+            "zh-TW" => "這是同一段聊天裡的後續訊息。按本次角色繼續完成交付的工作；歷史角色與 @ 候選人不會授予轉派權限。",
+            "ja" => "これは同じチャットの続きです。今回の役割に従って割り当てられた仕事を続けてください。過去の役割や @ の候補は再委任の権限を与えません。",
+            "ko" => "같은 대화의 후속 메시지입니다. 이번 역할에 따라 배정된 일을 계속하세요. 이전 역할이나 @ 후보는 재위임 권한을 부여하지 않습니다.",
+            _ => "这是同一段聊天里的后续消息。按本次角色继续完成交给你的工作；历史角色与 @ 候选人不会授予转派权限。",
+        };
+        return format!("{role}\n{again}");
+    }
     let again = match locale {
         "en" => "This is a later message in the same chat. Decide again for this message. If you are the owner, look up the roster and assign before doing the work; do not keep executing because you did the previous message yourself. Do that lookup only in tool calls. The reply the user sees must not mention the roster, the owner flow, or that you are deciding whether to assign or do it yourself. Do not open with it. Assign with `multara task create --assignee <agentId>` or a `[@name](mention://agent/<agentId>)` line. Do not use the runtime's Task or subagent tool instead.",
         "zh-TW" => "這是同一段聊天裡的後續訊息。這一輪要重新判斷。你是負責人就先查名單再派，不要因為上一輪是自己做的就繼續自己做。查名單、花名冊、負責人流程、決定派還是自己做，都不要寫進使用者看得到的回覆，也不要當開場白。找到了就直接派；沒找到就直接做使用者問的事。派工用 `multara task create --assignee <agentId>`，或另起一段以 `[@名稱](mention://agent/<agentId>)` 開頭。不要改用運行時自帶的 Task 或子代理。",
@@ -757,9 +826,82 @@ mod tests {
         assert!(assignee.contains("你是被指派的人"));
         assert!(!assignee.contains("你是负责人"));
         assert!(!assignee.contains("优先指派"));
-        let hint = mention_hint("zh-CN", &[("agent".into(), "docs".into()), ("agent".into(), "qa".into())]);
+        let hint = mention_hint("zh-CN", &[("agent".into(), "docs".into()), ("agent".into(), "qa".into())], true);
         assert!(hint.contains("agent:docs"));
         assert!(hint.contains("agent:qa"));
+    }
+
+    #[test]
+    fn database_role_matches_chat_target_without_promoting_executors() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+               VALUES ('miku', 'Miku', '', '', '', 'cursor', 'auto', 1),
+                      ('docs', '文档', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO squads (id, name, description, instructions, leader_agent_id)
+               VALUES ('sq', '小队', '', '', 'docs');
+             INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at) VALUES
+               ('chat', '聊天', 'agent', 'miku', 'now', 'now'),
+               ('squad', '小队', 'squad', 'sq', 'now', 'now'),
+               ('task', '任务', 'agent', 'docs', 'now', 'now');
+             INSERT INTO tasks (id, session_id, title, description, agent_id, status, created_at, updated_at)
+               VALUES ('task-id', 'task', '任务', '', 'docs', 'todo', 'now', 'now');",
+        ).unwrap();
+        assert!(session_is_lead(&db, "chat", "miku", false).unwrap());
+        assert!(!session_is_lead(&db, "chat", "docs", false).unwrap());
+        assert!(!session_is_lead(&db, "chat", "miku", true).unwrap());
+        assert!(session_is_lead(&db, "squad", "docs", false).unwrap());
+        assert!(!session_is_lead(&db, "squad", "miku", false).unwrap());
+        assert!(!session_is_lead(&db, "task", "docs", false).unwrap());
+        assert!(!session_is_lead(&db, "missing", "miku", false).unwrap());
+        for prefix in [crate::workflow::WF_NODE_PREFIX, crate::workflow::WF_RUN_PREFIX] {
+            let session = format!("{prefix}test");
+            db.execute(
+                "INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+                 VALUES (?1, '工作流', 'agent', 'miku', 'now', 'now')",
+                [&session],
+            ).unwrap();
+            assert!(!session_is_lead(&db, &session, "miku", false).unwrap());
+        }
+        db.execute("UPDATE chat_sessions SET target_id='docs' WHERE id='chat'", []).unwrap();
+        assert!(session_is_lead(&db, "chat", "docs", false).unwrap());
+        assert!(!session_is_lead(&db, "chat", "miku", false).unwrap());
+        assert!(!session_is_lead(&db, "chat", "docs", true).unwrap());
+    }
+
+    #[test]
+    fn mention_and_resume_prompts_do_not_override_the_run_role() {
+        let mentioned = [("agent".into(), "docs".into()), ("agent".into(), "qa".into())];
+        for locale in ["zh-CN", "zh-TW", "en", "ja", "ko"] {
+            let owner = role_section(locale, Some(true));
+            let assignee = role_section(locale, Some(false));
+            let owner_body = owner.split_once('\n').unwrap().1;
+            let assignee_body = assignee.split_once('\n').unwrap().1;
+            let preview = role_section(locale, None);
+            assert!(!preview.contains(owner_body));
+            assert!(!preview.contains(assignee_body));
+            for lead in [true, false] {
+                let hint = mention_hint(locale, &mentioned, lead);
+                assert!(hint.contains("agent:docs") && hint.contains("agent:qa"));
+                assert!(!hint.contains(owner_body));
+                let resumed = resume_role_reminder(locale, lead);
+                assert!(resumed.starts_with(if lead { &owner } else { &assignee }));
+                if !lead {
+                    assert!(!resumed.contains(owner_body));
+                    assert!(!resumed.contains("multara task create --assignee"));
+                    assert!(!hint.contains("mention://agent/"));
+                }
+                assert!(mention_hint(locale, &[], lead).is_empty());
+            }
+        }
+        let assigned = format!("{}\n{}",
+            mention_hint("zh-CN", &mentioned, false),
+            resume_role_reminder("zh-CN", false),
+        );
+        assert!(!assigned.contains("你是负责人"));
+        assert!(!assigned.contains("优先指派"));
+        assert!(!assigned.contains("先查名单再派"));
     }
 
     #[test]

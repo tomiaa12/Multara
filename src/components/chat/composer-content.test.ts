@@ -253,6 +253,26 @@ describe("parseUserPromptNodes", () => {
     expect(visiblePromptText(content).startsWith("[实体引用]")).toBe(false);
   });
 
+  test("multiple mentions remain candidates and do not grant delegation authority", () => {
+    const nodes: ComposerNode[] = [
+      { type: "text", value: "找个能进页面的账号 " },
+      { type: "chip", id: "agent:db", referenceKind: "agent", referenceId: "db", label: "测试库查询" },
+      { type: "text", value: " " },
+      { type: "chip", id: "agent:logs", referenceKind: "agent", referenceId: "logs", label: "测试日志" },
+    ];
+    for (const directMentions of [true, false]) {
+      const content = formatAgentPrompt(nodes, { directMentions });
+      expect(content).toContain("[实体引用] agent db ");
+      expect(content).toContain("[实体引用] agent logs ");
+      expect(content).not.toContain("你是负责人");
+      expect(parseUserPromptNodes(content)).toEqual(nodes);
+      if (!directMentions) {
+        expect(content).toContain("尚未派发，不改变本轮角色");
+        expect(content).toContain("不因这份候选名单获得转派权限");
+      }
+    }
+  });
+
   test("round-trips a workflow mention", () => {
     const nodes: ComposerNode[] = [
       { type: "text", value: "改一下 " },

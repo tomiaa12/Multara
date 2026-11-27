@@ -5095,16 +5095,6 @@ fn send_message_inner_ext(
         .collect::<Result<Vec<_>, _>>()?;
     // @ 只是点名。运行仍交给会话左下角选中的负责人，由对方决定派还是自己做。
     let mentioned = explicit_chat_targets(content);
-    let mention_note = if mentioned.is_empty() {
-        String::new()
-    } else {
-        let locale = state
-            .lock_db()
-            .ok()
-            .map(|db| crate::app_locale::from_db(&db))
-            .unwrap_or("zh-CN");
-        crate::runtime_brief::mention_hint(&locale, &mentioned)
-    };
     let mut explicit_targets = Vec::new();
     if explicit_targets.is_empty() {
         if let Some(agent_id) = source.as_ref().and_then(genui_reply_agent) {
@@ -5119,6 +5109,20 @@ fn send_message_inner_ext(
         session_target_agent(&*state.lock_db()?, &session_id)?
     } else {
         None
+    };
+    let mention_note = {
+        let db = state.lock_db()?;
+        let recipient = match explicit_targets.first() {
+            Some((kind, id)) if kind == "agent" => Some(id.clone()),
+            _ => session_target_agent(&db, &session_id)?,
+        };
+        let lead = recipient
+            .as_deref()
+            .map(|agent_id| crate::runtime_brief::session_is_lead(&db, &session_id, agent_id, false))
+            .transpose()
+            .map_err(|error| error.to_string())?
+            .unwrap_or(false);
+        crate::runtime_brief::mention_hint(crate::app_locale::from_db(&db), &mentioned, lead)
     };
     let can_steer = match steer_agent_id.as_deref() {
         Some(agent_id) => {
@@ -8087,7 +8091,38 @@ mod tests {
     }
 
     #[test]
-    fn explicit_chat_mention_dispatches_to_the_mentioned_agent() {
+    fn user_mentions_leave_dispatch_with_the_selected_chat_owner() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        crate::database::seed(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+               VALUES ('docs', '文档', '', '', '', 'cursor', 'auto', 1),
+                      ('qa', '测试', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+               VALUES ('session', '聊天', 'agent', 'miku', 'now', 'now');",
+        ).unwrap();
+        for content in [
+            "[实体引用] agent docs Docs\n请看看",
+            "[实体引用] agent docs Docs\n[实体引用] agent qa QA\n一起看看",
+        ] {
+            let mentioned = explicit_chat_targets(content);
+            let owner = session_target_agent(&db, "session").unwrap().unwrap();
+            let lead = crate::runtime_brief::session_is_lead(&db, "session", &owner, false).unwrap();
+            let hint = crate::runtime_brief::mention_hint("zh-CN", &mentioned, lead);
+            let created = dispatch(&db, "session", None, &format!("{hint}\n{content}"), "now", &[], RunMode::Auto).unwrap();
+            assert_eq!(created.len(), 1);
+            assert_eq!(created[0].1, "miku");
+            assert!(!hint.contains("你是负责人"));
+        }
+        let member_runs: i64 = db.query_row("SELECT COUNT(*) FROM agent_runs WHERE agent_id!='miku'", [], |r| r.get(0)).unwrap();
+        let cards: i64 = db.query_row("SELECT COUNT(*) FROM messages WHERE message_kind='assignment'", [], |r| r.get(0)).unwrap();
+        assert_eq!(member_runs, 0);
+        assert_eq!(cards, 0);
+    }
+
+    #[test]
+    fn explicit_reply_target_can_override_the_selected_agent() {
         let db = Connection::open_in_memory().unwrap();
         crate::database::migrate(&db).unwrap();
         crate::database::seed(&db).unwrap();

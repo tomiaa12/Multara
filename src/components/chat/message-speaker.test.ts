@@ -68,6 +68,17 @@ function message(partial: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role"
 }
 
 describe("assignmentReplies", () => {
+  it("用户点名的候选和口头安排不会生成执行卡片", () => {
+    const messages = [
+      message({ id: "u1", role: "user", content: "[@测试库查询](mention://agent/member) [@测试日志](mention://agent/log) 查一个账号" }),
+      message({ id: "a1", role: "assistant", agentId: "lead", content: "我来安排测试库查询和测试日志。" }),
+    ];
+    expect(assignmentReplies(messages).size).toBe(0);
+    expect(openAssignmentAssigneeIds(messages).size).toBe(0);
+    expect(liveAssignmentAudience(messages, "member")).toBeNull();
+    expect(liveAssignmentAudience(messages, "log")).toBeNull();
+  });
+
   it("两张派活卡片各自收回自己队员的回复", () => {
     const messages = [
       message({ id: "u1", role: "user" }),

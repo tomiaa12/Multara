@@ -248,7 +248,7 @@ export function formatAgentPrompt(
     .replace(/\u00a0/g, " ")
     .trim();
   const assignment = !options.directMentions && assignees.length
-    ? `[指派要求] 以下是用户明确点名的人选。请由当前负责人（输入框左下角选中的智能体，或小队的队长）判断：能派就建成可追踪的任务并指派，可以同时派给多个；派不出去再自己做。不要只在正文中口头声称已分配：\n${assignees.map((item) => `- ${item}`).join("\n")}`
+    ? `[指派要求] 以下仅是用户点名的候选人，尚未派发，不改变本轮角色。负责人可按工作需要选择一个或多个，通过 @ 指令或可追踪任务实际指派；被指派的执行者仍遵守原有分工，不因这份候选名单获得转派权限。不要只在正文中口头声称已分配：\n${assignees.map((item) => `- ${item}`).join("\n")}`
     : "";
   return [...citations, assignment, visible].filter((part) => part.trim()).join("\n\n");
 }
