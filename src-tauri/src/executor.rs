@@ -64,11 +64,9 @@ struct NormalizedEvent {
 }
 
 fn session_lead(app: &AppHandle, run: &QueuedRun) -> bool {
-    let workflow = run.session_id.starts_with(crate::workflow::WF_NODE_PREFIX)
-        || run.session_id.starts_with(crate::workflow::WF_RUN_PREFIX);
     let state = app.state::<AppState>();
     let Ok(db) = state.lock_db() else {
-        return runtime_brief::is_lead(true, workflow, false, false);
+        return false;
     };
     let parent_run: bool = db
         .query_row(
@@ -77,37 +75,8 @@ fn session_lead(app: &AppHandle, run: &QueuedRun) -> bool {
             |row| row.get(0),
         )
         .unwrap_or(true);
-    let task_session: bool = db
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM tasks WHERE session_id=?1 AND agent_id=?2)",
-            [&run.session_id, &run.agent_id],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-    let session_agent = db
-        .query_row(
-            "SELECT target_type, target_id FROM chat_sessions WHERE id=?1",
-            [&run.session_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .ok()
-        .is_some_and(|(target_type, target_id)| {
-            if target_type == "agent" {
-                return target_id == run.agent_id;
-            }
-            if target_type == "squad" {
-                return db
-                    .query_row(
-                        "SELECT leader_agent_id FROM squads WHERE id=?1",
-                        [target_id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .ok()
-                    .is_some_and(|leader| leader == run.agent_id);
-            }
-            false
-        });
-    runtime_brief::is_lead(parent_run, workflow, task_session, session_agent)
+    runtime_brief::session_is_lead(&db, &run.session_id, &run.agent_id, parent_run)
+        .unwrap_or(false)
 }
 
 pub fn dispatch(app: AppHandle) {
@@ -5484,6 +5453,50 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn multiple_members_get_real_assignment_cards_before_owner_summary() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        crate::database::migrate(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+               VALUES ('lead', '负责人', '', '', '', 'cursor', 'auto', 1),
+                      ('db', '测试库查询', '', '', '', 'cursor', 'auto', 1),
+                      ('logs', '测试日志', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+               VALUES ('s', '聊天', 'agent', 'lead', 'now', 'now');
+             INSERT INTO agent_runs (id, session_id, agent_id, runtime_id, assignment, status, created_at, mode)
+               VALUES ('r', 's', 'lead', 'cursor', '查账号', 'completed', 'now', 'agent');
+             INSERT INTO messages (id, session_id, role, content, created_at)
+               VALUES ('run:r', 's', 'assistant', '准备安排', '2026-01-01T00:00:00+00:00');",
+        ).unwrap();
+        let now = "2026-01-01T00:00:01+00:00";
+        assert!(super::dispatch_mentions(&db, "r", "准备安排测试库查询和测试日志。", now).unwrap().is_empty());
+        let output = "我来安排。\n\n[@测试库查询](mention://agent/db) 查准入条件\n\n[@测试日志](mention://agent/logs) 核对失败原因";
+        let created = super::dispatch_mentions(&db, "r", output, now).unwrap();
+        assert_eq!(created.len(), 2);
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM messages WHERE message_kind='assignment'", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 2);
+        for (id, agent_id) in &created {
+            let parent: String = db.query_row("SELECT parent_run_id FROM agent_runs WHERE id=?1", [id], |r| r.get(0)).unwrap();
+            assert_eq!(parent, "r");
+            assert!(!crate::runtime_brief::session_is_lead(&db, "s", agent_id, true).unwrap());
+        }
+        assert!(super::dispatch_mentions(&db, "r", output, now).unwrap().is_empty());
+        let first = &created[0].0;
+        db.execute("UPDATE agent_runs SET status='completed' WHERE id=?1", [first]).unwrap();
+        db.execute("INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?1, 's', 'assistant', '已找到账号', ?2)", params![format!("run:{first}"), now]).unwrap();
+        assert!(super::resume_leader_after_members(&db, first, now).unwrap().is_none());
+        let second = &created[1].0;
+        db.execute("UPDATE agent_runs SET status='failed' WHERE id=?1", [second]).unwrap();
+        db.execute("INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?1, 's', 'assistant', '日志查询失败', ?2)", params![format!("run:{second}"), now]).unwrap();
+        let (summary_id, owner_id) = super::resume_leader_after_members(&db, second, now).unwrap().unwrap();
+        assert_eq!(owner_id, "lead");
+        let summary: String = db.query_row("SELECT assignment FROM agent_runs WHERE id=?1", [&summary_id], |r| r.get(0)).unwrap();
+        assert!(summary.contains("已找到账号"));
+        assert!(summary.contains("日志查询失败"));
+        assert!(crate::runtime_brief::session_is_lead(&db, "s", &owner_id, false).unwrap());
     }
 
     #[test]
