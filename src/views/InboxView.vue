@@ -1,24 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Archive, ArrowRight, FolderKanban, GitBranch, Inbox as InboxIcon, ListTodo, MailOpen, MessageSquare, MessagesSquare, Trash2 } from "@lucide/vue";
-import AgentAvatar from "../components/AgentAvatar.vue";
-import ChannelMark from "../components/channels/ChannelMark.vue";
+import { Archive, ArrowRight, Inbox as InboxIcon, MailOpen, Trash2 } from "@lucide/vue";
 import ChatPanel from "../components/ChatPanel.vue";
 import WorkflowRunView from "./workflows/WorkflowRunView.vue";
-import { isWorkflowNodeSession, isWorkflowRunSession, workflowRunIdFromSession } from "../domain/workflow";
+import { isWorkflowRunSession, workflowRunIdFromSession } from "../domain/workflow";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
-import { firstUnreadMessageId, plainInboxLine, unreadBadgeLabel, unreadTotal } from "../domain/inbox";
-import UiCountBadge from "../components/ui/UiCountBadge.vue";
-import type { ChannelType, FeishuContact, InboxItem } from "../domain/types";
+import { firstUnreadMessageId, unreadBadgeLabel, unreadTotal } from "../domain/inbox";
+import type { FeishuContact, InboxItem } from "../domain/types";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
 import InboxFileReview from "./InboxFileReview.vue";
+import InboxList from "./inbox/InboxList.vue";
 import InboxToolRail from "./inbox/InboxToolRail.vue";
 import { inboxProjectIds, workspacesForProjects } from "./inbox/inbox-workspaces";
+import { inboxAgent, inboxListTitle, inboxSource, sortedInboxItems } from "./inbox/inbox-row";
 import TaskActivity from "./TaskActivity.vue";
-import { relativeTime } from "./task-board";
 
 const store = useAppStore();
 const route = useRoute();
@@ -50,11 +48,7 @@ const stageTerminal = ref(false);
 const pickedWorkspaceId = ref("");
 const stageWidth = computed(() => (stageContent.value ? stagePanelWidth.value : 0));
 
-const items = computed(() =>
-  [...(store.data?.inbox ?? [])]
-    .filter((item) => !isWorkflowNodeSession(item.sessionId))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-);
+const items = computed(() => sortedInboxItems(store.data?.inbox ?? []));
 type InboxSource = "all" | "unread" | "waiting" | "project" | "task" | "workflow" | "chat" | "channel";
 const SOURCE_TABS = computed(() => [
   { id: "all" as const, label: t("inbox.filter.all") },
@@ -72,23 +66,8 @@ const sourceFilter = ref<InboxSource>("all");
  * 通知来源：工作流总览 → 工作流；挂了任务 → 任务；只挂需求 → 需求工作台里的对话；
  * 两者都没有 → 右下角浮动聊天发起的对话。
  */
-const CHANNEL_SOURCES = new Set(["feishu", "lark", "slack", "dingtalk", "wecom", "telegram", "weixin", "qq"]);
-
-function isChannel(item: InboxItem) {
-  return CHANNEL_SOURCES.has(item.channelType ?? "");
-}
-
-function channelMarkType(item: InboxItem): ChannelType | null {
-  const type = item.channelType ?? "";
-  return CHANNEL_SOURCES.has(type) ? type as ChannelType : null;
-}
-
-function sourceOf(item: InboxItem): "project" | "task" | "workflow" | "chat" | "channel" {
-  if (isWorkflowRunSession(item.sessionId)) return "workflow";
-  if (isChannel(item)) return "channel";
-  if (item.taskId) return "task";
-  if (item.projectId) return "project";
-  return "chat";
+function sourceOf(item: InboxItem) {
+  return inboxSource(item);
 }
 
 function railKind(item: InboxItem): "project" | "task" | "chat" {
@@ -101,24 +80,6 @@ function railKind(item: InboxItem): "project" | "task" | "chat" {
 const showSourceTag = computed(
   () => sourceFilter.value !== "project" && sourceFilter.value !== "task" && sourceFilter.value !== "workflow" && sourceFilter.value !== "chat" && sourceFilter.value !== "channel",
 );
-
-function sourceLabel(item: InboxItem) {
-  const source = sourceOf(item);
-  if (source === "channel") return t("inbox.filter.channel");
-  if (source === "project") return t("inbox.filter.project");
-  if (source === "task") return t("nav.tasks");
-  if (source === "workflow") return t("inbox.filter.workflow");
-  return t("inbox.filter.chat");
-}
-
-function sourceTone(item: InboxItem): "primary" | "accent" | "purple" | "success" | "warning" {
-  const source = sourceOf(item);
-  if (source === "channel") return "success";
-  if (source === "project") return "primary";
-  if (source === "task") return "accent";
-  if (source === "workflow") return "warning";
-  return "purple";
-}
 
 const sourceCounts = computed(() => {
   const counts: Record<InboxSource, number> = { all: 0, unread: 0, waiting: 0, project: 0, task: 0, workflow: 0, chat: 0, channel: 0 };
@@ -220,32 +181,13 @@ function statusLabel(status: string) {
   return status;
 }
 
-const sessionsById = computed(() => new Map((store.data?.sessions ?? []).map((entry) => [entry.id, entry])));
-const squadsById = computed(() => new Map((store.data?.squads ?? []).map((entry) => [entry.id, entry])));
-const agentsById = computed(() => new Map((store.data?.agents ?? []).map((entry) => [entry.id, entry])));
-
 function agentFor(item: InboxItem) {
-  const session = sessionsById.value.get(item.sessionId);
-  if (!session) return { avatar: "M", name: t("inbox.agentFallback") };
-  if (session.targetType === "squad") {
-    const squad = squadsById.value.get(session.targetId);
-    return { avatar: "队", name: squad?.name ?? t("inbox.squadFallback") };
-  }
-  const agent = agentsById.value.get(session.targetId);
-  return { avatar: agent?.avatar ?? "M", name: agent?.name ?? t("inbox.agentFallback") };
-}
-
-function channelPerson(item: InboxItem) {
-  const contact = channelContacts.value.find((entry) => entry.sessionId === item.sessionId);
-  if (!contact) return "";
-  return contact.displayName?.trim() || contact.note?.trim() || contact.openId;
-}
-
-function listTitle(item: InboxItem) {
-  if (sourceOf(item) !== "channel") return item.title;
-  const name = channelPerson(item);
-  if (!name) return item.title;
-  return t("inbox.channel.private", { name });
+  return inboxAgent(
+    item,
+    store.data?.sessions ?? [],
+    store.data?.agents ?? [],
+    store.data?.squads ?? [],
+  );
 }
 
 const headerTitle = computed(() => {
@@ -255,7 +197,7 @@ const headerTitle = computed(() => {
   if (source === "project") {
     return store.data?.projects.find((project) => project.id === item.projectId)?.name || item.title;
   }
-  if (source === "channel") return channelPerson(item) || item.title;
+  if (source === "channel") return inboxListTitle(item, channelContacts.value);
   return item.title;
 });
 
@@ -451,44 +393,15 @@ onUnmounted(() => {
           <SegmentedTabs v-model="sourceFilter" :label="t('inbox.filterBySource')" :items="sourceTabs" />
         </div>
       </header>
-      <ul v-if="visibleItems.length" class="inbox-list vs-scroll" @scroll="onListScroll">
-        <li v-for="item in visibleItems" :key="item.id">
-          <button
-            type="button"
-            :class="{ selected: item.id === selectedId, unread: item.unreadCount > 0 }"
-            @click="select(item)"
-          >
-            <AgentAvatar :value="agentFor(item).avatar" :name="agentFor(item).name" :size="28" />
-            <span>
-              <strong>
-                <i v-if="item.unreadCount" class="inbox-unread-dot" />
-                <span v-if="showSourceTag" class="ds-badge" :data-tone="sourceTone(item)">
-                  <GitBranch v-if="sourceOf(item) === 'workflow'" :size="12" />
-                  <ListTodo v-else-if="sourceOf(item) === 'task'" :size="12" />
-                  <FolderKanban v-else-if="sourceOf(item) === 'project'" :size="12" />
-                  <MessagesSquare v-else-if="sourceOf(item) === 'channel'" :size="12" />
-                  <MessageSquare v-else :size="12" />
-                  {{ sourceLabel(item) }}
-                </span>
-                <span v-if="channelMarkType(item)" class="inbox-channel-mark">
-                  <ChannelMark :type="channelMarkType(item)!" />
-                </span>
-                <span class="inbox-item-title">{{ listTitle(item) }}</span>
-              </strong>
-              <small>{{ plainInboxLine(item.preview) }}</small>
-            </span>
-            <span class="inbox-meta">
-              <UiCountBadge
-                v-if="item.unreadCount"
-                class="nav-badge"
-                tone="primary"
-                :count="item.unreadCount"
-              />
-              <em v-else>{{ relativeTime(item.createdAt) }}</em>
-            </span>
-          </button>
-        </li>
-      </ul>
+      <InboxList
+        v-if="visibleItems.length"
+        :items="visibleItems"
+        :selected-id="selectedId"
+        :show-source-tag="showSourceTag"
+        :contacts="channelContacts"
+        @select="select"
+        @scroll="onListScroll"
+      />
       <div v-else-if="items.length" class="ds-empty inbox-rail-empty">
         <span class="ds-empty-icon"><InboxIcon :size="18" /></span>
         <h3>{{ t("inbox.emptyFiltered") }}</h3>

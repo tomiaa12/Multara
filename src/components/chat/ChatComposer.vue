@@ -427,15 +427,6 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
       description: automationTriggerLabel(item.triggerType),
       group: "automations",
     })),
-    ...(data?.sessions ?? [])
-      .filter((item) => item.id !== currentSessionId)
-      .map((item) => ({
-        id: item.id,
-        kind: "session" as const,
-        label: item.title || t("chat.untitledSession"),
-        description: item.targetType === "squad" ? t("nav.squads") : t("nav.agents"),
-        group: "sessions",
-      })),
   ];
   const group = (id: string, label: string) => ({
     id,
@@ -456,7 +447,7 @@ const suggestCategories = computed<ComposerSuggestCategoryItem[]>(() => {
     {
       id: "session",
       label: t("chat.context.sessions"),
-      groups: [group("sessions", t("chat.context.sessions"))],
+      groups: [],
       emptyText: t("chat.context.sessionsEmpty"),
     },
     { id: "agent", label: t("chat.context.agents"), groups: [group("agents", t("nav.agents")), group("squads", t("nav.squads"))] },
@@ -823,6 +814,7 @@ defineExpose({
       :categories="suggestCategories"
       :default-category="suggestTrigger.category"
       :query="suggestTrigger.query"
+      :exclude-session-id="modeSessionId"
       :anchor="suggestAnchor"
       aria-label="插入引用"
       @category-action="onSuggestCategoryAction"

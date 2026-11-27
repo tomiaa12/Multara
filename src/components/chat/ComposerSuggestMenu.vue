@@ -30,6 +30,11 @@ import {
   scrollTopToReveal,
   type CascadePane,
 } from "./composer-cascade";
+import { useAppStore } from "../../stores/app";
+import InboxList from "../../views/inbox/InboxList.vue";
+import { inboxListTitle, sortedInboxItems } from "../../views/inbox/inbox-row";
+import { plainInboxLine } from "../../domain/inbox";
+import type { InboxItem } from "../../domain/types";
 import { t } from "../../i18n";
 
 export type ComposerSuggestItem = {
@@ -65,6 +70,7 @@ const props = defineProps<{
   /** 光标或输入区的视口矩形，用于浮层定位（不占输入框文档流） */
   anchor: { left: number; top: number; bottom: number; width?: number } | null;
   ariaLabel?: string;
+  excludeSessionId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -83,7 +89,7 @@ const PAGE_SIZE = 5;
 const MIN_BELOW = 220;
 
 const root = ref<HTMLElement | null>(null);
-const listEl = ref<HTMLElement | null>(null);
+const listEl = ref<HTMLElement | { $el?: Node } | null>(null);
 const categoryIndex = ref(0);
 const activeIndex = ref(0);
 const activePane = ref<CascadePane>("categories");
@@ -93,7 +99,18 @@ const placement = ref<"bottom" | "top">("bottom");
 const layerZ = nextPopupZIndex();
 const popoverStyle = ref<Record<string, string>>({ zIndex: String(layerZ) });
 
+const store = useAppStore();
 const activeCategory = computed(() => props.categories[categoryIndex.value] ?? props.categories[0]);
+const sessionRows = computed(() => {
+  if (activeCategory.value?.id !== "session") return [];
+  const query = searchQuery.value.trim().toLowerCase();
+  return sortedInboxItems(store.data?.inbox ?? []).filter((item) => {
+    if (props.excludeSessionId && item.sessionId === props.excludeSessionId) return false;
+    if (!query) return true;
+    const title = inboxListTitle(item, []).toLowerCase();
+    return title.includes(query) || plainInboxLine(item.preview).toLowerCase().includes(query);
+  });
+});
 const filteredGroups = computed(() =>
   (activeCategory.value?.groups ?? []).map((group) => ({
     ...group,
@@ -108,15 +125,25 @@ const visibleGroups = computed(() =>
     items: group.items.slice(0, visibleCounts[`${activeCategory.value?.id}:${group.id}`] ?? PAGE_SIZE),
   })),
 );
-const navigationEntries = computed(() =>
-  visibleGroups.value.flatMap((group) => {
+const navigationEntries = computed((): Array<{ item?: ComposerSuggestItem; more?: ComposerSuggestGroup }> => {
+  if (activeCategory.value?.id === "session") {
+    return sessionRows.value.map((item) => ({
+      item: {
+        id: item.sessionId,
+        kind: "session" as const,
+        label: inboxListTitle(item, []),
+        leading: "session" as const,
+      },
+    }));
+  }
+  return visibleGroups.value.flatMap((group) => {
     const entries: Array<{ item?: ComposerSuggestItem; more?: ComposerSuggestGroup }> =
       group.items.map((item) => ({ item }));
     const total = filteredGroups.value.find((item) => item.id === group.id)?.items.length ?? 0;
     if (group.items.length < total) entries.push({ more: group });
     return entries;
-  }),
-);
+  });
+});
 
 function selectCategory(index: number) {
   categoryIndex.value = index;
@@ -192,12 +219,18 @@ function clippedView(scroller: HTMLElement) {
 
 async function scrollActiveIntoView() {
   await nextTick();
+  const current = listEl.value as HTMLElement | { $el?: Node } | null;
+  const results = current instanceof HTMLElement
+    ? current
+    : current?.$el instanceof HTMLElement
+      ? current.$el
+      : null;
   const scroller = activePane.value === "categories"
     ? root.value?.querySelector<HTMLElement>(".composer-suggest-categories")
-    : listEl.value;
+    : results;
   const target = activePane.value === "categories"
     ? scroller?.querySelectorAll<HTMLElement>("button")[categoryIndex.value]
-    : listEl.value?.querySelector<HTMLElement>(`[data-nav-index="${activeIndex.value}"]`);
+    : results?.querySelector<HTMLElement>(`[data-nav-index="${activeIndex.value}"]`);
   if (!scroller || !target) return;
   const view = clippedView(scroller);
   const item = target.getBoundingClientRect();
@@ -262,6 +295,15 @@ function handleKeydown(event: KeyboardEvent) {
     if (entry?.more) loadMore(entry.more);
   }
   return true;
+}
+
+function pickSession(item: InboxItem) {
+  emit("select", {
+    id: item.sessionId,
+    kind: "session",
+    label: inboxListTitle(item, []),
+    leading: "session",
+  });
 }
 
 defineExpose({ handleKeydown });
@@ -347,7 +389,18 @@ onBeforeUnmount(() => {
             @keydown="handleKeydown"
           />
         </label>
-        <div ref="listEl" class="ds-select-list vs-scroll" @mousedown.prevent>
+        <InboxList
+          v-if="activeCategory?.id === 'session' && sessionRows.length"
+          ref="listEl"
+          :items="sessionRows"
+          :active-index="activePane === 'results' ? activeIndex : -1"
+          @hover="(index: number) => { activePane = 'results'; activeIndex = index; }"
+          @select="pickSession"
+        />
+        <div v-else-if="activeCategory?.id === 'session'" class="ds-select-empty">
+          {{ activeCategory?.emptyText || t("select.empty") }}
+        </div>
+        <div v-else ref="listEl" class="ds-select-list vs-scroll" @mousedown.prevent>
           <template v-for="group in visibleGroups" :key="group.id">
             <div v-if="group.items.length" class="ds-select-group">
               <div v-if="group.label" class="ds-select-group-label">

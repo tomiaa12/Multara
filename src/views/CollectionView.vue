@@ -295,12 +295,36 @@ async function updateRuntime(runtimeId: string, value: unknown) {
   await store.configureRuntime(runtimeId, Number(value));
 }
 
+async function explainRuntime(message: string, detail?: string) {
+  await confirmDialog(message, {
+    type: "warning",
+    cancel: false,
+    primary: t("common.gotIt"),
+    detail,
+  });
+}
+
 async function setAgentRuntime(agent: Agent, runtimeId: string) {
   if (!runtimeId || runtimeId === agent.runtimeId) return;
+  const runtime = store.data?.runtimes.find((item) => item.id === runtimeId);
+  if (!runtime) {
+    await explainRuntime(t("collection.runtimeMissing"));
+    return;
+  }
+  if (runtime.status !== "online") {
+    const command = runtime.command || runtime.name;
+    await explainRuntime(
+      runtime.status === "not_found" || !runtime.path
+        ? t("collection.runtimeNotFound", { name: runtime.name, command })
+        : t("collection.runtimeUnavailable", { name: runtime.name }),
+    );
+    return;
+  }
   try {
     await store.saveAgent({ ...agent, runtimeId, model: "auto" });
   } catch (cause) {
-    window.alert(cause instanceof Error ? cause.message : String(cause));
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    await explainRuntime(t("collection.runtimeSwitchFailed"), detail);
   }
 }
 

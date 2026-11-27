@@ -7706,6 +7706,11 @@ body.is-dragging-workspace-file * {
   padding: 16px 28px 48px;
   background: var(--color-surface-raised);
 }
+/* 悬浮滚动条会把宿主改成 relative，盖过这里的 absolute，预览就跟着内容撑高、被父级裁掉。 */
+.md-preview.vs-scroll[data-overlay-scroll] {
+  position: absolute;
+  inset: 0;
+}
 .md-preview > .rich-message {
   width: min(860px, 100%);
   margin: 0 auto;
@@ -11913,6 +11918,14 @@ body.is-dragging-inbox-float * {
 }
 .composer-suggest-results .ds-select-search {
   margin: 0;
+}
+.composer-suggest-results > .inbox-list {
+  min-height: 0;
+  height: 100%;
+  padding-top: var(--spacing-1);
+}
+.composer-suggest-menu .inbox-list button[data-active] {
+  background: var(--color-surface-active);
 }
 .composer-suggest-menu .ds-select-list {
   width: 100%;

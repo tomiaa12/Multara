@@ -63,7 +63,7 @@
 
   /* ── Layout ─────────────────────────────────────────────────── */
   --layout-header-height: 40px;
-  --layout-statusbar-height: 24px;
+  --layout-statusbar-height: 20px;
   --layout-sidebar-width: 208px;
   --layout-content-max-width: 1160px;
   --layout-content-padding: 32px;
