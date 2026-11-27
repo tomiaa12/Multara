@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onActivated, onDeactivated, ref, watch } from "vue";
 import { vMotion } from "../ui/motion";
 import { X } from "@lucide/vue";
 import EditorWithDiff from "../components/workbench/EditorWithDiff.vue";
@@ -10,26 +10,41 @@ import FileTypeIcon from "../components/FileTypeIcon.vue";
 import { fileName } from "../components/chat/timeline-display";
 import { detectIndent } from "../editor/eol";
 import { currentDocumentTheme, monacoThemeName } from "../editor/monaco-workspace";
-import type { FileContent } from "../domain/types";
+import type { EditorSelectionContext, FileContent } from "../domain/types";
+import { useInboxEditor } from "./inbox/use-inbox-editor";
 import { useAppStore } from "../stores/app";
 import { useDiffStore } from "../stores/diff";
 import { useI18n } from "../i18n";
 import * as backend from "../services/backend";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   workspaceId: string;
   filePath: string;
-}>();
+  sessionId: string;
+  manageUnsaved?: boolean;
+}>(), { manageUnsaved: true });
 
 const emit = defineEmits<{
   close: [];
+  addToChat: [context: EditorSelectionContext];
 }>();
 
 const store = useAppStore();
 const diffStore = useDiffStore();
 const { t } = useI18n();
 const editor = ref<InstanceType<typeof EditorWithDiff> | null>(null);
-const file = ref<FileContent | null>(null);
+const file = ref<(FileContent & { original: string }) | null>(null);
+const active = ref(true);
+const fileEditor = useInboxEditor({
+  files: () => file.value ? [file.value] : [],
+  sessionId: () => props.sessionId,
+  active: () => active.value,
+  attach: (context) => emit("addToChat", context),
+  manageUnsaved: props.manageUnsaved,
+});
+const editorError = fileEditor.error;
+onActivated(() => { active.value = true; });
+onDeactivated(() => { active.value = false; });
 const pendingChunks = ref(0);
 const busy = ref(false);
 
@@ -49,14 +64,20 @@ watch(
   },
 );
 
+let loadVersion = 0;
 async function load() {
+  const version = ++loadVersion;
   try {
-    file.value = await backend.readWorkspaceFile(props.workspaceId, props.filePath);
+    const loaded = await backend.readWorkspaceFile(props.workspaceId, props.filePath);
+    if (version !== loadVersion || (file.value && fileEditor.dirty(file.value))) return;
+    file.value = { ...loaded, original: loaded.content };
   } catch {
+    if (version !== loadVersion || (file.value && fileEditor.dirty(file.value))) return;
     file.value = {
       workspaceId: props.workspaceId,
       path: props.filePath,
       content: "",
+      original: "",
       language: "plaintext",
       size: 0,
       readOnly: true,
@@ -83,7 +104,7 @@ async function keep() {
 }
 
 async function undo() {
-  if (busy.value || !pendingChunks.value) return;
+  if (busy.value || !pendingChunks.value || !(await fileEditor.confirmFiles())) return;
   busy.value = true;
   try {
     await editor.value?.undoAll();
@@ -97,19 +118,23 @@ function layout() {
   editor.value?.layout();
 }
 
-defineExpose({ layout });
+async function close() {
+  if (await fileEditor.confirmFiles()) emit("close");
+}
+
+defineExpose({ layout, confirmUnsaved: fileEditor.confirmFiles, dirtyFiles: fileEditor.dirtyFiles });
 </script>
 
 <template>
-  <aside class="inbox-file-review">
+  <aside class="inbox-file-review" @keydown.capture="fileEditor.keydown">
     <section v-if="file" class="editor-area">
       <header class="editor-tabbar">
         <div class="editor-tabs">
-          <UiTooltip :content="filePath"><button type="button" class="editor-tab active">
+          <UiTooltip :content="filePath"><button type="button" class="editor-tab active" :class="{ 'is-dirty': fileEditor.dirty(file) }">
             <FileTypeIcon :name="title" />
             <span class="editor-tab-name">{{ title }}</span>
             <UiTooltip :content="t('common.close')">
-              <span class="tab-close" @click="emit('close')">
+              <span class="tab-close" :class="{ 'is-dirty': fileEditor.dirty(file) }" @click="close">
                 <X :size="12" />
               </span>
             </UiTooltip>
@@ -153,9 +178,12 @@ defineExpose({ layout });
           :insert-spaces="indent.insertSpaces"
           :sticky-scroll="stickyScroll"
           :word-wrap="wordWrap"
+          @change="(content, fromUser) => fileEditor.change(file, content, fromUser)"
+          @mount="fileEditor.bind($event, () => file)"
           @pending-chunks="pendingChunks = $event"
         />
       </div>
+      <p v-if="editorError" class="form-error" role="alert">{{ editorError }}</p>
     </section>
   </aside>
 </template>

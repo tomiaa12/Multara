@@ -179,9 +179,9 @@ const sessionScroll = new Map<string, { scrollTop: number; atBottom: boolean }>(
 const composerError = ref("");
 const composerEmpty = ref(true);
 const seenChipIds = ref(new Set<string>());
-const previewContexts = ref<EditorSelectionContext[]>([]);
+const localContexts = ref<EditorSelectionContext[]>([]);
 const composerContexts = computed(() =>
-  props.preview ? previewContexts.value : store.composerContexts,
+  props.preview ? localContexts.value : [...store.composerContexts, ...localContexts.value],
 );
 
 const taskSessionIds = computed(() =>
@@ -1121,7 +1121,7 @@ function insertLocalWorkspaceChip(file: { workspaceId: string; path: string; isD
     text: file.path ? "" : (workspace?.name || root.split(/[\\/]/).pop() || ""),
     isDirectory: Boolean(file.isDirectory) || !file.path,
   };
-  previewContexts.value = [...previewContexts.value, context].slice(-8);
+  localContexts.value = [...localContexts.value, context].slice(-8);
   composerInput.value?.insertChip(context);
   composerInput.value?.focus();
 }
@@ -1286,9 +1286,8 @@ function onComposerChange(nodes: ComposerNode[]) {
     node.type === "chip" || (node.type === "text" && node.value.replace(/\u00a0/g, " ").trim()),
   );
   const ids = new Set(nodes.filter((node) => node.type === "chip").map((node) => node.id));
-  if (props.preview) {
-    previewContexts.value = previewContexts.value.filter((item) => ids.has(item.id));
-  } else {
+  localContexts.value = localContexts.value.filter((item) => ids.has(item.id));
+  if (!props.preview) {
     for (const id of seenChipIds.value) {
       if (!ids.has(id)) store.removeComposerContext(id);
     }
@@ -1938,8 +1937,9 @@ onBeforeUnmount(() => {
 watch(
   () => store.composerFocusNonce,
   async () => {
-    if (props.preview) return;
+    if (props.preview || !canEditComposer() || !elementIsShown(chatRoot.value)) return;
     await nextTick();
+    if (!elementIsShown(chatRoot.value)) return;
     composerInput.value?.insertMissing(store.composerContexts);
     composerInput.value?.focus();
   },
@@ -2005,15 +2005,16 @@ function clearComposerPreview() {
   }
   pendingAttachments.value[session.value.id] = [];
   pendingPastes.value[session.value.id] = [];
-  previewContexts.value = [];
+  localContexts.value = [];
   drafts.value[session.value.id] = [];
   composerEmpty.value = true;
 }
 
 defineExpose({
   insertChip: (item: EditorSelectionContext) => {
-    if (props.preview) {
-      previewContexts.value = [...previewContexts.value.filter((context) => context.id !== item.id), item].slice(-8);
+    if (!props.preview && !canEditComposer()) return;
+    if (props.preview || !store.composerContexts.some((context) => context.id === item.id)) {
+      localContexts.value = [...localContexts.value.filter((context) => context.id !== item.id), item].slice(-8);
     }
     composerInput.value?.insertChip(item);
     composerInput.value?.focus();

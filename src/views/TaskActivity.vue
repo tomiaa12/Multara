@@ -393,6 +393,10 @@ function rememberChip(context: EditorSelectionContext) {
 
 defineExpose({
   focus: () => composer.value?.focus(),
+  insertChip: (context: EditorSelectionContext) => {
+    if (props.historyViewOnly || props.hideComposer || !pageActive.value) return;
+    rememberChip(context);
+  },
 });
 
 async function attachFileFromSuggest(file: { workspaceId: string; path: string; isDirectory?: boolean }) {

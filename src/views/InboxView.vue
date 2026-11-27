@@ -7,7 +7,8 @@ import WorkflowRunView from "./workflows/WorkflowRunView.vue";
 import { isWorkflowRunSession, workflowRunIdFromSession } from "../domain/workflow";
 import SegmentedTabs from "../components/ui/SegmentedTabs.vue";
 import { firstUnreadMessageId, unreadBadgeLabel, unreadTotal } from "../domain/inbox";
-import type { FeishuContact, InboxItem } from "../domain/types";
+import type { EditorSelectionContext, FeishuContact, InboxItem } from "../domain/types";
+import { useInboxUnsavedEditors, type InboxEditableFile } from "./inbox/use-inbox-editor";
 import { t } from "../i18n";
 import * as backend from "../services/backend";
 import { useAppStore } from "../stores/app";
@@ -22,7 +23,7 @@ const store = useAppStore();
 const route = useRoute();
 const router = useRouter();
 const selectedId = ref<string | null>(null);
-const threadPanel = ref<{ focus: () => void } | null>(null);
+const threadPanel = ref<{ focus: () => void; insertChip: (context: EditorSelectionContext) => void } | null>(null);
 const dividerMessageId = ref<string | null>(null);
 const REVIEW_MIN_WIDTH = 240;
 const REVIEW_DEFAULT_WIDTH = 420;
@@ -33,8 +34,21 @@ const RAIL_WIDTH_KEY = "multara.inbox.railWidth";
 const reviewFile = ref<{ workspaceId: string; filePath: string } | null>(null);
 const reviewWidth = ref(REVIEW_DEFAULT_WIDTH);
 const railWidth = ref(readRailWidth());
-const reviewPane = ref<{ layout: () => void } | null>(null);
-const toolRail = ref<{ closeAll: () => void } | null>(null);
+type UnsavedPane = {
+  confirmUnsaved: () => Promise<boolean>;
+  dirtyFiles: () => InboxEditableFile[];
+};
+const reviewPane = ref<(UnsavedPane & { layout: () => void }) | null>(null);
+const toolRail = ref<(UnsavedPane & { closeAll: () => Promise<boolean> }) | null>(null);
+async function confirmUnsaved() {
+  if (reviewPane.value && !(await reviewPane.value.confirmUnsaved())) return false;
+  return !toolRail.value || await toolRail.value.confirmUnsaved();
+}
+useInboxUnsavedEditors({
+  leave: confirmUnsaved,
+  dirty: () => Boolean(reviewPane.value?.dirtyFiles().length || toolRail.value?.dirtyFiles().length),
+  paths: () => [...(reviewPane.value?.dirtyFiles() ?? []), ...(toolRail.value?.dirtyFiles() ?? [])].map((file) => file.path),
+});
 const listScrolled = ref(false);
 
 function onListScroll(event: Event) {
@@ -163,9 +177,10 @@ function onToolLayout(payload: { content: boolean; files: boolean; width: number
   stageTerminal.value = payload.terminal;
 }
 
-function openReview(file: { workspaceId: string; filePath: string }, origin: "chat" | "tool") {
+async function openReview(file: { workspaceId: string; filePath: string }, origin: "chat" | "tool") {
+  if (reviewPane.value && !(await reviewPane.value.confirmUnsaved())) return;
+  if (origin === "chat" && toolRail.value && !(await toolRail.value.closeAll())) return;
   reviewFile.value = file;
-  if (origin === "chat") toolRail.value?.closeAll();
 }
 const selectedTask = computed(() =>
   store.data?.tasks.find((task) => task.id === selected.value?.taskId) ?? null,
@@ -226,6 +241,7 @@ function composerHistoryOnly(item: InboxItem) {
 
 async function select(item: InboxItem) {
   const same = selectedId.value === item.id;
+  if (!same && !(await confirmUnsaved())) return;
   const wasUnread = !item.read;
   if (isWorkflowRunSession(item.sessionId)) await store.ensureSessionLoaded(item.sessionId);
   else await store.loadMessages(item.sessionId);
@@ -496,6 +512,9 @@ onUnmounted(() => {
       :key="`${reviewFile.workspaceId}\n${reviewFile.filePath}`"
       :workspace-id="reviewFile.workspaceId"
       :file-path="reviewFile.filePath"
+      :session-id="selected?.sessionId ?? ''"
+      :manage-unsaved="false"
+      @add-to-chat="threadPanel?.insertChip($event)"
       @close="reviewFile = null"
     />
     <InboxToolRail
@@ -507,6 +526,8 @@ onUnmounted(() => {
       :kind="railKind(selected)"
       log-label="收件箱"
       :task-id="selected.taskId"
+      :manage-unsaved="false"
+      @add-to-chat="threadPanel?.insertChip($event)"
       @pick-workspace="pickedWorkspaceId = $event"
       @layout="onToolLayout"
       @merge-focus="onMergeFocus"

@@ -27,6 +27,7 @@ const descriptionNodes = ref<ComposerNode[]>([{ type: "text", value: "" }]);
 const descriptionKey = ref(0);
 const stage = ref({ content: false, width: 0, terminal: false });
 const rail = ref<{ openWorkspaceFile: (workspaceId: string, path: string, startLine?: number) => void } | null>(null);
+const activity = ref<InstanceType<typeof TaskActivity> | null>(null);
 
 const task = computed(() => store.data?.tasks.find((item) => item.id === route.params.taskId));
 const workspaces = computed(() => {
@@ -186,7 +187,7 @@ async function saveTitle() {
             </div>
             <section class="task-feed task-feed-fill">
               <header>{{ t('tasks.activity') }}</header>
-              <TaskActivity docked :session-id="task.sessionId" :agent-id="task.agentId" />
+              <TaskActivity ref="activity" docked :session-id="task.sessionId" :agent-id="task.agentId" />
             </section>
             <p v-if="error" class="task-board-error">{{ error }}</p>
           </main>
@@ -203,6 +204,7 @@ async function saveTitle() {
       float-host-selector=".task-detail-page"
       :task-id="task.id"
       @layout="onLayout"
+      @add-to-chat="activity?.insertChip($event)"
     />
   </div>
   <div v-else class="tasks-page task-issue-missing">

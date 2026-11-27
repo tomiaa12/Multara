@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { vMotion } from "../../ui/motion";
-import type { FileContent, Workspace } from "../../domain/types";
+import type { EditorSelectionContext, FileContent, Workspace } from "../../domain/types";
+import type * as Monaco from "monaco-editor";
+import { useInboxEditor } from "./use-inbox-editor";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
 import type { TerminalProfile } from "../../services/backend";
@@ -31,7 +33,7 @@ import WorkspaceFileTree from "../../components/workbench/WorkspaceFileTree.vue"
 import { fileNameOf, workspaceMode, workspaceModeHint, workspaceModeLabel, workspaceSubtitle } from "../../components/workbench/workspace-mode";
 import { loadScmDiff, scmDiffId, scmOpensAsFile } from "../../components/workbench/scm-diff";
 import type { ScmOpenChangesPayload, ScmOpenTarget } from "../../components/workbench/scm-groups";
-import { isAbsoluteFsPath, normalizeFsPath } from "../../components/workbench/workspace-file-location";
+import { isAbsoluteFsPath, matchLongestWorkspaceRoot, normalizeFsPath } from "../../components/workbench/workspace-file-location";
 import { isCanvasEnabled } from "../../components/chat/genui/block";
 import { splitWorkspacePaths } from "../../components/chat/workspace-path";
 import { useAppStore } from "../../stores/app";
@@ -88,7 +90,7 @@ type EditorTab = {
 const TERMINAL_MIN_HEIGHT = 120;
 const TERMINAL_HEIGHT_KEY = "multara.panel.terminalHeight";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   workspaces: Workspace[];
   workspaceId: string;
   sessionId: string;
@@ -103,12 +105,14 @@ const props = defineProps<{
   floatHostSelector?: string;
   /** 内嵌浏览器诊断日志里的来源，例如收件箱、执行。 */
   logLabel?: string;
-}>();
+  manageUnsaved?: boolean;
+}>(), { manageUnsaved: true });
 
 const emit = defineEmits<{
   "pick-workspace": [id: string];
   layout: [payload: { content: boolean; files: boolean; width: number; terminal: boolean }];
   mergeFocus: [payload: { inboxItemId: string | null; workspaceId: string; sessionId: string }];
+  addToChat: [context: EditorSelectionContext];
 }>();
 
 const store = useAppStore();
@@ -120,6 +124,7 @@ const gitPreview = ref<{
   path: string;
   language: string;
   content: string;
+  original: string;
   readOnly: boolean;
   diff: GitSideDiff | null;
   commitFiles: CommitDiffFile[] | null;
@@ -132,6 +137,7 @@ const filePreview = ref<{
   path: string;
   language: string;
   content: string;
+  original: string;
   readOnly: boolean;
   diff: GitSideDiff | null;
 } | null>(null);
@@ -409,6 +415,19 @@ function readTerminalHeight() {
 
 /** keep-alive 缓存时后台实例不抢布局 / 预览；真正销毁才走 onBeforeUnmount。 */
 const railActive = ref(true);
+const fileEditor = useInboxEditor({
+  files: () => [
+    ...editorTabs.value.filter((tab) => !tab.emptyFiles && !tab.diff && !tab.commitFiles),
+    ...(filePreview.value && !filePreview.value.diff ? [filePreview.value] : []),
+    ...(gitPreview.value && !gitPreview.value.diff && !gitPreview.value.commitFiles ? [gitPreview.value] : []),
+  ],
+  sessionId: () => props.sessionId,
+  active: () => railActive.value,
+  attach: (context) => emit("addToChat", context),
+  saved: () => gitChangeRefreshScheduler.request(),
+  manageUnsaved: props.manageUnsaved,
+});
+const editorError = fileEditor.error;
 
 function writeLayout() {
   localStorage.setItem(INBOX_PANEL_WIDTH_KEY, String(panelWidth.value));
@@ -439,6 +458,7 @@ function applyGitWatch() {
 }
 
 function tabDirty(tab: EditorTab) {
+  if (tab.emptyFiles) return Boolean(filePreview.value && fileEditor.dirty(filePreview.value));
   return !tab.diff && !tab.commitFiles && tab.content !== tab.original;
 }
 
@@ -622,8 +642,9 @@ function onAddMenu(id: string) {
   if (id === "browser" || id === "search") openSurface(id, "fresh");
 }
 
-function closeSurface(key: string) {
+async function closeSurface(key: string) {
   const closing = surfaces.value.find((item) => item.key === key);
+  if (closing?.kind === "changes" && gitPreview.value && !(await fileEditor.confirmFiles([gitPreview.value]))) return;
   if (closing?.kind === "changes") {
     gitPreview.value = null;
     gitBarOpen.value = true;
@@ -653,17 +674,12 @@ function resolveRevealPath(path: string, workspaceId?: string): { workspaceId: s
   ) {
     return { workspaceId, path };
   }
-  const absolute = props.workspaces.find((item) => {
-    const root = normalizeFsPath(item.workPath || item.sourcePath || "");
-    return Boolean(root) && (normalized === root || normalized.startsWith(`${root}/`));
-  });
-  if (absolute) {
-    const root = normalizeFsPath(absolute.workPath || absolute.sourcePath || "");
-    return {
-      workspaceId: absolute.id,
-      path: normalized.slice(root.length).replace(/^\//, ""),
-    };
-  }
+  const absolute = matchLongestWorkspaceRoot(normalized, props.workspaces.map((item) => ({
+    id: item.id,
+    name: item.name,
+    roots: [item.workPath || item.sourcePath].filter((root): root is string => Boolean(root)),
+  })));
+  if (absolute) return absolute;
   // 工作区外的明确绝对路径：空 workspaceId，后面用 readExternalFile 只读打开。
   if (isAbsoluteFsPath(normalized)) {
     return { workspaceId: "", path: normalized };
@@ -725,13 +741,17 @@ function onTerminalReveal() {
   });
 }
 
-function openGitList() {
+async function openGitList() {
+  if (gitPreview.value && !(await fileEditor.confirmFiles([gitPreview.value]))) return;
   gitPreview.value = null;
   gitBarOpen.value = true;
   openSurface("changes", "singleton");
 }
 
-function closeEditor(tab: EditorTab) {
+async function closeEditor(tab: EditorTab) {
+  const files = tab.emptyFiles && filePreview.value ? [filePreview.value] : [tab];
+  if (!(await fileEditor.confirmFiles(files))) return;
+  if (tab.emptyFiles) filePreview.value = null;
   const next = editorTabs.value.filter((item) => item.key !== tab.key);
   editorTabs.value = next;
   if (activeEditorKey.value === tab.key) {
@@ -747,6 +767,8 @@ function place(tab: EditorTab) {
 }
 
 async function openFile(workspaceId: string, path: string, pin = false): Promise<boolean> {
+  const resolved = resolveRevealPath(path, workspaceId);
+  if (resolved) ({ workspaceId, path } = resolved);
   const key = `${workspaceId}\n${path}`;
   const existing = editorTabs.value.find((tab) => tab.key === key);
   if (existing) {
@@ -783,7 +805,9 @@ async function openFile(workspaceId: string, path: string, pin = false): Promise
 }
 
 function closeEmptyFilesTab() {
+  if (filePreview.value && fileEditor.dirty(filePreview.value)) return;
   if (!editorTabs.value.some((tab) => tab.emptyFiles)) return;
+  filePreview.value = null;
   editorTabs.value = editorTabs.value.filter((tab) => !tab.emptyFiles);
   if (activeEditorKey.value === "files-empty") {
     activeEditorKey.value = editorTabs.value.at(-1)?.key ?? "";
@@ -792,8 +816,12 @@ function closeEmptyFilesTab() {
 
 async function previewInFiles(workspaceId: string, path: string) {
   showFiles();
+  if (filePreview.value && !(await fileEditor.confirmFiles([filePreview.value]))) return;
   const opened = editorTabs.value.find((tab) => tab.key === `${workspaceId}\n${path}`);
-  if (opened) closeEditor(opened);
+  if (opened) {
+    await closeEditor(opened);
+    if (editorTabs.value.includes(opened)) return;
+  }
   const filesTab = editorTabs.value.find((tab) => tab.emptyFiles);
   if (filesTab) activateEditor(filesTab);
   let file: FileContent;
@@ -807,6 +835,7 @@ async function previewInFiles(workspaceId: string, path: string) {
     path,
     language: file.language,
     content: file.content,
+    original: file.content,
     readOnly: Boolean(file.readOnly),
     diff: null,
   };
@@ -848,6 +877,7 @@ function ensureChanges() {
 }
 
 async function showGitFile(workspaceId: string, path: string) {
+  if (gitPreview.value && !(await fileEditor.confirmFiles([gitPreview.value]))) return;
   let file: FileContent;
   try {
     file = await backend.readWorkspaceFile(workspaceId, path);
@@ -862,6 +892,7 @@ async function showGitFile(workspaceId: string, path: string) {
       path,
       language: file.language,
       content: "",
+      original: "",
       readOnly: true,
       diff: {
         id: `${workspaceId}:media:${path}`,
@@ -880,6 +911,7 @@ async function showGitFile(workspaceId: string, path: string) {
     path,
     language: file.language,
     content: file.content,
+    original: file.content,
     readOnly: Boolean(file.readOnly),
     diff: null,
     commitFiles: null,
@@ -888,6 +920,7 @@ async function showGitFile(workspaceId: string, path: string) {
 }
 
 async function showGitDiff(target: ScmOpenTarget) {
+  if (gitPreview.value && !(await fileEditor.confirmFiles([gitPreview.value]))) return true;
   const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
   const same = !loaded.binary && loaded.original === loaded.modified;
   if (same) return false;
@@ -896,6 +929,7 @@ async function showGitDiff(target: ScmOpenTarget) {
     path: target.path,
     language: loaded.language,
     content: loaded.modified,
+    original: loaded.modified,
     readOnly: true,
     diff: {
       id: scmDiffId(target),
@@ -943,6 +977,7 @@ async function openChangeInGit(target: ScmOpenTarget) {
 }
 
 async function showGitCommit(target: ScmOpenTarget) {
+  if (gitPreview.value && !(await fileEditor.confirmFiles([gitPreview.value]))) return;
   ensureChanges();
   try {
     const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
@@ -951,6 +986,7 @@ async function showGitCommit(target: ScmOpenTarget) {
       path: target.path,
       language: loaded.language,
       content: loaded.modified,
+      original: loaded.modified,
       readOnly: true,
       diff: {
         id: scmDiffId(target),
@@ -969,6 +1005,7 @@ async function showGitCommit(target: ScmOpenTarget) {
 
 async function openChanges(payload: ScmOpenChangesPayload) {
   if (!payload.targets.length) return;
+  if (gitPreview.value && !(await fileEditor.confirmFiles([gitPreview.value]))) return;
   ensureChanges();
   try {
     const files = await Promise.all(payload.targets.map(async (target) => {
@@ -987,6 +1024,7 @@ async function openChanges(payload: ScmOpenChangesPayload) {
       path: files[0]?.path ?? payload.commit,
       language: files[0]?.language || "plaintext",
       content: "",
+      original: "",
       readOnly: true,
       diff: null,
       commitFiles: files,
@@ -1000,7 +1038,7 @@ async function openChanges(payload: ScmOpenChangesPayload) {
 
 function onEditorChange(content: string, fromUser: boolean) {
   const tab = activeEditor.value;
-  if (!tab || !fromUser) return;
+  if (!tab || tab.readOnly || !fromUser) return;
   tab.content = content;
   if (tab.content !== tab.original) tab.pinned = true;
 }
@@ -1179,22 +1217,32 @@ function openTerminalPath(payload: { path: string; isDirectory: boolean }) {
   void openFile(match.id, relative, true);
 }
 
-function closeStage() {
+async function closeStage() {
+  if (!(await fileEditor.confirmFiles())) return false;
   surfaces.value = [];
+  filePreview.value = null;
+  gitPreview.value = null;
   editorTabs.value = [];
   activeEditorKey.value = "";
   activeSurfaceKey.value = "";
   filesWanted.value = false;
   writeLayout();
+  return true;
 }
 
-function closeAll() {
-  closeStage();
+async function closeAll() {
+  if (!(await closeStage())) return false;
   terminalOpen.value = false;
   writeLayout();
+  return true;
 }
 
-defineExpose({ closeAll, openWorkspaceFile });
+defineExpose({
+  closeAll,
+  openWorkspaceFile,
+  confirmUnsaved: fileEditor.confirmFiles,
+  dirtyFiles: fileEditor.dirtyFiles,
+});
 
 watch(() => store.fileReveal?.nonce, () => {
   if (!railActive.value) return;
@@ -1263,6 +1311,8 @@ watch(() => props.sessionId, () => {
   // keep-alive 下每个需求各有实例；同需求换会话时才清编辑器。
   if (!railActive.value) return;
   editorTabs.value = [];
+  filePreview.value = null;
+  gitPreview.value = null;
   activeEditorKey.value = "";
   writeLayout();
 });
@@ -1272,10 +1322,8 @@ function switchHistoryKind(kind: "file" | "line") {
   else fileHistoryView.value?.setExpanded(true);
 }
 
-function onFileEditorMount(editor: {
-  getPosition: () => { lineNumber: number } | null;
-  onDidChangeCursorPosition: (listener: (event: { position: { lineNumber: number } }) => void) => { dispose: () => void };
-}) {
+function onFileEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
+  fileEditor.bind(editor, () => activeEditor.value?.emptyFiles ? filePreview.value : activeEditor.value);
   fileCursor?.dispose();
   fileLine.value = editor.getPosition()?.lineNumber ?? 1;
   fileCursor = editor.onDidChangeCursorPosition((event) => {
@@ -1284,6 +1332,7 @@ function onFileEditorMount(editor: {
 }
 
 async function openHistoryInFiles(target: ScmOpenTarget) {
+  if (filePreview.value && !(await fileEditor.confirmFiles([filePreview.value]))) return;
   showFiles();
   try {
     const loaded = await loadScmDiff(target, diffReaders(target.workspaceId));
@@ -1292,6 +1341,7 @@ async function openHistoryInFiles(target: ScmOpenTarget) {
       path: target.path,
       language: loaded.language,
       content: loaded.modified,
+      original: loaded.modified,
       readOnly: true,
       diff: {
         id: scmDiffId(target),
@@ -1409,7 +1459,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-motion="{ enter: 'fade' }" v-if="stageOpen" class="inbox-stage">
+  <section v-motion="{ enter: 'fade' }" v-if="stageOpen" class="inbox-stage" @keydown.capture="fileEditor.keydown">
     <div
       class="inbox-tool-resize"
       role="separator"
@@ -1574,6 +1624,8 @@ onBeforeUnmount(() => {
                 :insert-spaces="gitIndent.insertSpaces"
                 :sticky-scroll="stickyScroll"
                 :word-wrap="wordWrap"
+                @change="(content, fromUser) => fileEditor.change(gitPreview, content, fromUser)"
+                @mount="fileEditor.bind($event, () => gitPreview)"
               />
             </div>
             <aside
@@ -1637,6 +1689,7 @@ onBeforeUnmount(() => {
               :insert-spaces="indent.insertSpaces"
               :sticky-scroll="stickyScroll"
               :word-wrap="wordWrap"
+              @change="(content, fromUser) => fileEditor.change(filePreview, content, fromUser)"
               @mount="onFileEditorMount"
             />
           </div>
@@ -1804,6 +1857,7 @@ onBeforeUnmount(() => {
           </UiPaneView>
         </aside>
       </div>
+      <p v-if="editorError" class="form-error" role="alert">{{ editorError }}</p>
     </div>
   </section>
   <!-- keep-alive 停用时关掉 Teleport，避免残留悬浮栏抢点击、改到后台实例 -->
