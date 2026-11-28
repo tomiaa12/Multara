@@ -4175,7 +4175,7 @@ fn normalize_claude_events(value: &Value) -> Vec<NormalizedEvent> {
             .collect();
     }
     if event_type == "system" {
-        return normalize_claude_task_event(value);
+        return normalize_claude_system_event(value);
     }
     if event_type == "control_request"
         && value.pointer("/request/subtype").and_then(Value::as_str) == Some("can_use_tool")
@@ -4258,11 +4258,14 @@ fn normalize_claude_tool_use(block: &Value) -> Vec<NormalizedEvent> {
     }
 }
 
-fn normalize_claude_task_event(value: &Value) -> Vec<NormalizedEvent> {
+fn normalize_claude_system_event(value: &Value) -> Vec<NormalizedEvent> {
     let subtype = value
         .get("subtype")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    if subtype == "api_retry" {
+        return vec![claude_retry_event(value)];
+    }
     if !matches!(
         subtype,
         "task_started" | "task_progress" | "task_updated" | "task_notification"
@@ -4296,6 +4299,50 @@ fn normalize_claude_task_event(value: &Value) -> Vec<NormalizedEvent> {
         status: None,
         output_json: None,
     }]
+}
+
+/// CLI 在 API 请求失败后的重试通知。保留为 `error` 事件落库并广播，前端据此显示「正在重试」，
+/// 但 `input.kind = "retry"` 让时间线把它当成状态而不是红色错误块。
+fn claude_retry_event(value: &Value) -> NormalizedEvent {
+    let attempt = value.get("attempt").and_then(Value::as_u64);
+    let max_retries = value
+        .get("max_retries")
+        .or_else(|| value.get("maxRetries"))
+        .and_then(Value::as_u64);
+    let retry_delay_ms = value
+        .get("retry_delay_ms")
+        .or_else(|| value.get("retryDelayMs"))
+        .and_then(Value::as_u64);
+    let error = value
+        .get("error")
+        .map(|error| match error {
+            Value::String(text) => text.clone(),
+            other => other.to_string(),
+        })
+        .map(|text| truncate_and_redact(&text, 500))
+        .filter(|text| !text.is_empty());
+    let content = match (attempt, max_retries) {
+        (Some(attempt), Some(max)) => format!("Request timed out, retrying ({attempt}/{max})"),
+        _ => "Request timed out, retrying".to_string(),
+    };
+    NormalizedEvent {
+        event_type: "error",
+        call_id: None,
+        tool: None,
+        content: Some(content),
+        input: Some(json!({
+            "kind": "retry",
+            "attempt": attempt,
+            "maxRetries": max_retries,
+            "retryDelayMs": retry_delay_ms,
+            "error": error,
+        })),
+        output: None,
+        replaces_final_text: false,
+        parent_call_id: None,
+        status: None,
+        output_json: None,
+    }
 }
 
 fn normalize_cursor(value: &Value) -> Vec<NormalizedEvent> {
@@ -5636,6 +5683,62 @@ mod tests {
         assert_eq!(events[1].call_id.as_deref(), Some("call-1"));
         assert_eq!(events[2].content.as_deref(), Some("done"));
         assert!(events[2].replaces_final_text);
+    }
+
+    #[test]
+    fn normalizes_claude_api_retry_as_retry_status() {
+        let events = normalize_runtime_line(
+            "claude",
+            r#"{"type":"system","subtype":"api_retry","attempt":2,"max_retries":10,"retry_delay_ms":30000,"error":"Request timed out."}"#,
+            false,
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "error");
+        assert!(events[0].status.is_none());
+        assert_eq!(
+            events[0].content.as_deref(),
+            Some("Request timed out, retrying (2/10)")
+        );
+        let input = events[0].input.as_ref().unwrap();
+        assert_eq!(input.get("kind").and_then(Value::as_str), Some("retry"));
+        assert_eq!(input.get("attempt").and_then(Value::as_u64), Some(2));
+        assert_eq!(input.get("maxRetries").and_then(Value::as_u64), Some(10));
+        assert_eq!(input.get("retryDelayMs").and_then(Value::as_u64), Some(30000));
+        assert_eq!(
+            input.get("error").and_then(Value::as_str),
+            Some("Request timed out.")
+        );
+    }
+
+    #[test]
+    fn normalizes_claude_api_retry_without_counts_and_redacts_error() {
+        let events = normalize_runtime_line(
+            "claude",
+            r#"{"type":"system","subtype":"api_retry","error":"upstream failed with sk-abcdefghijklmnopqrstuvwx"}"#,
+            false,
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].content.as_deref(),
+            Some("Request timed out, retrying")
+        );
+        let error = events[0]
+            .input
+            .as_ref()
+            .and_then(|input| input.get("error"))
+            .and_then(Value::as_str)
+            .unwrap();
+        assert!(!error.contains("sk-abcdefghijklmnopqrstuvwx"));
+    }
+
+    #[test]
+    fn ignores_unknown_claude_system_events() {
+        assert!(normalize_runtime_line(
+            "claude",
+            r#"{"type":"system","subtype":"init","session_id":"abc"}"#,
+            false,
+        )
+        .is_empty());
     }
 
     #[test]

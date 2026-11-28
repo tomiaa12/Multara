@@ -35,8 +35,13 @@ import {
   subtaskEmbedForMessage,
 } from "../components/chat/message-speaker";
 import AssignmentStack from "../components/chat/AssignmentStack.vue";
-import { liveCapacity, resolveSessionLiveWorkStatus } from "../components/agent-live-status";
-import { liveWorkParts } from "../components/chat/timeline-display";
+import {
+  liveCapacity,
+  pickSessionLiveRun,
+  resolveSessionLiveWorkStatus,
+  retryItemFromRun,
+} from "../components/agent-live-status";
+import { latestRetrySignal, liveWorkParts, type RetrySignal } from "../components/chat/timeline-display";
 import {
   classifyClipboardEntry,
   type OsDroppedEntry,
@@ -242,6 +247,20 @@ const liveRunStatus = computed(() => resolveSessionLiveWorkStatus({
   processing: sessionProcessing.value,
   capacity: liveCapacity(store.data),
 }));
+const liveRun = computed(() => pickSessionLiveRun(store.runStates, props.sessionId));
+const liveIdleSeconds = computed(() => {
+  const at = liveRun.value?.lastEventAtMs;
+  if (!at) return undefined;
+  return Math.max(0, (liveClock.value - at) / 1000);
+});
+function retryFor(runId: string | null | undefined): RetrySignal | null {
+  const item = retryItemFromRun(store.runStates, runId);
+  return item ? latestRetrySignal([item]) : null;
+}
+const liveRetry = computed<RetrySignal | null>(() => (
+  retryFor(liveRun.value?.runId)
+  ?? latestRetrySignal(currentTurnAssistant.value?.timeline ?? [])
+));
 const liveAnchor = computed(() => {
   const created = Date.parse(currentTurnAssistant.value?.createdAt ?? "");
   if (Number.isFinite(created) && created > 0 && created <= liveClock.value + 1000) return created;
@@ -272,9 +291,14 @@ function cardWorking(message: ChatMessage) {
   if (!running) return null;
   const found = store.data?.agents.find((item) => item.id === assigneeId);
   const elapsed = Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000));
+  const idleSeconds = running.lastEventAtMs
+    ? Math.max(0, (liveClock.value - running.lastEventAtMs) / 1000)
+    : undefined;
   const line = liveWorkParts([], elapsed, {
     language: store.data?.settings.language,
     status: running.status === "queued" ? "queued" : "running",
+    idleSeconds,
+    retrying: retryFor(running.runId),
   })[0];
   if (!line) return null;
   return {
@@ -287,7 +311,12 @@ function cardWorking(message: ChatMessage) {
 const workingLines = computed(() => liveWorkParts(
   currentTurnAssistant.value?.timeline ?? [],
   Math.max(0, Math.floor((liveClock.value - liveAnchor.value) / 1000)),
-  { language: store.data?.settings.language, status: liveRunStatus.value },
+  {
+    language: store.data?.settings.language,
+    status: liveRunStatus.value,
+    idleSeconds: liveIdleSeconds.value,
+    retrying: liveRetry.value,
+  },
 ));
 watch([sessionProcessing, pageActive], ([active, visible]) => {
   window.clearInterval(liveTimer);

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 底栏右下角：没人跑时是「0 个运行中」；有人跑时是堆叠头像 + 扫光状态，整段有最大宽度。
-import { computed } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import AvatarStack, { type AvatarStackItem } from "./ui/AvatarStack.vue";
@@ -9,8 +9,9 @@ import {
   liveCapacity,
   liveRunMessage,
   resolveRunLiveWorkStatus,
+  retryItemFromRun,
 } from "./agent-live-status";
-import { liveWorkParts } from "./chat/timeline-display";
+import { latestRetrySignal, liveWorkParts, WAITING_AFTER_SECONDS } from "./chat/timeline-display";
 
 const store = useAppStore();
 
@@ -26,17 +27,39 @@ const liveItems = computed<AvatarStackItem[]>(() =>
   }),
 );
 
+const nowMs = ref(Date.now());
+let ticker = 0;
+watch(() => liveRuns.value.length, (count) => {
+  window.clearInterval(ticker);
+  if (!count) return;
+  nowMs.value = Date.now();
+  ticker = window.setInterval(() => { nowMs.value = Date.now(); }, 5000);
+}, { immediate: true });
+onUnmounted(() => window.clearInterval(ticker));
+
 const liveLabel = computed(() => {
   const runs = liveRuns.value;
   if (runs.length > 1) return t("agentLive.multi", { n: runs.length });
   const run = runs[0];
   if (!run) return "";
-  const timeline = liveRunMessage(store.messages, run)?.timeline ?? [];
+  const state = store.runStates[run.runId];
+  const messageTimeline = liveRunMessage(store.messages, run)?.timeline ?? [];
+  const timeline = messageTimeline.length
+    ? messageTimeline
+    : state?.timelineItem ? [state.timelineItem] : [];
   const status = resolveRunLiveWorkStatus(run, store.runStates, liveCapacity(store.data));
-  if (status === "running" && timeline.length === 0) return t("chat.thinking");
+  const idleSeconds = state?.lastEventAtMs
+    ? Math.max(0, (nowMs.value - state.lastEventAtMs) / 1000)
+    : undefined;
+  const retryItem = retryItemFromRun(store.runStates, run.runId);
+  if (status === "running" && timeline.length === 0 && (idleSeconds ?? 0) < WAITING_AFTER_SECONDS) {
+    return t("chat.thinking");
+  }
   return liveWorkParts(timeline, 0, {
     language: store.data?.settings.language,
     status,
+    idleSeconds,
+    retrying: retryItem ? latestRetrySignal([retryItem]) : null,
   })[0]?.label ?? t("chat.thinking");
 });
 </script>

@@ -486,6 +486,50 @@ function latestWorkItem(items: TimelineItem[]): TimelineItem | undefined {
   return undefined;
 }
 
+/** 运行时已拉起但还没有任何输出时，超过这个秒数就从「启动中」切到「等待响应」。 */
+export const WAITING_AFTER_SECONDS = 15;
+/** 长时间完全没有输出时，状态行改为「长时间无响应」，但不会自动停止运行。 */
+export const STALLED_AFTER_SECONDS = 180;
+
+export interface RetrySignal {
+  attempt?: number;
+  maxRetries?: number;
+}
+
+export interface LiveWorkOptions {
+  language?: string;
+  status?: "queued" | "running" | "sending" | null;
+  /** 距离该 run 最近一次事件的秒数；用于把空转的「启动中」降级成等待 / 无响应。 */
+  idleSeconds?: number;
+  /** 明确的运行时重试信号；不传时从 timeline 里找。 */
+  retrying?: RetrySignal | null;
+}
+
+export function isRetryItem(item: TimelineItem | null | undefined): boolean {
+  if (!item || item.eventType !== "error") return false;
+  return resolvedInput(item).kind === "retry";
+}
+
+function retrySignalOf(item: TimelineItem | null | undefined): RetrySignal | null {
+  if (!item || !isRetryItem(item)) return null;
+  const input = resolvedInput(item);
+  return {
+    attempt: typeof input.attempt === "number" ? input.attempt : undefined,
+    maxRetries: typeof input.maxRetries === "number" ? input.maxRetries : undefined,
+  };
+}
+
+/** 最近一条重试通知；之后已经恢复输出（text / thinking / 工具调用）就不再算重试中。 */
+export function latestRetrySignal(items: TimelineItem[]): RetrySignal | null {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) continue;
+    if (isRetryItem(item)) return retrySignalOf(item);
+    if (["text", "thinking", "tool_use", "todo"].includes(item.eventType)) return null;
+  }
+  return null;
+}
+
 function liveStageKeyForKind(kind: ToolKind): MessageKey {
   if (kind === "shell") return "chat.runningCommand";
   if (kind === "read") return "chat.readingFiles";
@@ -501,16 +545,27 @@ function liveStageKeyForKind(kind: ToolKind): MessageKey {
   return "chat.working";
 }
 
-function liveStageKey(items: TimelineItem[], status?: "queued" | "running" | "sending" | null): MessageKey {
+function liveStageKey(
+  items: TimelineItem[],
+  status?: "queued" | "running" | "sending" | null,
+  options?: { idleSeconds?: number; retrying?: boolean },
+): MessageKey {
   // status=queued 表示运行时或智能体的全局名额已满；名额还在的 queued 应由调用方收成 sending
   if (status === "queued") return "chat.queued";
+  if (options?.retrying) return "chat.retrying";
   const latest = latestWorkItem(items);
+  if (latest) {
+    if (latest.eventType === "text") return "chat.typing";
+    if (latest.eventType === "thinking") return "chat.thinking";
+    if (latest.eventType === "todo") return "chat.updatingPlan";
+    return liveStageKeyForKind(toolKind(inferToolName(latest) || latest.tool));
+  }
+  const idle = options?.idleSeconds;
+  if (idle != null && idle >= STALLED_AFTER_SECONDS) return "chat.noResponse";
+  // 有过事件但只剩 error/tool_result，或者已经等了一段时间：不再是「刚启动」，如实显示等待。
+  if ((idle != null && idle >= WAITING_AFTER_SECONDS) || items.length > 0) return "chat.waiting";
   // 尚无 timeline：CLI / 会话还在拉起（对齐 Multica starting_up），不要直接「思考中」
-  if (!latest) return "chat.starting";
-  if (latest.eventType === "text") return "chat.typing";
-  if (latest.eventType === "thinking") return "chat.thinking";
-  if (latest.eventType === "todo") return "chat.updatingPlan";
-  return liveStageKeyForKind(toolKind(inferToolName(latest) || latest.tool));
+  return "chat.starting";
 }
 
 const LIVE_DETAIL_MAX = 40;
@@ -650,11 +705,18 @@ function latestEditName(items: TimelineItem[]): string {
 export function liveWorkParts(
   items: TimelineItem[],
   elapsedSeconds: number,
-  options?: { language?: string; status?: "queued" | "running" | "sending" | null },
+  options?: LiveWorkOptions,
 ): Array<{ label: string; elapsed: string }> {
   const elapsed = formatLiveElapsed(elapsedSeconds, options?.language);
-  const stage = liveStageKey(items, options?.status);
   const prefix = subAgentLivePrefix(items, options?.language);
+  const retry = options?.retrying !== undefined ? options.retrying : latestRetrySignal(items);
+  if (retry) {
+    const detail = retry.attempt != null && retry.maxRetries != null
+      ? translate("chat.retrying", options?.language, { attempt: retry.attempt, max: retry.maxRetries })
+      : translate("chat.retryPending", options?.language);
+    return [{ label: `${prefix}${detail}`, elapsed }];
+  }
+  const stage = liveStageKey(items, options?.status, { idleSeconds: options?.idleSeconds });
   // 还有没返回的修改时优先列出，不因后面跟上读取或正文就把它们藏掉。
   const pendingEdits = pendingEditNames(items);
   if (pendingEdits.length) {
@@ -681,7 +743,7 @@ export function liveWorkParts(
 export function liveWorkLabels(
   items: TimelineItem[],
   elapsedSeconds: number,
-  options?: { language?: string; status?: "queued" | "running" | "sending" | null },
+  options?: LiveWorkOptions,
 ): string[] {
   return liveWorkParts(items, elapsedSeconds, options).map(({ label, elapsed }) => `${label} · ${elapsed}`);
 }
@@ -689,7 +751,7 @@ export function liveWorkLabels(
 export function liveWorkLabel(
   items: TimelineItem[],
   elapsedSeconds: number,
-  options?: { language?: string; status?: "queued" | "running" | "sending" | null },
+  options?: LiveWorkOptions,
 ): string {
   return liveWorkLabels(items, elapsedSeconds, options).join("\n");
 }
@@ -1073,6 +1135,8 @@ function blockFromNode(node: EventTreeNode, lifecycle: AgentLifecycle): Timeline
   if (item.eventType === "mode_change") return { type: "mode", item };
   if (item.eventType === "permission") return { type: "permission", item };
   if (item.eventType === "thinking") return (item.content ?? "").trim() ? { type: "thinking", item } : undefined;
+  // 重试通知只驱动运行状态，不在过程折叠里刷成红色错误块。
+  if (isRetryItem(item)) return undefined;
   if (item.eventType === "error") return (item.content || item.output || "").trim() ? { type: "error", item } : undefined;
   if (item.eventType !== "tool_use" || isBlankTool(item)) return undefined;
   const name = inferToolName(item).toLowerCase();

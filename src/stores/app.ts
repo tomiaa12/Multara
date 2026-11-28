@@ -204,6 +204,7 @@ export const useAppStore = defineStore("app", () => {
       error: null,
       timelineItem: null,
       elapsedMs: null,
+      lastEventAtMs: Date.now(),
     };
   }
 
@@ -431,7 +432,7 @@ export const useAppStore = defineStore("app", () => {
       ) {
         return;
       }
-      runStates.value[payload.runId] = payload;
+      runStates.value[payload.runId] = { ...payload, lastEventAtMs: Date.now() };
       // 停止/失败后保持排队，不自动发下一条；只有正常推进时才尝试 drain。
       if (
         pendingRunSessions.value.delete(payload.sessionId)

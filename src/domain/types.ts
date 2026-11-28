@@ -544,6 +544,8 @@ export interface RunEvent {
   snapshotAbsent?: boolean | null;
   affectedFile?: string | null;
   workspaceId?: string | null;
+  /** 前端收到该事件的时间，不来自后端。用来判断运行时是否长时间没有输出。 */
+  lastEventAtMs?: number;
 }
 
 export interface GlobalResource {

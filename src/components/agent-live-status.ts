@@ -1,4 +1,4 @@
-import type { Agent, ChatMessage, RunEvent, Runtime } from "../domain/types";
+import type { Agent, ChatMessage, RunEvent, Runtime, TimelineItem } from "../domain/types";
 
 export interface LiveRun {
   runId: string;
@@ -141,6 +141,40 @@ export function collectLiveRuns(
     });
   }
   return [...byAgent.values()];
+}
+
+/** 会话里最值得展示的活跃 run：优先 running，其次最近有事件的。 */
+export function pickSessionLiveRun(
+  runStates: Record<string, RunEvent>,
+  sessionId: string | null | undefined,
+): RunEvent | null {
+  if (!sessionId) return null;
+  let picked: RunEvent | null = null;
+  for (const event of Object.values(runStates)) {
+    if (event.sessionId !== sessionId) continue;
+    if (event.status !== "queued" && event.status !== "running") continue;
+    if (event.runId.startsWith("pending:")) continue;
+    if (!picked) {
+      picked = event;
+      continue;
+    }
+    if (picked.status === "running" && event.status !== "running") continue;
+    if (event.status === "running" && picked.status !== "running") {
+      picked = event;
+      continue;
+    }
+    if ((event.lastEventAtMs ?? 0) > (picked.lastEventAtMs ?? 0)) picked = event;
+  }
+  return picked;
+}
+
+/** run 最近一次广播的 timelineItem；消息还没落库时用它判断是否在重试。 */
+export function retryItemFromRun(
+  runStates: Record<string, RunEvent>,
+  runId: string | null | undefined,
+): TimelineItem | null {
+  if (!runId) return null;
+  return runStates[runId]?.timelineItem ?? null;
 }
 
 /** run 对应的助手消息（store 按 `run:<runId>` 建的那条），里面有实时 timeline。 */

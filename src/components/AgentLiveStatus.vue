@@ -1,13 +1,19 @@
 <script setup lang="ts">
 // 智能体状态格：有智能体在跑时显示「头像 + 轮播动作文案」，多个同时跑时显示堆叠头像 + 「N 个智能体处理中」；
 // 没在跑时：头像 +「名称 3 小时前」（单人+idleLabel），或多人头像 + 相对时间；仅 showName 时为头像+名称。
-import { computed } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import AgentAvatar from "./AgentAvatar.vue";
 import AvatarStack, { type AvatarStackItem } from "./ui/AvatarStack.vue";
-import { collectLiveRuns, liveCapacity, liveRunMessage, resolveRunLiveWorkStatus } from "./agent-live-status";
-import { liveWorkParts } from "./chat/timeline-display";
+import {
+  collectLiveRuns,
+  liveCapacity,
+  liveRunMessage,
+  resolveRunLiveWorkStatus,
+  retryItemFromRun,
+} from "./agent-live-status";
+import { latestRetrySignal, liveWorkParts } from "./chat/timeline-display";
 
 const props = withDefaults(defineProps<{
   /** 这格对应的会话：需求下所有会话 / 任务自己的会话 */
@@ -44,15 +50,38 @@ const liveItems = computed<AvatarStackItem[]>(() =>
   }),
 );
 
+const nowMs = ref(Date.now());
+let ticker = 0;
+watch(() => liveRuns.value.length, (count) => {
+  window.clearInterval(ticker);
+  if (!count) return;
+  nowMs.value = Date.now();
+  ticker = window.setInterval(() => { nowMs.value = Date.now(); }, 5000);
+}, { immediate: true });
+onUnmounted(() => window.clearInterval(ticker));
+
 const liveLabel = computed(() => {
   const runs = liveRuns.value;
   if (runs.length > 1) return t("agentLive.multi", { n: runs.length });
   const run = runs[0];
   if (!run) return "";
-  const timeline = liveRunMessage(store.messages, run)?.timeline ?? [];
+  const state = store.runStates[run.runId];
+  const messageTimeline = liveRunMessage(store.messages, run)?.timeline ?? [];
+  const timeline = messageTimeline.length
+    ? messageTimeline
+    : state?.timelineItem ? [state.timelineItem] : [];
   // 与对话内工作行共用：绑定运行时的名额满了才是排队中
   const status = resolveRunLiveWorkStatus(run, store.runStates, liveCapacity(store.data));
-  return liveWorkParts(timeline, 0, { language: store.data?.settings.language, status })[0]?.label ?? "";
+  const idleSeconds = state?.lastEventAtMs
+    ? Math.max(0, (nowMs.value - state.lastEventAtMs) / 1000)
+    : undefined;
+  const retryItem = retryItemFromRun(store.runStates, run.runId);
+  return liveWorkParts(timeline, 0, {
+    language: store.data?.settings.language,
+    status,
+    idleSeconds,
+    retrying: retryItem ? latestRetrySignal([retryItem]) : null,
+  })[0]?.label ?? "";
 });
 
 const idleText = computed(() => props.idleLabel.trim());

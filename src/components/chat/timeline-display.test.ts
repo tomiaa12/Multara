@@ -60,6 +60,33 @@ describe("liveWorkLabel", () => {
     expect(liveWorkLabel([], 3, { status: "sending", language: "zh-CN" })).toBe("启动中 · 3 秒");
     expect(liveWorkLabel([], 3, { status: "running", language: "zh-CN" })).toBe("启动中 · 3 秒");
     expect(liveWorkLabel([], 3, { status: "queued", language: "zh-CN" })).toBe("排队中 · 3 秒");
+    expect(liveWorkLabel([], 20, { status: "running", language: "zh-CN", idleSeconds: 20 })).toBe("等待响应 · 20 秒");
+    expect(liveWorkLabel([], 200, { status: "running", language: "zh-CN", idleSeconds: 200 })).toBe("长时间无响应 · 3 分 20 秒");
+    expect(liveWorkLabel(
+      [item("error")],
+      10,
+      { status: "running", language: "zh-CN", idleSeconds: 10 },
+    )).toBe("等待响应 · 10 秒");
+    expect(liveWorkLabel(
+      [item("error", null, { kind: "retry", attempt: 2, maxRetries: 10 })],
+      30,
+      { status: "running", language: "zh-CN" },
+    )).toBe("请求超时，正在重试（2/10） · 30 秒");
+    expect(liveWorkLabel(
+      [item("error", null, { kind: "retry" })],
+      30,
+      { status: "running", language: "zh-CN" },
+    )).toBe("请求超时，正在重试 · 30 秒");
+    expect(liveWorkLabel(
+      [item("error", null, { kind: "retry", attempt: 1, maxRetries: 5 }), item("text")],
+      31,
+      { status: "running", language: "zh-CN" },
+    )).toBe("输入中 · 31 秒");
+    expect(liveWorkLabel(
+      [item("tool_use", "Edit", { file_path: "a.ts" }), item("error", null, { kind: "retry", attempt: 1, maxRetries: 5 })],
+      31,
+      { status: "running", language: "zh-CN" },
+    )).toBe("请求超时，正在重试（1/5） · 31 秒");
     expect(liveWorkLabel([item("thinking")], 8, { status: "running", language: "zh-CN" })).toBe("思考中… · 8 秒");
     expect(liveWorkLabel([item("text")], 8, { status: "running", language: "zh-CN" })).toBe("输入中 · 8 秒");
     expect(liveWorkLabel(
@@ -141,6 +168,17 @@ describe("groupTimeline", () => {
       { ...item("error"), seq: 2, content: "读取超时" },
     ]);
     expect(blocks.map((block) => block.type)).toEqual(["explore", "error"]);
+  });
+
+  test("hides runtime retry notices but keeps ordinary errors", () => {
+    const retry = groupTimeline([
+      { ...item("error", null, { kind: "retry", attempt: 1, maxRetries: 10 }), seq: 1, content: "Request timed out, retrying (1/10)" },
+    ]);
+    expect(retry).toEqual([]);
+    const ordinary = groupTimeline([
+      { ...item("error"), seq: 1, content: "读取超时" },
+    ]);
+    expect(ordinary.map((block) => block.type)).toEqual(["error"]);
   });
 
   test("drops unparsed tool-input fragments instead of rendering empty Tool rows", () => {

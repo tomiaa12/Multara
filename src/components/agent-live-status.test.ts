@@ -3,15 +3,24 @@ import type { RunEvent } from "../domain/types";
 import {
   collectAllLiveRuns,
   collectLiveRuns,
+  pickSessionLiveRun,
   resolveRunLiveWorkStatus,
   resolveSessionLiveWorkStatus,
+  retryItemFromRun,
   type LiveCapacity,
 } from "./agent-live-status";
 
-function run(runId: string, sessionId: string, agentId: string, status: RunEvent["status"]): RunEvent {
+function run(
+  runId: string,
+  sessionId: string,
+  agentId: string,
+  status: RunEvent["status"],
+  extra: Partial<RunEvent> = {},
+): RunEvent {
   return {
     runId, sessionId, agentId, status,
     chunk: null, error: null, timelineItem: null, elapsedMs: null,
+    ...extra,
   };
 }
 
@@ -106,6 +115,51 @@ describe("resolveSessionLiveWorkStatus", () => {
       sessionId: "s1",
       processing: true,
     })).toBe("sending");
+  });
+});
+
+describe("pickSessionLiveRun", () => {
+  it("prefers running over a more recently active queued run", () => {
+    const states = {
+      a: run("a", "s1", "ag1", "queued", { lastEventAtMs: 900 }),
+      b: run("b", "s1", "ag2", "running", { lastEventAtMs: 100 }),
+    };
+    expect(pickSessionLiveRun(states, "s1")?.runId).toBe("b");
+  });
+
+  it("picks the most recently active running run", () => {
+    const states = {
+      a: run("a", "s1", "ag1", "running", { lastEventAtMs: 100 }),
+      b: run("b", "s1", "ag2", "running", { lastEventAtMs: 900 }),
+    };
+    expect(pickSessionLiveRun(states, "s1")?.runId).toBe("b");
+  });
+
+  it("ignores other sessions, finished runs and pending placeholders", () => {
+    const states = {
+      a: run("a", "other", "ag1", "running"),
+      b: run("b", "s1", "ag1", "completed"),
+      c: run("pending:x", "s1", "ag2", "running"),
+    };
+    expect(pickSessionLiveRun(states, "s1")).toBeNull();
+  });
+});
+
+describe("retryItemFromRun", () => {
+  it("returns the latest broadcast timeline item for the run", () => {
+    const item = {
+      seq: 3,
+      eventType: "error" as const,
+      callId: null,
+      tool: null,
+      content: "Request timed out, retrying (1/10)",
+      input: { kind: "retry", attempt: 1, maxRetries: 10 },
+      output: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const states = { a: run("a", "s1", "ag1", "running", { timelineItem: item }) };
+    expect(retryItemFromRun(states, "a")).toBe(item);
+    expect(retryItemFromRun(states, "missing")).toBeNull();
   });
 });
 
