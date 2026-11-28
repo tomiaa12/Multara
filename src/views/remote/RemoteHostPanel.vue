@@ -9,6 +9,8 @@ import UiSwitch from "../../components/ui/UiSwitch.vue";
 import { showToast } from "../../components/ui/toast";
 import { t } from "../../i18n";
 import * as remoteApi from "../../services/remote-backend";
+import RemoteConnectionLog from "./RemoteConnectionLog.vue";
+import RemoteHostNetworks from "./RemoteHostNetworks.vue";
 
 const SECOND_MS = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -93,68 +95,63 @@ onBeforeUnmount(() => window.clearInterval(timer));
 </script>
 
 <template>
-  <section v-if="status" class="panel remote-host">
-    <div class="remote-row">
-      <div class="grow">
-        <strong>{{ t("remote.hostMode.title") }}</strong>
-        <small>{{ status.running ? t("remote.hostMode.running") : t("remote.hostMode.off") }}</small>
+  <div v-if="status" class="remote-host-stack">
+    <section class="settings-card">
+      <div class="settings-row">
+        <div>
+          <strong>{{ t("remote.hostMode.title") }}</strong>
+          <p>{{ t("remote.hostMode.firewallHint") }}</p>
+        </div>
+        <UiSwitch :model-value="status.enabled" :busy="busy" :label="t('remote.hostMode.title')" @update:model-value="setEnabled" />
       </div>
-      <UiSwitch :model-value="status.enabled" :busy="busy" :label="t('remote.hostMode.title')" @update:model-value="setEnabled" />
-    </div>
-    <p class="remote-hint">{{ t("remote.hostMode.firewallHint") }}</p>
-    <p v-if="status.error || error" class="form-error">{{ status.error || error }}</p>
-    <dl class="remote-facts">
-      <dt>{{ t("remote.hostMode.port") }}</dt>
-      <dd>
+      <p v-if="status.error || error" class="settings-hint form-error">{{ status.error || error }}</p>
+      <div class="settings-row">
+        <div><strong>{{ t("remote.hostMode.port") }}</strong></div>
         <UiInput v-model="port" class="remote-port" inputmode="numeric" :aria-label="t('remote.hostMode.port')" @change="savePort" @keydown.enter="savePort" />
-      </dd>
-      <dt>{{ t("remote.hostMode.addresses") }}</dt>
-      <dd>
-        <code v-for="address in status.addresses" :key="address">{{ address }}:{{ status.port }}</code>
-        <span v-if="!status.addresses.length" class="remote-hint">{{ t("remote.hostMode.noAddress") }}</span>
-      </dd>
-      <dt>{{ t("remote.hostMode.fingerprint") }}</dt>
-      <dd><code class="remote-fp">{{ formatFingerprint(status.fingerprint) }}</code></dd>
-    </dl>
-  </section>
+      </div>
+      <RemoteHostNetworks :status="status" @update="apply" @error="error = $event" />
+      <div class="settings-row settings-row-start">
+        <div><strong>{{ t("remote.hostMode.fingerprint") }}</strong></div>
+        <code class="remote-fp">{{ formatFingerprint(status.fingerprint) }}</code>
+      </div>
+    </section>
 
-  <section v-if="status?.running" class="panel remote-host">
-    <div class="remote-row">
-      <div class="grow">
-        <strong>{{ t("remote.pairing.title") }}</strong>
-        <small>{{ t("remote.pairing.hint") }}</small>
+    <section v-if="status.running" class="settings-card">
+      <div class="settings-row">
+        <div>
+          <strong>{{ t("remote.pairing.title") }}</strong>
+          <p>{{ t("remote.pairing.hint") }}</p>
+        </div>
+        <UiButton v-if="!pairing" variant="primary" @click="createCode"><KeyRound :size="16" /> {{ t("remote.pairing.create") }}</UiButton>
+        <UiButton v-else variant="ghost" size="icon" :tip="t('common.cancel')" @click="cancelCode"><X :size="16" /></UiButton>
       </div>
-      <UiButton v-if="!pairing" variant="primary" @click="createCode"><KeyRound :size="16" /> {{ t("remote.pairing.create") }}</UiButton>
-      <UiButton v-else variant="ghost" size="icon" :tip="t('common.cancel')" @click="cancelCode"><X :size="16" /></UiButton>
-    </div>
-    <div v-if="pairing" class="remote-pairing">
-      <!-- 二维码 SVG 由本机后端生成 -->
-      <div class="remote-qr" v-html="pairing.qrSvg" />
-      <div class="remote-pairing-info">
-        <code class="remote-code">{{ pairing.code }}</code>
-        <span class="remote-hint">{{ t("remote.pairing.expiresIn", { time: remainingLabel }) }}</span>
-        <UiButton size="small" @click="copy(pairing.link)"><Copy :size="14" /> {{ t("remote.pairing.copyLink") }}</UiButton>
+      <div v-if="pairing" class="settings-row settings-row-stack">
+        <!-- 二维码 SVG 由本机后端生成 -->
+        <div class="remote-pairing">
+          <div class="remote-qr" v-html="pairing.qrSvg" />
+          <div class="remote-pairing-info">
+            <code class="remote-code">{{ pairing.code }}</code>
+            <span class="remote-muted">{{ t("remote.pairing.expiresIn", { time: remainingLabel }) }}</span>
+            <UiButton size="small" @click="copy(pairing.link)"><Copy :size="14" /> {{ t("remote.pairing.copyLink") }}</UiButton>
+          </div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
+
+    <RemoteConnectionLog v-if="status.running" />
+  </div>
 </template>
 
 <style scoped>
-.remote-host { display: grid; gap: 12px; }
-.remote-row { display: flex; align-items: center; gap: 12px; }
-.grow { display: grid; flex: 1; min-width: 0; gap: 2px; }
-.grow small, .remote-hint { color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
-.remote-hint { margin: 0; line-height: 1.6; }
-.remote-facts { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: center; margin: 0; }
-.remote-facts dt { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.remote-facts dd { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
-.remote-facts code, .remote-code { font-family: var(--font-family-mono); }
-.remote-fp { overflow-wrap: anywhere; }
+.remote-host-stack { display: grid; gap: var(--spacing-4); }
 .remote-port { width: 120px; }
+.remote-code, .remote-fp { font-family: var(--font-family-mono); }
+.remote-fp { overflow-wrap: anywhere; text-align: right; }
+.remote-muted { color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
 .remote-pairing { display: flex; gap: 20px; align-items: center; }
 .remote-qr { flex: none; width: 168px; height: 168px; padding: 8px; border-radius: var(--radius-lg); background: #fff; }
 .remote-qr :deep(svg) { width: 100%; height: 100%; }
 .remote-pairing-info { display: grid; gap: 10px; justify-items: start; }
 .remote-code { font-size: 28px; letter-spacing: 4px; color: var(--color-text-strong); }
-.form-error { margin: 0; color: var(--color-error); font-size: var(--font-size-sm); }
+.form-error { color: var(--color-error); }
 </style>

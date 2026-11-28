@@ -234,6 +234,7 @@ fn revoked_device(device_id: &str) -> DeviceCtx {
             project_ids: Vec::new(),
             agent_ids: Vec::new(),
             device_count: 0,
+            pages: Vec::new(),
         },
     }
 }

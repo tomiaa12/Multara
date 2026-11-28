@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { Pencil, Plus, Trash2 } from "@lucide/vue";
-import type { RemoteGroup } from "../../domain/remote";
+import { REMOTE_PAGES, type RemoteGroup } from "../../domain/remote";
 import { roleLabel } from "../../components/remote/remote-labels";
 import { confirmDialog } from "../../components/ui/confirm-dialog";
 import UiButton from "../../components/ui/UiButton.vue";
@@ -26,6 +26,7 @@ function blankGroup(): RemoteGroup {
     requireApproval: false,
     maxRunning: DEFAULT_MAX_RUNNING,
     isDefault: false,
+    pages: [...REMOTE_PAGES],
     projectIds: [],
     agentIds: [],
     deviceCount: 0,

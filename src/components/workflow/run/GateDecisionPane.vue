@@ -7,6 +7,7 @@ import * as backend from "../../../services/backend";
 import type { ChatMessage } from "../../../domain/types";
 import { defaultGateDecisions, type GateConfig, type NodeRun, type RunDetail } from "../../../domain/workflow";
 import { useAppStore } from "../../../stores/app";
+import { useRemoteStore } from "../../../stores/remote";
 import ChatMessageItem from "../../ChatMessageItem.vue";
 import MarkdownPreview from "../../workbench/MarkdownPreview.vue";
 import { gateActionsFromText, stripGateActions } from "./gate-actions";
@@ -16,6 +17,7 @@ import ValueViewer from "./ValueViewer.vue";
 const props = defineProps<{ detail: RunDetail; nodeRun: NodeRun }>();
 const router = useRouter();
 const store = useAppStore();
+const remote = useRemoteStore();
 
 interface FormField { key: string; type: string; title: string; options: string[]; required: boolean }
 
@@ -269,13 +271,15 @@ function openDiff(projectId: string) {
           <UiTextarea v-model="followup" :rows="2" :placeholder="t('workflow.gate.followupPlaceholder')" />
           <UiButton size="small" :disabled="!followup.trim() || followBusy" @click="sendFollowup">{{ followBusy ? t("workflow.gate.waiting") : t("workflow.gate.followupSend") }}</UiButton>
         </label>
-        <UiButton
-          v-for="decision in buttons"
-          :key="decision.id"
-          :variant="decision.primary ? 'primary' : 'default'"
-          :disabled="busy"
-          @click="decide(decision.id, decision.requireComment)"
-        >{{ decision.label }}</UiButton>
+        <template v-if="!remote.isRemote">
+          <UiButton
+            v-for="decision in buttons"
+            :key="decision.id"
+            :variant="decision.primary ? 'primary' : 'default'"
+            :disabled="busy"
+            @click="decide(decision.id, decision.requireComment)"
+          >{{ decision.label }}</UiButton>
+        </template>
         <UiButton v-for="slot in slotProjects" :key="slot.slotKey" variant="ghost" @click="openDiff(slot.projectId)">
           <GitCompare :size="14" /> {{ t("workflow.gate.viewDiff", { slot: slot.slotKey }) }}
         </UiButton>

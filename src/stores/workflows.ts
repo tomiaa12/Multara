@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { onAppEvent } from "../dev/dev-events";
 import * as backend from "../services/backend";
 import { mergeById } from "./merge-by-id";
 import { remapClipboard } from "../domain/workflow-graph";
@@ -491,9 +492,9 @@ export const useWorkflowsStore = defineStore("workflows", () => {
     if (subscribers > 1) return;
     try {
       const handlers = await Promise.all([
-        listen<{ runId: string; workflowId: string; status: string }>("workflow-run-changed", (event) => onRunChanged(event.payload)),
-        listen<{ runId: string; nodeRunId: string; nodeId: string; status: string }>("workflow-node-changed", (event) => onNodeChanged(event.payload)),
-        listen<{ nodeRunId: string; stream: string; chunk: string }>("workflow-node-log", (event) => onNodeLog(event.payload)),
+        onAppEvent<{ runId: string; workflowId: string; status: string }>("workflow-run-changed", (event) => onRunChanged(event.payload)),
+        onAppEvent<{ runId: string; nodeRunId: string; nodeId: string; status: string }>("workflow-node-changed", (event) => onNodeChanged(event.payload)),
+        onAppEvent<{ nodeRunId: string; stream: string; chunk: string }>("workflow-node-log", (event) => onNodeLog(event.payload)),
       ]);
       if (subscribers === 0) handlers.forEach((fn) => fn());
       else unlisten = handlers;

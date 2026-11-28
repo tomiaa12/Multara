@@ -13,6 +13,7 @@ import { fileToBase64 } from "../utils/file-base64";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
 import { useWorkflowsStore } from "../stores/workflows";
+import { useRemoteStore } from "../stores/remote";
 import { recordComposerRecent } from "../stores/composer-recent-paths";
 import { runStatusTone } from "../components/run-log";
 import {
@@ -35,6 +36,7 @@ const PASTE_MAX_BYTES = 25 * 1024 * 1024;
 
 const store = useAppStore();
 const workflows = useWorkflowsStore();
+const remote = useRemoteStore();
 const showForm = ref(false);
 const busy = ref(false);
 const error = ref("");
@@ -386,7 +388,7 @@ async function toggleHistory(item: Automation, forceOpen = false) {
   }
   try {
     histories[item.id] = await listAutomationRuns(item.id);
-    deliveries[item.id] = item.triggerType === "webhook" ? await listWebhookDeliveries(item.id) : [];
+    deliveries[item.id] = item.triggerType === "webhook" && !remote.isRemote ? await listWebhookDeliveries(item.id) : [];
     expandedId.value = item.id;
   } catch (cause) {
     window.alert(cause instanceof Error ? cause.message : String(cause));
@@ -429,7 +431,7 @@ function toggleWeekday(day: number) {
   <div class="page">
     <div class="page-header">
       <div><h1>{{ t("automation.title") }}</h1><p>{{ t("automation.subtitle") }}</p></div>
-      <div class="header-actions">
+      <div v-if="!remote.isRemote" class="header-actions">
         <UiButton variant="primary" :disabled="!targets.length" @click="edit()"><Plus :size="16" /> {{ t("automation.create") }}</UiButton>
       </div>
     </div>
@@ -461,14 +463,17 @@ function toggleWeekday(day: number) {
               <UiSwitch
                 :model-value="item.enabled"
                 :busy="togglingIds.has(item.id)"
+                :disabled="remote.isRemote"
                 :label="t('automation.enable')"
                 @update:model-value="setEnabled(item, $event)"
               />
             </UiTooltip>
-            <UiButton variant="ghost" size="icon" :tip="t('common.runNow')" :disabled="!item.enabled" @click="run(item)"><Play :size="14" /></UiButton>
+            <UiButton v-if="!remote.isRemote" variant="ghost" size="icon" :tip="t('common.runNow')" :disabled="!item.enabled" @click="run(item)"><Play :size="14" /></UiButton>
             <UiButton variant="ghost" size="small" :tip="t('common.history')" :class="{ active: expandedId === item.id }" @click="toggleHistory(item)"><History :size="14" /><component :is="expandedId === item.id ? ChevronUp : ChevronDown" :size="12" /></UiButton>
-            <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
-            <UiButton variant="ghost" size="icon" class="automation-delete" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+            <template v-if="!remote.isRemote">
+              <UiButton variant="ghost" size="icon" :tip="t('common.edit')" @click="edit(item)"><Pencil :size="14" /></UiButton>
+              <UiButton variant="ghost" size="icon" class="automation-delete" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+            </template>
           </div>
         </div>
         <div v-if="expandedId === item.id" class="automation-history">

@@ -86,8 +86,9 @@ impl ScopeData {
                 Access::Hidden
             };
         }
+        // 主机本机的收件箱、右下角聊天这类无需求会话：远程只读，不能代替主机所有者发言。
         if project_ids.is_empty() {
-            return Access::Hidden;
+            return Access::Read;
         }
         if ctx.role() >= Role::Developer {
             Access::Write
@@ -415,7 +416,20 @@ impl<'a> Filter<'a> {
             });
         }
         if let Some(object) = value.as_object_mut() {
-            object.insert("automations".into(), Value::Array(Vec::new()));
+            let automations = if self.ctx.group.page_visible(super::store::PAGE_AUTOMATION) {
+                object.get_mut("automations").and_then(Value::as_array_mut).map(|items| {
+                    items
+                        .iter_mut()
+                        .filter_map(Value::as_object_mut)
+                        .for_each(|item| {
+                            item.remove("webhookToken");
+                        });
+                    items.clone()
+                })
+            } else {
+                None
+            };
+            object.insert("automations".into(), Value::Array(automations.unwrap_or_default()));
             object.insert("resources".into(), Value::Array(Vec::new()));
             let settings = object
                 .get("settings")

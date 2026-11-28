@@ -5,6 +5,7 @@ import { FolderOpen, MessageSquare, Square } from "@lucide/vue";
 import { t } from "../../../i18n";
 import * as backend from "../../../services/backend";
 import { confirmDialog } from "../../ui/confirm-dialog";
+import { useRemoteStore } from "../../../stores/remote";
 import { isRunTerminal, type RunDetail } from "../../../domain/workflow";
 import { elapsedMs, formatDuration, runStatusLabel, runStatusTone, summarizeInputs, triggerSourceLabel } from "./run-format";
 
@@ -16,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{ "toggle-overview": [] }>();
 
 const router = useRouter();
+const remote = useRemoteStore();
 const now = ref(Date.now());
 const error = ref("");
 const timer = window.setInterval(() => (now.value = Date.now()), 1000);
@@ -68,7 +70,7 @@ function openWorkbench(projectId: string) {
         <FolderOpen :size="14" /> {{ t("workflow.run.openWorkbench", { slot: space.slotKey }) }}
       </UiButton>
       <UiButton v-if="!hideOverview" size="small" :class="{ active: overviewOpen }" @click="emit('toggle-overview')"><MessageSquare :size="14" /> {{ t("workflow.run.overview") }}</UiButton>
-      <UiButton v-if="live" size="small" variant="danger" @click="cancel"><Square :size="13" /> {{ t("workflow.run.cancel") }}</UiButton>
+      <UiButton v-if="live && !remote.isRemote" size="small" variant="danger" @click="cancel"><Square :size="13" /> {{ t("workflow.run.cancel") }}</UiButton>
       <slot name="actions" />
     </div>
   </header>

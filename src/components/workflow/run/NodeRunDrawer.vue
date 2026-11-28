@@ -4,6 +4,7 @@ import { RotateCcw, SkipForward, X } from "@lucide/vue";
 import { t } from "../../../i18n";
 import type { ChatMessage } from "../../../domain/types";
 import * as backend from "../../../services/backend";
+import { useRemoteStore } from "../../../stores/remote";
 import ChatMessageItem from "../../ChatMessageItem.vue";
 import SegmentedTabs, { type SegmentedTab } from "../../ui/SegmentedTabs.vue";
 import {
@@ -18,6 +19,7 @@ import { elapsedMs, formatDuration, nodeStatusLabel, nodeStatusTone, summarizeVa
 
 const props = defineProps<{ detail: RunDetail; nodeId: string }>();
 const emit = defineEmits<{ close: [] }>();
+const remote = useRemoteStore();
 
 const tab = ref("overview");
 const pickedId = ref<string | null>(null);
@@ -36,7 +38,7 @@ const isCurrent = computed(() => selected.value?.id === current.value?.id);
 const usage = computed(() => props.detail.usage?.[props.nodeId]);
 const blockedAgent = computed(() => node.value?.kind === "agent" && selected.value?.status === "waiting_human");
 const confirmTargets = computed(() => {
-  if (!blockedAgent.value || !isCurrent.value) return [];
+  if (!blockedAgent.value || !isCurrent.value || remote.isRemote) return [];
   return props.detail.definition.edges
     .filter((edge) => edge.source === props.nodeId)
     .map((edge) => ({
@@ -89,8 +91,8 @@ function runLabel(item: NodeRun) {
   return t("workflow.drawer.roundLabel", { iteration: item.iteration + 1, attempt: item.attempt });
 }
 
-const canRetry = computed(() => isCurrent.value && ["failed", "cancelled"].includes(selected.value?.status ?? ""));
-const canSkip = computed(() => isCurrent.value && selected.value?.status === "failed");
+const canRetry = computed(() => !remote.isRemote && isCurrent.value && ["failed", "cancelled"].includes(selected.value?.status ?? ""));
+const canSkip = computed(() => !remote.isRemote && isCurrent.value && selected.value?.status === "failed");
 
 function openSkip() {
   skipText.value = selected.value?.content ?? "";

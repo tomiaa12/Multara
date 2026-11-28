@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { onAppEvent } from "../../dev/dev-events";
+import { useRemoteStore } from "../../stores/remote";
 import { GitBranch, Trash2 } from "@lucide/vue";
 import { t } from "../../i18n";
 import * as backend from "../../services/backend";
@@ -21,6 +23,7 @@ import { useWorkflowsStore } from "../../stores/workflows";
 const route = useRoute();
 const router = useRouter();
 const store = useWorkflowsStore();
+const remote = useRemoteStore();
 
 const workflowId = computed(() => String(route.params.workflowId ?? ""));
 const workflow = ref<Workflow | null>(null);
@@ -83,7 +86,7 @@ onMounted(async () => {
   void load();
   tick = window.setInterval(() => (now.value = Date.now()), 1000);
   try {
-    const handler = await listen("workflow-run-changed", () => void load());
+    const handler = await onAppEvent("workflow-run-changed", () => void load());
     if (disposed) handler();
     else unlisten = handler;
   } catch {
@@ -130,7 +133,7 @@ watch([workflowId, status], () => void load());
           <p class="run-inputs">{{ summarizeInputs(run.inputs, 140) }}</p>
           <small v-if="run.error" class="run-err">{{ run.errorCode ? `${run.errorCode}: ` : "" }}{{ run.error }}</small>
         </div>
-        <UiButton v-if="isRunTerminal(run.status)" variant="ghost" size="icon" :tip="t('common.delete')" @click.stop="remove(run)"><Trash2 :size="14" /></UiButton>
+        <UiButton v-if="isRunTerminal(run.status) && !remote.isRemote" variant="ghost" size="icon" :tip="t('common.delete')" @click.stop="remove(run)"><Trash2 :size="14" /></UiButton>
       </article>
     </div>
   </div>

@@ -7,6 +7,7 @@ mod frame;
 mod gateway;
 mod identity;
 mod ipc;
+mod network;
 mod pairing;
 pub mod permission;
 mod rules;

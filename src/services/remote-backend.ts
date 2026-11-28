@@ -4,6 +4,7 @@ import type {
   RemoteApproval,
   RemoteAuditEntry,
   RemoteAuditQuery,
+  RemoteConnectionAttempt,
   RemoteDevice,
   RemoteGroup,
   RemoteHello,
@@ -19,6 +20,10 @@ import type {
 export const hostStatus = () => invoke<RemoteHostStatus>("remote_host_get_status");
 export const setHostEnabled = (enabled: boolean) => invoke<RemoteHostStatus>("remote_host_set_enabled", { enabled });
 export const setHostPort = (port: number) => invoke<RemoteHostStatus>("remote_host_set_port", { port });
+export const setNetworkAllowed = (cidr: string, allowed: boolean) =>
+  invoke<RemoteHostStatus>("remote_host_set_network_allowed", { cidr, allowed });
+export const setAllowOther = (allowed: boolean) => invoke<RemoteHostStatus>("remote_host_set_allow_other", { allowed });
+export const connectionLog = () => invoke<RemoteConnectionAttempt[]>("remote_host_connection_log");
 
 export const createPairingCode = () => invoke<RemotePairingCode>("remote_pairing_create");
 export const cancelPairingCode = () => invoke<void>("remote_pairing_cancel");

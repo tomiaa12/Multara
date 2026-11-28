@@ -13,7 +13,7 @@ use super::{
     permission::DeviceCtx,
     rules::arg,
     scope::{self, Access},
-    server, terminals,
+    server, store, terminals,
 };
 use crate::database::AppState;
 
@@ -25,9 +25,31 @@ const FORWARDED: &[&str] = &[
     "terminal-data",
     "terminal-exit",
     "explorer-fs-changed",
+    "workflow-run-changed",
+    "workflow-node-changed",
+    "workflow-node-log",
 ];
 /// 可见性判定的缓存时长：流式输出时 run-event 很密，不能每条都查库；权限变更最多延迟这么久生效。
 const ACCESS_TTL: Duration = Duration::from_secs(5);
+/// 这些表变化时通知远程界面重新拉取列表。消息和运行过程不在内：它们有 run-event / session-messages-changed，
+/// 放进来会在 Agent 输出时反复整页刷新。
+const WATCHED_TABLES: &[&str] = &[
+    "projects",
+    "workspaces",
+    "agents",
+    "squads",
+    "squad_members",
+    "chat_sessions",
+    "session_projects",
+    "session_workspaces",
+    "tasks",
+    "inbox_items",
+    "merge_sessions",
+    "automations",
+    "automation_triggers",
+];
+const DATA_DEBOUNCE: Duration = Duration::from_millis(300);
+const DATA_CHANGED_EVENT: &str = "remote-data-changed";
 
 #[derive(Hash, PartialEq, Eq)]
 enum Key {
@@ -88,10 +110,42 @@ pub fn install(app: &AppHandle) {
             }
         });
     }
-    let app = app.clone();
+    let forward_app = app.clone();
     let _ = thread::Builder::new()
         .name("multara-remote-events".into())
-        .spawn(move || forward(&app, receiver));
+        .spawn(move || forward(&forward_app, receiver));
+    watch_data(app);
+}
+
+/// 所有写库都走同一个连接，挂 update_hook 就能覆盖本机界面、远程、CLI、IM 渠道等全部来源。
+/// 钩子在持有数据库锁时同步执行，只发信号，不做别的。
+fn watch_data(app: &AppHandle) {
+    let (sender, receiver) = mpsc::channel::<()>();
+    {
+        let state = app.state::<AppState>();
+        let Ok(db) = state.lock_db() else {
+            return;
+        };
+        db.update_hook(Some(move |_: rusqlite::hooks::Action, _: &str, table: &str, _: i64| {
+            if WATCHED_TABLES.contains(&table) {
+                let _ = sender.send(());
+            }
+        }));
+    }
+    let _ = thread::Builder::new()
+        .name("multara-remote-data".into())
+        .spawn(move || {
+            while receiver.recv().is_ok() {
+                thread::sleep(DATA_DEBOUNCE);
+                while receiver.try_recv().is_ok() {}
+                for (_, conn) in server::paired_connections() {
+                    conn.send(Frame::Evt {
+                        event: DATA_CHANGED_EVENT.to_string(),
+                        payload: Value::Null,
+                    });
+                }
+            }
+        });
 }
 
 fn forward(app: &AppHandle, receiver: mpsc::Receiver<(&'static str, String)>) {
@@ -107,6 +161,9 @@ fn forward(app: &AppHandle, receiver: mpsc::Receiver<(&'static str, String)>) {
                     .and_then(terminals::owner)
                     .is_some_and(|owner| owner == device_id),
                 "inbox-changed" => true,
+                "workflow-run-changed" | "workflow-node-changed" | "workflow-node-log" => {
+                    ctx.group.page_visible(store::PAGE_WORKFLOWS)
+                }
                 "explorer-fs-changed" => arg(&payload, "workspaceId").is_some_and(|id| {
                     cache.visible(app, &ctx, Key::Workspace(device_id.clone(), id.to_string()))
                 }),

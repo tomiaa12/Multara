@@ -38,9 +38,27 @@ export type RemoteHostStatus = {
   running: boolean;
   port: number;
   addresses: string[];
+  networks: RemoteLocalNetwork[];
+  allowOther: boolean;
   fingerprint: string;
   fingerprintShort: string;
   error?: string | null;
+};
+
+export type RemoteLocalNetwork = {
+  interface: string;
+  address: string;
+  cidr: string;
+  allowed: boolean;
+};
+
+export type RemoteConnectionAttempt = {
+  at: string;
+  ip: string;
+  /** 命中的本机网段；null 表示其他来源 */
+  cidr: string | null;
+  allowed: boolean;
+  device: string | null;
 };
 
 export type RemotePairingCode = {
@@ -59,6 +77,10 @@ export type RemotePendingPairing = {
   address: string;
 };
 
+/** 分组可单独开放的只读页面，值与路由路径同名 */
+export const REMOTE_PAGES = ["workflows", "automation", "stats"] as const;
+export type RemotePage = (typeof REMOTE_PAGES)[number];
+
 export type RemoteGroup = {
   id: string;
   name: string;
@@ -69,6 +91,8 @@ export type RemoteGroup = {
   requireApproval: boolean;
   maxRunning: number;
   isDefault: boolean;
+  /** 允许只读查看的主机配置页面 */
+  pages: RemotePage[];
   projectIds: string[];
   agentIds: string[];
   deviceCount: number;
@@ -172,6 +196,7 @@ export type RemoteHello = {
     shareInGroup: boolean;
     requireApproval: boolean;
     maxRunning: number;
+    pages?: RemotePage[];
   };
   perms: string[];
 };

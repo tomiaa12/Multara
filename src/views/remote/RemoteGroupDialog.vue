@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive } from "vue";
 import { AlertTriangle, X } from "@lucide/vue";
-import { REMOTE_ROLES, type RemoteGroup } from "../../domain/remote";
+import { REMOTE_PAGES, REMOTE_ROLES, type RemoteGroup } from "../../domain/remote";
 import { roleLabel } from "../../components/remote/remote-labels";
 import UiButton from "../../components/ui/UiButton.vue";
 import UiInput from "../../components/ui/UiInput.vue";
@@ -20,7 +20,12 @@ const props = defineProps<{ group: RemoteGroup }>();
 const emit = defineEmits<{ close: []; save: [group: RemoteGroup] }>();
 
 const store = useAppStore();
-const form = reactive<RemoteGroup>({ ...props.group, projectIds: [...props.group.projectIds], agentIds: [...props.group.agentIds] });
+const form = reactive<RemoteGroup>({
+  ...props.group,
+  projectIds: [...props.group.projectIds],
+  agentIds: [...props.group.agentIds],
+  pages: [...(props.group.pages ?? [])],
+});
 
 const roleOptions = REMOTE_ROLES.map((role) => ({ value: role, label: roleLabel(role) }));
 const projectOptions = computed(() =>
@@ -85,6 +90,13 @@ function submit() {
             :options="agentOptions"
             @update:model-value="form.agentIds = ids($event)"
           />
+        </section>
+        <section>
+          <h3>{{ t("remote.group.pages") }}</h3>
+          <label v-for="page in REMOTE_PAGES" :key="page" class="check-row">
+            <input v-model="form.pages" class="ui-checkbox" type="checkbox" :value="page" /> <span>{{ t(`nav.${page}`) }}</span>
+          </label>
+          <small class="remote-hint">{{ t("remote.group.pagesHint") }}</small>
         </section>
         <section>
           <h3>{{ t("remote.group.rules") }}</h3>

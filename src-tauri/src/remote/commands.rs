@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::{
     client, gateway,
     frame::RemoteError,
-    identity, pairing,
+    identity, network, pairing,
     server::{self, HostStatus},
     store, terminals,
 };
@@ -75,6 +75,39 @@ pub async fn remote_host_set_port(port: u16, app: AppHandle) -> Result<HostStatu
         server::status(app)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn remote_host_set_network_allowed(cidr: String, allowed: bool, app: AppHandle) -> Result<HostStatus, String> {
+    off_main(app, move |app| {
+        {
+            let state = app.state::<AppState>();
+            let db = state.lock_db()?;
+            network::set_network_allowed(&db, &cidr, allowed)?;
+        }
+        server::disconnect_disallowed(app);
+        server::status(app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remote_host_set_allow_other(allowed: bool, app: AppHandle) -> Result<HostStatus, String> {
+    off_main(app, move |app| {
+        {
+            let state = app.state::<AppState>();
+            let db = state.lock_db()?;
+            network::set_allow_other(&db, allowed)?;
+        }
+        server::disconnect_disallowed(app);
+        server::status(app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn remote_host_connection_log() -> Vec<network::ConnectionAttempt> {
+    network::connection_log()
 }
 
 #[tauri::command]

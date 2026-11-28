@@ -5,6 +5,7 @@ import { BarChart3, RefreshCw } from "@lucide/vue";
 import type { RunStatistics, StatisticGroup, UsageDay } from "../domain/types";
 import { getRunStatistics } from "../services/backend";
 import { useAppStore } from "../stores/app";
+import { useRemoteStore } from "../stores/remote";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import ProviderLogo from "../components/ProviderLogo.vue";
 import { useRouter } from "vue-router";
@@ -26,6 +27,7 @@ const RANGES = computed(() => [
 ]);
 
 const store = useAppStore();
+const remote = useRemoteStore();
 /** 统计按 runtime id 分组；显示时换成运行时名称和品牌图标。已删除的运行时退回 id 本身。 */
 const runtimesById = computed(() => new Map((store.data?.runtimes ?? []).map((item) => [item.id, item])));
 function runtimeDisplay(id: string) {
@@ -50,10 +52,13 @@ const updatedAt = ref("");
 const timezone = computed(() => Intl.DateTimeFormat().resolvedOptions().timeZone || t("stats.localTime"));
 const days = computed(() => Number(range.value) || 30);
 const projects = computed(() => store.data?.projects ?? []);
+/** 远程分组只授权了部分需求时，主机拒绝汇总全部需求，只能按单个需求看。 */
+const scopedRemote = computed(() => remote.isRemote && !remote.me?.group.allProjects);
 const projectOptions = computed(() => [
-  { value: "", label: t("stats.projectAll") },
+  ...(scopedRemote.value ? [] : [{ value: "", label: t("stats.projectAll") }]),
   ...projects.value.map((project) => ({ value: project.id, label: project.name })),
 ]);
+if (scopedRemote.value) projectId.value = projects.value[0]?.id ?? "";
 
 function allowedDims(value: number): Array<"daily" | "weekly"> {
   // 短窗口按天才看得清；180 天只按周，避免一根柱子挤成一条线。

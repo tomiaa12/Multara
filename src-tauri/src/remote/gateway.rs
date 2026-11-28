@@ -207,6 +207,7 @@ fn hello(ctx: &DeviceCtx) -> Value {
             "shareInGroup": ctx.group.share_in_group,
             "requireApproval": ctx.group.require_approval,
             "maxRunning": ctx.group.max_running,
+            "pages": ctx.group.pages,
         },
         "perms": ctx.perms(),
     })

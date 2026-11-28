@@ -78,6 +78,18 @@ fn not_found() -> RemoteError {
     RemoteError::new("not_found", tr!("资源不存在或无权访问"))
 }
 
+fn not_allowed() -> RemoteError {
+    RemoteError::new("not_allowed", tr!("这个操作不支持远程调用"))
+}
+
+fn page(ctx: &DeviceCtx, page: &str) -> Result<(), RemoteError> {
+    if ctx.group.page_visible(page) {
+        Ok(())
+    } else {
+        Err(not_allowed())
+    }
+}
+
 fn read_only() -> RemoteError {
     RemoteError::new("read_only", tr!("这个会话对你只读"))
 }
@@ -480,7 +492,24 @@ pub fn authorize(db: &Connection, ctx: &DeviceCtx, cmd: &str, args: &Value) -> R
             }
             on(plan(Perm::Terminal, Post::None), "terminal", id)
         }
-        _ => return Err(RemoteError::new("not_allowed", tr!("这个操作不支持远程调用"))),
+        // 主机配置类页面：分组勾选后只读开放，对应的写命令不在白名单里。
+        "list_workflows" | "get_workflow" | "list_workflow_runs" | "get_workflow_run" | "get_workflow_node_values"
+        | "get_workflow_node_log" | "list_workflow_events" | "list_node_templates" | "list_workflow_templates" => {
+            page(ctx, store::PAGE_WORKFLOWS)?;
+            plan(Perm::ProjectRead, Post::None)
+        }
+        "list_automation_runs" => {
+            page(ctx, store::PAGE_AUTOMATION)?;
+            plan(Perm::ProjectRead, Post::None)
+        }
+        "get_run_statistics" => {
+            page(ctx, store::PAGE_STATS)?;
+            if !ctx.group.all_projects {
+                project(db, ctx, required(args, "projectId")?)?;
+            }
+            plan(Perm::ProjectRead, Post::None)
+        }
+        _ => return Err(not_allowed()),
     };
     need(ctx, result.perm)?;
     Ok(result)
@@ -659,6 +688,7 @@ mod tests {
                 project_ids: vec!["p1".into()],
                 agent_ids: Vec::new(),
                 device_count: 2,
+                pages: vec![store::PAGE_WORKFLOWS.into()],
             },
         }
     }
@@ -674,6 +704,27 @@ mod tests {
         let owner = ctx(Role::Owner, false);
         for cmd in ["save_settings", "add_workspace", "save_automation", "read_external_file", "open_external_url"] {
             assert_eq!(code(authorize(&db, &owner, cmd, &json!({}))), "not_allowed", "{cmd}");
+        }
+    }
+
+    #[test]
+    fn pages_are_read_only_and_follow_group_switches() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = database(&dir.path().to_string_lossy());
+        let viewer = ctx(Role::Viewer, false);
+        let args = json!({ "workflowId": "w1", "automationId": "a1" });
+        assert_eq!(code(authorize(&db, &viewer, "list_workflows", &args)), "ok");
+        assert_eq!(code(authorize(&db, &viewer, "get_workflow", &args)), "ok");
+        assert_eq!(code(authorize(&db, &viewer, "list_automation_runs", &args)), "not_allowed");
+        assert_eq!(code(authorize(&db, &viewer, "get_run_statistics", &json!({ "projectId": "p1" }))), "not_allowed");
+        let mut stats = ctx(Role::Viewer, false);
+        stats.group.pages.push(store::PAGE_STATS.into());
+        let statistics = |project: Value| code(authorize(&db, &stats, "get_run_statistics", &json!({ "days": 30, "projectId": project })));
+        assert_eq!(statistics(json!("p1")), "ok");
+        assert_eq!(statistics(json!("p2")), "not_found");
+        assert_eq!(statistics(Value::Null), "bad_args");
+        for cmd in ["save_workflow_draft", "publish_workflow", "start_workflow_run", "save_automation", "run_automation"] {
+            assert_eq!(code(authorize(&db, &ctx(Role::Owner, false), cmd, &args)), "not_allowed", "{cmd}");
         }
     }
 

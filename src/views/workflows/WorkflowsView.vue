@@ -2,8 +2,10 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { Copy, GitBranch, History, LayoutGrid, Plus, RotateCcw, Rows3, Trash2, Upload } from "@lucide/vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { confirmDialog } from "../../components/ui/confirm-dialog";
+import { onAppEvent } from "../../dev/dev-events";
+import { useRemoteStore } from "../../stores/remote";
 import { runStatusLabel, runStatusTone } from "../../components/workflow/run/run-format";
 import { useWorkflowsStore } from "../../stores/workflows";
 import * as backend from "../../services/backend";
@@ -12,6 +14,7 @@ import type { WorkflowSummary } from "../../domain/workflow";
 
 const router = useRouter();
 const store = useWorkflowsStore();
+const remote = useRemoteStore();
 const error = ref("");
 const loading = ref(true);
 const togglingIds = ref(new Set<string>());
@@ -57,7 +60,7 @@ function stopWatchingList() {
 onMounted(async () => {
   await refresh();
   try {
-    unlisten = await listen("workflow-run-changed", () => void store.loadList().catch(() => undefined));
+    unlisten = await onAppEvent("workflow-run-changed", () => void store.loadList().catch(() => undefined));
   } catch {
     // 浏览器预览没有事件总线
   }
@@ -200,11 +203,13 @@ function formatTime(value: string | null) {
             <LayoutGrid :size="14" /> {{ t("workflow.list.viewCard") }}
           </button>
         </div>
-        <UiButton v-if="isDev" :disabled="resetting" @click="resetExamples">
-          <RotateCcw :size="15" /> {{ t("workflow.list.resetExamples") }}
-        </UiButton>
-        <UiButton @click="importFlow"><Upload :size="15" /> {{ t("workflow.list.import") }}</UiButton>
-        <UiButton variant="primary" @click="openCreate"><Plus :size="16" /> {{ t("workflow.list.create") }}</UiButton>
+        <template v-if="!remote.isRemote">
+          <UiButton v-if="isDev" :disabled="resetting" @click="resetExamples">
+            <RotateCcw :size="15" /> {{ t("workflow.list.resetExamples") }}
+          </UiButton>
+          <UiButton @click="importFlow"><Upload :size="15" /> {{ t("workflow.list.import") }}</UiButton>
+          <UiButton variant="primary" @click="openCreate"><Plus :size="16" /> {{ t("workflow.list.create") }}</UiButton>
+        </template>
       </div>
     </div>
 
@@ -216,7 +221,12 @@ function formatTime(value: string | null) {
       <p>{{ t("workflow.list.emptyHint") }}</p>
     </section>
     <div v-else class="wf-list" :class="listView === 'card' ? 'is-cards' : 'is-list'">
-      <article v-for="item in store.list" :key="item.id" class="list-card wf-card" @click="router.push(`/workflows/${item.id}`)">
+      <article
+        v-for="item in store.list"
+        :key="item.id"
+        class="list-card wf-card"
+        @click="router.push(remote.isRemote ? `/workflows/${item.id}/runs` : `/workflows/${item.id}`)"
+      >
         <span class="wf-card-icon"><GitBranch :size="16" /></span>
         <div class="grow">
           <strong>{{ item.name }}</strong>
@@ -237,14 +247,16 @@ function formatTime(value: string | null) {
             <UiSwitch
               :model-value="item.enabled"
               :busy="togglingIds.has(item.id)"
-              :disabled="!item.publishedVersion"
+              :disabled="!item.publishedVersion || remote.isRemote"
               :label="t('workflow.list.enable')"
               @update:model-value="setEnabled(item, $event)"
             />
           </UiTooltip>
           <UiButton variant="ghost" size="icon" :tip="t('workflow.list.runs')" @click="router.push(`/workflows/${item.id}/runs`)"><History :size="14" /></UiButton>
-          <UiButton variant="ghost" size="icon" :tip="t('workflow.list.duplicate')" @click="duplicate(item)"><Copy :size="14" /></UiButton>
-          <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+          <template v-if="!remote.isRemote">
+            <UiButton variant="ghost" size="icon" :tip="t('workflow.list.duplicate')" @click="duplicate(item)"><Copy :size="14" /></UiButton>
+            <UiButton variant="ghost" size="icon" :tip="t('common.delete')" @click="remove(item)"><Trash2 :size="14" /></UiButton>
+          </template>
         </div>
       </article>
     </div>

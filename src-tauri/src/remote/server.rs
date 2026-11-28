@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
+    net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc::{self, Sender},
@@ -16,7 +16,9 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::{
     frame::{self, Frame, RemoteError},
-    gateway, identity, store, tls,
+    gateway, identity,
+    network::{self, LocalNetwork},
+    store, tls,
 };
 use crate::database::AppState;
 
@@ -85,7 +87,10 @@ pub struct HostStatus {
     pub enabled: bool,
     pub running: bool,
     pub port: u16,
+    /// 已放行网段上的本机地址，配对码用第一个。
     pub addresses: Vec<String>,
+    pub networks: Vec<LocalNetwork>,
+    pub allow_other: bool,
     pub fingerprint: String,
     pub fingerprint_short: String,
     pub error: Option<String>,
@@ -144,18 +149,20 @@ pub fn disconnect_device(device_id: &str) {
         .for_each(|conn| conn.stop.store(true, Ordering::SeqCst));
 }
 
-/// 本机局域网地址：向外部地址"连接"UDP 套接字只会选路由，不会发包。
-pub fn lan_addresses() -> Vec<String> {
-    UdpSocket::bind("0.0.0.0:0")
-        .and_then(|socket| {
-            socket.connect("10.255.255.255:1")?;
-            socket.local_addr()
+/// 网段开关变化后，断开来源已不被放行的连接。
+pub fn disconnect_disallowed(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.lock_db() else {
+        return;
+    };
+    conns()
+        .values()
+        .filter(|conn| {
+            conn.address
+                .parse::<SocketAddr>()
+                .is_ok_and(|addr| !network::check(&db, addr.ip()).0)
         })
-        .ok()
-        .map(|addr| addr.ip())
-        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified())
-        .map(|ip| vec![ip.to_string()])
-        .unwrap_or_default()
+        .for_each(|conn| conn.stop.store(true, Ordering::SeqCst));
 }
 
 pub fn app_data(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -165,16 +172,27 @@ pub fn app_data(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 pub fn status(app: &AppHandle) -> Result<HostStatus, String> {
     let identity = identity::load_or_create(&app_data(app)?)?;
     let state = app.state::<AppState>();
-    let (enabled, configured_port) = {
+    let (enabled, configured_port, networks, allow_other) = {
         let db = state.lock_db()?;
-        (store::host_enabled(&db), store::host_port(&db))
+        (
+            store::host_enabled(&db),
+            store::host_port(&db),
+            network::local_networks(&db),
+            network::allow_other(&db),
+        )
     };
     let running_port = listener_slot().as_ref().map(|listener| listener.port);
     Ok(HostStatus {
         enabled,
         running: running_port.is_some(),
         port: running_port.unwrap_or(configured_port),
-        addresses: lan_addresses(),
+        addresses: networks
+            .iter()
+            .filter(|network| network.allowed)
+            .map(|network| network.address.clone())
+            .collect(),
+        networks,
+        allow_other,
         fingerprint_short: identity::short_fingerprint(&identity.fingerprint),
         fingerprint: identity.fingerprint,
         error: last_error().clone(),
@@ -238,12 +256,23 @@ fn accept_loop(app: AppHandle, socket: TcpListener, config: Arc<ServerConfig>, s
     while !stop.load(Ordering::SeqCst) {
         match socket.accept() {
             Ok((stream, addr)) => {
+                let (allowed, cidr) = app
+                    .state::<AppState>()
+                    .lock_db()
+                    .map(|db| network::check(&db, addr.ip()))
+                    .unwrap_or((false, None));
+                if !allowed {
+                    drop(stream);
+                    network::record(addr.ip(), cidr, false, None);
+                    let _ = app.emit(network::CONNECTIONS_CHANGED_EVENT, ());
+                    continue;
+                }
                 let app = app.clone();
                 let config = Arc::clone(&config);
                 let _ = thread::Builder::new()
                     .name("multara-remote-conn".into())
                     .spawn(move || {
-                        if let Err(error) = handle_connection(&app, stream, addr, config) {
+                        if let Err(error) = handle_connection(&app, stream, addr, cidr, config) {
                             crate::diag::write(&format!("remote connection {addr} ended: {error}"));
                         }
                     });
@@ -268,6 +297,7 @@ fn handle_connection(
     app: &AppHandle,
     mut tcp: TcpStream,
     addr: SocketAddr,
+    cidr: Option<String>,
     config: Arc<ServerConfig>,
 ) -> Result<(), String> {
     tcp.set_nonblocking(false).map_err(|error| error.to_string())?;
@@ -292,6 +322,8 @@ fn handle_connection(
     if device.is_none() && unpaired_count(&addr.ip().to_string()) >= MAX_UNPAIRED_PER_IP {
         return Err("too many unpaired connections".into());
     }
+    network::record(addr.ip(), cidr, true, device.as_ref().map(|device| device.name.clone()));
+    let _ = app.emit(network::CONNECTIONS_CHANGED_EVENT, ());
     tcp.set_read_timeout(Some(frame::READ_POLL)).map_err(|error| error.to_string())?;
     let (sender, outbound) = mpsc::channel();
     let conn = Arc::new(Conn {

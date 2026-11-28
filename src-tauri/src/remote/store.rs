@@ -8,6 +8,12 @@ pub const DEFAULT_GROUP_ID: &str = "remote-default";
 pub const HOST_ENABLED_KEY: &str = "remoteHostEnabled";
 pub const HOST_PORT_KEY: &str = "remoteHostPort";
 pub const DEFAULT_PORT: u16 = 43130;
+/// 分组可单独开关的只读页面；需求、收件箱、任务等核心页面由权限控制，不在这里。
+pub const PAGE_WORKFLOWS: &str = "workflows";
+pub const PAGE_AUTOMATION: &str = "automation";
+pub const PAGE_STATS: &str = "stats";
+const PAGES: &[&str] = &[PAGE_WORKFLOWS, PAGE_AUTOMATION, PAGE_STATS];
+const PAGES_DEFAULT: &str = "workflows,automation,stats";
 const AUDIT_RETENTION_DAYS: i64 = 90;
 const AUDIT_MAX_ROWS: i64 = 200_000;
 
@@ -94,9 +100,51 @@ pub fn migrate(db: &Connection) -> rusqlite::Result<()> {
         ",
     )?;
     db.execute(
-        "INSERT OR IGNORE INTO remote_groups (id, name, role, is_default, created_at)
-         VALUES (?1, ?2, 'viewer', 1, ?3)",
+        "INSERT OR IGNORE INTO remote_groups (id, name, role, all_projects, is_default, created_at)
+         VALUES (?1, ?2, 'viewer', 1, 1, ?3)",
         params![DEFAULT_GROUP_ID, tr!("仅查看"), now()],
+    )?;
+    let has_pages = db
+        .prepare("SELECT 1 FROM pragma_table_info('remote_groups') WHERE name='pages'")?
+        .exists([])?;
+    if !has_pages {
+        db.execute(
+            &format!("ALTER TABLE remote_groups ADD COLUMN pages TEXT NOT NULL DEFAULT '{PAGES_DEFAULT}'"),
+            [],
+        )?;
+    }
+    seed_preset_groups(db)
+}
+
+const PRESETS_SEEDED_KEY: &str = "remoteGroupPresetsSeeded";
+
+/// 只执行一次：默认分组没勾过需求时改为全部需求，并补上执行者 / 开发者 / 管理员三个预设分组。
+/// 之后用户删改分组不会被还原。
+fn seed_preset_groups(db: &Connection) -> rusqlite::Result<()> {
+    if setting(db, PRESETS_SEEDED_KEY).is_some() {
+        return Ok(());
+    }
+    db.execute(
+        "UPDATE remote_groups SET all_projects=1
+         WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM remote_group_projects WHERE group_id=?1)",
+        [DEFAULT_GROUP_ID],
+    )?;
+    let presets = [
+        ("remote-preset-runner", tr!("执行者"), Role::Runner),
+        ("remote-preset-developer", tr!("开发者"), Role::Developer),
+        ("remote-preset-owner", tr!("管理员"), Role::Owner),
+    ];
+    for (id, name, role) in presets {
+        db.execute(
+            "INSERT OR IGNORE INTO remote_groups (id, name, role, all_projects, created_at)
+             VALUES (?1, ?2, ?3, 1, ?4)",
+            params![id, name, role.as_str(), now()],
+        )?;
+    }
+    db.execute(
+        "INSERT INTO app_settings (key, value) VALUES (?1, 'true')
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [PRESETS_SEEDED_KEY],
     )?;
     Ok(())
 }
@@ -127,6 +175,15 @@ pub struct Group {
     pub agent_ids: Vec<String>,
     #[serde(default)]
     pub device_count: u32,
+    /// 允许查看的只读页面（`PAGES` 里的键）。
+    #[serde(default)]
+    pub pages: Vec<String>,
+}
+
+impl Group {
+    pub fn page_visible(&self, page: &str) -> bool {
+        self.pages.iter().any(|item| item == page)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -179,12 +236,18 @@ fn read_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<Group> {
         project_ids: Vec::new(),
         agent_ids: Vec::new(),
         device_count: row.get::<_, i64>(9)?.max(0) as u32,
+        pages: row
+            .get::<_, String>(10)?
+            .split(',')
+            .filter(|page| PAGES.contains(page))
+            .map(str::to_string)
+            .collect(),
     })
 }
 
 const GROUP_COLUMNS: &str = "g.id, g.name, g.role, g.all_projects, g.all_agents, g.share_in_group,
     g.require_approval, g.max_running, g.is_default,
-    (SELECT COUNT(*) FROM remote_devices d WHERE d.group_id = g.id)";
+    (SELECT COUNT(*) FROM remote_devices d WHERE d.group_id = g.id), g.pages";
 
 fn fill_group(db: &Connection, mut group: Group) -> Result<Group, String> {
     group.project_ids = ids(
@@ -250,12 +313,13 @@ pub fn save_group(db: &Connection, input: &Group) -> Result<Group, String> {
     let tx = db.unchecked_transaction().map_err(err)?;
     tx.execute(
         "INSERT INTO remote_groups
-           (id, name, role, all_projects, all_agents, share_in_group, require_approval, max_running, is_default, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)
+           (id, name, role, all_projects, all_agents, share_in_group, require_approval, max_running, is_default, created_at, pages)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET
            name=excluded.name, role=excluded.role, all_projects=excluded.all_projects,
            all_agents=excluded.all_agents, share_in_group=excluded.share_in_group,
-           require_approval=excluded.require_approval, max_running=excluded.max_running",
+           require_approval=excluded.require_approval, max_running=excluded.max_running,
+           pages=excluded.pages",
         params![
             id,
             name,
@@ -266,6 +330,12 @@ pub fn save_group(db: &Connection, input: &Group) -> Result<Group, String> {
             input.require_approval as i64,
             input.max_running.clamp(1, 6) as i64,
             now(),
+            PAGES
+                .iter()
+                .filter(|page| input.page_visible(page))
+                .copied()
+                .collect::<Vec<_>>()
+                .join(","),
         ],
     )
     .map_err(err)?;

@@ -1043,6 +1043,23 @@ export const useAppStore = defineStore("app", () => {
     data.value.workspaces = mergeById(data.value.workspaces, next.workspaces);
   }
 
+  /** 远程模式：主机端数据变化后重新拉一次列表；运行中的状态和消息另有事件推送，这里不碰。 */
+  async function syncFromHost() {
+    if (!data.value) return;
+    const next = await backend.bootstrap();
+    if (!data.value) return;
+    data.value.projects = mergeById(data.value.projects, next.projects);
+    data.value.workspaces = mergeById(data.value.workspaces, next.workspaces);
+    data.value.agents = mergeById(data.value.agents, next.agents);
+    data.value.squads = mergeById(data.value.squads, next.squads);
+    data.value.sessions = mergeById(data.value.sessions, next.sessions);
+    data.value.tasks = mergeById(data.value.tasks, next.tasks);
+    data.value.inbox = mergeById(data.value.inbox, next.inbox);
+    data.value.automations = mergeById(data.value.automations, next.automations);
+    data.value.mergeSessions = next.mergeSessions;
+    data.value.stats = next.stats;
+  }
+
   /** CLI（如对话里 `multara agent create`）只写库，需主动拉回前端缓存。 */
   function refreshAgentsAndSquads(): Promise<void> {
     agentsRefresh ??= new Promise<void>((resolve, reject) => {
@@ -2241,6 +2258,7 @@ export const useAppStore = defineStore("app", () => {
     deleteCustomRuntime,
     refreshResources,
     refreshAgentsAndSquads,
+    syncFromHost,
     transferResource,
     createSkill,
     generateSkill,

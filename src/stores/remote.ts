@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
-import type { RemoteConnState, RemoteHello, RemoteHost, RemoteHostConnStatus, RemotePerm } from "../domain/remote";
+import type { RemoteConnState, RemoteHello, RemoteHost, RemoteHostConnStatus, RemotePage, RemotePerm } from "../domain/remote";
 import { permLabel, roleLabel } from "../components/remote/remote-labels";
 import { showToast } from "../components/ui/toast";
 import { onAppEvent } from "../dev/dev-events";
@@ -10,6 +10,7 @@ import { notifyDesktop } from "../utils/desktop-notify";
 import { inTauri } from "../services/dev-backend";
 import * as remote from "../services/remote-backend";
 import { remoteHostId } from "../services/remote-target";
+import { useAppStore } from "./app";
 
 const ONLINE: RemoteConnState = "online";
 const PENDING = "pending";
@@ -38,6 +39,11 @@ export const useRemoteStore = defineStore("remote", () => {
   /** 只用于界面提示；真正的校验在主机端。 */
   function can(perm: RemotePerm) {
     return !isRemote || Boolean(me.value?.perms.includes(perm));
+  }
+
+  /** 主机配置类页面（工作流、自动化、统计）是否对当前分组开放；开放后也只读。 */
+  function pageVisible(page: RemotePage) {
+    return !isRemote || Boolean(me.value?.group.pages?.includes(page));
   }
 
   /** 远程模式下按钮是否要锁住：断线时写操作一律锁，角色不足时锁对应权限。 */
@@ -104,6 +110,9 @@ export const useRemoteStore = defineStore("remote", () => {
     void listen<RemoteHostConnStatus>("remote-host-status", ({ payload }) => onHostStatus(payload));
     if (isRemote) {
       void onAppEvent("remote-permissions-changed", () => window.location.reload());
+      void onAppEvent("remote-data-changed", () => {
+        void useAppStore().syncFromHost().catch((cause) => console.error("[remote] sync failed", cause));
+      });
       return;
     }
     for (const event of HOST_PENDING_EVENTS) void listen(event, () => void loadPending());
@@ -119,6 +128,7 @@ export const useRemoteStore = defineStore("remote", () => {
     connState,
     requesting,
     can,
+    pageVisible,
     locked,
     lockTip,
     openRequest,

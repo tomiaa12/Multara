@@ -87,6 +87,7 @@ import RemoteHostSwitcher from "./components/remote/RemoteHostSwitcher.vue";
 import RemotePairingDialog from "./components/remote/RemotePairingDialog.vue";
 import RemoteStatusItem from "./components/remote/RemoteStatusItem.vue";
 import { useRemoteStore } from "./stores/remote";
+import { REMOTE_PAGES } from "./domain/remote";
 
 const store = useAppStore();
 const editorStatus = useEditorStatusStore();
@@ -457,7 +458,12 @@ const primary = computed(() => [
   { to: "/agents", label: t("nav.agents"), icon: Bot },
   { to: "/squads", label: t("nav.squads"), icon: Users },
   { to: "/stats", label: t("nav.stats"), icon: BarChart3 },
-].filter((item) => !remote.isRemote || REMOTE_PRIMARY.has(item.match ?? item.to)));
+].filter(
+  (item) =>
+    !remote.isRemote ||
+    REMOTE_PRIMARY.has(item.match ?? item.to) ||
+    REMOTE_PAGES.some((page) => item.to === `/${page}` && remote.pageVisible(page)),
+));
 
 const inboxUnread = computed(() => unreadTotal(store.data?.inbox ?? []));
 
