@@ -27,6 +27,7 @@ import {
   TERMINAL_SNAPSHOT_LINE_CAP,
 } from "./terminal-selection";
 import { subscribeTerminalOutput, unsubscribeTerminalOutput } from "../../stores/running-terminals";
+import { useRemoteStore } from "../../stores/remote";
 import { ShellIntegration } from "./terminal-shell-integration";
 import { terminalCellSize, terminalScreenElement } from "./terminal-geometry";
 import {
@@ -96,6 +97,7 @@ const emit = defineEmits<{
   runSelection: [];
 }>();
 
+const remote = useRemoteStore();
 const PUBLISH_DELAY_MS = 400;
 const TAB_ICONS = ["terminal", "zap", "beaker", "rocket", "tools", "server", "database", "globe", "debug", "package"];
 const TAB_COLORS = ["", "red", "green", "yellow", "blue", "magenta", "cyan"];
@@ -1421,10 +1423,10 @@ defineExpose({
         <span v-if="!sessions.length" class="bottom-panel-empty">{{ t('terminal.label') }}</span>
       </div>
       <div class="bottom-panel-actions">
-        <UiTooltip :content="newTitle"><button type="button" @click="onNewButton">
+        <UiTooltip :content="remote.lockTip('terminal') || newTitle"><button type="button" :disabled="remote.locked('terminal')" @click="onNewButton">
           <Codicon name="add" :size="16" />
         </button></UiTooltip>
-        <UiTooltip :content="t('terminal.newMenu')"><button type="button" @click="openNewMenu">
+        <UiTooltip :content="t('terminal.newMenu')"><button type="button" :disabled="remote.locked('terminal')" @click="openNewMenu">
           <Codicon name="chevron-down" :size="12" />
         </button></UiTooltip>
         <UiTooltip :content="t('terminal.splitTerminal')"><button type="button" :disabled="!activeId" @click="emit('split')">

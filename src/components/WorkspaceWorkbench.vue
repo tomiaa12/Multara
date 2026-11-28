@@ -170,6 +170,9 @@ import { forgetTerminal, runningTerminals, terminalFocus, trackTerminal } from "
 import { activeTerminalSessionId, terminalSessions } from "../stores/terminal-sessions";
 import { readProjectTerminalOpen, writeProjectTerminalOpen } from "../stores/terminal-layout";
 import { useAppStore } from "../stores/app";
+import { useRemoteStore } from "../stores/remote";
+import { gateMenuItems, type MenuGate } from "./remote/remote-gate";
+import { showToast } from "./ui/toast";
 import { registerSurfaceCtl, type SurfaceCtlPayload, type SurfaceCtlResult } from "../stores/surface-ctl";
 import { useCanvasStore } from "../stores/canvas";
 import UiFrame from "./UiFrame.vue";
@@ -200,6 +203,7 @@ const props = withDefaults(
 
 const route = useRoute();
 const store = useAppStore();
+const remote = useRemoteStore();
 const canvas = useCanvasStore();
 const diffStore = useDiffStore();
 const editorStatus = useEditorStatusStore();
@@ -637,6 +641,23 @@ function entryGitChanges(workspaceId: string, path: string, isDirectory: boolean
   return changes.filter((change) => !prefix || change.path === path || change.path.startsWith(prefix));
 }
 
+const TREE_MENU_GATE: MenuGate = {
+  "new-file": "fileWrite",
+  "new-folder": "fileWrite",
+  paste: "fileWrite",
+  cut: "fileWrite",
+  rename: "fileWrite",
+  delete: "fileDelete",
+  "git-stage": "gitWrite",
+  "git-unstage": "gitWrite",
+  "git-ignore": "fileWrite",
+  "git-discard": "fileDelete",
+  "open-terminal": "terminal",
+  "add-project": null,
+  detach: null,
+  reveal: null,
+  "open-external": null,
+};
 const treeMenuItems = computed<ContextMenuItem[]>(() => {
   const menu = treeMenu.value;
   if (!menu) return [];
@@ -678,7 +699,7 @@ const treeMenuItems = computed<ContextMenuItem[]>(() => {
         ),
       });
     }
-    return items;
+    return gateMenuItems(items, TREE_MENU_GATE, remote);
   }
   const entry = menu.entry;
   const files = targets.filter((item) => !item.isDirectory);
@@ -748,7 +769,7 @@ const treeMenuItems = computed<ContextMenuItem[]>(() => {
     { id: "rename", label: t("workbench.rename"), key: explorerKeys.rename, disabled: multi },
     { id: "delete", label: multi ? t("workbench.deleteMany", { count: targets.length }) : t("common.delete"), key: explorerKeys.delete },
   );
-  return items;
+  return gateMenuItems(items, TREE_MENU_GATE, remote);
 });
 
 function workspaceById(id: string): Workspace | undefined {
@@ -3611,6 +3632,7 @@ async function startTerminal(
   let shell = "";
   let pid = 0;
   try {
+    if (remote.locked("terminal")) throw new Error(remote.lockTip("terminal"));
     const opened = await backend.terminalOpen(cwd, profileId);
     id = opened.id;
     profileId = opened.profileId;
@@ -4262,6 +4284,10 @@ async function openFile(workspaceId: string, entry: FileEntry, pin = false) {
 
 async function saveTab(tab: EditorTab) {
   if (isVirtualTab(tab)) return true;
+  if (remote.locked("fileWrite")) {
+    showToast(remote.lockTip("fileWrite"), "warning");
+    return false;
+  }
   flushActiveEditorTab();
   const isActive = tabKey(tab) === activeEditorKey.value;
   const file = isActive && activeFile.value ? activeFile.value : tab.file;
@@ -6286,7 +6312,8 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :tip="t('workbench.newFile')"
+            :disabled="remote.locked('fileWrite')"
+            :tip="remote.lockTip('fileWrite') || t('workbench.newFile')"
             @click="startCreateInSelection(false)"
           >
             <Codicon name="new-file" />
@@ -6294,7 +6321,8 @@ defineExpose({
           <UiButton
             variant="ghost"
             size="icon"
-            :tip="t('workbench.newFolder')"
+            :disabled="remote.locked('fileWrite')"
+            :tip="remote.lockTip('fileWrite') || t('workbench.newFolder')"
             @click="startCreateInSelection(true)"
           >
             <Codicon name="new-folder" />

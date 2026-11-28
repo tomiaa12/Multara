@@ -3225,6 +3225,7 @@ pub async fn save_settings(
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("builtin-skills");
+    #[cfg(target_os = "macos")]
     let language_changed = settings.contains_key("language");
     let saved = off_main(app.clone(), move |state| {
         let language_changed = settings.contains_key("language");
@@ -4186,6 +4187,7 @@ pub fn create_chat_session(
         default_mode: RunMode::Auto,
         last_run_agent_id: None,
         last_run_at: None,
+        origin_device: None,
     };
     db.execute(
         "INSERT INTO chat_sessions
@@ -4808,7 +4810,7 @@ fn explicit_chat_targets(content: &str) -> Vec<(String, String)> {
 }
 
 /// 消息里 @ 点名的需求（`[实体引用] requirement <id> …`），按出现顺序去重。
-fn referenced_requirement_ids(content: &str) -> Vec<String> {
+pub(crate) fn referenced_requirement_ids(content: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     content
         .lines()
@@ -6687,7 +6689,9 @@ fn list_sessions(db: &Connection) -> Result<Vec<ChatSession>, String> {
                      WHERE session_id = chat_sessions.id
                        AND status IN ('completed', 'failed', 'stopped')
                      ORDER BY COALESCE(completed_at, created_at) DESC, rowid DESC
-                     LIMIT 1)
+                     LIMIT 1),
+                    (SELECT name FROM remote_devices
+                     WHERE 'device:' || remote_devices.id = chat_sessions.origin_principal)
              FROM chat_sessions ORDER BY updated_at DESC",
         )
         .map_err(|error| error.to_string())?;
@@ -6710,6 +6714,7 @@ fn list_sessions(db: &Connection) -> Result<Vec<ChatSession>, String> {
                 default_mode: row.get::<_, String>(7)?.parse().unwrap_or(RunMode::Auto),
                 last_run_agent_id: row.get(8)?,
                 last_run_at: row.get(9)?,
+                origin_device: row.get(10)?,
             })
         })
         .map_err(|error| error.to_string())?

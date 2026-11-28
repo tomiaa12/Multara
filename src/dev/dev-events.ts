@@ -1,4 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
+import { remoteHostId } from "../services/remote-target";
+import type { RemoteEventEnvelope } from "../domain/remote";
 
 const browserDev = import.meta.env.MULTARA_BROWSER_DEV === true;
 
@@ -72,12 +74,34 @@ function ensurePoller() {
   void poll();
 }
 
+let remoteHandlers: Map<string, Set<Handler>> | null = null;
+
+/** 远程模式：主机推来的事件经本机 Tauri 事件 `remote-event` 转发，只分发当前主机的。 */
+function onRemoteEvent(hostId: string, name: string, handler: Handler): () => void {
+  if (!remoteHandlers) {
+    const handlers = new Map<string, Set<Handler>>();
+    remoteHandlers = handlers;
+    void listen<RemoteEventEnvelope>("remote-event", ({ payload }) => {
+      if (payload?.hostId !== hostId) return;
+      handlers.get(payload.event)?.forEach((item) => item({ payload: payload.payload }));
+    });
+  }
+  const set = remoteHandlers.get(name) ?? new Set();
+  set.add(handler);
+  remoteHandlers.set(name, set);
+  return () => set.delete(handler);
+}
+
 /** 桌面里直接听 Tauri。浏览器开发页听桌面窗口转过来的事件。隐藏的浏览器 DEV 窗口自己不处理。 */
 export function onAppEvent<T>(
   name: string,
   handler: (event: { payload: T }) => void,
 ): Promise<() => void> {
   if (browserDevWorker()) return Promise.resolve(() => undefined);
+  const hostId = remoteHostId();
+  if (hostId && inTauri()) {
+    return Promise.resolve(onRemoteEvent(hostId, name, handler as Handler));
+  }
   if (inTauri()) {
     return listen<T>(name, handler).then((unlisten) => unlisten);
   }

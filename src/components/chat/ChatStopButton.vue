@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { t } from "../../i18n";
+import { useRemoteStore } from "../../stores/remote";
 
 withDefaults(defineProps<{
   /** 覆盖默认「停止当前任务 (Ctrl+C)」提示 */
@@ -11,6 +13,9 @@ withDefaults(defineProps<{
 const emit = defineEmits<{
   click: [event: MouseEvent];
 }>();
+
+const remote = useRemoteStore();
+const lockTip = computed(() => remote.lockTip("taskCreate"));
 
 function onMouseDown(event: MouseEvent) {
   // 阻止抢焦点：footer-on-focus 下若先失焦，页脚会把停止钮藏掉，click 落空
@@ -26,8 +31,9 @@ function onClick(event: MouseEvent) {
   <UiButton
     type="button"
     class="ds-stop-button"
-    :tip="tip || t('chat.stopTaskShortcut')"
-    :aria-label="tip || t('chat.stopTaskShortcut')"
+    :disabled="Boolean(lockTip)"
+    :tip="lockTip || tip || t('chat.stopTaskShortcut')"
+    :aria-label="lockTip || tip || t('chat.stopTaskShortcut')"
     @mousedown="onMouseDown"
     @click="onClick"
   >

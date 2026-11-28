@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { ClipboardList, Sparkles, Zap } from "@lucide/vue";
 import type { RunMode } from "../../domain/types";
 import { useAppStore } from "../../stores/app";
+import { useRemoteStore } from "../../stores/remote";
 import { useI18n } from "../../i18n";
 import type { SelectOption } from "../ui/select-types";
 import {
@@ -21,7 +22,10 @@ const props = defineProps<{
 
 const MODE_ICONS = { auto: Sparkles, plan: ClipboardList, agent: Zap } satisfies Record<RunMode, unknown>;
 
+const PLAN_MODE: RunMode = "plan";
+
 const store = useAppStore();
+const remote = useRemoteStore();
 const { t } = useI18n();
 
 const runtime = computed(() => {
@@ -32,11 +36,12 @@ const runtime = computed(() => {
 const options = computed<SelectOption<RunMode>[]>(() =>
   RUN_MODES.map((mode) => {
     const supported = modeSupported(runtime.value, mode);
+    const lockTip = remote.lockTip(mode === PLAN_MODE ? "agentPlan" : "agentRun");
     return {
       value: mode,
       label: modeLabel(mode),
-      description: supported ? t(modeDescriptionKey(runtime.value, mode)) : modeUnsupportedReason(runtime.value),
-      disabled: !supported,
+      description: lockTip || (supported ? t(modeDescriptionKey(runtime.value, mode)) : modeUnsupportedReason(runtime.value)),
+      disabled: !supported || Boolean(lockTip),
     };
   }),
 );

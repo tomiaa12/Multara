@@ -9,6 +9,7 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu.vue";
 import UiButton from "../ui/UiButton.vue";
 import ScmCommitBox from "./ScmCommitBox.vue";
 import ScmResourceList from "./ScmResourceList.vue";
+import { useRemoteStore } from "../../stores/remote";
 import {
   SCM_GROUP_ORDER,
   scmGroups,
@@ -80,6 +81,7 @@ const emit = defineEmits<{
   error: [message: string];
 }>();
 
+const remote = useRemoteStore();
 const REAL_BRANCH_WARN_KEY = "multara.scm.hideRealBranchWarn";
 
 function readHideRealBranchWarn() {
@@ -137,9 +139,13 @@ const canPrimary = computed(() => {
 });
 
 const commitMenuItems = computed<ContextMenuItem[]>(() => [
-  { id: "commit", label: t("scm.commit"), disabled: !canCommit.value },
-  { id: "commit-push", label: t("scm.commitPush"), disabled: !canCommit.value || !props.repository?.hasRemote },
-  { id: "commit-sync", label: t("scm.commitSync"), disabled: !canCommit.value || !props.repository?.hasRemote || !props.repository.upstream },
+  { id: "commit", label: t("scm.commit"), disabled: !canCommit.value || remote.locked("gitWrite") },
+  { id: "commit-push", label: t("scm.commitPush"), disabled: !canCommit.value || !props.repository?.hasRemote || remote.locked("gitPush") },
+  {
+    id: "commit-sync",
+    label: t("scm.commitSync"),
+    disabled: !canCommit.value || !props.repository?.hasRemote || !props.repository.upstream || remote.locked("gitPush"),
+  },
 ]);
 
 const branchBar = computed(() => props.repository ? branchAction(props.repository) : null);
@@ -159,8 +165,13 @@ const syncBusy = computed(() =>
 const moreMenuItems = computed<ContextMenuItem[]>(() => {
   const repository = props.repository;
   const items: ContextMenuItem[] = [
-    { id: "pull", label: t("scm.pull"), icon: "arrow-down", disabled: !repository?.hasRemote || !repository.upstream || repository.merging },
-    { id: "push", label: t("scm.push"), icon: "arrow-up", disabled: !repository?.hasRemote || repository.merging },
+    {
+      id: "pull",
+      label: t("scm.pull"),
+      icon: "arrow-down",
+      disabled: !repository?.hasRemote || !repository.upstream || repository.merging || remote.locked("gitWrite"),
+    },
+    { id: "push", label: t("scm.push"), icon: "arrow-up", disabled: !repository?.hasRemote || repository.merging || remote.locked("gitPush") },
   ];
   if (canCheckout.value) {
     items.push({ id: "checkout", label: t("scm.checkoutTo"), icon: "git-branch", disabled: Boolean(props.busy) });
@@ -437,11 +448,11 @@ function onPrimary() {
           <Codicon v-if="branchBusy" name="loading" spin :size="16" />
           <span>{{ branchBar.label }}</span>
         </button></UiTooltip>
-        <UiTooltip v-if="syncBar" :content="syncBusy ? t('scm.syncing') : syncBar.tooltip"><button
+        <UiTooltip v-if="syncBar" :content="remote.lockTip('gitPush') || (syncBusy ? t('scm.syncing') : syncBar.tooltip)"><button
           type="button"
           class="scm-status-action"
          
-          :disabled="repoBusy || repository.merging"
+          :disabled="repoBusy || repository.merging || remote.locked('gitPush')"
           @click.stop="syncBar.kind === 'publish' ? emit('publish') : emit('sync')"
         >
           <Codicon :name="syncBusy ? 'sync' : syncBar.icon" :spin="syncBusy" :size="16" />
@@ -455,11 +466,11 @@ function onPrimary() {
         >
           <Codicon :name="viewMode === 'list' ? 'list-tree' : 'list-flat'" :size="16" />
         </button></UiTooltip>
-        <UiTooltip :content="t('scm.commit')"><button
+        <UiTooltip :content="remote.lockTip('gitWrite') || t('scm.commit')"><button
           type="button"
           class="scm-status-action is-icon scm-repo-menu"
          
-          :disabled="!canCommit || repoBusy"
+          :disabled="!canCommit || repoBusy || remote.locked('gitWrite')"
           @click.stop="emit('commit')"
         >
           <Codicon name="check" :size="16" />

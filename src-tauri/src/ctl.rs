@@ -188,6 +188,19 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request, port: u16) {
             }
         }
     };
+    // terminal / surface 会在主机界面上弹出窗口，远程设备发起的运行不开放。
+    let device_run = matches!(namespace.as_str(), "terminal" | "surface")
+        && app
+            .state::<AppState>()
+            .lock_db()
+            .is_ok_and(|db| crate::remote::permission::is_device_run(&db, &ctx.run_id));
+    if device_run {
+        return respond(
+            request,
+            200,
+            CanvasError::new("canvas.disabled", tr!("远程设备发起的运行不能使用这个功能")).to_json(),
+        );
+    }
     let body = match namespace.as_str() {
         "canvas" => match dispatch_canvas(app, &ctx, &method, &args) {
             Ok(value) => value,

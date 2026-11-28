@@ -562,6 +562,7 @@ fn start_conflict_session(
         default_mode: crate::models::RunMode::Auto,
         last_run_agent_id: None,
         last_run_at: None,
+        origin_device: None,
     };
     let merge_workspace = Workspace {
         id: workspace_id,

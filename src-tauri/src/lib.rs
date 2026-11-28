@@ -45,6 +45,7 @@ pub mod process;
 pub mod project_skills;
 pub mod protocol;
 pub mod raw_session;
+pub mod remote;
 pub mod resources;
 pub mod runtime;
 pub mod runtime_accounts;
@@ -336,6 +337,7 @@ pub fn run() {
             channel::supervisor::start(app.handle().clone());
             channel::outbound::recover_pending(app.handle());
             workflow::runtime::start(app.handle());
+            remote::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -620,7 +622,34 @@ pub fn run() {
             get_turn_snapshots,
             update_chunk_state,
             delete_snapshots_from,
-            stop_run
+            stop_run,
+            remote::commands::remote_host_get_status,
+            remote::commands::remote_host_set_enabled,
+            remote::commands::remote_host_set_port,
+            remote::commands::remote_pairing_create,
+            remote::commands::remote_pairing_cancel,
+            remote::commands::remote_pairing_pending,
+            remote::commands::remote_pairing_confirm,
+            remote::commands::remote_devices_list,
+            remote::commands::remote_device_update,
+            remote::commands::remote_device_disconnect,
+            remote::commands::remote_device_remove,
+            remote::commands::remote_groups_list,
+            remote::commands::remote_group_save,
+            remote::commands::remote_group_delete,
+            remote::commands::remote_requests_list,
+            remote::commands::remote_request_decide,
+            remote::commands::remote_approvals_list,
+            remote::commands::remote_approval_decide,
+            remote::commands::remote_audit_query,
+            remote::commands::remote_hosts_list,
+            remote::commands::remote_identity,
+            remote::commands::remote_host_pair,
+            remote::commands::remote_host_update,
+            remote::commands::remote_host_remove,
+            remote::commands::remote_host_connect,
+            remote::commands::remote_host_disconnect,
+            remote::commands::remote_invoke
         ])
         .build(tauri::generate_context!())
         .expect("启动 Multara 失败")

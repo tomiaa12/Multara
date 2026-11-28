@@ -1,6 +1,7 @@
 //! 收件箱内置浏览器：主窗口 child Webview（对齐 VS Code BrowserView），
 //! 顶层浏览上下文可写 Cookie，避免 iframe 第三方 Cookie 被拦。
 
+#[cfg(target_os = "macos")]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use std::{

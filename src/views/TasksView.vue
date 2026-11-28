@@ -20,6 +20,7 @@ import AgentLiveStatus from "../components/AgentLiveStatus.vue";
 import ContextMenu, { type ContextMenuItem } from "../components/ui/ContextMenu.vue";
 import { t } from "../i18n";
 import { useAppStore } from "../stores/app";
+import { useRemoteStore } from "../stores/remote";
 import { readStorage, writeStorage } from "../utils/safe-storage";
 import { vDragPan } from "../ui/drag-pan";
 import { sharedRequirementCategories } from "./dashboard/requirement-categories";
@@ -29,6 +30,7 @@ import { beginTaskCardDrag, cancelTaskCardDrag, type TaskDropTarget } from "./ta
 const ORDER_KEY = "multara.task-board-order";
 const DISPLAY_KEY = "multara.task-board-display";
 const store = useAppStore();
+const remote = useRemoteStore();
 const router = useRouter();
 const scope = ref<"all" | "agent" | "squad">("all");
 const agentFilter = ref("");
@@ -152,7 +154,7 @@ const CREATE_COLUMN_STATUSES: TaskStatus[] = ["backlog", "todo"];
 function canAddInColumn(status: TaskStatus) {
   return CREATE_COLUMN_STATUSES.includes(status);
 }
-const columnMenuItems: ContextMenuItem[] = [{ id: "add", label: t("tasks.addTask") }];
+const columnMenuItems = computed<ContextMenuItem[]>(() => [{ id: "add", label: t("tasks.addTask"), disabled: remote.locked("taskCreate") }]);
 
 function loadOrder() {
   try {
@@ -384,7 +386,13 @@ function onColumnMenu(id: string) {
     <header class="task-toolbar">
       <div class="task-toolbar-title">
         <h1>{{ t("tasks.title") }}</h1>
-        <UiButton variant="primary" size="small" :tip="t('tasks.createShortcut')" @click="openCreate()">
+        <UiButton
+          variant="primary"
+          size="small"
+          :disabled="remote.locked('taskCreate')"
+          :tip="remote.lockTip('taskCreate') || t('tasks.createShortcut')"
+          @click="openCreate()"
+        >
           <Plus :size="14" /> {{ t("tasks.create") }}
         </UiButton>
         <nav class="ds-segmented" :aria-label="t('tasks.scope')">
@@ -485,7 +493,8 @@ function onColumnMenu(id: string) {
               variant="ghost"
               size="icon"
               class="task-column-action"
-              :tip="t('tasks.addTask')"
+              :disabled="remote.locked('taskCreate')"
+              :tip="remote.lockTip('taskCreate') || t('tasks.addTask')"
               @click="openCreate(column.id, true)"
             >
               <Plus :size="15" />
@@ -518,6 +527,9 @@ function onColumnMenu(id: string) {
                 {{ task.review === 'pending' ? t('tasks.review.pending') : t('tasks.review.seen') }}
               </span>
               {{ t('tasks.changedFiles', { n: task.changedFileCount }) }}
+            </p>
+            <p v-if="sessionsById.get(task.sessionId)?.originDevice" class="task-card-meta">
+              <span class="ds-badge">{{ t('remote.createdBy', { name: sessionsById.get(task.sessionId)?.originDevice ?? '' }) }}</span>
             </p>
             <div
               v-if="taskProjects(task).length"

@@ -19,6 +19,7 @@ import {
   ListTodo,
   MessagesSquare,
   Minus,
+  MonitorSmartphone,
   Moon,
   Network,
   Palette,
@@ -81,9 +82,17 @@ import { startRunningTerminalWatch } from "./stores/running-terminals";
 import { startSurfaceCtlWatch } from "./stores/surface-ctl";
 import { startTerminalCtlWatch } from "./stores/terminal-ctl";
 import TaskCreateDialog from "./views/TaskCreateDialog.vue";
+import RemoteApprovalWait from "./components/remote/RemoteApprovalWait.vue";
+import RemoteHostSwitcher from "./components/remote/RemoteHostSwitcher.vue";
+import RemotePairingDialog from "./components/remote/RemotePairingDialog.vue";
+import RemoteStatusItem from "./components/remote/RemoteStatusItem.vue";
+import { useRemoteStore } from "./stores/remote";
 
 const store = useAppStore();
 const editorStatus = useEditorStatusStore();
+const remote = useRemoteStore();
+/** 远程模式下只保留主机开放给设备的入口；运行时、技能等属于主机本地配置。 */
+const REMOTE_PRIMARY = new Set(["/projects", "/inbox", "/tasks", "/agents", "/squads"]);
 const route = useRoute();
 
 /* 切侧栏菜单：新页面淡入。不用 <Transition> 包 keep-alive —— 多根节点的页面在 out-in 下会白屏 */
@@ -401,6 +410,7 @@ function onTaskCreateShortcut(event: KeyboardEvent) {
   const target = event.target;
   if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true']")) return;
   event.preventDefault();
+  if (remote.locked("taskCreate")) return;
   store.openTaskCreate();
 }
 
@@ -440,14 +450,14 @@ const primary = computed(() => [
     to: "/tasks",
     label: t("nav.tasks"),
     icon: ListTodo,
-    action: { tip: t("tasks.createShortcut"), run: () => store.openTaskCreate() },
+    action: remote.locked("taskCreate") ? undefined : { tip: t("tasks.createShortcut"), run: () => store.openTaskCreate() },
   },
   { to: "/workflows", label: t("nav.workflows"), icon: GitBranch },
   { to: "/automation", label: t("nav.automation"), icon: Workflow },
   { to: "/agents", label: t("nav.agents"), icon: Bot },
   { to: "/squads", label: t("nav.squads"), icon: Users },
   { to: "/stats", label: t("nav.stats"), icon: BarChart3 },
-]);
+].filter((item) => !remote.isRemote || REMOTE_PRIMARY.has(item.match ?? item.to)));
 
 const inboxUnread = computed(() => unreadTotal(store.data?.inbox ?? []));
 
@@ -478,6 +488,7 @@ const navGroups = computed(() => [
       icon: item.icon,
       to: item.to,
       active: isNavActive(item),
+      badge: item.to === "/remote" && remote.pendingCount ? unreadBadgeLabel(remote.pendingCount) : undefined,
       title: sidebarCollapsed.value ? item.label : undefined,
     })),
   },
@@ -495,8 +506,9 @@ const config = computed(() => [
     ? [{ to: "/preview", label: t("nav.preview"), icon: Palette }]
     : []),
   { to: "/channels", label: t("nav.channels"), icon: MessagesSquare },
+  { to: "/remote", label: t("nav.remote"), icon: MonitorSmartphone },
   { to: "/settings", label: t("nav.settings"), icon: Settings },
-]);
+].filter((item) => !remote.isRemote || item.to === "/remote"));
 
 async function restoreImmersiveTitlebar() {
   if (!isWindows) return;
@@ -513,6 +525,7 @@ onMounted(async () => {
   startTerminalCtlWatch();
   startSurfaceCtlWatch();
   store.initialize();
+  void remote.start();
   // 设置页、store 初始化都会直接改 data-theme，这里统一监听以同步标题栏图标。
   themeObserver = new MutationObserver(() => {
     documentTheme.value = document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -685,6 +698,7 @@ onBeforeUnmount(() => {
       @resize-start="beginSidebarResize"
     >
       <template #footer>
+        <RemoteHostSwitcher :collapsed="sidebarCollapsed" />
         <UiTooltip
           placement="right"
           :content="sidebarCollapsed ? t('app.expandSidebar') : t('app.collapseSidebar')"
@@ -790,8 +804,11 @@ onBeforeUnmount(() => {
         </UiTooltip>
         <TerminalActivity />
         <RunningStatus />
+        <RemoteStatusItem />
       </div>
     </footer>
+    <RemotePairingDialog v-if="!remote.isRemote" />
+    <RemoteApprovalWait />
     <EditorLanguagePicker
       v-if="languagePickerOpen && languageAnchor"
       :languages="editorStatus.languages"

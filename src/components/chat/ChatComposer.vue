@@ -26,6 +26,7 @@ import type { SelectOption } from "../ui/select-types";
 import type { ComposerFeishuChipNode, ComposerNode } from "./composer-content";
 import { useAppStore } from "../../stores/app";
 import { useCanvasStore } from "../../stores/canvas";
+import { useRemoteStore } from "../../stores/remote";
 import { useWorkflowsStore } from "../../stores/workflows";
 import { isCanvasEnabled } from "./genui/block";
 import { getCaretClientRect } from "./composer-caret";
@@ -130,9 +131,13 @@ const store = useAppStore();
 const canvas = useCanvasStore();
 const workflows = useWorkflowsStore();
 const dictationStore = useDictationStore();
+const remote = useRemoteStore();
 const dictationTargetId = `composer-${crypto.randomUUID()}`;
 const rootEl = ref<HTMLElement | null>(null);
-const showDictation = computed(() => props.dictation && dictationStore.visible && !props.disabled);
+/** 远程主机上没有发消息权限（或断线）时，整个输入框锁住并在占位符里说明原因。 */
+const remoteLockTip = computed(() => remote.lockTip("taskCreate"));
+const isDisabled = computed(() => props.disabled || Boolean(remoteLockTip.value));
+const showDictation = computed(() => props.dictation && dictationStore.visible && !isDisabled.value);
 const dropOver = ref(false);
 const suggestTrigger = ref<ComposerTrigger | null>(null);
 const suggestMenu = ref<{ handleKeydown: (event: KeyboardEvent) => boolean } | null>(null);
@@ -168,7 +173,7 @@ function onNativeOsDrop(event: Event) {
   event.stopPropagation();
   osDropOver = false;
   syncDropOver();
-  if (!paths.length || props.disabled || props.readonly) return;
+  if (!paths.length || isDisabled.value || props.readonly) return;
   const entries = osPathEntries(paths);
   field.value?.beginExternalDrop();
   requestAnimationFrame(() => {
@@ -547,7 +552,7 @@ async function refreshSuggestAnchor() {
 }
 
 function onDragOver(event: DragEvent) {
-  if (props.disabled || props.readonly) return;
+  if (isDisabled.value || props.readonly) return;
   if (!isWorkspaceFileDrag(event.dataTransfer)) return;
   event.preventDefault();
   event.stopPropagation();
@@ -564,7 +569,7 @@ function onDragLeave(event: DragEvent) {
 
 function onDrop(event: DragEvent) {
   dropOver.value = false;
-  if (props.disabled || props.readonly) {
+  if (isDisabled.value || props.readonly) {
     event.preventDefault();
     return;
   }
@@ -718,7 +723,7 @@ function onSuggestCategoryAction(action: "pick-files-or-folders") {
 
 /** 发送旁 + 打开与 @ 相同的引用面板；再点一次关闭 */
 function openAttachMenu(defaultCategory: ComposerSuggestCategoryId = "file") {
-  if (props.disabled || props.readonly) return;
+  if (isDisabled.value || props.readonly) return;
   if (suggestTrigger.value) {
     closeSuggest();
     return;
@@ -755,6 +760,7 @@ const field = ref<{
 async function onSubmit() {
   // 发送时强制关掉 @/#/ 浮层（清空输入有时来不及触发 change，Teleport 会留在 body）
   closeSuggest();
+  if (remoteLockTip.value) return;
   if (showDictation.value) {
     await dictationService.stopBeforeSubmit(dictationTargetId);
   }
@@ -794,7 +800,7 @@ defineExpose({
     :class="{
       'footer-on-focus': footerMode === 'focus',
       'is-drop-over': dropOver,
-      'is-disabled': disabled,
+      'is-disabled': isDisabled,
       'is-readonly': readonly,
     }"
     @submit.prevent="onSubmit"
@@ -823,10 +829,10 @@ defineExpose({
     />
     <ChatComposerField
       ref="field"
-      :placeholder="placeholder"
+      :placeholder="remoteLockTip || placeholder"
       :initial-nodes="initialNodes"
       :contexts="contexts"
-      :disabled="disabled"
+      :disabled="isDisabled"
       :readonly="readonly"
       :enter-to-submit="enterToSubmit"
       @change="onComposerChange"
@@ -863,7 +869,7 @@ defineExpose({
           :is-composing="() => field?.isComposing() ?? false"
         />
         <slot name="actions">
-          <UiButton class="ds-send-button send-button" type="submit" :disabled="disabled || !canSend" tip="发送">
+          <UiButton class="ds-send-button send-button" type="submit" :disabled="isDisabled || !canSend" tip="发送">
             <ArrowUp :size="16" />
           </UiButton>
         </slot>

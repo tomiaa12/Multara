@@ -1,9 +1,11 @@
 import type { MessageCatalog } from "../types";
 
 import { workflowMessages } from "../workflow";
+import { remoteMessages } from "../remote";
 
 const catalog: MessageCatalog = {
   ...workflowMessages("zh-TW"),
+  ...remoteMessages("zh-TW"),
   "nav.workflows": "工作流程",
   "route.workflowEditor": "工作流程編輯",
   "route.workflowRuns": "執行記錄",

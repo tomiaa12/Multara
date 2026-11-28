@@ -1,4 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { onAppEvent } from "../dev/dev-events";
 import { t } from "../i18n";
 import { hasBackend, inTauri, invoke } from "./dev-backend";
 
@@ -157,7 +158,7 @@ export async function watchWorkspaces(owner: string, workspaceIds: string[], exc
 export async function onFsChanged(handler: (change: ExplorerFsChange) => void): Promise<UnlistenFn> {
   // 事件监听只能在 WebView；浏览器桥只转发 invoke。
   if (!inTauri()) return () => undefined;
-  return listen<ExplorerFsChange>("explorer-fs-changed", (event) => handler(event.payload));
+  return onAppEvent<ExplorerFsChange>("explorer-fs-changed", (event) => handler(event.payload));
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {

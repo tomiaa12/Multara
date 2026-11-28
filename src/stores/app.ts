@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, getCurrentScope, ref, watch, type ComputedRef } from "vue";
-import { listen } from "@tauri-apps/api/event";
+import { onAppEvent } from "../dev/dev-events";
+import { notifyDesktop } from "../utils/desktop-notify";
 import type { Agent, AutomationInput, BootstrapData, ChatMessage, CustomRuntimeInput, EditorSelectionContext, FeishuRecipientInput, McpInput, MergeSession, MessageAttachmentInput, MessageSourceInput, PlanActionInput, RunEvent, RunMode, RunStatus, Squad, TaskInput, TaskStatus } from "../domain/types";
 import { titleSeedText } from "../components/chat/composer-content";
 import { liveAssignmentAudience } from "../components/chat/message-speaker";
@@ -387,16 +388,16 @@ export const useAppStore = defineStore("app", () => {
   async function registerRunEvents() {
     if (eventsReady || !("__TAURI_INTERNALS__" in window)) return;
     eventsReady = true;
-    await listen<string>("session-messages-changed", async ({ payload }) => {
+    await onAppEvent<string>("session-messages-changed", async ({ payload }) => {
       if (!payload) return;
       await reloadPersistedMessages(payload);
     });
-    await listen("inbox-changed", async () => {
+    await onAppEvent("inbox-changed", async () => {
       await refreshTaskInboxSurfaces().catch((cause) => {
         console.error("[app] inbox refresh failed", cause);
       });
     });
-    await listen<RunEvent>("run-event", async ({ payload }) => {
+    await onAppEvent<RunEvent>("run-event", async ({ payload }) => {
       if (payload.eventKind === "file_snapshot" && payload.messageId && payload.filePath != null) {
         if (!payload.workspaceId) {
           console.error("[diff] file_snapshot 缺少 workspaceId，已丢弃", payload);
@@ -1152,17 +1153,6 @@ export const useAppStore = defineStore("app", () => {
       return;
     }
     notifyDesktop(item.title, item.preview);
-  }
-
-  function notifyDesktop(title: string, body: string) {
-    if (typeof Notification === "undefined") return;
-    if (Notification.permission === "default") void Notification.requestPermission();
-    if (Notification.permission !== "granted") return;
-    try {
-      new Notification(title, { body, silent: false });
-    } catch {
-      // 系统通知不可用时忽略
-    }
   }
 
   async function markInboxRead(id: string, messageId?: string | null) {

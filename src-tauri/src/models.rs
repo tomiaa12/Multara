@@ -385,6 +385,8 @@ pub struct ChatSession {
     /// 最近一次已结束 run 的执行者；需求列表空闲态用来展示头像，不只靠内存里的 runStates。
     pub last_run_agent_id: Option<String>,
     pub last_run_at: Option<String>,
+    /// 由远程设备创建时的设备名；本机创建为 None。
+    pub origin_device: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

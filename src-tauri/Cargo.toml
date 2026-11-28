@@ -59,6 +59,7 @@ notify = "8"
 trash = "5"
 portable-pty = "0.8"
 qrcode = "0.14"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
 regex = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-platform-verifier = "0.7"

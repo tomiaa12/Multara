@@ -254,6 +254,8 @@ export interface ChatSession {
   /** 最近一次已结束 run 的执行者；需求列表空闲态用，不依赖内存 runStates */
   lastRunAgentId?: string | null;
   lastRunAt?: string | null;
+  /** 由远程设备创建时的设备名 */
+  originDevice?: string | null;
 }
 
 export type TaskStatus =

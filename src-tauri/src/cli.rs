@@ -258,6 +258,13 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
     let run_id = env::var("MULTARA_RUN_ID").ok();
     ensure_write_allowed(db, run_id.as_deref(), resource, verb)?;
     ensure_workflow_node_scope(db, run_id.as_deref(), resource, verb)?;
+    let scoped_projects: Vec<String> = parsed
+        .flag(&["project", "project-id"])
+        .into_iter()
+        .chain(id.as_deref().filter(|_| resource == "project"))
+        .map(str::to_string)
+        .collect();
+    crate::remote::permission::ensure_cli_scope(db, run_id.as_deref(), resource, verb, &scoped_projects)?;
     if resource == "node" || resource == "workflow" {
         return crate::workflow::cli::execute(args, db);
     }

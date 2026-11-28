@@ -449,6 +449,18 @@ fn handle_command(app: &AppHandle, installation: &Installation, message: &Inboun
                 )
                 .ok()
             };
+            let permitted = project.as_ref().is_some_and(|(project_id, _)| {
+                let state = app.state::<AppState>();
+                state
+                    .lock_db()
+                    .ok()
+                    .and_then(|db| store::allowed_user(&db, &installation.id, &message.sender_id))
+                    .is_none_or(|user| store::user_grant(&user).allows_project(project_id))
+            });
+            if project.is_some() && !permitted {
+                send_notice(app, installation, message, &tr!("你没有这个需求的访问权限。"));
+                return true;
+            }
             match project {
                 Some((project_id, name)) => {
                     let mut updated = installation.clone();
@@ -694,13 +706,19 @@ fn ensure_binding(
     } else {
         format!("{chat_label} · {first_line}")
     };
+    // 关闭「读取工作区文件」或需求不在授权范围内时不挂需求，运行就没有需求工作区。
+    let grant = store::user_grant(user);
+    let project_id = installation
+        .project_id
+        .clone()
+        .filter(|id| grant.read_files && grant.allows_project(id));
     db.execute(
         "INSERT INTO chat_sessions
          (id, project_id, title, target_type, target_id, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
         rusqlite::params![
             session_id,
-            installation.project_id,
+            project_id,
             title,
             target_type,
             target_id,
@@ -708,7 +726,7 @@ fn ensure_binding(
         ],
     )
     .map_err(|error| error.to_string())?;
-    let project_ids: Vec<String> = installation.project_id.clone().into_iter().collect();
+    let project_ids: Vec<String> = project_id.into_iter().collect();
     crate::session::replace_linked_projects(&db, &session_id, &project_ids)?;
     store::create_binding(&db, &installation.id, &key, message, &session_id)
 }
@@ -831,11 +849,26 @@ fn enqueue(
     }
 }
 
-fn sender_permission_note(app: &AppHandle, installation: &Installation, sender_id: &str) -> Option<String> {
+fn sender_grant(app: &AppHandle, installation: &Installation, sender_id: &str) -> super::grant::ChannelGrant {
     let state = app.state::<AppState>();
-    let db = state.lock_db().ok()?;
-    let user = store::allowed_user(&db, &installation.id, sender_id)?;
-    Some(super::grant::runtime_note(&store::user_grant(&user)))
+    state
+        .lock_db()
+        .ok()
+        .and_then(|db| store::allowed_user(&db, &installation.id, sender_id))
+        .map(|user| store::user_grant(&user))
+        .unwrap_or_default()
+}
+
+/// 没有「修改工作区文件」权限时只能用 Plan 模式。
+fn permitted_mode(
+    grant: &super::grant::ChannelGrant,
+    requested: Option<crate::models::RunMode>,
+) -> Option<crate::models::RunMode> {
+    if grant.write_files {
+        requested
+    } else {
+        Some(crate::models::RunMode::Plan)
+    }
 }
 
 fn flush(app: &AppHandle, key: &str) {
@@ -868,9 +901,25 @@ fn flush(app: &AppHandle, key: &str) {
     }
     let raw_content = batch.texts.join("\n\n");
     let (parsed, requested_mode) = parse_mode_command(&raw_content);
-    let content = match sender_permission_note(app, &batch.installation, &batch.message.sender_id) {
-        Some(note) if !note.is_empty() => format!("{parsed}\n\n{note}"),
-        _ => parsed.to_string(),
+    let grant = sender_grant(app, &batch.installation, &batch.message.sender_id);
+    if crate::commands::referenced_requirement_ids(parsed)
+        .iter()
+        .any(|id| !grant.allows_project(id))
+    {
+        send_notice(
+            app,
+            &batch.installation,
+            &batch.message,
+            &tr!("消息里引用了你没有访问权限的需求。"),
+        );
+        return;
+    }
+    let requested_mode = permitted_mode(&grant, requested_mode);
+    let note = super::grant::runtime_note(&grant);
+    let content = if note.is_empty() {
+        parsed.to_string()
+    } else {
+        format!("{parsed}\n\n{note}")
     };
     let meta = json!({
         "installationId": batch.installation.id,
@@ -1095,6 +1144,7 @@ fn answer_question(app: &AppHandle, installation: &Installation, action: &CardAc
         "senderName": null,
         "answerToRunId": run_id,
     });
+    let grant = sender_grant(app, installation, &action.operator_id);
     let Ok(outcome) = crate::commands::send_channel_message(
         app,
         &delivery.session_id,
@@ -1102,7 +1152,7 @@ fn answer_question(app: &AppHandle, installation: &Installation, action: &CardAc
         Vec::new(),
         &installation.channel_type,
         meta,
-        None,
+        permitted_mode(&grant, None),
     ) else {
         return;
     };
@@ -1170,6 +1220,16 @@ fn handle_plan_action(app: &AppHandle, installation: &Installation, action: &Car
                 "text",
                 &json!({ "text": crate::plan_prompts::plan_card_text(locale).refine_hint })
                     .to_string(),
+            );
+        }
+        return;
+    }
+    if !sender_grant(app, installation, &action.operator_id).write_files {
+        if let Ok((_, api)) = api_for(app, &installation.id) {
+            let _ = api.send_message_raw(
+                &delivery.chat_id,
+                "text",
+                &json!({ "text": tr!("你没有修改工作区文件的权限，不能执行计划。") }).to_string(),
             );
         }
         return;

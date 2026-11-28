@@ -4,6 +4,7 @@ import type { GitRepositoryStatus } from "../../domain/types";
 import Codicon from "../ui/Codicon.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiTextarea from "../ui/UiTextarea.vue";
+import { useRemoteStore } from "../../stores/remote";
 import {
   resetCommitMessageCursor,
   scmBusyTitle,
@@ -29,8 +30,11 @@ const emit = defineEmits<{
   settings: [];
 }>();
 
+const remote = useRemoteStore();
 const field = ref<{ el: HTMLTextAreaElement | null } | null>(null);
 const repoBusy = computed(() => props.busy.endsWith(`:${props.workspaceId}`));
+const commitLock = computed(() => remote.lockTip("gitWrite"));
+const primaryLock = computed(() => (props.action === "commit" ? commitLock.value : remote.lockTip("gitPush")));
 
 function placeholder() {
   return `消息 (Ctrl+Enter 在 "${props.repository.branch || "HEAD"}" 上提交)`;
@@ -45,6 +49,7 @@ function primaryLabel() {
 function onKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
+    if (primaryLock.value) return;
     emit("submit");
     return;
   }
@@ -113,8 +118,8 @@ onMounted(() => void nextTick(syncInputHeight));
     <div class="scm-commit-split">
       <UiButton
         class="scm-commit-go"
-        :tip="scmBusyTitle(busy, [`commit:${workspaceId}`, `push:${workspaceId}`, `sync:${workspaceId}`], primaryLabel())"
-        :disabled="repoBusy || !canPrimary"
+        :tip="primaryLock || scmBusyTitle(busy, [`commit:${workspaceId}`, `push:${workspaceId}`, `sync:${workspaceId}`], primaryLabel())"
+        :disabled="repoBusy || !canPrimary || Boolean(primaryLock)"
         @click="emit('submit')"
       >
         <Codicon v-if="busy.startsWith(`commit:${workspaceId}`) || busy === `push:${workspaceId}` || busy === `sync:${workspaceId}`" name="loading" class="codicon-modifier-spin" />
@@ -128,8 +133,8 @@ onMounted(() => void nextTick(syncInputHeight));
       <UiButton
         v-if="action === 'commit'"
         class="scm-commit-more"
-        :tip="scmBusyTitle(busy, `commit:${workspaceId}`, '更多提交操作')"
-        :disabled="repoBusy || !canCommit"
+        :tip="commitLock || scmBusyTitle(busy, `commit:${workspaceId}`, '更多提交操作')"
+        :disabled="repoBusy || !canCommit || Boolean(commitLock)"
         @click="emit('menu', $event)"
       >
         <Codicon name="chevron-down" />

@@ -45,6 +45,7 @@ export const router = createRouter({
     },
     { path: "/automation", component: () => import("./views/AutomationView.vue"), meta: { titleKey: "nav.automation" } },
     { path: "/channels", component: () => import("./views/ChannelsView.vue"), meta: { titleKey: "nav.channels" } },
+    { path: "/remote", component: () => import("./views/remote/RemoteView.vue"), meta: { titleKey: "nav.remote" } },
     { path: "/agents", component: CollectionView, meta: { titleKey: "nav.agents", kind: "agents" } },
     {
       path: "/agents/:agentId",

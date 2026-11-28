@@ -1,9 +1,11 @@
 import type { MessageCatalog } from "../types";
 
 import { workflowMessages } from "../workflow";
+import { remoteMessages } from "../remote";
 
 const catalog: MessageCatalog = {
   ...workflowMessages("en"),
+  ...remoteMessages("en"),
   "nav.workflows": "Workflows",
   "route.workflowEditor": "Workflow editor",
   "route.workflowRuns": "Runs",

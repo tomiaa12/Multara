@@ -93,8 +93,10 @@ const sentTarget = computed(() =>
 
 const channelSource = computed(() => {
   if (!props.message.sourceType) return "";
-  if (props.message.sourceType === "genui") return t("genui.fromUi");
   const meta = (props.message.sourceMeta ?? {}) as Record<string, unknown>;
+  const device = String(meta.deviceName ?? "").trim();
+  if (device) return t("remote.fromDevice", { device });
+  if (props.message.sourceType === "genui") return t("genui.fromUi");
   const channel = channelSourceLabel(props.message.sourceType);
   const sender = String(meta.senderName ?? meta.senderId ?? "").trim();
   return sender ? t("chat.fromChannel", { channel, sender }) : channel;

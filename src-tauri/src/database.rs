@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -561,6 +561,11 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     ensure_column(&columns, "workspaces", "source_workspace_id", "TEXT")?;
     // 同一仓库的多个 Worktree 共用 source_path，唯一约束要落在检出目录上。
     migrate_workspace_checkout_key(db)?;
+    // 远程访问：发起者主体（`device:<id>` / `channel:<installation>:<sender>`），NULL 表示本机。
+    crate::remote::store::migrate(db)?;
+    ensure_column(&columns, "chat_sessions", "origin_principal", "TEXT")?;
+    ensure_column(&columns, "agent_runs", "origin_principal", "TEXT")?;
+    ensure_column(&columns, "workspaces", "origin_principal", "TEXT")?;
     ensure_column(&columns, "messages", "turn_id", "TEXT")?;
     ensure_column(&columns, "messages", "agent_id", "TEXT")?;
     ensure_column(&columns, "messages", "audience_type", "TEXT")?;

@@ -1,6 +1,25 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { remoteInvoke } from "./remote-invoke";
+import { remoteHostId } from "./remote-target";
 
 let bridgeLive = false;
+
+/** 远程模式下仍在本机执行：主机与设备管理（remote_*）、本机界面设置。 */
+const LOCAL_COMMANDS = new Set(["save_settings", "sync_app_locale"]);
+
+function runsLocally(cmd: string) {
+  return cmd.startsWith("remote_") || LOCAL_COMMANDS.has(cmd);
+}
+
+/** 数据取自远程主机，界面设置（主题、语言等）仍用本机的。 */
+async function invokeRemote<T>(hostId: string, cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (cmd !== "bootstrap") return remoteInvoke<T>(hostId, cmd, args);
+  const [remote, local] = await Promise.all([
+    remoteInvoke<Record<string, unknown>>(hostId, cmd, args),
+    tauriInvoke<Record<string, unknown>>(cmd, args),
+  ]);
+  return { ...remote, settings: local?.settings } as T;
+}
 
 export function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -41,6 +60,8 @@ export async function connectDevBackend(timeoutMs?: number): Promise<boolean> {
 }
 
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const hostId = remoteHostId();
+  if (hostId && inTauri() && !runsLocally(cmd)) return invokeRemote<T>(hostId, cmd, args);
   if (inTauri()) return tauriInvoke<T>(cmd, args);
   if (!bridgeLive) throw new Error(`dev bridge offline: ${cmd}`);
   const response = await fetch("/__multara/invoke", {

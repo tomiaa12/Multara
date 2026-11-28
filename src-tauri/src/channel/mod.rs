@@ -15,7 +15,7 @@ pub mod grant;
 pub mod link;
 pub mod outbound;
 pub mod qq;
-mod pairing;
+pub(crate) mod pairing;
 pub mod router;
 pub mod secret;
 pub mod slack;

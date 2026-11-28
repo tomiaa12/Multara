@@ -36,6 +36,7 @@ import TagManageDialog from "../components/ui/TagManageDialog.vue";
 import TagPicker from "../components/ui/TagPicker.vue";
 import { confirmDialog } from "../components/ui/confirm-dialog";
 import { useAppStore } from "../stores/app";
+import { useRemoteStore } from "../stores/remote";
 import {
   buildHomeIndex,
   buildHomeProject,
@@ -71,6 +72,7 @@ const AVATAR_VISIBLE = 3;
 defineOptions({ name: "DashboardView" });
 
 const store = useAppStore();
+const remote = useRemoteStore();
 const router = useRouter();
 const showCreate = ref(false);
 const projectName = ref("");
@@ -587,7 +589,8 @@ const runShellStyle = computed(() => {
                     class="icon-button req-delete"
                     size="icon"
                     variant="danger"
-                    :tip="t('dashboard.delete')"
+                    :tip="remote.lockTip('projectDelete') || t('dashboard.delete')"
+                    :disabled="remote.locked('projectDelete')"
                     @click="askRemoveProject(row.id, row.name)"
                   >
                     <Trash2 :size="14" />

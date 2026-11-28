@@ -59,6 +59,10 @@ impl ChannelGrant {
         self.channel.get(key).copied().unwrap_or(true)
     }
 
+    pub fn allows_project(&self, project_id: &str) -> bool {
+        self.projects_unrestricted || self.project_ids.iter().any(|id| id == project_id)
+    }
+
     pub fn is_open(&self) -> bool {
         self.create_task
             && self.add_agent
