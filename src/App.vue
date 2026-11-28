@@ -37,6 +37,7 @@ import { startOsFileDrop } from "./components/chat/os-file-drop";
 import { backTarget, crumbs, markMenuNavigation } from "./stores/breadcrumbs";
 import FloatingChat from "./components/FloatingChat.vue";
 import CanvasFrameHost from "./components/CanvasFrameHost.vue";
+import SessionRawDataHost from "./components/session-raw/SessionRawDataHost.vue";
 import UpdateNotification from "./components/UpdateNotification.vue";
 import { RunLogHost } from "./components/run-log";
 import UnsavedChangesDialog from "./components/workbench/UnsavedChangesDialog.vue";
@@ -714,6 +715,7 @@ onBeforeUnmount(() => {
     <FloatingChat :hidden="hideFloatingChat" />
     <!-- Canvas 页面的 iframe 都在这一层（keep-alive 外面），切走页面也保持连接 -->
     <CanvasFrameHost />
+    <SessionRawDataHost />
     <UpdateNotification />
     <UiToastHost />
     <UnsavedChangesDialog

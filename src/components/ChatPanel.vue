@@ -40,6 +40,7 @@ import ChatSessionList, { type SessionListRow } from "./chat/ChatSessionList.vue
 import { clampSessionListWidth, latestActivity, sessionListLayout } from "./chat/session-list";
 import { loadSessionListPrefs, saveSessionListPrefs } from "../stores/chat-session-list";
 import { exportChatDiagnostics } from "./chat/export-session-diagnostics";
+import { openSessionRawData } from "./session-raw/raw-data-state";
 import { liveCapacity, resolveSessionLiveWorkStatus } from "./agent-live-status";
 import { liveWorkParts } from "./chat/timeline-display";
 import ContextMenu, { type ContextMenuItem } from "./ui/ContextMenu.vue";
@@ -806,6 +807,7 @@ const tabMenuItems = computed<ContextMenuItem[]>(() => {
     { id: "fork", label: t("chat.forkSession") },
     { id: "compact", label: t("chat.compact") },
     { id: "export", label: t("chat.exportDiagnostics"), disabled: props.preview },
+    { id: "raw", label: t("chat.viewRawData"), disabled: props.preview },
     { id: "close", label: t("chat.close") },
     { id: "close-others", label: t("chat.closeOthers"), disabled: displaySessions.value.length < 2 },
     { id: "close-right", label: t("chat.closeRight"), disabled: index < 0 || index >= displaySessions.value.length - 1 },
@@ -821,6 +823,10 @@ function onTabMenuSelect(id: string) {
   if (id === "fork") void store.forkSession(sessionId);
   if (id === "compact") void store.compactSession(sessionId);
   if (id === "export") void exportDiagnostics(sessionId);
+  if (id === "raw") {
+    const title = displaySessions.value.find((item) => item.id === sessionId)?.title;
+    openSessionRawData({ sessionId, title });
+  }
   if (id === "close") void closeSessionTab(sessionId);
   if (id === "close-others") void closeOtherSessionTabs(sessionId);
   if (id === "close-right") void closeSessionTabsToTheRight(sessionId);

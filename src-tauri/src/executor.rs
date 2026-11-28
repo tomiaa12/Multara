@@ -1401,6 +1401,34 @@ fn spawn_run(app: AppHandle, mut run: QueuedRun) {
         } else {
             launch_provider.clone()
         };
+        let delivery = if protocol.is_some() {
+            "protocol"
+        } else if prompt_via_stdin {
+            "stdin"
+        } else {
+            "arg"
+        };
+        if let Ok(db) = app.state::<AppState>().lock_db() {
+            if let Err(error) = crate::raw_session::record_invocation(
+                &db,
+                &run.id,
+                &run.session_id,
+                &run.runtime_id,
+                &program.to_string_lossy(),
+                &final_args,
+                &cwd,
+                delivery,
+                resume_id.as_deref(),
+                run.user_message_id.as_deref(),
+                &prompt,
+                &Utc::now().to_rfc3339(),
+            ) {
+                crate::diag::write(&format!(
+                    "RAW invocation write failed {}: {error}",
+                    run.id
+                ));
+            }
+        }
         let mut child = match {
             let mut command = crate::process::command(program);
             command

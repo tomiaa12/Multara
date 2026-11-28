@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -806,6 +806,26 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
            WHERE parent_task_id IS NOT NULL AND parent_task_id != ''
              AND status IN ('done', 'cancelled')
              AND followup_reported_at IS NULL;",
+    )?;
+    // 每次运行实际执行的命令行与完整 prompt，供会话原始数据查看器回看；旧运行没有记录时为 NULL。
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS run_invocations (
+          run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL,
+          runtime_id TEXT NOT NULL,
+          program TEXT NOT NULL,
+          args_json TEXT NOT NULL DEFAULT '[]',
+          cwd TEXT NOT NULL DEFAULT '',
+          delivery TEXT NOT NULL DEFAULT 'arg',
+          resume_id TEXT,
+          user_message_id TEXT,
+          prompt_text TEXT,
+          prompt_chars INTEGER NOT NULL DEFAULT 0,
+          prompt_truncated INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
+         CREATE INDEX IF NOT EXISTS idx_run_invocations_session
+           ON run_invocations(session_id, created_at);",
     )?;
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;

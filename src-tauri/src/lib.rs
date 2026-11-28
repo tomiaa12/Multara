@@ -44,6 +44,7 @@ pub mod plan_prompts;
 pub mod process;
 pub mod project_skills;
 pub mod protocol;
+pub mod raw_session;
 pub mod resources;
 pub mod runtime;
 pub mod runtime_accounts;
@@ -574,6 +575,8 @@ pub fn run() {
             save_message_queue,
             session_export::export_session_diagnostics,
             session_export::save_diagnostic_file,
+            raw_session::list_session_raw_runs,
+            raw_session::get_run_raw_detail,
             diag::export_recent_error_log,
             diag::save_log_file,
             upsert_inbox_item,

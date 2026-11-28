@@ -1085,6 +1085,117 @@ export async function exportSessionDiagnostics(sessionId: string): Promise<Sessi
   return invoke<SessionDiagnostic>("export_session_diagnostics", { sessionId });
 }
 
+export interface RawSessionInfo {
+  id: string;
+  title: string;
+  projectId: string | null;
+  targetType: string;
+  targetId: string;
+  defaultMode: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RawRunInvocation {
+  program: string;
+  args: string[];
+  cwd: string;
+  delivery: string;
+  resumeId: string | null;
+  promptChars: number;
+  promptTruncated: boolean;
+}
+
+export interface RawRunSummary {
+  id: string;
+  agentId: string;
+  runtimeId: string;
+  parentRunId: string | null;
+  status: string;
+  mode: string | null;
+  effort: string | null;
+  modelOverride: string | null;
+  usageModel: string | null;
+  turnId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  assignment: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  costUsd: number | null;
+  eventCount: number;
+  invocation: RawRunInvocation | null;
+}
+
+export interface RawSessionData {
+  kind: "multara-session-raw";
+  schemaVersion: number;
+  generatedAt: string;
+  session: RawSessionInfo | null;
+  runs: RawRunSummary[];
+}
+
+export interface RawRunInvocationFull extends RawRunInvocation {
+  prompt: string | null;
+  createdAt: string;
+}
+
+export interface RawMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+  failureReason: string | null;
+  elapsedMs: number | null;
+  messageKind: string;
+}
+
+export interface RawRunEvent {
+  seq: number;
+  eventType: string;
+  callId: string | null;
+  tool: string | null;
+  content: string | null;
+  inputJson: string | null;
+  output: string | null;
+  outputJson: string | null;
+  createdAt: string;
+  parentCallId: string | null;
+  status: string | null;
+}
+
+export interface RawRunDetail {
+  run: RawRunSummary;
+  invocation: RawRunInvocationFull | null;
+  userMessage: RawMessage | null;
+  assistantMessages: RawMessage[];
+  events: RawRunEvent[];
+  eventCount: number;
+  nextAfterSeq: number | null;
+  hasMore: boolean;
+}
+
+export async function listSessionRawRuns(sessionId: string): Promise<RawSessionData> {
+  if (!hasBackend()) throw new Error("Raw session data requires the desktop app");
+  return invoke<RawSessionData>("list_session_raw_runs", { sessionId });
+}
+
+export async function getRunRawDetail(
+  runId: string,
+  afterSeq?: number | null,
+  limit?: number | null,
+): Promise<RawRunDetail> {
+  if (!hasBackend()) throw new Error("Raw session data requires the desktop app");
+  return invoke<RawRunDetail>("get_run_raw_detail", {
+    runId,
+    afterSeq: afterSeq ?? null,
+    limit: limit ?? null,
+  });
+}
+
 export async function saveDiagnosticFile(path: string, contents: string): Promise<void> {
   if (!hasBackend()) throw new Error("Diagnostics export requires the desktop app");
   await invoke("save_diagnostic_file", { path, contents });

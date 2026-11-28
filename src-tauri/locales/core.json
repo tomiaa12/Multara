@@ -5,6 +5,12 @@
     "ja": "セッションが見つかりません",
     "ko": "세션을 찾을 수 없습니다"
   },
+  "运行不存在": {
+    "en": "Run not found",
+    "zh-TW": "執行不存在",
+    "ja": "実行が見つかりません",
+    "ko": "실행을 찾을 수 없습니다"
+  },
   "消息不存在或不属于该会话": {
     "en": "Message not found or does not belong to this conversation",
     "zh-TW": "訊息不存在或不屬於此對話",
