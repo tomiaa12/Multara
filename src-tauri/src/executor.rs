@@ -2402,7 +2402,7 @@ fn finish(
     let completed_at = Utc::now();
     let mut elapsed_ms = None;
     let mut member_runs = Vec::new();
-    let mut parent_followup: Option<crate::ops::task::ParentFollowup> = None;
+    let mut parent_followups: Vec<crate::ops::task::ParentFollowup> = Vec::new();
     let mut plan_item = None;
     if let Ok(db) = state.lock_db() {
         elapsed_ms = db
@@ -2595,12 +2595,17 @@ fn finish(
             &completed_at.to_rfc3339(),
         );
         if status == "completed" || status == "failed" {
-            if let Ok(Some(followup)) = crate::ops::task::maybe_resume_parent(
-                &db,
-                &run.session_id,
-                &completed_at.to_rfc3339(),
-            ) {
-                parent_followup = Some(followup);
+            let now = completed_at.to_rfc3339();
+            if let Ok(Some(followup)) =
+                crate::ops::task::maybe_resume_parent(&db, &run.session_id, &now)
+            {
+                parent_followups.push(followup);
+            }
+            // 子任务可能在负责人 run 还没结束时收口；run 结束后补一次汇总检查。
+            if let Ok(Some(followup)) =
+                crate::ops::task::maybe_resume_after_run(&db, &run.session_id, &run.agent_id, &now)
+            {
+                parent_followups.push(followup);
             }
         }
     }
@@ -2627,8 +2632,8 @@ fn finish(
     for (run_id, agent_id) in &member_runs {
         notify_run(app, run_id, &run.session_id, agent_id, "queued");
     }
-    if let Some(followup) = &parent_followup {
-        // 桥接消息已写入父会话；通知前端重载，避免只刷新子任务会话。
+    for followup in &parent_followups {
+        // 桥接消息已写入父会话/来源会话；通知前端重载，避免只刷新子任务会话。
         let _ = app.emit("session-messages-changed", &followup.parent_session_id);
         if let Some(run_id) = &followup.resume_run_id {
             notify_run(
@@ -5306,6 +5311,7 @@ mod tests {
         tool_use_event, truncate_and_redact, DIFF_OMITTED, NormalizedEvent, PendingStream,
         ToolErrorActor, ToolErrorTracker, MAX_CONSECUTIVE_TOOL_ERRORS,
     };
+    use rusqlite::params;
     use serde_json::{json, Value};
 
     fn skill_resource(id: &str, name: &str, source_path: &str) -> crate::models::GlobalResource {

@@ -13,6 +13,8 @@ pub struct CreateTaskInput<'a> {
     pub project_id: Option<&'a str>,
     pub project_ids: &'a [String],
     pub source_session_id: Option<&'a str>,
+    /// 在普通会话（没有 task）里派活时，当前执行的负责人；用于写派活消息并在子任务收口后唤醒。
+    pub origin_agent_id: Option<&'a str>,
     pub status: Option<&'a str>,
     pub parent_task_id: Option<&'a str>,
     pub requested_mode: RunMode,
@@ -122,6 +124,31 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
     let now = Utc::now().to_rfc3339();
     let task_id = Uuid::new_v4().to_string();
     let session_id = Uuid::new_v4().to_string();
+    // 没有父任务、但来自某个会话（收件箱 chat / 需求工作台）时，记下来源：派活卡片写回该会话，
+    // 子任务收口后再唤醒那里的负责人，行为跟 @ 派活一致。
+    let origin = match (
+        input.parent_task_id,
+        input.origin_agent_id,
+        input.source_session_id,
+    ) {
+        (None, Some(agent_id), Some(source_session_id))
+            if !agent_id.is_empty()
+                && !source_session_id.is_empty()
+                && source_session_id != session_id.as_str()
+                && !source_session_id.starts_with("automation-run:")
+                && !crate::workflow::is_workflow_session(source_session_id) =>
+        {
+            let exists: bool = db
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE id=?1)",
+                    [source_session_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+            exists.then_some((source_session_id, agent_id))
+        }
+        _ => None,
+    };
     let transaction = db.transaction().map_err(|error| error.to_string())?;
     transaction
         .execute(
@@ -142,8 +169,9 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
     transaction
         .execute(
             "INSERT INTO tasks
-             (id, session_id, title, description, agent_id, status, created_at, updated_at, parent_task_id, default_mode)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)",
+             (id, session_id, title, description, agent_id, status, created_at, updated_at,
+              parent_task_id, default_mode, origin_session_id, origin_agent_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10, ?11)",
             params![
                 task_id,
                 session_id,
@@ -153,7 +181,9 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
                 status,
                 now,
                 input.parent_task_id,
-                input.requested_mode.as_str()
+                input.requested_mode.as_str(),
+                origin.map(|(session, _)| session),
+                origin.map(|(_, agent)| agent)
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -178,11 +208,28 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
             },
         )?;
     }
-    // 挂在父任务下时：在父会话写一条 @指派，详情动态里能看到队长/负责人派活。
+    // 派活卡片：父任务写回父会话，普通会话写回来源会话；两处都显示为「负责人 @ 被派 agent + 子任务链接」。
     if let Some(parent_id) = input.parent_task_id {
-        let _ = record_parent_assignment(
+        if let Ok((parent_session, parent_agent)) = transaction.query_row(
+            "SELECT session_id, agent_id FROM tasks WHERE id=?1",
+            [parent_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        ) {
+            let _ = record_assignment(
+                &transaction,
+                &parent_session,
+                &parent_agent,
+                input.agent_id,
+                title,
+                &task_id,
+                &now,
+            );
+        }
+    } else if let Some((origin_session, origin_agent)) = origin {
+        let _ = record_assignment(
             &transaction,
-            parent_id,
+            origin_session,
+            origin_agent,
             input.agent_id,
             title,
             &task_id,
@@ -214,35 +261,29 @@ pub fn create(db: &mut Connection, input: CreateTaskInput<'_>) -> Result<Created
     })
 }
 
-fn record_parent_assignment(
+fn record_assignment(
     db: &Connection,
-    parent_task_id: &str,
+    session_id: &str,
+    assigner_id: &str,
     assignee_id: &str,
     child_title: &str,
     child_id: &str,
     now: &str,
 ) -> Result<(), String> {
-    let (parent_session, parent_agent): (String, String) = db
-        .query_row(
-            "SELECT session_id, agent_id FROM tasks WHERE id=?1",
-            [parent_task_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|_| tr!("父任务不存在"))?;
     let spoken = tr!(
         "请处理子任务「{child_title}」（`{child_id}`），完成后向我汇报。",
         child_title = child_title,
         child_id = child_id
     );
     db.execute(
-        "INSERT INTO messages
+        "INSERT OR IGNORE INTO messages
          (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
          VALUES (?1, ?2, 'assistant', ?3, ?4, 'agent', ?5, 'assignment', ?6)",
         params![
-            Uuid::new_v4().to_string(),
-            parent_session,
+            format!("assign:{child_id}"),
+            session_id,
             spoken,
-            parent_agent,
+            assigner_id,
             assignee_id,
             now
         ],
@@ -348,23 +389,32 @@ pub struct ParentFollowup {
     pub resume_run_id: Option<String>,
 }
 
-/// 子任务全部收口后，给父任务负责人再排一轮，汇总结果。
-/// 无论是否立刻汇总，都会先尝试写入本子任务的 B@A 桥接消息；有父任务时始终返回 followup，便于前端刷新父会话。
+#[derive(Clone, Copy)]
+enum FollowupScope<'a> {
+    Parent { task_id: &'a str },
+    Origin { session_id: &'a str, agent_id: &'a str },
+}
+
+/// 子任务全部收口后，给父任务负责人或来源会话负责人再排一轮，汇总结果。
+/// 无论是否立刻汇总，都会先尝试写入本子任务的 B@A 桥接消息；有后续目标时始终返回 followup，便于前端刷新会话。
 pub fn maybe_resume_parent(
     db: &Connection,
     child_session_id: &str,
     now: &str,
 ) -> Result<Option<ParentFollowup>, String> {
-    let Some((child_id, child_title, parent_id, child_agent)) = db
+    let Some((child_id, child_title, parent_id, origin_session, origin_agent, child_agent)) = db
         .query_row(
-            "SELECT id, title, parent_task_id, agent_id FROM tasks WHERE session_id=?1",
+            "SELECT id, title, parent_task_id, origin_session_id, origin_agent_id, agent_id
+             FROM tasks WHERE session_id=?1",
             [child_session_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             },
         )
@@ -373,131 +423,394 @@ pub fn maybe_resume_parent(
     else {
         return Ok(None);
     };
-    let Some(parent_id) = parent_id.filter(|id| !id.is_empty()) else {
-        return Ok(None);
-    };
-    // 旧数据里可能已有 A→B→A 的环，不拦的话两边会互相排恢复运行，永不停止。
-    if parent_chain_contains(db, &parent_id, &child_id)? {
-        return Ok(None);
+
+    if let Some(parent_id) = parent_id.filter(|id| !id.is_empty()) {
+        // 旧数据里可能已有 A→B→A 的环，不拦的话两边会互相排恢复运行，永不停止。
+        if parent_chain_contains(db, &parent_id, &child_id)? {
+            return Ok(None);
+        }
+        let (parent_session, parent_agent, parent_title): (String, String, String) = db
+            .query_row(
+                "SELECT session_id, agent_id, title FROM tasks WHERE id=?1",
+                [&parent_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|_| tr!("父任务不存在"))?;
+        let _ = record_parent_bridge_reply(
+            db,
+            child_session_id,
+            &child_id,
+            &child_agent,
+            &parent_session,
+            &parent_agent,
+            now,
+        );
+        let resume_run_id = resume_followup(
+            db,
+            &parent_session,
+            &parent_agent,
+            Some(&parent_title),
+            Some((&child_id, &child_title)),
+            FollowupScope::Parent { task_id: &parent_id },
+            now,
+        )?;
+        return Ok(Some(ParentFollowup {
+            parent_session_id: parent_session,
+            parent_agent_id: parent_agent,
+            resume_run_id,
+        }));
     }
 
-    let (parent_session, parent_agent, parent_title): (String, String, String) = db
+    let (Some(origin_session), Some(origin_agent)) = (origin_session, origin_agent) else {
+        return Ok(None);
+    };
+    if origin_session.is_empty() || origin_agent.is_empty() {
+        return Ok(None);
+    }
+    let exists: bool = db
         .query_row(
-            "SELECT session_id, agent_id, title FROM tasks WHERE id=?1",
-            [&parent_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE id=?1)",
+            [&origin_session],
+            |row| row.get(0),
         )
-        .map_err(|_| tr!("父任务不存在"))?;
-
+        .unwrap_or(false);
+    if !exists {
+        return Ok(None);
+    }
     let _ = record_parent_bridge_reply(
         db,
         child_session_id,
         &child_id,
         &child_agent,
-        &parent_session,
-        &parent_agent,
+        &origin_session,
+        &origin_agent,
         now,
     );
+    let resume_run_id = resume_followup(
+        db,
+        &origin_session,
+        &origin_agent,
+        None,
+        Some((&child_id, &child_title)),
+        FollowupScope::Origin {
+            session_id: &origin_session,
+            agent_id: &origin_agent,
+        },
+        now,
+    )?;
+    Ok(Some(ParentFollowup {
+        parent_session_id: origin_session,
+        parent_agent_id: origin_agent,
+        resume_run_id,
+    }))
+}
 
-    let bridged = ParentFollowup {
-        parent_session_id: parent_session.clone(),
-        parent_agent_id: parent_agent.clone(),
-        resume_run_id: None,
-    };
-
-    let open_children: u32 = db
+/// 会话空闲后补检查：子任务可能在负责人 run 还没结束时收口，当时为避免同会话并发跳过了汇总；
+/// 这里在 run 结束时补一次。父任务会话和普通会话都适用。
+pub fn maybe_resume_after_run(
+    db: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    now: &str,
+) -> Result<Option<ParentFollowup>, String> {
+    let task: Option<(String, String, String)> = db
         .query_row(
+            "SELECT id, agent_id, title FROM tasks WHERE session_id=?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+
+    if let Some((task_id, task_agent, task_title)) = task {
+        if task_agent != agent_id {
+            return Ok(None);
+        }
+        let unreported: u32 = db
+            .query_row(
+                "SELECT COUNT(*) FROM tasks
+                 WHERE parent_task_id=?1
+                   AND status IN ('done', 'cancelled')
+                   AND followup_reported_at IS NULL",
+                [&task_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if unreported == 0 {
+            return Ok(None);
+        }
+        let scope = FollowupScope::Parent { task_id: &task_id };
+        let finished = latest_closed_child(db, scope)?;
+        let resume_run_id = resume_followup(
+            db,
+            session_id,
+            agent_id,
+            Some(&task_title),
+            finished.as_ref().map(|(id, title)| (id.as_str(), title.as_str())),
+            scope,
+            now,
+        )?;
+        return Ok(Some(ParentFollowup {
+            parent_session_id: session_id.to_string(),
+            parent_agent_id: agent_id.to_string(),
+            resume_run_id,
+        }));
+    }
+
+    let unreported: u32 = db
+        .query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE origin_session_id=?1 AND origin_agent_id=?2
+               AND status IN ('done', 'cancelled')
+               AND followup_reported_at IS NULL",
+            params![session_id, agent_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if unreported == 0 {
+        return Ok(None);
+    }
+    let scope = FollowupScope::Origin { session_id, agent_id };
+    let finished = latest_closed_child(db, scope)?;
+    let resume_run_id = resume_followup(
+        db,
+        session_id,
+        agent_id,
+        None,
+        finished.as_ref().map(|(id, title)| (id.as_str(), title.as_str())),
+        scope,
+        now,
+    )?;
+    Ok(Some(ParentFollowup {
+        parent_session_id: session_id.to_string(),
+        parent_agent_id: agent_id.to_string(),
+        resume_run_id,
+    }))
+}
+
+fn latest_closed_child(
+    db: &Connection,
+    scope: FollowupScope<'_>,
+) -> Result<Option<(String, String)>, String> {
+    let row = match scope {
+        FollowupScope::Parent { task_id } => db
+            .query_row(
+                "SELECT id, title FROM tasks
+                 WHERE parent_task_id=?1 AND status IN ('done', 'cancelled')
+                 ORDER BY updated_at DESC LIMIT 1",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional(),
+        FollowupScope::Origin { session_id, agent_id } => db
+            .query_row(
+                "SELECT id, title FROM tasks
+                 WHERE origin_session_id=?1 AND origin_agent_id=?2
+                   AND status IN ('done', 'cancelled')
+                 ORDER BY updated_at DESC LIMIT 1",
+                params![session_id, agent_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional(),
+    };
+    row.map_err(|error| error.to_string())
+}
+
+fn resume_followup(
+    db: &Connection,
+    target_session: &str,
+    target_agent: &str,
+    parent_title: Option<&str>,
+    finished_child: Option<(&str, &str)>,
+    scope: FollowupScope<'_>,
+    now: &str,
+) -> Result<Option<String>, String> {
+    let open_children: u32 = match scope {
+        FollowupScope::Parent { task_id } => db.query_row(
             "SELECT COUNT(*) FROM tasks
              WHERE parent_task_id=?1
                AND status IN ('backlog', 'todo', 'in_progress', 'blocked')",
-            [&parent_id],
+            [task_id],
             |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
+        ),
+        FollowupScope::Origin { session_id, agent_id } => db.query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE origin_session_id=?1 AND origin_agent_id=?2
+               AND status IN ('backlog', 'todo', 'in_progress', 'blocked')",
+            params![session_id, agent_id],
+            |row| row.get(0),
+        ),
+    }
+    .map_err(|error| error.to_string())?;
     if open_children > 0 {
-        return Ok(Some(bridged));
+        return Ok(None);
     }
 
-    if crate::plan::latest_awaiting_plan(db, &parent_session)?.is_some() {
-        return Ok(Some(bridged));
+    if crate::plan::latest_awaiting_plan(db, target_session)?.is_some() {
+        return Ok(None);
     }
 
     let active: u32 = db
         .query_row(
             "SELECT COUNT(*) FROM agent_runs
              WHERE session_id=?1 AND status IN ('queued', 'running')",
-            [&parent_session],
+            [target_session],
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
     if active > 0 {
-        return Ok(Some(bridged));
+        return Ok(None);
     }
+
+    // claim：只让一个调用方排汇总，避免负责人 run 结束后的补检查重复排队。
+    let claimed = match scope {
+        FollowupScope::Parent { task_id } => db.execute(
+            "UPDATE tasks SET followup_reported_at=?1
+             WHERE parent_task_id=?2
+               AND status IN ('done', 'cancelled')
+               AND followup_reported_at IS NULL",
+            params![now, task_id],
+        ),
+        FollowupScope::Origin { session_id, agent_id } => db.execute(
+            "UPDATE tasks SET followup_reported_at=?1
+             WHERE origin_session_id=?2 AND origin_agent_id=?3
+               AND status IN ('done', 'cancelled')
+               AND followup_reported_at IS NULL",
+            params![now, session_id, agent_id],
+        ),
+    }
+    .map_err(|error| error.to_string())?;
+    if claimed == 0 {
+        return Ok(None);
+    }
+
+    let rows: Vec<(String, String, String, String)> = match scope {
+        FollowupScope::Parent { task_id } => {
+            let mut statement = db
+                .prepare(
+                    "SELECT id, title, status, agent_id FROM tasks
+                     WHERE parent_task_id=?1
+                     ORDER BY updated_at ASC",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map([task_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        }
+        FollowupScope::Origin { session_id, agent_id } => {
+            let mut statement = db
+                .prepare(
+                    "SELECT id, title, status, agent_id FROM tasks
+                     WHERE origin_session_id=?1 AND origin_agent_id=?2
+                     ORDER BY updated_at ASC",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![session_id, agent_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        }
+    };
 
     let mut lines = Vec::new();
-    {
-        let mut statement = db
-            .prepare(
-                "SELECT id, title, status, agent_id FROM tasks
-                 WHERE parent_task_id=?1
-                 ORDER BY updated_at ASC",
-            )
-            .map_err(|error| error.to_string())?;
-        let rows = statement
-            .query_map([&parent_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
+    for (id, title, status, agent_id) in rows {
+        let name: String = db
+            .query_row("SELECT name FROM agents WHERE id=?1", [&agent_id], |r| {
+                r.get(0)
             })
-            .map_err(|error| error.to_string())?;
-        for row in rows {
-            let (id, title, status, agent_id) = row.map_err(|error| error.to_string())?;
-            let name: String = db
-                .query_row("SELECT name FROM agents WHERE id=?1", [&agent_id], |r| {
-                    r.get(0)
-                })
-                .unwrap_or(agent_id);
-            lines.push(tr!(
-                "- [{status}] {title}（`{id}`，@{name}）",
-                status = status,
-                title = title,
-                id = id,
-                name = name
-            ));
-        }
+            .unwrap_or(agent_id);
+        lines.push(tr!(
+            "- [{status}] {title}（`{id}`，@{name}）",
+            status = status,
+            title = title,
+            id = id,
+            name = name
+        ));
     }
     let summary = lines.join("\n");
-    let assignment = tr!(
-        "子任务已全部收口（刚结束的是「{child_title}」`{child_id}`）。\n\
-         请汇总父任务「{parent_title}」的结果。还有未收口的子任务就继续留在进行中；这一轮成功结束且子任务都已收口时，系统会把父任务收成已完成。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活，还是到此为止）。不要用 `multara task comment` 在父任务上写进度流水。\n\n\
-         子任务状态：\n{summary}",
-        child_title = child_title,
-        child_id = child_id,
-        parent_title = parent_title,
-        summary = summary
-    );
 
-    let run_id = super::run::enqueue(
+    let assignment = if let Some(parent_title) = parent_title {
+        let finished = match finished_child {
+            Some((id, title)) => tr!(
+                "子任务已全部收口（刚结束的是「{title}」`{id}`）。\n",
+                title = title,
+                id = id
+            ),
+            None => tr!("子任务已全部收口。\n"),
+        };
+        tr!(
+            "{finished}请汇总父任务「{parent_title}」的结果。还有未收口的子任务就继续留在进行中；这一轮成功结束且子任务都已收口时，系统会把父任务收成已完成。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活，还是到此为止）。不要用 `multara task comment` 在父任务上写进度流水。\n\n子任务状态：\n{summary}",
+            finished = finished,
+            parent_title = parent_title,
+            summary = summary
+        )
+    } else {
+        let finished = match finished_child {
+            Some((id, title)) => tr!(
+                "你派发的子任务已收口（刚结束的是「{title}」`{id}`）。\n",
+                title = title,
+                id = id
+            ),
+            None => tr!("你派发的子任务已收口。\n"),
+        };
+        tr!(
+            "{finished}请汇总结果。还有未收口的子任务就继续留在进行中。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活，还是到此为止）。\n\n子任务状态：\n{summary}",
+            finished = finished,
+            summary = summary
+        )
+    };
+
+    match super::run::enqueue(
         db,
         super::run::Enqueue {
-            session_id: &parent_session,
+            session_id: target_session,
             turn_id: None,
-            agent_id: &parent_agent,
+            agent_id: target_agent,
             parent_run_id: None,
             assignment: &assignment,
             status: "queued",
             now,
             mode: RunMode::Auto,
         },
-    )?;
-    Ok(Some(ParentFollowup {
-        parent_session_id: parent_session,
-        parent_agent_id: parent_agent,
-        resume_run_id: Some(run_id),
-    }))
+    ) {
+        Ok(run_id) => Ok(Some(run_id)),
+        Err(error) => {
+            // 排不上就退回 claim，下次收口或补检查还能再试。
+            let revert = match scope {
+                FollowupScope::Parent { task_id } => db.execute(
+                    "UPDATE tasks SET followup_reported_at=NULL
+                     WHERE parent_task_id=?1 AND followup_reported_at=?2",
+                    params![task_id, now],
+                ),
+                FollowupScope::Origin { session_id, agent_id } => db.execute(
+                    "UPDATE tasks SET followup_reported_at=NULL
+                     WHERE origin_session_id=?1 AND origin_agent_id=?2 AND followup_reported_at=?3",
+                    params![session_id, agent_id, now],
+                ),
+            };
+            let _ = revert;
+            Err(error)
+        }
+    }
 }
 
 /// 把已经存在的会话挂成任务，不再新建会话、也不再排队。
@@ -796,8 +1109,9 @@ pub fn sync_from_run(
 ) -> Result<(), String> {
     match run_status {
         "queued" | "running" => {
+            // 子任务重新开跑：清掉上一次的汇总标记，收口后可以再次唤醒负责人。
             db.execute(
-                "UPDATE tasks SET status='in_progress', updated_at=?1
+                "UPDATE tasks SET status='in_progress', updated_at=?1, followup_reported_at=NULL
                  WHERE session_id=?2 AND status IN ('backlog', 'todo', 'done', 'blocked')",
                 params![now, session_id],
             )
@@ -1175,6 +1489,7 @@ mod tests {
                 project_id: Some("project"),
                 project_ids: &[],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("todo"),
                 parent_task_id: None,
                 requested_mode: RunMode::Auto,
@@ -1193,6 +1508,7 @@ mod tests {
                 project_id: Some("project"),
                 project_ids: &[],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("backlog"),
                 parent_task_id: None,
                 requested_mode: RunMode::Auto,
@@ -1235,6 +1551,7 @@ mod tests {
                 project_id: None,
                 project_ids: &["p1".to_string(), "p2".to_string()],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("backlog"),
                 parent_task_id: None,
                 requested_mode: RunMode::Auto,
@@ -1276,6 +1593,7 @@ mod tests {
                 project_id: None,
                 project_ids: &[],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("todo"),
                 parent_task_id: None,
                 requested_mode: RunMode::Plan,
@@ -1313,6 +1631,7 @@ mod tests {
             project_id: None,
             project_ids: &[],
             source_session_id: None,
+            origin_agent_id: None,
             status: Some("backlog"),
             parent_task_id: None,
             requested_mode: RunMode::Auto,
@@ -1366,6 +1685,7 @@ mod tests {
                 project_id: None,
                 project_ids: &[],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("todo"),
                 parent_task_id: None,
                 requested_mode: RunMode::Plan,
@@ -1420,6 +1740,7 @@ mod tests {
                 project_id: None,
                 project_ids: &[],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("backlog"),
                 parent_task_id: None,
                 requested_mode: RunMode::Auto,
@@ -1436,6 +1757,7 @@ mod tests {
                 project_id: None,
                 project_ids: &[],
                 source_session_id: None,
+                origin_agent_id: None,
                 status: Some("backlog"),
                 parent_task_id: Some(&parent.id),
                 requested_mode: RunMode::Auto,
@@ -1491,5 +1813,195 @@ mod tests {
             )
             .unwrap();
         assert_eq!(bridge_count, 1);
+    }
+
+    fn origin_fixture(db: &mut Connection) {
+        crate::database::migrate(db).unwrap();
+        db.execute_batch(
+            "INSERT INTO agents
+               (id, name, avatar, description, instructions, runtime_id, model, max_concurrent_tasks)
+             VALUES ('lead', '负责人', '', '', '', 'cursor', 'auto', 1),
+                    ('delegate', '测试库查询', '', '', '', 'cursor', 'auto', 1);
+             INSERT INTO chat_sessions (id, title, target_type, target_id, created_at, updated_at)
+             VALUES ('chat', '聊天', 'agent', 'lead', 'now', 'now');",
+        )
+        .unwrap();
+    }
+
+    fn origin_task(db: &mut Connection, status: &str) -> super::Task {
+        create(
+            db,
+            CreateTaskInput {
+                title: "测试库查询",
+                description: "查 SIT 账号",
+                agent_id: "delegate",
+                project_id: None,
+                project_ids: &[],
+                source_session_id: Some("chat"),
+                origin_agent_id: Some("lead"),
+                status: Some(status),
+                parent_task_id: None,
+                requested_mode: RunMode::Auto,
+            },
+        )
+        .unwrap()
+        .task
+    }
+
+    #[test]
+    fn delegates_from_chat_session_with_visible_assignment_and_resume() {
+        let mut db = Connection::open_in_memory().unwrap();
+        origin_fixture(&mut db);
+        let task = origin_task(&mut db, "backlog");
+
+        let (origin_session, origin_agent): (Option<String>, Option<String>) = db
+            .query_row(
+                "SELECT origin_session_id, origin_agent_id FROM tasks WHERE id=?1",
+                [&task.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(origin_session.as_deref(), Some("chat"));
+        assert_eq!(origin_agent.as_deref(), Some("lead"));
+
+        let assignment_id = format!("assign:{}", task.id);
+        let (agent_id, audience_type, audience_id, kind): (String, String, String, String) = db
+            .query_row(
+                "SELECT agent_id, audience_type, audience_id, message_kind FROM messages WHERE id=?1",
+                [&assignment_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(agent_id, "lead");
+        assert_eq!(audience_type, "agent");
+        assert_eq!(audience_id, "delegate");
+        assert_eq!(kind, "assignment");
+
+        db.execute(
+            "INSERT INTO messages
+             (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
+             VALUES ('child-reply', ?1, 'assistant', 'SIT 有可用账号。', 'delegate', 'user', NULL, 'message', 't1')",
+            [&task.session_id],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE tasks SET status='done', updated_at='t1' WHERE id=?1",
+            [&task.id],
+        )
+        .unwrap();
+
+        let first = super::maybe_resume_parent(&db, &task.session_id, "t2")
+            .unwrap()
+            .expect("origin should follow up");
+        assert_eq!(first.parent_session_id, "chat");
+        assert_eq!(first.parent_agent_id, "lead");
+        assert!(first.resume_run_id.is_some());
+
+        let bridge_id = format!("bridge:{}", task.id);
+        let (bridge_agent, bridge_audience, bridge_content): (String, String, String) = db
+            .query_row(
+                "SELECT agent_id, audience_id, content FROM messages WHERE id=?1",
+                [&bridge_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(bridge_agent, "delegate");
+        assert_eq!(bridge_audience, "lead");
+        assert!(bridge_content.contains("SIT 有可用账号"));
+
+        let second = super::maybe_resume_parent(&db, &task.session_id, "t3")
+            .unwrap()
+            .expect("bridge still reported");
+        assert!(second.resume_run_id.is_none(), "summary already queued");
+
+        db.execute(
+            "UPDATE agent_runs SET status='completed' WHERE session_id='chat'",
+            [],
+        )
+        .unwrap();
+        let third = super::maybe_resume_parent(&db, &task.session_id, "t4")
+            .unwrap()
+            .expect("bridge still reported");
+        assert!(
+            third.resume_run_id.is_none(),
+            "already reported once, no duplicate summary"
+        );
+        let summaries: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM agent_runs WHERE session_id='chat'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(summaries, 1, "only one summary run should ever be queued");
+    }
+
+    #[test]
+    fn origin_summary_waits_until_lead_run_finishes() {
+        let mut db = Connection::open_in_memory().unwrap();
+        origin_fixture(&mut db);
+        let task = origin_task(&mut db, "backlog");
+        db.execute(
+            "INSERT INTO messages
+             (id, session_id, role, content, agent_id, audience_type, audience_id, message_kind, created_at)
+             VALUES ('child-reply', ?1, 'assistant', 'SIT 有可用账号。', 'delegate', 'user', NULL, 'message', 't1')",
+            [&task.session_id],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE tasks SET status='done', updated_at='t1' WHERE id=?1",
+            [&task.id],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO agent_runs
+             (id, session_id, agent_id, runtime_id, assignment, status, created_at)
+             VALUES ('lead-run', 'chat', 'lead', 'cursor', '继续排查', 'running', 't0')",
+            [],
+        )
+        .unwrap();
+
+        let deferred = super::maybe_resume_parent(&db, &task.session_id, "t2")
+            .unwrap()
+            .expect("bridge should still be written");
+        assert!(deferred.resume_run_id.is_none(), "lead is still running");
+        let queued: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM agent_runs WHERE session_id='chat' AND status='queued'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(queued, 0);
+
+        db.execute(
+            "UPDATE agent_runs SET status='completed', completed_at='t3' WHERE id='lead-run'",
+            [],
+        )
+        .unwrap();
+        let resumed = super::maybe_resume_after_run(&db, "chat", "lead", "t3")
+            .unwrap()
+            .expect("origin should resume after lead run ends");
+        assert_eq!(resumed.parent_session_id, "chat");
+        assert_eq!(resumed.parent_agent_id, "lead");
+        assert!(resumed.resume_run_id.is_some());
+    }
+
+    #[test]
+    fn origin_task_does_not_set_parent_run_for_same_turn_mentions() {
+        let mut db = Connection::open_in_memory().unwrap();
+        origin_fixture(&mut db);
+        let task = origin_task(&mut db, "todo");
+        let parent_run: Option<String> = db
+            .query_row(
+                "SELECT parent_run_id FROM agent_runs WHERE session_id=?1",
+                [&task.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            parent_run.is_none(),
+            "task run must stay a root run so dispatch_mentions still works"
+        );
     }
 }

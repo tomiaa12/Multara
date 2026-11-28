@@ -71,7 +71,7 @@ pub fn open_file_light(path: &Path) -> Result<Connection, String> {
 }
 
 /// 每次给 `migrate` 加了结构变化都要加一，否则 CLI 的轻量打开会跳过新迁移。
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// 负数表示 KiB。
 const CACHE_SIZE_KIB: i64 = 16 * 1024;
@@ -795,6 +795,18 @@ pub(crate) fn migrate(db: &Connection) -> rusqlite::Result<()> {
     )?;
     ensure_column(&columns, "tasks", "review", "TEXT")?;
     migrate_task_work_unit(db)?;
+    // 普通会话（无 task）里派出的子任务：记录来源会话/负责人，任务收口后据此桥接回复并唤醒。
+    ensure_column(&columns, "tasks", "origin_session_id", "TEXT")?;
+    ensure_column(&columns, "tasks", "origin_agent_id", "TEXT")?;
+    ensure_column(&columns, "tasks", "followup_reported_at", "TEXT")?;
+    db.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_origin
+           ON tasks(origin_session_id, origin_agent_id, status);
+         UPDATE tasks SET followup_reported_at=updated_at
+           WHERE parent_task_id IS NOT NULL AND parent_task_id != ''
+             AND status IN ('done', 'cancelled')
+             AND followup_reported_at IS NULL;",
+    )?;
     migrate_optional_automation_project(db)?;
     migrate_diff_chunk_keys(db)?;
     migrate_run_event_types(db)?;

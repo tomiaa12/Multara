@@ -383,6 +383,42 @@
     "ja": "サブタスクはすべて完了しました（直前に終わったのは「{child_title}」`{child_id}`）。\n親タスク「{parent_title}」の結果をまとめてください。未完了のサブタスクが残っていれば進行中のままにしてください。このラウンドが成功し、サブタスクがすべて閉じたら、システムが親タスクを完了にします。\nメンバーの成果はすでに会話に表示されています。復唱や引用はせず、結論と次の一手（追加の割り当てか、ここで終える）だけを述べてください。`multara task comment` で親タスクに進捗ログを書かないでください。\n\nサブタスクのステータス：\n{summary}",
     "ko": "하위 작업이 모두 마무리되었습니다(방금 끝난 작업은 \"{child_title}\" `{child_id}`).\n상위 작업 \"{parent_title}\"의 결과를 정리하세요. 아직 끝나지 않은 하위 작업이 있으면 진행 중을 유지하세요. 이번 라운드가 성공하고 하위 작업이 모두 닫히면 시스템이 상위 작업을 완료로 바꿉니다.\n멤버의 결과는 이미 대화에 표시되어 있습니다. 반복하거나 인용하지 말고 결론과 다음 단계(추가 배정 또는 여기서 마무리)만 말하세요. `multara task comment`로 상위 작업에 진행 로그를 남기지 마세요.\n\n하위 작업 상태:\n{summary}"
   },
+  "子任务已全部收口（刚结束的是「{title}」`{id}`）。\n": {
+    "en": "All subtasks are closed (the one that just finished is \"{title}\" `{id}`).\n",
+    "zh-TW": "子任務已全部收尾（剛結束的是「{title}」`{id}`）。\n",
+    "ja": "サブタスクはすべて完了しました（直前に終わったのは「{title}」`{id}`）。\n",
+    "ko": "하위 작업이 모두 마무리되었습니다(방금 끝난 작업은 \"{title}\" `{id}`).\n"
+  },
+  "子任务已全部收口。\n": {
+    "en": "All subtasks are closed.\n",
+    "zh-TW": "子任務已全部收尾。\n",
+    "ja": "サブタスクはすべて完了しました。\n",
+    "ko": "하위 작업이 모두 마무리되었습니다.\n"
+  },
+  "{finished}请汇总父任务「{parent_title}」的结果。还有未收口的子任务就继续留在进行中；这一轮成功结束且子任务都已收口时，系统会把父任务收成已完成。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活，还是到此为止）。不要用 `multara task comment` 在父任务上写进度流水。\n\n子任务状态：\n{summary}": {
+    "en": "{finished}Summarize the parent task \"{parent_title}\". If any subtask is still open, stay in progress; when this round succeeds and every subtask is closed, the system marks the parent done.\nMembers' results are already shown in the conversation: do not repeat or quote them; give only the conclusion and next step (delegate more, or stop here). Do not log progress on the parent task with `multara task comment`.\n\nSubtask status:\n{summary}",
+    "zh-TW": "{finished}請彙整父任務「{parent_title}」的結果。還有未收口的子任務就繼續留在進行中；這一輪成功結束且子任務都已收口時，系統會把父任務收成已完成。\n成員成果已顯示在對話裡：不要複述或引用原文，只說結論與下一步（繼續派工，或到此為止）。不要用 `multara task comment` 在父任務上寫進度流水。\n\n子任務狀態：\n{summary}",
+    "ja": "{finished}親タスク「{parent_title}」の結果をまとめてください。未完了のサブタスクが残っていれば進行中のままにしてください。このラウンドが成功し、サブタスクがすべて閉じたら、システムが親タスクを完了にします。\nメンバーの成果はすでに会話に表示されています。復唱や引用はせず、結論と次の一手（追加の割り当てか、ここで終える）だけを述べてください。`multara task comment` で親タスクに進捗ログを書かないでください。\n\nサブタスクのステータス：\n{summary}",
+    "ko": "{finished}상위 작업 \"{parent_title}\"의 결과를 정리하세요. 아직 끝나지 않은 하위 작업이 있으면 진행 중을 유지하세요. 이번 라운드가 성공하고 하위 작업이 모두 닫히면 시스템이 상위 작업을 완료로 바꿉니다.\n멤버의 결과는 이미 대화에 표시되어 있습니다. 반복하거나 인용하지 말고 결론과 다음 단계(추가 배정 또는 여기서 마무리)만 말하세요. `multara task comment`로 상위 작업에 진행 로그를 남기지 마세요.\n\n하위 작업 상태:\n{summary}"
+  },
+  "你派发的子任务已收口（刚结束的是「{title}」`{id}`）。\n": {
+    "en": "The subtask you delegated is closed (the one that just finished is \"{title}\" `{id}`).\n",
+    "zh-TW": "你派出的子任務已收尾（剛結束的是「{title}」`{id}`）。\n",
+    "ja": "あなたが割り当てたサブタスクが完了しました（直前に終わったのは「{title}」`{id}`）。\n",
+    "ko": "당신이 배정한 하위 작업이 마무리되었습니다(방금 끝난 작업은 \"{title}\" `{id}`).\n"
+  },
+  "你派发的子任务已收口。\n": {
+    "en": "The subtask you delegated is closed.\n",
+    "zh-TW": "你派出的子任務已收尾。\n",
+    "ja": "あなたが割り当てたサブタスクが完了しました。\n",
+    "ko": "당신이 배정한 하위 작업이 마무리되었습니다.\n"
+  },
+  "{finished}请汇总结果。还有未收口的子任务就继续留在进行中。\n成员的成果已经显示在对话里：不要复述或引用原文，只说结论和下一步（继续派活，还是到此为止）。\n\n子任务状态：\n{summary}": {
+    "en": "{finished}Summarize the result. If any subtask is still open, stay in progress.\nMembers' results are already shown in the conversation: do not repeat or quote them; give only the conclusion and next step (delegate more, or stop here).\n\nSubtask status:\n{summary}",
+    "zh-TW": "{finished}請彙整結果。還有未收口的子任務就繼續留在進行中。\n成員成果已顯示在對話裡：不要複述或引用原文，只說結論與下一步（繼續派工，或到此為止）。\n\n子任務狀態：\n{summary}",
+    "ja": "{finished}結果をまとめてください。未完了のサブタスクが残っていれば進行中のままにしてください。\nメンバーの成果はすでに会話に表示されています。復唱や引用はせず、結論と次の一手（追加の割り当てか、ここで終える）だけを述べてください。\n\nサブタスクのステータス：\n{summary}",
+    "ko": "{finished}결과를 정리하세요. 아직 끝나지 않은 하위 작업이 있으면 진행 중을 유지하세요.\n멤버의 결과는 이미 대화에 표시되어 있습니다. 반복하거나 인용하지 말고 결론과 다음 단계(추가 배정 또는 여기서 마무리)만 말하세요.\n\n하위 작업 상태:\n{summary}"
+  },
   "你刚才 @ 的成员已经回复，回复原文如下：\n\n{replies}\n\n你是负责人，先对照你最初的要求检查成果。不满足就在回答里另起一段继续 @ 他，写清楚还差什么，不要自己动手改。": {
     "en": "The member you @-mentioned has replied. Their reply is below:\n\n{replies}\n\nYou are responsible: check the result against your original request first. If it falls short, start another paragraph with an @mention of them saying what is missing; do not do the work yourself.",
     "zh-TW": "你剛才 @ 的成員已經回覆，回覆原文如下：\n\n{replies}\n\n你是負責人，先對照你最初的要求檢查成果。不滿足就在回答裡另起一段繼續 @ 他，寫清楚還差什麼，不要自己動手改。",

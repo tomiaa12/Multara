@@ -284,6 +284,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                 .or_else(|| env::var("MULTARA_AGENT_ID").ok())
                 .unwrap_or_else(|| builtin_agents::MIKU_ID.to_string());
             let source_session = env::var("MULTARA_SESSION_ID").ok();
+            let origin_agent = env::var("MULTARA_AGENT_ID").ok();
             // 在某个任务的 run 里建子任务时，未传 --parent 则挂到当前任务下，详情右侧才能看见。
             let parent_task_id = parsed
                 .flag(&["parent", "parent-id"])
@@ -298,6 +299,7 @@ pub fn execute(args: &[String], db: &mut Connection) -> Result<String, String> {
                     project_id: parsed.flag(&["project", "project-id"]),
                     project_ids: &[],
                     source_session_id: source_session.as_deref(),
+                    origin_agent_id: origin_agent.as_deref(),
                     status: parsed.flag(&["status"]),
                     parent_task_id: parent_task_id.as_deref(),
                     requested_mode: crate::models::RunMode::Auto,

@@ -3725,6 +3725,7 @@ pub fn create_task(input: TaskInput, app: AppHandle) -> Result<Task, String> {
                 project_id: input.project_id.as_deref(),
                 project_ids: &input.project_ids,
                 source_session_id: input.source_session_id.as_deref(),
+                origin_agent_id: None,
                 status: input.status.as_deref(),
                 parent_task_id: input.parent_task_id.as_deref(),
                 requested_mode: input.requested_mode,
@@ -8107,7 +8108,7 @@ mod tests {
             "[实体引用] agent docs Docs\n[实体引用] agent qa QA\n一起看看",
         ] {
             let mentioned = explicit_chat_targets(content);
-            let owner = session_target_agent(&db, "session").unwrap().unwrap();
+            let owner = super::session_target_agent(&db, "session").unwrap().unwrap();
             let lead = crate::runtime_brief::session_is_lead(&db, "session", &owner, false).unwrap();
             let hint = crate::runtime_brief::mention_hint("zh-CN", &mentioned, lead);
             let created = dispatch(&db, "session", None, &format!("{hint}\n{content}"), "now", &[], RunMode::Auto).unwrap();
