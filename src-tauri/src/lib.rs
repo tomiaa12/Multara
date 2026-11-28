@@ -72,6 +72,8 @@ mod macos_menu;
 
 #[cfg(windows)]
 pub mod win_shutdown;
+#[cfg(windows)]
+mod win_taskbar_icon;
 
 use channel::feishu_send::{list_feishu_contacts, resend_feishu_send};
 use commands::{
@@ -231,6 +233,8 @@ fn reveal_main_window(app: &tauri::App, theme_setting: Option<&str>) -> tauri::R
     let _ = window.restore_state(RESTORED_WINDOW_FLAGS);
     persist_main_window_state(&window);
     window.show()?;
+    #[cfg(windows)]
+    win_taskbar_icon::apply(&window);
     let _ = window.set_focus();
     Ok(())
 }
